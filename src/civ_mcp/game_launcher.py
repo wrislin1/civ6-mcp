@@ -539,7 +539,7 @@ def _find_game_window() -> WindowInfo | None:
         ):
             continue
         bounds = w.get("kCGWindowBounds", {})
-        return WindowInfo(
+        info = WindowInfo(
             window_id=w.get("kCGWindowNumber", 0),
             x=int(bounds.get("X", 0)),
             y=int(bounds.get("Y", 0)),
@@ -547,6 +547,17 @@ def _find_game_window() -> WindowInfo | None:
             h=int(bounds.get("Height", 0)),
             pid=w.get("kCGWindowOwnerPID", 0),
         )
+        log.info(
+            "Window found: wid=%s pos=(%d,%d) size=%dx%d pid=%d",
+            info.window_id,
+            info.x,
+            info.y,
+            info.w,
+            info.h,
+            info.pid,
+        )
+        return info
+    log.info("No game window found")
     return None
 
 
@@ -693,6 +704,18 @@ def _find_game_window_linux() -> WindowInfo | None:
                 # Smaller "Civilization VI" window is the client area
                 best = info
 
+        if best:
+            log.info(
+                "Window found: wid=%s pos=(%d,%d) size=%dx%d pid=%d",
+                best.window_id,
+                best.x,
+                best.y,
+                best.w,
+                best.h,
+                best.pid,
+            )
+        else:
+            log.info("No game window found")
         return best
     except Exception as e:
         log.debug("xdotool window search failed: %s", e)
@@ -898,6 +921,9 @@ def _ocr_vision(
         sw = bbox.size.width * extent_w
         sh = bbox.size.height * extent_h
         results.append((text, int(sx), int(sy), int(sw), int(sh)))
+    log.info("Vision OCR: %d lines found", len(results))
+    if results:
+        log.debug("Vision OCR sample: %s", [r[0] for r in results[:5]])
     return results
 
 
@@ -1088,6 +1114,11 @@ def _ocr_tesseract(
         if key not in seen:
             seen.add(key)
             deduped.append((text, sx, sy, sw, sh))
+    log.info(
+        "Tesseract OCR: %d lines found (%d before dedup)", len(deduped), len(results)
+    )
+    if deduped:
+        log.debug("Tesseract OCR sample: %s", [r[0] for r in deduped[:5]])
     return deduped
 
 
@@ -1140,6 +1171,7 @@ def _ocr_fullscreen() -> list[tuple[str, int, int, int, int]]:
     display_bounds = Quartz.CGDisplayBounds(main_display)
     disp_w = int(display_bounds.size.width)
     disp_h = int(display_bounds.size.height)
+    log.info("Fullscreen OCR: capturing %dx%d (macOS)", disp_w, disp_h)
 
     image = Quartz.CGWindowListCreateImage(
         display_bounds,
@@ -1148,9 +1180,12 @@ def _ocr_fullscreen() -> list[tuple[str, int, int, int, int]]:
         Quartz.kCGWindowImageDefault,
     )
     if image is None:
+        log.info("Fullscreen OCR: CGWindowListCreateImage returned nil")
         return []
 
-    return _ocr_vision(image, 0, 0, disp_w, disp_h)
+    results = _ocr_vision(image, 0, 0, disp_w, disp_h)
+    log.info("Fullscreen OCR: %d text regions found", len(results))
+    return results
 
 
 def _ocr_fullscreen_win32() -> list[tuple[str, int, int, int, int]]:
@@ -1227,15 +1262,22 @@ def _ocr_fullscreen_linux() -> list[tuple[str, int, int, int, int]]:
 
     with mss.mss() as sct:
         monitor = sct.monitors[1]  # primary monitor
+        log.info(
+            "Fullscreen OCR: capturing %dx%d (Linux)",
+            monitor["width"],
+            monitor["height"],
+        )
         screenshot = sct.grab(monitor)
         img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
-        return _ocr_tesseract(
+        results = _ocr_tesseract(
             img,
             monitor["left"],
             monitor["top"],
             monitor["width"],
             monitor["height"],
         )
+        log.info("Fullscreen OCR: %d text regions found", len(results))
+        return results
 
 
 def _normalize(s: str) -> str:
@@ -1310,6 +1352,7 @@ def _click(x: int, y: int) -> None:
     _require_gui_deps()
     import Quartz
 
+    log.info("Click: screen=(%d,%d) via Quartz", x, y)
     e = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (x, y), 0)
     Quartz.CGEventPost(Quartz.kCGHIDEventTap, e)
     time.sleep(0.3)
@@ -1428,6 +1471,7 @@ def _click_win32(x: int, y: int) -> None:
 
 def _click_linux(x: int, y: int) -> None:
     """Click at screen coordinates using xdotool (Linux)."""
+    log.info("Click: screen=(%d,%d) via xdotool", x, y)
     subprocess.run(
         ["xdotool", "mousemove", str(x), str(y)],
         capture_output=True,
