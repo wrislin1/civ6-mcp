@@ -65,11 +65,14 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
     """
     from civ_mcp.game_lifecycle import load_game_save
 
-    # 1. Launch game if not running
-    if not game_launcher.is_game_running():
-        log.info("Auto-boot: launching game...")
-        result = await asyncio.to_thread(game_launcher._launch_game_sync)
-        log.info("Auto-boot: launch result: %s", result)
+    # 1. Kill any existing game for a clean start, then launch
+    if game_launcher.is_game_running():
+        log.info("Auto-boot: killing existing game for clean start...")
+        kill_result = await game_launcher.kill_game()
+        log.info("Auto-boot: %s", kill_result)
+    log.info("Auto-boot: launching game...")
+    result = await asyncio.to_thread(game_launcher._launch_game_sync)
+    log.info("Auto-boot: launch result: %s", result)
 
     # 2. Connect to FireTuner (retry — game takes time to start)
     for attempt in range(90):
