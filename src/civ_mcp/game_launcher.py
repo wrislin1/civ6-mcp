@@ -312,102 +312,6 @@ def _is_tuner_port_open() -> bool:
         return False
 
 
-def _send_key_win32(vk_code: int) -> None:
-    """Send a single keypress via SendInput (Windows)."""
-    import ctypes
-
-    class KEYBDINPUT(ctypes.Structure):
-        _fields_ = [
-            ("wVk", ctypes.c_ushort),
-            ("wScan", ctypes.c_ushort),
-            ("dwFlags", ctypes.c_ulong),
-            ("time", ctypes.c_ulong),
-            ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
-        ]
-
-    class INPUT(ctypes.Structure):
-        class _U(ctypes.Union):
-            _fields_ = [("ki", KEYBDINPUT)]
-
-        _anonymous_ = ("_u",)
-        _fields_ = [("type", ctypes.c_ulong), ("_u", _U)]
-
-    KEYEVENTF_KEYUP = 0x0002
-    user32 = ctypes.windll.user32
-
-    # Key down
-    inp_down = INPUT(
-        type=1,
-        ki=KEYBDINPUT(
-            wVk=vk_code,
-            wScan=0,
-            dwFlags=0,
-            time=0,
-            dwExtraInfo=None,
-        ),
-    )
-    user32.SendInput(1, ctypes.byref(inp_down), ctypes.sizeof(INPUT))
-    time.sleep(0.05)
-
-    # Key up
-    inp_up = INPUT(
-        type=1,
-        ki=KEYBDINPUT(
-            wVk=vk_code,
-            wScan=0,
-            dwFlags=KEYEVENTF_KEYUP,
-            time=0,
-            dwExtraInfo=None,
-        ),
-    )
-    user32.SendInput(1, ctypes.byref(inp_up), ctypes.sizeof(INPUT))
-
-
-def _send_key_linux(key_name: str) -> None:
-    """Send a single keypress via xdotool (Linux).
-
-    key_name: xdotool key name, e.g. 'Return', 'Escape', 'space'
-    """
-    subprocess.run(
-        ["xdotool", "key", key_name],
-        capture_output=True,
-        timeout=5,
-    )
-
-
-# VK codes for _send_key_win32
-_VK_RETURN = 0x0D
-_VK_ESCAPE = 0x1B
-_VK_SPACE = 0x20
-
-_WIN32_KEY_MAP: dict[str, int] = {
-    "Return": _VK_RETURN,
-    "Escape": _VK_ESCAPE,
-    "space": _VK_SPACE,
-}
-
-
-def _send_key(key_name: str) -> None:
-    """Send a keypress using the platform-appropriate backend.
-
-    key_name uses xdotool naming: 'Return', 'Escape', 'space'.
-    """
-    if sys.platform == "linux":
-        _send_key_linux(key_name)
-    elif sys.platform == "win32":
-        vk = _WIN32_KEY_MAP.get(key_name)
-        if vk is None:
-            log.warning("_send_key: unknown key '%s' for win32", key_name)
-            return
-        _send_key_win32(vk)
-    elif sys.platform == "darwin":
-        # macOS Vision OCR handles CONTINUE reliably; keyboard fallback
-        # not needed yet. Log and skip.
-        log.debug("_send_key: not implemented on macOS (key=%s)", key_name)
-    else:
-        log.warning("_send_key: unsupported platform %s", sys.platform)
-
-
 def _click_continue_positional() -> None:
     """Click the CONTINUE GAME button by its known position on the leader screen.
 
@@ -546,8 +450,7 @@ def _launch_game_sync() -> str:
     with a PLAY button). This function auto-clicks through it if GUI
     deps are available.
 
-    On Windows, sends Escape keypresses during startup to dismiss intro
-    videos, and falls back to direct EXE launch if steam://run fails.
+    On Windows, falls back to direct EXE launch if steam://run fails.
     """
     # Dismiss any crash reporter dialogs blocking relaunch
     _dismiss_crash_dialogs_sync()
@@ -1494,7 +1397,9 @@ def _find_text(
         matches = [(t, x, y, w, h) for t, x, y, w, h in matches if y >= min_y]
     if not matches:
         # Second-chance: fuzzy suffix match on rejected low-confidence results
-        fuzzy = _fuzzy_suffix_match(target, _last_rejected_ocr)
+        fuzzy = _fuzzy_suffix_match(target, _last_rejected_ocr) or _fuzzy_suffix_match(
+            target, ocr_results
+        )
         if fuzzy:
             log.info(
                 "_find_text: '%s' not in confident results, "
