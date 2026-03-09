@@ -561,12 +561,14 @@ export const ingestMapData = mutation({
     initialOwners: v.string(),
     initialRoutes: v.optional(v.string()),
     initialTurn: v.number(),
-    ownerFrames: v.string(),
-    cityFrames: v.string(),
-    roadFrames: v.string(),
+    // Legacy: inline frames for small games that fit in one doc
+    ownerFrames: v.optional(v.string()),
+    cityFrames: v.optional(v.string()),
+    roadFrames: v.optional(v.string()),
     cityNames: v.optional(v.string()),
     players: v.array(v.object({ pid: v.number(), civ: v.string(), csType: v.optional(v.string()) })),
     maxTurn: v.number(),
+    frameChunks: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -586,6 +588,29 @@ export const ingestMapData = mutation({
       .unique();
     if (game && !game.hasMap) {
       await ctx.db.patch(game._id, { hasMap: true, lastUpdated: Date.now() });
+    }
+  },
+});
+
+export const ingestMapFrames = mutation({
+  args: {
+    gameId: v.string(),
+    chunk: v.number(),
+    ownerFrames: v.string(),
+    cityFrames: v.string(),
+    roadFrames: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("mapFrames")
+      .withIndex("by_gameId_chunk", (q) =>
+        q.eq("gameId", args.gameId).eq("chunk", args.chunk),
+      )
+      .first();
+    if (existing) {
+      await ctx.db.replace(existing._id, args);
+    } else {
+      await ctx.db.insert("mapFrames", args);
     }
   },
 });

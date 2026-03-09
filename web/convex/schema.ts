@@ -195,7 +195,8 @@ export default defineSchema({
     }),
   }).index("by_game_turn", ["gameId", "turn"]),
 
-  // One doc per game — strategic map data for terrain + replay
+  // One doc per game — strategic map static data + terrain
+  // Replay frames stored in mapFrames table (chunked for large games)
   mapData: defineTable({
     gameId: v.string(),
     gridW: v.number(),
@@ -205,14 +206,25 @@ export default defineSchema({
     initialOwners: v.string(), // one owner per tile (-1 = unowned), row-major
     initialRoutes: v.optional(v.string()), // one route type per tile (-1 = none), row-major
     initialTurn: v.number(),
-    ownerFrames: v.string(),   // packed [turn, count, tileIdx, owner, ...]
-    cityFrames: v.string(),    // packed [turn, count, x, y, pid, pop, ...]
-    roadFrames: v.string(),    // packed [turn, count, tileIdx, routeType, ...]
+    // Legacy: frames inline (old games). New games use mapFrames table.
+    ownerFrames: v.optional(v.string()),
+    cityFrames: v.optional(v.string()),
+    roadFrames: v.optional(v.string()),
     cityNames: v.optional(v.string()), // JSON object {"x,y": "CityName"}
     // Player→civ mapping for territory coloring
     players: v.array(v.object({ pid: v.number(), civ: v.string(), csType: v.optional(v.string()) })),
     maxTurn: v.number(),
+    frameChunks: v.optional(v.number()), // number of mapFrames docs for this game
   }).index("by_gameId", ["gameId"]),
+
+  // Chunked replay frames — multiple docs per game for large replays
+  mapFrames: defineTable({
+    gameId: v.string(),
+    chunk: v.number(),
+    ownerFrames: v.string(),   // packed [turn, count, tileIdx, owner, ...]
+    cityFrames: v.string(),    // packed [turn, count, x, y, pid, pop, ...]
+    roadFrames: v.string(),    // packed [turn, count, tileIdx, routeType, ...]
+  }).index("by_gameId_chunk", ["gameId", "chunk"]),
 
   // One doc per game — pre-aggregated per-tile spatial attention map for hex heatmap
   spatialMaps: defineTable({

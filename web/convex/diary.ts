@@ -135,6 +135,17 @@ export const getMapData = query({
   },
 });
 
+/** Chunked replay frames for large games. Multiple docs per game. */
+export const getMapFrames = query({
+  args: { gameId: v.string() },
+  handler: async (ctx, { gameId }) => {
+    return ctx.db
+      .query("mapFrames")
+      .withIndex("by_gameId_chunk", (q) => q.eq("gameId", gameId))
+      .collect();
+  },
+});
+
 /** Tile-level spatial attention map for hex heatmap. One doc per game. */
 export const getSpatialMap = query({
   args: { gameId: v.string() },

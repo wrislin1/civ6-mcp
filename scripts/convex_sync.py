@@ -714,6 +714,73 @@ async def sync_spatial_map(
     )
 
 
+_FRAME_CHUNK_LIMIT = 700_000  # bytes per chunk, well under 1MB with overhead
+
+
+def _chunk_map_frames(
+    turn_entries: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Split per-turn map deltas into chunks that fit under Convex's doc limit.
+
+    Packs frames per-turn into flat arrays, then greedily groups turns into
+    chunks by cumulative JSON byte size. Returns list of dicts with
+    ownerFrames/cityFrames/roadFrames as JSON strings.
+    """
+    # Build per-turn packed segments
+    per_turn: list[tuple[list[int], list[int], list[int]]] = []
+    for entry in turn_entries:
+        turn = entry.get("turn", 0)
+        o: list[int] = []
+        c: list[int] = []
+        r: list[int] = []
+
+        owners = entry.get("owners", [])
+        if owners:
+            o = [turn, len(owners) // 2, *owners]
+
+        cities = entry.get("cities", [])
+        if cities:
+            c = [turn, len(cities)]
+            for city in cities:
+                c.extend([city["x"], city["y"], city["pid"], city["pop"]])
+
+        roads = entry.get("roads", [])
+        if roads:
+            r = [turn, len(roads) // 2, *roads]
+
+        per_turn.append((o, c, r))
+
+    # Greedily pack turns into chunks
+    chunks: list[dict[str, str]] = []
+    cur_o: list[int] = []
+    cur_c: list[int] = []
+    cur_r: list[int] = []
+    cur_size = 0
+
+    def _flush() -> None:
+        nonlocal cur_o, cur_c, cur_r, cur_size
+        if cur_o or cur_c or cur_r:
+            chunks.append({
+                "ownerFrames": json.dumps(cur_o),
+                "cityFrames": json.dumps(cur_c),
+                "roadFrames": json.dumps(cur_r),
+            })
+        cur_o, cur_c, cur_r, cur_size = [], [], [], 0
+
+    for o, c, r in per_turn:
+        # Estimate size of this turn's data (rough: ~4 chars per int + commas)
+        turn_size = (len(o) + len(c) + len(r)) * 5
+        if cur_size + turn_size > _FRAME_CHUNK_LIMIT and cur_size > 0:
+            _flush()
+        cur_o.extend(o)
+        cur_c.extend(c)
+        cur_r.extend(r)
+        cur_size += turn_size
+
+    _flush()
+    return chunks
+
+
 async def sync_map_data(
     path: Path, game_id: str, state: dict, client: ConvexClient
 ) -> None:
@@ -798,8 +865,16 @@ async def sync_map_data(
             road_frames.append(len(roads) // 2)
             road_frames.extend(roads)
 
-    # Convex caps arrays at 8192 elements — encode large arrays as JSON strings
-    payload = {
+    # Check if frames fit in a single doc or need chunking
+    frames_json = {
+        "ownerFrames": json.dumps(owner_frames),
+        "cityFrames": json.dumps(city_frames),
+        "roadFrames": json.dumps(road_frames),
+    }
+    frames_bytes = sum(len(v.encode()) for v in frames_json.values())
+
+    # Static payload (always fits — terrain is fixed size)
+    static_payload = {
         "gameId": game_id,
         "gridW": static_data["gridW"],
         "gridH": static_data["gridH"],
@@ -807,23 +882,30 @@ async def sync_map_data(
         "initialOwners": json.dumps(static_data["initialOwners"]),
         "initialRoutes": json.dumps(static_data.get("initialRoutes", [])),
         "initialTurn": static_data.get("initialTurn", 0),
-        "ownerFrames": json.dumps(owner_frames),
-        "cityFrames": json.dumps(city_frames),
-        "roadFrames": json.dumps(road_frames),
         "cityNames": json.dumps(city_names) if city_names else None,
         "players": static_data.get("players", []),
         "maxTurn": max_turn,
     }
 
-    payload_bytes = len(json.dumps(payload).encode())
-    if payload_bytes > 800_000:
-        log.warning(
-            "Map payload for %s is %dKB — approaching 1MB Convex limit",
-            game_id,
-            payload_bytes // 1024,
+    # If frames fit in one doc (~700KB threshold), send inline (simpler)
+    if frames_bytes < 700_000:
+        static_payload.update(frames_json)
+        await client.mutation("ingest:ingestMapData", static_payload)
+    else:
+        # Chunk frames into multiple docs
+        chunks = _chunk_map_frames(turn_entries)
+        static_payload["frameChunks"] = len(chunks)
+        await client.mutation("ingest:ingestMapData", static_payload)
+        for i, chunk in enumerate(chunks):
+            await client.mutation("ingest:ingestMapFrames", {
+                "gameId": game_id,
+                "chunk": i,
+                **chunk,
+            })
+        log.info(
+            "map %s: frames split into %d chunks (%dKB total)",
+            game_id, len(chunks), frames_bytes // 1024,
         )
-
-    await client.mutation("ingest:ingestMapData", payload)
 
     log.info(
         "map %s: %dx%d grid, %d turn deltas, maxTurn=%d",

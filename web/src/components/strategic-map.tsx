@@ -50,10 +50,35 @@ interface StrategicMapProps {
 
 export function StrategicMap({ gameId }: StrategicMapProps) {
   const rawMapData = useQuery(api.diary.getMapData, { gameId });
+  const rawFrames = useQuery(api.diary.getMapFrames, { gameId });
   const spatialMap = useQuery(api.diary.getSpatialMap, { gameId });
   const spatialTurns = useQuery(api.diary.getSpatialTurns, { gameId });
 
-  if (rawMapData === undefined) {
+  // Reassemble frames: prefer chunked mapFrames, fall back to inline
+  const resolvedMapData = useMemo(() => {
+    if (!rawMapData) return rawMapData; // null or undefined passthrough
+    // If frames are inline (legacy or small game), use as-is
+    if (rawMapData.ownerFrames) return rawMapData as MapDataDoc;
+    // Reassemble from chunks
+    if (!rawFrames?.length) return rawMapData as MapDataDoc;
+    const sorted = [...rawFrames].sort((a, b) => a.chunk - b.chunk);
+    const ownerParts: number[] = [];
+    const cityParts: number[] = [];
+    const roadParts: number[] = [];
+    for (const c of sorted) {
+      ownerParts.push(...JSON.parse(c.ownerFrames));
+      cityParts.push(...JSON.parse(c.cityFrames));
+      roadParts.push(...JSON.parse(c.roadFrames));
+    }
+    return {
+      ...rawMapData,
+      ownerFrames: JSON.stringify(ownerParts),
+      cityFrames: JSON.stringify(cityParts),
+      roadFrames: JSON.stringify(roadParts),
+    } as MapDataDoc;
+  }, [rawMapData, rawFrames]);
+
+  if (resolvedMapData === undefined) {
     return (
       <div className="flex flex-1 items-center justify-center py-20 text-marble-500">
         Loading map data...
@@ -61,7 +86,7 @@ export function StrategicMap({ gameId }: StrategicMapProps) {
     );
   }
 
-  if (rawMapData === null) {
+  if (resolvedMapData === null) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20">
         <CivIcon icon={MapIcon} color={CIV6_COLORS.spatial} size="md" />
@@ -80,7 +105,7 @@ export function StrategicMap({ gameId }: StrategicMapProps) {
   return (
     <MapRenderer
       gameId={gameId}
-      mapData={rawMapData}
+      mapData={resolvedMapData}
       spatialMap={spatialMap ?? null}
       spatialTurns={(spatialTurns as SpatialTurn[] | undefined) ?? null}
     />
@@ -148,8 +173,8 @@ function MapRenderer({ gameId, mapData, spatialMap, spatialTurns }: {
   } = useMemo(() => {
     const terrainArr: number[] = JSON.parse(mapData.terrain);
     const initialOwnersArr: number[] = JSON.parse(mapData.initialOwners);
-    const ownerFramesArr: number[] = JSON.parse(mapData.ownerFrames);
-    const cityFramesArr: number[] = JSON.parse(mapData.cityFrames);
+    const ownerFramesArr: number[] = JSON.parse(mapData.ownerFrames ?? "[]");
+    const cityFramesArr: number[] = JSON.parse(mapData.cityFrames ?? "[]");
     const t = unpackTerrain(terrainArr);
     const of_ = unpackOwnerFrames(ownerFramesArr);
     const cf = unpackCityFrames(cityFramesArr);

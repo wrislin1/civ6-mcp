@@ -258,12 +258,14 @@ export interface MapDataDoc {
   initialOwners: string;
   initialRoutes?: string;
   initialTurn: number;
-  ownerFrames: string;
-  cityFrames: string;
-  roadFrames: string;
+  // Inline frames (small games) or absent when chunked into mapFrames table
+  ownerFrames?: string;
+  cityFrames?: string;
+  roadFrames?: string;
   cityNames?: string;
   players: { pid: number; civ: string; csType?: string }[];
   maxTurn: number;
+  frameChunks?: number;
 }
 
 export interface MapTile {
