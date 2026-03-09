@@ -255,23 +255,60 @@ def discover_eval_files(run_id: str) -> list[str]:
     return []
 
 
-def _cloud_run_is_complete(fs: Any, prefix: str, run_id: str) -> bool:
-    """Check if a cloud run has a game_over entry in its log file."""
+def _extract_outcome(log_lines: list[str]) -> dict[str, Any] | None:
+    """Extract game outcome from log JSONL lines.
+
+    Returns patchGameOutcome-shaped dict or None if no game_over found.
+    """
+    outcome = None
+    for line in log_lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get("type") == "game_over":
+            o = entry.get("outcome", {})
+            outcome = {
+                "result": "defeat" if o.get("is_defeat") else "victory",
+                "winnerCiv": o.get("winner_civ", ""),
+                "winnerLeader": o.get("winner_leader", ""),
+                "victoryType": o.get("victory_type", ""),
+                "turn": entry.get("turn", 0),
+                "playerAlive": o.get("player_alive", True),
+            }
+    return outcome
+
+
+async def _complete_game(
+    game_id: str, client: "ConvexClient", log_lines: list[str] | None = None
+) -> None:
+    """Mark a game as completed, with outcome if available."""
+    outcome = _extract_outcome(log_lines) if log_lines else None
+    if outcome:
+        await client.mutation(
+            "ingest:patchGameOutcome",
+            {"gameId": game_id, "outcome": outcome},
+        )
+        log.info(
+            "Marked %s completed: %s — %s (%s)",
+            game_id, outcome["result"], outcome["winnerCiv"], outcome["victoryType"],
+        )
+    else:
+        await client.mutation("ingest:markGameCompleted", {"gameId": game_id})
+        log.info("Marked %s completed (no outcome found)", game_id)
+
+
+def _cloud_run_outcome(fs: Any, prefix: str, run_id: str) -> dict[str, Any] | None:
+    """Extract game outcome from a cloud run's log file."""
     log_path = f"{prefix}/runs/{run_id}/log.jsonl"
     try:
         content = fs.cat_file(log_path).decode("utf-8")
-        for line in content.strip().splitlines():
-            try:
-                entry = json.loads(line)
-                if entry.get("type") == "game_over":
-                    return True
-            except json.JSONDecodeError:
-                continue
+        return _extract_outcome(content.splitlines())
     except FileNotFoundError:
-        pass
+        return None
     except Exception:
         log.warning("Failed to read log for run %s", run_id)
-    return False
+        return None
 
 
 def _download_cloud_run(
@@ -833,12 +870,9 @@ async def check_idle_games(state: dict, client: ConvexClient) -> None:
     now = time.time()
     for game_id, last_seen in list(state.get("game_last_seen", {}).items()):
         if now - last_seen > IDLE_TIMEOUT:
-            await client.mutation("ingest:markGameCompleted", {"gameId": game_id})
-            log.info(
-                "Marked game %s as completed (idle %dm)",
-                game_id,
-                (now - last_seen) // 60,
-            )
+            log_path = DIARY_DIR / f"log_{game_id}.jsonl"
+            log_lines = log_path.read_text().splitlines() if log_path.exists() else None
+            await _complete_game(game_id, client, log_lines)
             del state["game_last_seen"][game_id]
 
 
@@ -873,7 +907,9 @@ async def batch_upload(directory: Path, client: ConvexClient) -> None:
             if ftype in files:
                 await sync_file(files[ftype], state, client)
 
-        await client.mutation("ingest:markGameCompleted", {"gameId": gid})
+        log_path = directory / f"log_{gid}.jsonl"
+        log_lines = log_path.read_text().splitlines() if log_path.exists() else None
+        await _complete_game(gid, client, log_lines)
 
         elapsed = time.time() - game_start
         log.info("  %s done (%.1fs)", gid, elapsed)
@@ -1025,13 +1061,16 @@ async def watch_loop_cloud(bucket_url: str, client: ConvexClient) -> None:
                                 await sync_file(games[game_id][ftype], state, client)
 
                     # Check completion via game_over entry in log
-                    if _cloud_run_is_complete(fs, prefix, run_id):
+                    outcome = _cloud_run_outcome(fs, prefix, run_id)
+                    if outcome is not None:
                         await client.mutation(
-                            "ingest:markGameCompleted", {"gameId": game_id}
+                            "ingest:patchGameOutcome",
+                            {"gameId": game_id, "outcome": outcome},
                         )
                         log.info(
-                            "Marked %s as completed (game_over in log)",
-                            game_id,
+                            "Marked %s completed: %s — %s (%s)",
+                            game_id, outcome["result"],
+                            outcome["winnerCiv"], outcome["victoryType"],
                         )
                         completed_runs.add(run_id)
             except Exception:
