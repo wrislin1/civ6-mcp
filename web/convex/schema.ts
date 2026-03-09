@@ -39,6 +39,8 @@ export default defineSchema({
     ),
     // Run ID for constructing Azure blob download URLs
     runId: v.optional(v.string()),
+    // .eval filenames stored under runs/{runId}/ in cloud storage
+    evalFiles: v.optional(v.array(v.string())),
     // Eval metadata (set at ingest time from diary/log entries)
     mcpVersion: v.optional(v.string()),
     mcpGitSha: v.optional(v.string()),

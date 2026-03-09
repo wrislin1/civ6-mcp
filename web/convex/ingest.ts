@@ -104,8 +104,9 @@ export const ingestPlayerRows = mutation({
     seed: v.string(),
     rows: v.array(v.any()),
     runId: v.optional(v.string()),
+    evalFiles: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, { gameId, civ, leader, seed, rows, runId }) => {
+  handler: async (ctx, { gameId, civ, leader, seed, rows, runId, evalFiles }) => {
     for (const row of rows) {
       // Backfill fields added after early game data was recorded
       if (row.exploration_pct === undefined) row.exploration_pct = 0;
@@ -159,6 +160,10 @@ export const ingestPlayerRows = mutation({
       if (leader) patch.leader = leader;
       if (civ) patch.civ = civ;
       if (runId) patch.runId = runId;
+      if (evalFiles?.length) {
+        const existing = game.evalFiles ?? [];
+        patch.evalFiles = [...new Set([...existing, ...evalFiles])];
+      }
       // Denormalized fields
       if (agentRow) {
         if (agentRow.agent_model) patch.agentModel = agentRow.agent_model;
@@ -191,6 +196,7 @@ export const ingestPlayerRows = mutation({
         hasCities: false,
         ...evalMeta,
         ...(runId ? { runId } : {}),
+        ...(evalFiles?.length ? { evalFiles } : {}),
         ...(agentRow?.agent_model ? { agentModel: agentRow.agent_model } : {}),
         ...(typeof agentRow?.score === "number" ? { agentScore: agentRow.score } : {}),
         ...(latestRows.length >= 2

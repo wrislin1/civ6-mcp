@@ -225,6 +225,36 @@ def discover_cloud_runs(bucket_url: str) -> list[dict[str, Any]]:
     return manifests
 
 
+def discover_eval_files(run_id: str) -> list[str]:
+    """Discover .eval filenames for a run from cloud or local storage.
+
+    Returns just the filenames (not full paths) — these are stored in Convex
+    and combined with the blob base URL + run_id to construct download links.
+    """
+    # Try cloud storage first
+    bucket_url = os.environ.get("CIV_MCP_TELEMETRY_BUCKET", "")
+    if bucket_url:
+        try:
+            fs, prefix = _get_cloud_fs(bucket_url)
+            paths = fs.glob(f"{prefix}/runs/{run_id}/*.eval")
+            names = [p.rsplit("/", 1)[-1] for p in paths]
+            if names:
+                log.debug("Found %d .eval file(s) in cloud for run %s", len(names), run_id)
+                return names
+        except Exception:
+            log.debug("Could not list .eval files in cloud for run %s", run_id)
+
+    # Fall back to local logs/ directory
+    local_logs = SCRIPT_DIR.parent / "logs"
+    if local_logs.exists():
+        names = [f.name for f in local_logs.glob("*.eval")]
+        if names:
+            log.debug("Found %d .eval file(s) in local logs/", len(names))
+            return names
+
+    return []
+
+
 def _cloud_run_is_complete(fs: Any, prefix: str, run_id: str) -> bool:
     """Check if a cloud run has a game_over entry in its log file."""
     log_path = f"{prefix}/runs/{run_id}/log.jsonl"
@@ -391,6 +421,9 @@ async def sync_diary(
     candidate = parts[-1] if len(parts) > 1 else ""
     run_id = candidate if candidate and not candidate.lstrip("-").isdigit() else None
 
+    # Discover .eval files associated with this run
+    eval_files = discover_eval_files(run_id) if run_id else []
+
     # Batch and send
     for i in range(0, len(rows_to_upsert), BATCH_SIZE):
         batch = rows_to_upsert[i : i + BATCH_SIZE]
@@ -403,6 +436,8 @@ async def sync_diary(
         }
         if run_id:
             args["runId"] = run_id
+        if eval_files:
+            args["evalFiles"] = eval_files
         await client.mutation("ingest:ingestPlayerRows", args)
 
     log.info(

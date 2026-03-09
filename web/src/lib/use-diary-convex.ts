@@ -62,6 +62,7 @@ export interface DiarySummary {
   gameSpeed: string | null;
   evalTrack: string | null;
   runId: string | null;
+  evalFiles: string[] | null;
 }
 
 /** Game summary subscription — 1 doc read. Returns sparkline series + metadata. */
@@ -98,6 +99,7 @@ export function useDiarySummaryConvex(filename: string | null): DiarySummary {
     gameSpeed: summary?.gameSpeed ?? null,
     evalTrack: summary?.evalTrack ?? null,
     runId: summary?.runId ?? null,
+    evalFiles: summary?.evalFiles ?? null,
   };
 }
 

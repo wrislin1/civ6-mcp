@@ -108,6 +108,7 @@ export const getGameSummary = query({
       gameSpeed: game.gameSpeed ?? null,
       evalTrack: game.evalTrack ?? null,
       runId: game.runId ?? null,
+      evalFiles: game.evalFiles ?? null,
     };
   },
 });

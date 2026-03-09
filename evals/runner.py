@@ -251,10 +251,15 @@ def _discover_run_id() -> str | None:
     return run_id if run_id else None
 
 
-def _upload_eval_logs(local_dir: Path, cloud_url: str) -> None:
+def _upload_eval_logs(
+    local_dir: Path, cloud_url: str, run_id: str | None = None
+) -> None:
     """Upload .eval files from local_dir to cloud storage with retries.
 
-    cloud_url: e.g. "az://telemetry/evals"
+    When run_id is provided, uploads to {cloud_url}/runs/{run_id}/ so .eval
+    files live alongside the diary/log telemetry for the same game.
+    Falls back to {cloud_url}/evals/ when no run_id is available.
+
     Transient DNS/network errors are caught — the local file is preserved.
     """
     import time
@@ -274,11 +279,16 @@ def _upload_eval_logs(local_dir: Path, cloud_url: str) -> None:
         return
 
     for eval_file in eval_files:
-        dest = f"{base_path}/{eval_file.name}"
+        if run_id:
+            dest = f"{base_path}/runs/{run_id}/{eval_file.name}"
+            display = f"{cloud_url}/runs/{run_id}/{eval_file.name}"
+        else:
+            dest = f"{base_path}/evals/{eval_file.name}"
+            display = f"{cloud_url}/evals/{eval_file.name}"
         for attempt in range(3):
             try:
                 fs.put(str(eval_file), dest)
-                print(f"  Uploaded {eval_file.name} → {cloud_url}/{eval_file.name}")
+                print(f"  Uploaded {eval_file.name} → {display}")
                 eval_file.unlink()
                 break
             except Exception as e:
@@ -353,7 +363,8 @@ def run_scenario(
 
     # Upload .eval logs to cloud storage (retry-safe, won't crash on DNS failure)
     if cloud_bucket:
-        _upload_eval_logs(local_log_dir, cloud_bucket.rstrip("/") + "/evals")
+        run_id = os.environ.get("CIV_MCP_RUN_ID")
+        _upload_eval_logs(local_log_dir, cloud_bucket.rstrip("/"), run_id)
 
     return result.returncode
 
