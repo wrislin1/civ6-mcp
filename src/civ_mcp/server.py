@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
@@ -62,11 +63,14 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
     """
     from civ_mcp.game_lifecycle import load_game_save
 
-    # 1. Kill any existing game for a clean start, then launch
-    if game_launcher.is_game_running():
-        log.info("Auto-boot: killing existing game for clean start...")
-        kill_result = await game_launcher.kill_game()
-        log.info("Auto-boot: %s", kill_result)
+    # 1. Launch game (or reuse if already running).
+    # The eval runner's ensure_game_ready() typically launches the game
+    # before the MCP server starts. _launch_game_sync() detects an
+    # already-running game and returns immediately, avoiding a wasteful
+    # kill + relaunch cycle through the Aspyr launcher.
+    # The step-5 verification below catches wrong-save scenarios as a
+    # safety net (the Lua load path fails when mid-session, not from
+    # main menu).
     log.info("Auto-boot: launching game...")
     result = await asyncio.to_thread(game_launcher._launch_game_sync)
     log.info("Auto-boot: launch result: %s", result)
@@ -109,11 +113,56 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
             await conn.reconnect()
             if conn.gamecore_index is not None:
                 log.info("Auto-boot: game ready (GameCore=%s)", conn.gamecore_index)
-                return
+                break
         except ConnectionError:
             pass
         await asyncio.sleep(1)
-    log.warning("Auto-boot: save may not have loaded — GameCore not found")
+    else:
+        log.warning("Auto-boot: save may not have loaded — GameCore not found")
+        return
+
+    # 5. Verify correct save loaded — the Lua load path can silently fail
+    # when the game is mid-session (Network.LoadGame's save handle gets GC'd
+    # during the LeaveGame state teardown). Detect wrong save and fall back
+    # to kill + OCR menu navigation.
+    try:
+        verify = await conn.execute_read(
+            'local t = Game.GetCurrentGameTurn(); '
+            'print("VERIFY|" .. t); '
+            'print("---END---")'
+        )
+        for line in verify:
+            if line.startswith("VERIFY|"):
+                turn = int(line.split("|")[1])
+                if turn > 5:
+                    log.error(
+                        "Auto-boot: loaded T%d but expected T1 — wrong save! "
+                        "Falling back to kill + OCR reload", turn
+                    )
+                    await game_launcher.kill_game()
+                    result = await asyncio.to_thread(game_launcher._launch_game_sync)
+                    log.info("Auto-boot: relaunch: %s", result)
+                    result = await asyncio.to_thread(
+                        game_launcher._navigate_to_save_sync, save_name, None
+                    )
+                    log.info("Auto-boot: OCR nav: %s", result)
+                    for attempt in range(30):
+                        try:
+                            await conn.reconnect()
+                            if conn.gamecore_index is not None:
+                                log.info(
+                                    "Auto-boot: game ready after fallback (GameCore=%s)",
+                                    conn.gamecore_index,
+                                )
+                                return
+                        except ConnectionError:
+                            pass
+                        await asyncio.sleep(1)
+                    log.warning("Auto-boot: fallback reload also failed")
+                    return
+                log.info("Auto-boot: verified save at T%d", turn)
+    except Exception:
+        log.debug("Auto-boot: save verification failed", exc_info=True)
 
 
 @asynccontextmanager
@@ -1707,6 +1756,110 @@ async def end_turn(
 
     # Advance the turn
     result = await _logged(ctx, "end_turn", {}, gs.end_turn)
+
+    # ---------------------------------------------------------------
+    # Auto-recover from AI turn hangs (transparent to agent).
+    # end_turn returns "HANG:{turn}:{save}|..." when AI processing is
+    # stuck after ~39s of polling with no blockers found.
+    # Recovery: restart_and_load the MCP autosave, reconnect, retry.
+    # ---------------------------------------------------------------
+    if result.startswith("HANG:") and not getattr(gs, "_hang_retry_active", False):
+        parts = result.split("|", 1)
+        hang_info = parts[0]  # "HANG:57:0_MCP_0057"
+        _, hang_turn, hang_save = hang_info.split(":")
+
+        log.warning(
+            "HANG RECOVERY: AI turn stuck at T%s. "
+            "Restarting game and loading %s...",
+            hang_turn,
+            hang_save,
+        )
+
+        # Check save file exists before attempting recovery
+        save_path = os.path.join(game_launcher.SAVE_DIR, f"{hang_save}.Civ6Save")
+        if not os.path.exists(save_path):
+            log.error(
+                "HANG RECOVERY: Save file %s not found, cannot auto-recover",
+                save_path,
+            )
+            # Fall through — return the hang message to agent
+        else:
+            try:
+                # Step 1: Kill + relaunch + OCR load (~90s)
+                restart_result = await game_launcher.restart_and_load(hang_save)
+                log.info(
+                    "HANG RECOVERY: restart_and_load result: %s", restart_result
+                )
+
+                # Step 2: Reconnect (trigger Lua state rediscovery)
+                conn = gs.conn
+                for attempt in range(30):
+                    try:
+                        await conn.reconnect()
+                        if conn.gamecore_index is not None:
+                            log.info(
+                                "HANG RECOVERY: reconnected (GameCore=%s)",
+                                conn.gamecore_index,
+                            )
+                            break
+                    except ConnectionError:
+                        pass
+                    await asyncio.sleep(1)
+                else:
+                    log.error(
+                        "HANG RECOVERY: could not reconnect after restart"
+                    )
+                    return (
+                        "HANG RECOVERY FAILED: Game restarted but could not "
+                        "reconnect. Use get_game_overview to check."
+                    )
+
+                # Step 3: Reset state flags — old ACTION_ENDTURN is gone
+                gs._pending_end_turn = False
+                gs._pending_end_turn_from = None
+                gs._end_turn_blocked = False
+
+                # Step 4: Retry end_turn once (flag prevents recursion)
+                gs._hang_retry_active = True
+                log.info(
+                    "HANG RECOVERY: retrying end_turn for T%s...", hang_turn
+                )
+                try:
+                    result = await gs.end_turn()
+                    log.info(
+                        "HANG RECOVERY: retry result: %s", result[:200]
+                    )
+                finally:
+                    gs._hang_retry_active = False
+
+                # If retry also hangs, return to agent with clear guidance
+                if result.startswith("HANG:"):
+                    earlier = int(hang_turn) - 1
+                    log.error(
+                        "HANG RECOVERY: retry also hung at T%s "
+                        "— deterministic hang",
+                        hang_turn,
+                    )
+                    return (
+                        f"AI turn hung at T{hang_turn} after automatic "
+                        f"restart + retry. This appears to be a deterministic "
+                        f"hang. Try restart_and_load with an earlier save "
+                        f"(e.g. 0_MCP_{earlier:04d})."
+                    )
+
+                # Success — fall through to normal result processing
+                log.info(
+                    "HANG RECOVERY: T%s recovered successfully after restart",
+                    hang_turn,
+                )
+            except Exception:
+                log.error("HANG RECOVERY: failed", exc_info=True)
+                gs._hang_retry_active = False
+                return (
+                    f"HANG RECOVERY FAILED at T{hang_turn}: "
+                    f"restart_and_load threw an exception. "
+                    f"Try restart_and_load('{hang_save}') manually."
+                )
 
     # Clear stale camera events on successful turn advance
     turn_advanced = (
