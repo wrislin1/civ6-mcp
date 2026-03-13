@@ -147,7 +147,7 @@ export function OutcomeBanner({ outcome }: { outcome: GameOutcome }) {
 
   return (
     <div
-      className="mx-auto w-full max-w-2xl rounded-sm border px-4 py-3"
+      className="mx-auto w-full max-w-2xl animate-[banner-enter_0.4s_ease-out] rounded-sm border px-4 py-3 motion-reduce:animate-none"
       style={{ backgroundColor: bgColor, borderColor }}
     >
       <div className="flex items-center gap-3">

@@ -17,7 +17,7 @@ export function NavBar({ active, turn }: NavBarProps) {
         <div className="flex items-center gap-3 sm:gap-6 lg:pr-12">
           <Link href="/">
             <h1
-              className={`font-display text-sm font-bold tracking-[0.08em] uppercase transition-colors hover:text-gold-dark ${
+              className={`brand-glow font-display text-sm font-bold tracking-[0.08em] uppercase transition-all duration-300 hover:text-gold-dark ${
                 active === "home" ? "text-gold-dark" : "text-marble-800"
               }`}
             >
