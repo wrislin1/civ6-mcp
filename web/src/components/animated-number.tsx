@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 export function AnimatedNumber({
   value,
   duration = 400,
@@ -19,8 +24,9 @@ export function AnimatedNumber({
     const from = displayedRef.current;
     const to = value;
 
-    if (Math.abs(from - to) < 0.001) {
+    if (Math.abs(from - to) < 0.001 || prefersReducedMotion()) {
       displayedRef.current = to;
+      setDisplayed(to);
       return;
     }
 

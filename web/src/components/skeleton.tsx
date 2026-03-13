@@ -2,7 +2,7 @@
 export function SkeletonLine({ className = "w-24" }: { className?: string }) {
   return (
     <div
-      className={`h-3.5 animate-pulse rounded-sm bg-marble-200/70 ${className}`}
+      className={`h-3.5 animate-pulse rounded-sm bg-marble-200/70 motion-reduce:animate-none ${className}`}
     />
   );
 }
@@ -15,7 +15,7 @@ export function SkeletonBlock({
 }) {
   return (
     <div
-      className={`animate-pulse rounded-sm bg-marble-200/70 ${className}`}
+      className={`animate-pulse rounded-sm bg-marble-200/70 motion-reduce:animate-none ${className}`}
     />
   );
 }
