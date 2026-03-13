@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { Reflections } from "@/lib/diary-types";
 import { CIV6_COLORS } from "@/lib/civ-colors";
 import { CivIcon } from "./civ-icon";
@@ -55,6 +55,7 @@ export function ReflectionsPanel({ reflections }: ReflectionsPanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(
     new Set(["tactical", "strategic"]),
   );
+  const idPrefix = useId();
 
   if (!reflections) return null;
 
@@ -73,6 +74,7 @@ export function ReflectionsPanel({ reflections }: ReflectionsPanelProps) {
         const text = reflections[key];
         if (!text) return null;
         const isOpen = expanded.has(key);
+        const contentId = `${idPrefix}-${key}`;
         return (
           <div
             key={key}
@@ -80,6 +82,8 @@ export function ReflectionsPanel({ reflections }: ReflectionsPanelProps) {
           >
             <button
               onClick={() => toggle(key)}
+              aria-expanded={isOpen}
+              aria-controls={contentId}
               className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-marble-100"
             >
               <CivIcon icon={icon} color={color} size="sm" />
@@ -93,7 +97,7 @@ export function ReflectionsPanel({ reflections }: ReflectionsPanelProps) {
               )}
             </button>
             {isOpen && (
-              <div className="border-t border-marble-300/30 px-3 py-2">
+              <div id={contentId} role="region" aria-label={label} className="border-t border-marble-300/30 px-3 py-2">
                 <p className="whitespace-pre-wrap text-base leading-relaxed text-marble-700">
                   {text}
                 </p>

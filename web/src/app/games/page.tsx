@@ -105,6 +105,9 @@ function DropdownFilter({
       <button
         className={`${chipBase} ${count > 0 ? chipActive : chipDefault}`}
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`Filter by ${label}${count > 0 ? ` (${count} selected)` : ""}`}
       >
         {label}
         {count > 0 && (
@@ -113,15 +116,16 @@ function DropdownFilter({
         <ChevronDown className="h-2.5 w-2.5" />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 min-w-[160px] rounded-sm border border-marble-300/50 bg-marble-50 shadow-sm">
+        <div className="absolute left-0 top-full z-20 mt-1 min-w-[160px] rounded-sm border border-marble-300/50 bg-marble-50 shadow-sm" role="listbox" aria-label={label}>
           {options.length > 6 && (
             <div className="border-b border-marble-300/30 px-2 py-1.5">
               <input
-                type="text"
+                type="search"
                 placeholder="Search..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full bg-transparent text-xs text-marble-700 placeholder-marble-400 outline-none"
+                aria-label={`Search ${label} options`}
                 autoFocus
               />
             </div>
@@ -130,6 +134,8 @@ function DropdownFilter({
             {filtered.map((opt) => (
               <button
                 key={opt}
+                role="option"
+                aria-selected={selected.has(opt)}
                 className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs text-marble-700 transition-colors hover:bg-marble-100"
                 onClick={() => onToggle(opt)}
               >
@@ -179,6 +185,10 @@ function SortTh({
     <th
       className={`px-3 py-2.5 cursor-pointer select-none transition-colors hover:text-marble-700 ${className ?? ""}`}
       onClick={() => onSort(colKey)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSort(colKey); } }}
+      tabIndex={0}
+      role="columnheader"
+      aria-sort={isActive ? (activeSortDir === "desc" ? "descending" : "ascending") : "none"}
     >
       <span className="inline-flex items-center gap-0.5">
         {label}
@@ -454,7 +464,7 @@ function GamesPageInner() {
                         return (
                           <tr
                             key={game.filename}
-                            className="border-b border-marble-300/30 last:border-0 transition-colors hover:bg-marble-100/50 cursor-pointer"
+                            className="border-b border-marble-300/30 last:border-0 transition-colors hover:bg-marble-100/50 cursor-pointer focus-within:bg-marble-100/50"
                             style={{
                               borderLeftWidth: 5,
                               borderLeftColor: getGameStatusColor(
@@ -462,9 +472,11 @@ function GamesPageInner() {
                                 game.outcome,
                               ),
                             }}
+                            tabIndex={0}
                             onClick={() => {
                               router.push(`/games/${slug}`);
                             }}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/games/${slug}`); } }}
                           >
                             {/* Game — portrait + civ info */}
                             <td className="px-3 py-2">
@@ -483,7 +495,7 @@ function GamesPageInner() {
                                     </span>
                                   </div>
                                   {game.leader && (
-                                    <p className="mt-0.5 text-xs text-marble-500 truncate">
+                                    <p className="mt-0.5 max-w-[200px] text-xs text-marble-500 truncate">
                                       {game.leader}
                                     </p>
                                   )}

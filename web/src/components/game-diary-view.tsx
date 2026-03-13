@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentOverview } from "@/components/agent-overview";
 import { LeaderboardTable } from "@/components/leaderboard-table";
 import { CitiesPanel } from "@/components/cities-panel";
@@ -252,28 +252,72 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
 
         {/* Sparkline sidebar — mobile overlay */}
         {hasTurns && turnSeries && showSidebar && (
-          <div className="fixed inset-0 z-40 flex lg:hidden">
-            <div className="absolute inset-0 bg-black/30" onClick={() => setShowSidebar(false)} />
-            <div className="relative ml-auto h-full w-80 max-w-[85vw] overflow-y-auto bg-marble-50 p-4 shadow-lg">
-              <button onClick={() => setShowSidebar(false)} className="absolute right-3 top-3 rounded-sm p-1 text-marble-500 hover:bg-marble-200 hover:text-marble-700">
-                <X className="h-4 w-4" />
-              </button>
-              <SparklineSidebar turnSeries={turnSeries} currentIndex={index} />
-            </div>
-          </div>
+          <MobileSidebar onClose={() => setShowSidebar(false)}>
+            <SparklineSidebar turnSeries={turnSeries} currentIndex={index} />
+          </MobileSidebar>
         )}
 
         {/* Mobile chart toggle */}
         {hasTurns && (
           <button
             onClick={() => setShowSidebar(true)}
-            className="fixed bottom-4 right-4 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-marble-300 bg-marble-50 text-marble-600 shadow-md transition-colors hover:bg-marble-100 lg:hidden"
-            title="Show trends"
+            className="fixed bottom-4 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-marble-300 bg-marble-50 text-marble-600 shadow-md transition-colors hover:bg-marble-100 lg:hidden"
+            aria-label="Show trends"
           >
             <BarChart3 className="h-5 w-5" />
           </button>
         )}
       </div>
     </>
+  );
+}
+
+/** Accessible mobile sidebar overlay with focus trap and Escape key. */
+function MobileSidebar({
+  onClose,
+  children,
+}: {
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  // Focus the panel on mount
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex lg:hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Trend charts"
+    >
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="relative ml-auto h-full w-80 max-w-[85vw] overflow-y-auto bg-marble-50 p-4 shadow-lg outline-none"
+      >
+        <button
+          onClick={onClose}
+          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-sm text-marble-500 hover:bg-marble-200 hover:text-marble-700"
+          aria-label="Close trends"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        {children}
+      </div>
+    </div>
   );
 }

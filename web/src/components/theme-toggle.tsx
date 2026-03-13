@@ -15,19 +15,21 @@ export function ThemeToggle() {
   );
 
   if (!mounted) {
-    return <div className="h-7 w-7" />; // placeholder to avoid layout shift
+    return <div className="h-8 w-8" />; // placeholder to avoid layout shift
   }
+
+  const isDark = theme === "dark";
 
   return (
     <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="flex h-7 w-7 items-center justify-center rounded-sm text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700"
-      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      className="flex h-8 w-8 items-center justify-center rounded-sm text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700"
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >
-      {theme === "dark" ? (
-        <Sun className="h-3.5 w-3.5" />
+      {isDark ? (
+        <Sun className="h-4 w-4" />
       ) : (
-        <Moon className="h-3.5 w-3.5" />
+        <Moon className="h-4 w-4" />
       )}
     </button>
   );

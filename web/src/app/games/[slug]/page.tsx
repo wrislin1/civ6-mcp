@@ -15,7 +15,9 @@ function TabButton({ tab, active, label, setTab }: { tab: Tab; active: Tab; labe
   return (
     <button
       role="tab"
+      id={`tab-${tab}`}
       aria-selected={active === tab}
+      aria-controls={`tabpanel-${tab}`}
       onClick={() => setTab(tab)}
       className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
         active === tab
@@ -86,9 +88,13 @@ export default function GameDetailPage() {
 
       {/* Tab content */}
       {tab === "diary" ? (
-        <GameDiaryView filename={filename} />
+        <div role="tabpanel" id="tabpanel-diary" aria-labelledby="tab-diary" className="flex min-h-0 flex-1 flex-col">
+          <GameDiaryView filename={filename} />
+        </div>
       ) : (
-        <StrategicMap gameId={slug} />
+        <div role="tabpanel" id="tabpanel-map" aria-labelledby="tab-map" className="flex min-h-0 flex-1 flex-col">
+          <StrategicMap gameId={slug} />
+        </div>
       )}
     </PageShell>
   );
