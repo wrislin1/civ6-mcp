@@ -277,7 +277,7 @@ export function ProgressPanel({ agent, prevAgent, scenarioId }: ProgressPanelPro
         {/* Victory progress */}
         {visibleTypes.length > 0 && (
         <div>
-          <h4 className="mb-1.5 flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-[0.08em] text-marble-500">
+          <h4 className="mb-1 flex items-center gap-1.5 font-display text-xs font-bold uppercase tracking-[0.08em] text-marble-500">
             <CivIcon icon={Trophy} color={CIV6_COLORS.goldMetal} size="sm" />
             Victory Progress
           </h4>
