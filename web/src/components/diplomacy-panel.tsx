@@ -40,7 +40,7 @@ export function DiplomacyPanel({ agent }: DiplomacyPanelProps) {
                 <tr className="text-xs uppercase tracking-wider text-marble-500">
                   <th className="py-1 px-1 text-left">Civ</th>
                   <th className="py-1 px-1 text-left">State</th>
-                  <th className="py-1 px-1 text-left">Alliance</th>
+                  <th className="hidden py-1 px-1 text-left sm:table-cell">Alliance</th>
                   <th className="py-1 px-1 text-right">Grievances</th>
                 </tr>
               </thead>
@@ -61,7 +61,7 @@ export function DiplomacyPanel({ agent }: DiplomacyPanelProps) {
                     >
                       {DIPLO_STATE_NAMES[ds.state] ?? `State ${ds.state}`}
                     </td>
-                    <td className="py-1 px-1 font-mono text-marble-600">
+                    <td className="hidden py-1 px-1 font-mono text-marble-600 sm:table-cell">
                       {ds.alliance
                         ? `${ds.alliance.replace(/_/g, " ")} (L${ds.alliance_level})`
                         : "—"}

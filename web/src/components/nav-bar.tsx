@@ -14,7 +14,7 @@ export function NavBar({ active, turn }: NavBarProps) {
     <header className="shrink-0 border-b border-marble-300 bg-marble-50">
       <div className="mx-auto grid max-w-5xl items-center px-4 py-3 sm:px-6 lg:grid-cols-[1fr_1px_340px]">
         {/* Left — civ6-mcp brand + project nav */}
-        <div className="flex items-baseline gap-3 sm:gap-6 lg:pr-12">
+        <div className="flex items-center gap-3 sm:gap-6 lg:pr-12">
           <Link href="/">
             <h1
               className={`font-display text-sm font-bold tracking-[0.08em] uppercase transition-colors hover:text-gold-dark ${
@@ -66,6 +66,10 @@ export function NavBar({ active, turn }: NavBarProps) {
               CivBench
             </Link>
           </nav>
+          <div className="flex-1 lg:hidden" />
+          <div className="lg:hidden">
+            <ThemeToggle />
+          </div>
         </div>
 
         {/* Vertical divider */}

@@ -30,10 +30,10 @@ export function CitiesPanel({ cities }: CitiesPanelProps) {
               <th className="py-1 px-1 text-right">Gold</th>
               <th className="py-1 px-1 text-right">Sci</th>
               <th className="py-1 px-1 text-right">Cul</th>
-              <th className="py-1 px-1 text-right">Housing</th>
-              <th className="py-1 px-1 text-right">Amenity</th>
+              <th className="hidden py-1 px-1 text-right sm:table-cell">Housing</th>
+              <th className="hidden py-1 px-1 text-right sm:table-cell">Amenity</th>
               <th className="py-1 px-1 text-left">Producing</th>
-              <th className="py-1 px-1 text-right">Loyalty</th>
+              <th className="hidden py-1 px-1 text-right sm:table-cell">Loyalty</th>
             </tr>
           </thead>
           <tbody>
@@ -62,11 +62,11 @@ export function CitiesPanel({ cities }: CitiesPanelProps) {
                   <td className="py-1 px-1 text-right font-mono tabular-nums text-marble-700">
                     {c.culture}
                   </td>
-                  <td className="py-1 px-1 text-right font-mono tabular-nums text-marble-700">
+                  <td className="hidden py-1 px-1 text-right font-mono tabular-nums text-marble-700 sm:table-cell">
                     {c.housing}
                   </td>
                   <td
-                    className={`py-1 px-1 text-right font-mono tabular-nums ${amenitySurplus < 0 ? "text-terracotta" : "text-marble-700"}`}
+                    className={`hidden py-1 px-1 text-right font-mono tabular-nums sm:table-cell ${amenitySurplus < 0 ? "text-terracotta" : "text-marble-700"}`}
                   >
                     {amenitySurplus >= 0 ? "+" : ""}
                     {amenitySurplus}
@@ -80,7 +80,7 @@ export function CitiesPanel({ cities }: CitiesPanelProps) {
                       : "—"}
                   </td>
                   <td
-                    className={`py-1 px-1 text-right font-mono tabular-nums ${c.loyalty < 50 ? "text-terracotta font-semibold" : "text-marble-700"}`}
+                    className={`hidden py-1 px-1 text-right font-mono tabular-nums sm:table-cell ${c.loyalty < 50 ? "text-terracotta font-semibold" : "text-marble-700"}`}
                   >
                     {Math.round(c.loyalty)}
                     {c.loyalty_per_turn !== 0 && (
