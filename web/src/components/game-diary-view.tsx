@@ -88,7 +88,7 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
               value={index}
               aria-label="Turn navigation"
               onChange={(e) => seek(parseInt(e.target.value, 10))}
-              className="mx-2 w-24 accent-gold sm:w-48"
+              className="turn-slider mx-2 w-24 sm:w-48"
             />
           )}
 
@@ -160,12 +160,13 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
 
           {!loading && turnNumbers.length === 0 && (
             <div className="flex h-full items-center justify-center">
-              <div className="text-center">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <Map className="h-8 w-8 text-marble-300" />
                 <p className="font-display text-sm tracking-[0.08em] uppercase text-marble-500">
-                  No diary entries
+                  The scribes await
                 </p>
-                <p className="mt-2 text-sm text-marble-600">
-                  Start a game with diary enabled
+                <p className="text-sm text-marble-400">
+                  Start a game with diary enabled to record your empire&apos;s history.
                 </p>
               </div>
             </div>

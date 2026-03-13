@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, Globe, X } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
 import { useDiaryList } from "@/lib/use-diary";
 import { slugFromFilename } from "@/lib/diary-types";
@@ -241,9 +241,13 @@ function GamesPageInner() {
           </p>
 
           {games.length === 0 ? (
-            <div className="mt-12 flex items-center justify-center">
+            <div className="mt-16 flex flex-col items-center justify-center gap-3">
+              <Globe className="h-8 w-8 text-marble-300" />
               <p className="font-display text-sm tracking-[0.08em] uppercase text-marble-500">
-                No games yet
+                No civilizations have risen yet
+              </p>
+              <p className="text-sm text-marble-400">
+                Games will appear here once an agent begins its first turn.
               </p>
             </div>
           ) : (
@@ -409,7 +413,7 @@ function GamesPageInner() {
               {sorted.length === 0 ? (
                 <div className="mt-8 flex flex-col items-center justify-center gap-2">
                   <p className="font-display text-sm tracking-[0.08em] uppercase text-marble-500">
-                    No games match filters
+                    No civilizations match your criteria
                   </p>
                   <button
                     onClick={clearFilters}
