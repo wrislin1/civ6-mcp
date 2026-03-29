@@ -86,76 +86,66 @@ def _games_by_model(model: str, games: list[dict]) -> list[dict]:
     return [g for g in games if model.lower() in (g.get("agentModel") or "").lower()]
 
 
-def cloud_log(run_id: str) -> list[dict]:
-    """Fetch and cache log.jsonl from Azure blob."""
-    CACHE_DIR.mkdir(exist_ok=True)
-    cache_path = CACHE_DIR / f"log_{run_id}.jsonl"
+_fs_cache: Any = None
 
-    if cache_path.exists():
-        entries = []
-        for line in cache_path.read_text().splitlines():
-            if line.strip():
-                entries.append(json.loads(line))
-        return entries
 
-    env = _load_env()
-    conn_str = env.get("AZURE_STORAGE_CONNECTION_STRING", "")
-    if not conn_str:
-        print("Error: AZURE_STORAGE_CONNECTION_STRING not found in evals/.env", file=sys.stderr)
-        sys.exit(1)
-
+def _get_fs() -> Any:
+    """Lazy-init Azure fsspec filesystem from evals/.env credentials."""
+    global _fs_cache
+    if _fs_cache is not None:
+        return _fs_cache
     import fsspec
 
-    fs = fsspec.filesystem("az", connection_string=conn_str)
-    blob_path = f"telemetry/runs/{run_id}/log.jsonl"
+    env = _load_env()
+    # Try connection string first, then account_name + key, then DefaultAzureCredential
+    conn_str = env.get("AZURE_STORAGE_CONNECTION_STRING", "")
+    if conn_str:
+        _fs_cache = fsspec.filesystem("az", connection_string=conn_str)
+    else:
+        account = env.get("AZURE_STORAGE_ACCOUNT_NAME", "")
+        key = env.get("AZURE_STORAGE_ACCOUNT_KEY", "")
+        if account and key:
+            _fs_cache = fsspec.filesystem("az", account_name=account, account_key=key)
+        elif account:
+            from azure.identity import DefaultAzureCredential
+            _fs_cache = fsspec.filesystem(
+                "az", account_name=account, credential=DefaultAzureCredential()
+            )
+        else:
+            print("Error: Need AZURE_STORAGE_ACCOUNT_NAME (+ KEY) or "
+                  "AZURE_STORAGE_CONNECTION_STRING in evals/.env", file=sys.stderr)
+            sys.exit(1)
+    return _fs_cache
+
+
+def _cloud_jsonl(run_id: str, filename: str) -> list[dict]:
+    """Fetch and cache a JSONL file from Azure blob storage."""
+    CACHE_DIR.mkdir(exist_ok=True)
+    cache_path = CACHE_DIR / f"{filename.replace('.jsonl', '')}_{run_id}.jsonl"
+
+    if cache_path.exists():
+        return [json.loads(l) for l in cache_path.read_text().splitlines() if l.strip()]
+
+    fs = _get_fs()
+    blob_path = f"telemetry/runs/{run_id}/{filename}"
     try:
-        with fs.open(blob_path) as f:
-            raw = f.read()
+        raw = fs.cat_file(blob_path)
     except FileNotFoundError:
-        print(f"Error: {blob_path} not found in Azure", file=sys.stderr)
+        print(f"Warning: {blob_path} not found in Azure", file=sys.stderr)
         return []
 
     cache_path.write_bytes(raw)
-    entries = []
-    for line in raw.decode().splitlines():
-        if line.strip():
-            entries.append(json.loads(line))
-    return entries
+    return [json.loads(l) for l in raw.decode().splitlines() if l.strip()]
+
+
+def cloud_log(run_id: str) -> list[dict]:
+    """Fetch and cache log.jsonl from Azure blob."""
+    return _cloud_jsonl(run_id, "log.jsonl")
 
 
 def cloud_diary(run_id: str) -> list[dict]:
     """Fetch and cache diary.jsonl from Azure blob."""
-    CACHE_DIR.mkdir(exist_ok=True)
-    cache_path = CACHE_DIR / f"diary_{run_id}.jsonl"
-
-    if cache_path.exists():
-        entries = []
-        for line in cache_path.read_text().splitlines():
-            if line.strip():
-                entries.append(json.loads(line))
-        return entries
-
-    env = _load_env()
-    conn_str = env.get("AZURE_STORAGE_CONNECTION_STRING", "")
-    if not conn_str:
-        return []
-
-    import fsspec
-
-    fs = fsspec.filesystem("az", connection_string=conn_str)
-    blob_path = f"telemetry/runs/{run_id}/diary.jsonl"
-    try:
-        with fs.open(blob_path) as f:
-            raw = f.read()
-    except FileNotFoundError:
-        return []
-
-    cache_path.write_bytes(raw)
-    entries = []
-    for line in raw.decode().splitlines():
-        if line.strip():
-            entries.append(json.loads(line))
-    return entries
+    return _cloud_jsonl(run_id, "diary.jsonl")
 
 
 # ---------------------------------------------------------------------------
@@ -740,6 +730,307 @@ def cmd_turns(args):
 
 
 # ---------------------------------------------------------------------------
+# Research subcommands — paper-oriented analysis
+# ---------------------------------------------------------------------------
+
+# Tools classified by attention type for sensorium analysis
+REACTIVE_TOOLS = {
+    "unit_action", "set_city_production", "set_research", "end_turn",
+    "respond_to_diplomacy", "respond_to_trade", "promote_unit",
+    "choose_pantheon", "choose_dedication", "set_policies",
+    "skip_remaining_units", "purchase_item", "purchase_tile",
+    "found_religion", "send_envoy", "dismiss_popup",
+}
+PROACTIVE_TOOLS = {
+    "get_victory_progress", "get_religion_spread", "get_diplomacy",
+    "get_great_people", "get_strategic_map", "get_global_settle_advisor",
+    "get_empire_resources", "get_trade_routes", "get_world_congress",
+    "get_city_states", "get_spies", "get_builder_tasks",
+    "get_district_advisor", "get_wonder_advisor",
+}
+ORIENTATION_TOOLS = {
+    "get_game_overview", "get_units", "get_cities", "get_map_area",
+    "get_notifications", "get_tech_civics", "get_city_production",
+    "get_policies", "get_governors", "get_purchasable_tiles",
+    "get_settle_advisor", "get_pathing_estimate", "get_unit_promotions",
+    "get_pending_diplomacy", "get_pending_trades", "get_trade_destinations",
+    "get_trade_options",
+}
+
+
+def _classify_tool(tool: str) -> str:
+    if tool in REACTIVE_TOOLS:
+        return "reactive"
+    if tool in PROACTIVE_TOOLS:
+        return "proactive"
+    if tool in ORIENTATION_TOOLS:
+        return "orientation"
+    return "other"
+
+
+def cmd_sensorium(args):
+    """Sensorium effect analysis — quantify proactive vs reactive attention.
+
+    Measures: proactive monitoring frequency, blind-spot windows (turns
+    between strategic checks), reactive/proactive ratio, and per-domain
+    monitoring coverage. Directly supports Section 5.2 of the paper.
+    """
+    games = _list_games()
+
+    if args.model:
+        targets = _games_by_model(args.model, games)
+    elif args.game_ids:
+        targets = _resolve_run_ids(args.game_ids, games)
+    else:
+        targets = games
+
+    for g in targets:
+        rid = g["runId"]
+        model = g.get("agentModel") or "?"
+        o = g.get("outcome") or {}
+
+        print(f"\n{'='*70}")
+        print(f"  Sensorium Analysis: {rid} | {model} | T{int(g.get('count') or 0)}")
+        print(f"{'='*70}")
+
+        entries = cloud_log(rid)
+        tool_calls = [e for e in entries if e.get("type") == "tool_call"]
+        if not tool_calls:
+            print("  No data")
+            continue
+
+        turns = sorted(set(e.get("turn", 0) for e in tool_calls))
+        n_turns = len(turns) or 1
+
+        # --- Attention classification ---
+        attn = Counter(_classify_tool(e["tool"]) for e in tool_calls)
+        total = len(tool_calls)
+        print(f"\n  Attention Classification ({total} calls across {n_turns} turns)")
+        print("  " + "-" * 50)
+        for cat in ["reactive", "orientation", "proactive", "other"]:
+            n = attn.get(cat, 0)
+            bar = "█" * int(40 * n / total) if total else ""
+            print(f"    {cat:<14} {n:>5} ({_pct(n, total):>5})  {bar}")
+
+        proactive_ratio = attn.get("proactive", 0) / total if total else 0
+        print(f"\n  Proactive attention ratio: {proactive_ratio:.3f}")
+        print(f"  Proactive calls per 100 turns: {100 * attn.get('proactive', 0) / n_turns:.1f}")
+
+        # --- Per-domain monitoring frequency ---
+        print(f"\n  Domain Monitoring (calls & gaps)")
+        print("  " + "-" * 50)
+        domains = {
+            "Victory": ["get_victory_progress"],
+            "Religion": ["get_religion_spread"],
+            "Diplomacy": ["get_diplomacy", "get_city_states"],
+            "Great People": ["get_great_people"],
+            "Military Intel": ["get_strategic_map", "get_map_area"],
+            "Economy": ["get_empire_resources", "get_trade_routes"],
+            "Expansion": ["get_global_settle_advisor", "get_settle_advisor"],
+        }
+        headers = ["Domain", "Calls", "/100t", "First", "Last", "Max Gap", "Blind%"]
+        align = ["<", ">", ">", ">", ">", ">", ">"]
+        rows = []
+        for domain, tools in domains.items():
+            domain_turns = sorted(set(
+                e.get("turn", 0) for e in tool_calls if e["tool"] in tools
+            ))
+            count = sum(1 for e in tool_calls if e["tool"] in tools)
+            per100 = f"{100 * count / n_turns:.1f}" if n_turns else "0"
+
+            if not domain_turns:
+                rows.append([domain, 0, "0", "-", "-", "-", "100%"])
+                continue
+
+            gaps = [domain_turns[i + 1] - domain_turns[i]
+                    for i in range(len(domain_turns) - 1)]
+            max_gap = max(gaps) if gaps else 0
+            # Blind%: fraction of turns with no check in surrounding ±10 turns
+            checked = set()
+            for t in domain_turns:
+                for dt in range(-5, 6):
+                    checked.add(t + dt)
+            blind_pct = 1 - len(checked.intersection(turns)) / n_turns
+            rows.append([
+                domain, count, per100,
+                domain_turns[0], domain_turns[-1],
+                max_gap, f"{100 * blind_pct:.0f}%",
+            ])
+        _table(headers, rows, align)
+
+        # --- Blind-spot windows (>20 turns without any proactive check) ---
+        print(f"\n  Blind-Spot Windows (>20 turns with zero proactive calls)")
+        print("  " + "-" * 50)
+        proactive_turns = sorted(set(
+            e.get("turn", 0) for e in tool_calls if _classify_tool(e["tool"]) == "proactive"
+        ))
+        if proactive_turns:
+            # Include game start and end
+            all_boundaries = [turns[0]] + proactive_turns + [turns[-1]]
+            windows = []
+            for i in range(len(all_boundaries) - 1):
+                gap = all_boundaries[i + 1] - all_boundaries[i]
+                if gap > 20:
+                    windows.append((all_boundaries[i], all_boundaries[i + 1], gap))
+            if windows:
+                for start, end, gap in sorted(windows, key=lambda x: -x[2]):
+                    print(f"    T{start:>3} → T{end:>3}  ({gap} turns blind)")
+            else:
+                print("    (none — good proactive coverage)")
+        else:
+            print(f"    ENTIRE GAME ({n_turns} turns with zero proactive calls)")
+
+        # --- Proactive attention sparkline ---
+        proactive_per_turn = []
+        for t in turns:
+            n = sum(1 for e in tool_calls
+                    if e.get("turn") == t and _classify_tool(e["tool"]) == "proactive")
+            proactive_per_turn.append(n)
+        print(f"\n  Proactive calls/turn: {_sparkline(proactive_per_turn, 50)}")
+
+
+def cmd_reflection_gap(args):
+    """Reflection-action gap analysis — compare stated plans vs actual actions.
+
+    Extracts planning intentions from diary entries and checks whether the
+    agent followed through. Directly supports Section 5.3 of the paper.
+    """
+    games = _list_games()
+    targets = _resolve_run_ids([args.game_id], games)
+    if not targets:
+        print(f"Game '{args.game_id}' not found")
+        return
+    g = targets[0]
+    rid = g["runId"]
+    model = g.get("agentModel") or "?"
+
+    print(f"\n{'='*70}")
+    print(f"  Reflection-Action Gap: {rid} | {model}")
+    print(f"{'='*70}")
+
+    diary = cloud_diary(rid)
+    entries = cloud_log(rid)
+    tool_calls = [e for e in entries if e.get("type") == "tool_call"]
+
+    agent_rows = [d for d in diary if d.get("is_agent") and d.get("reflections")]
+
+    if not agent_rows:
+        print("  No diary reflections found")
+        return
+
+    # --- Stated vs actual: resource spending ---
+    print(f"\n  Resource Spending: Plans vs Reality")
+    print("  " + "-" * 50)
+    spend_mentions = 0
+    spend_actions = 0
+    for row in agent_rows:
+        turn = row.get("turn", 0)
+        planning = (row.get("reflections") or {}).get("planning", "")
+        if not planning:
+            continue
+
+        # Check if planning mentions spending/purchasing
+        spend_keywords = ["spend", "purchase", "buy", "gold", "faith"]
+        mentions_spend = any(kw in planning.lower() for kw in spend_keywords)
+        if mentions_spend:
+            spend_mentions += 1
+            # Check if purchase_item was actually called within ±3 turns
+            nearby_purchases = [
+                e for e in tool_calls
+                if e["tool"] in ("purchase_item", "purchase_tile", "patronize_great_person")
+                and abs(e.get("turn", 0) - turn) <= 3
+            ]
+            if nearby_purchases:
+                spend_actions += 1
+
+    if spend_mentions:
+        print(f"    Mentioned spending: {spend_mentions} diary entries")
+        print(f"    Actually purchased: {spend_actions} ({_pct(spend_actions, spend_mentions)} follow-through)")
+    else:
+        print(f"    No spending plans found in diary")
+
+    # --- Stated vs actual: monitoring intentions ---
+    print(f"\n  Monitoring Plans vs Actual Checks")
+    print("  " + "-" * 50)
+    monitor_pairs = [
+        ("victory", ["get_victory_progress"]),
+        ("religion", ["get_religion_spread"]),
+        ("diplomacy", ["get_diplomacy"]),
+        ("great people", ["get_great_people"]),
+        ("trade", ["get_trade_routes"]),
+    ]
+    for keyword, check_tools in monitor_pairs:
+        mentions = 0
+        followed = 0
+        for row in agent_rows:
+            turn = row.get("turn", 0)
+            planning = (row.get("reflections") or {}).get("planning", "")
+            if keyword in planning.lower():
+                mentions += 1
+                nearby = [e for e in tool_calls
+                          if e["tool"] in check_tools
+                          and abs(e.get("turn", 0) - turn) <= 5]
+                if nearby:
+                    followed += 1
+        if mentions:
+            pct = _pct(followed, mentions)
+            print(f"    {keyword:<15} mentioned {mentions:>3}x, followed through {followed:>3}x ({pct})")
+
+    # --- Repeated unfulfilled intentions ---
+    print(f"\n  Repeated Unfulfilled Intentions (≥3 consecutive mentions without action)")
+    print("  " + "-" * 50)
+    # Track consecutive planning mentions of keywords without matching action
+    action_keywords = {
+        "encampment": ["set_city_production"],
+        "holy site": ["set_city_production"],
+        "settler": ["set_city_production"],
+        "attack": ["unit_action"],
+        "alliance": ["form_alliance", "send_diplomatic_action"],
+        "campus": ["set_city_production"],
+    }
+    for keyword, action_tools in action_keywords.items():
+        streak = 0
+        max_streak = 0
+        streak_start = 0
+        for row in agent_rows:
+            turn = row.get("turn", 0)
+            planning = (row.get("reflections") or {}).get("planning", "")
+            if keyword in planning.lower():
+                if streak == 0:
+                    streak_start = turn
+                streak += 1
+                # Check for action within ±5 turns
+                nearby = [e for e in tool_calls
+                          if e["tool"] in action_tools
+                          and keyword.upper().replace(" ", "_") in str(e.get("params", "")).upper()
+                          and abs(e.get("turn", 0) - turn) <= 5]
+                if nearby:
+                    streak = 0  # resolved
+            else:
+                max_streak = max(max_streak, streak)
+                streak = 0
+        max_streak = max(max_streak, streak)
+        if max_streak >= 3:
+            print(f"    '{keyword}' — {max_streak} consecutive diary mentions without action (from ~T{streak_start})")
+
+    # --- Diary planning vs production timeline ---
+    print(f"\n  Production Alignment")
+    print("  " + "-" * 50)
+    prod_calls = [e for e in tool_calls if e["tool"] == "set_city_production" and e.get("success", True)]
+    if prod_calls:
+        # Group by 50-turn eras
+        era_items: dict[int, Counter] = defaultdict(Counter)
+        for e in prod_calls:
+            bucket = (e.get("turn", 0) // 50) * 50
+            item = (e.get("params") or {}).get("item_name", "?")
+            era_items[bucket][item] += 1
+        for bucket in sorted(era_items.keys()):
+            top = era_items[bucket].most_common(5)
+            items_str = ", ".join(f"{item}({n})" for item, n in top)
+            print(f"    T{bucket:>3}-T{bucket+49}: {items_str}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -774,6 +1065,15 @@ def main():
     p_turns.add_argument("--range", help="Turn range, e.g. 50-100")
     p_turns.add_argument("--metric", help="Metrics to show (comma-separated)")
 
+    # sensorium
+    p_sensor = sub.add_parser("sensorium", help="Sensorium effect analysis (paper §5.2)")
+    p_sensor.add_argument("game_ids", nargs="*", help="Game/run IDs")
+    p_sensor.add_argument("--model", help="Analyze all games for a model")
+
+    # reflection-gap
+    p_refl = sub.add_parser("reflection-gap", help="Reflection-action gap analysis (paper §5.3)")
+    p_refl.add_argument("game_id", help="Game or run ID")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -785,6 +1085,8 @@ def main():
         "compare": cmd_compare,
         "strategy": cmd_strategy,
         "turns": cmd_turns,
+        "sensorium": cmd_sensorium,
+        "reflection-gap": cmd_reflection_gap,
     }
     dispatch[args.command](args)
 
