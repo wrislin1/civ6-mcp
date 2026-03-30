@@ -128,7 +128,7 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
     # to kill + OCR menu navigation.
     try:
         verify = await conn.execute_read(
-            'local t = Game.GetCurrentGameTurn(); '
+            "local t = Game.GetCurrentGameTurn(); "
             'print("VERIFY|" .. t); '
             'print("---END---")'
         )
@@ -138,7 +138,8 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
                 if turn > 5:
                     log.error(
                         "Auto-boot: loaded T%d but expected T1 — wrong save! "
-                        "Falling back to kill + OCR reload", turn
+                        "Falling back to kill + OCR reload",
+                        turn,
                     )
                     await game_launcher.kill_game()
                     result = await asyncio.to_thread(game_launcher._launch_game_sync)
@@ -1765,22 +1766,20 @@ async def end_turn(
     # Auto-recover from AI turn hangs (transparent to agent).
     # end_turn returns "HANG:{turn}:{save}|..." when AI processing is
     # stuck after ~39s of polling with no blockers found.
-    # Recovery: restart_and_load the MCP autosave, reconnect, retry.
+    # Recovery: restart_and_load the MCP autosave, reconnect, retry
+    # up to _MAX_HANG_RETRIES times with escalating waits.
     # ---------------------------------------------------------------
-    if result.startswith("HANG:") and not getattr(gs, "_hang_retry_active", False):
+    _MAX_HANG_RETRIES = 3
+    _HANG_EXTRA_WAIT = [0, 15, 30]  # extra seconds before retry per attempt
+
+    if result.startswith("HANG:") and not gs._hang_retry_active:
         parts = result.split("|", 1)
         hang_info = parts[0]  # "HANG:57:0_MCP_0057"
         _, hang_turn, hang_save = hang_info.split(":")
-
-        log.warning(
-            "HANG RECOVERY: AI turn stuck at T%s. "
-            "Restarting game and loading %s...",
-            hang_turn,
-            hang_save,
-        )
+        hang_turn_int = int(hang_turn)
 
         # Check save file exists before attempting recovery
-        save_path = os.path.join(game_launcher.SAVE_DIR, f"{hang_save}.Civ6Save")
+        save_path = os.path.join(game_launcher.SINGLE_SAVE_DIR, f"{hang_save}.Civ6Save")
         if not os.path.exists(save_path):
             log.error(
                 "HANG RECOVERY: Save file %s not found, cannot auto-recover",
@@ -1788,82 +1787,120 @@ async def end_turn(
             )
             # Fall through — return the hang message to agent
         else:
+            identity_before = gs._game_identity
+            gs._hang_retry_active = True
             try:
-                # Step 1: Kill + relaunch + OCR load (~90s)
-                restart_result = await game_launcher.restart_and_load(hang_save)
-                log.info(
-                    "HANG RECOVERY: restart_and_load result: %s", restart_result
-                )
+                for attempt in range(1, _MAX_HANG_RETRIES + 1):
+                    extra_wait = _HANG_EXTRA_WAIT[
+                        min(attempt - 1, len(_HANG_EXTRA_WAIT) - 1)
+                    ]
+                    log.warning(
+                        "HANG RECOVERY: attempt %d/%d for T%s "
+                        "(extra wait: %ds, save: %s)",
+                        attempt,
+                        _MAX_HANG_RETRIES,
+                        hang_turn,
+                        extra_wait,
+                        hang_save,
+                    )
 
-                # Step 2: Reconnect (trigger Lua state rediscovery)
-                conn = gs.conn
-                for attempt in range(30):
-                    try:
-                        await conn.reconnect()
-                        if conn.gamecore_index is not None:
-                            log.info(
-                                "HANG RECOVERY: reconnected (GameCore=%s)",
-                                conn.gamecore_index,
+                    # Step 1: Kill + relaunch + OCR load
+                    restart_result = await game_launcher.restart_and_load(hang_save)
+                    log.info("HANG RECOVERY: restart_and_load: %s", restart_result)
+
+                    # Step 2: Reconnect
+                    conn = gs.conn
+                    reconnected = False
+                    for rc_attempt in range(30):
+                        try:
+                            await conn.reconnect()
+                            if conn.gamecore_index is not None:
+                                reconnected = True
+                                break
+                        except ConnectionError:
+                            pass
+                        await asyncio.sleep(1)
+
+                    if not reconnected:
+                        log.error(
+                            "HANG RECOVERY: could not reconnect (attempt %d)",
+                            attempt,
+                        )
+                        continue  # try the whole cycle again
+
+                    # Step 2b: Verify correct game loaded
+                    if identity_before is not None:
+                        try:
+                            actual = await gs.get_game_identity()
+                            if actual != identity_before:
+                                log.error(
+                                    "HANG RECOVERY: Wrong game loaded! "
+                                    "Expected %s, got %s — retrying",
+                                    identity_before,
+                                    actual,
+                                )
+                                continue  # next attempt will kill+reload
+                        except Exception:
+                            log.warning(
+                                "HANG RECOVERY: identity check failed — "
+                                "retrying to be safe",
+                                exc_info=True,
                             )
-                            break
-                    except ConnectionError:
-                        pass
-                    await asyncio.sleep(1)
-                else:
-                    log.error(
-                        "HANG RECOVERY: could not reconnect after restart"
-                    )
-                    return (
-                        "HANG RECOVERY FAILED: Game restarted but could not "
-                        "reconnect. Use get_game_overview to check."
-                    )
+                            continue
 
-                # Step 3: Reset state flags — old ACTION_ENDTURN is gone
-                gs._pending_end_turn = False
-                gs._pending_end_turn_from = None
-                gs._end_turn_blocked = False
+                    # Step 3: Reset state flags
+                    gs._pending_end_turn = False
+                    gs._pending_end_turn_from = None
+                    gs._end_turn_blocked = False
 
-                # Step 4: Retry end_turn once (flag prevents recursion)
-                gs._hang_retry_active = True
-                log.info(
-                    "HANG RECOVERY: retrying end_turn for T%s...", hang_turn
-                )
-                try:
-                    result = await gs.end_turn()
+                    # Step 4: Extra wait to give AI more processing time
+                    if extra_wait > 0:
+                        log.info(
+                            "HANG RECOVERY: waiting %ds before retry...",
+                            extra_wait,
+                        )
+                        await asyncio.sleep(extra_wait)
+
+                    # Step 5: Retry end_turn
                     log.info(
-                        "HANG RECOVERY: retry result: %s", result[:200]
+                        "HANG RECOVERY: retrying end_turn for T%s...",
+                        hang_turn,
                     )
-                finally:
-                    gs._hang_retry_active = False
+                    result = await gs.end_turn()
+                    log.info("HANG RECOVERY: retry result: %s", result[:200])
 
-                # If retry also hangs, return to agent with clear guidance
-                if result.startswith("HANG:"):
-                    earlier = int(hang_turn) - 1
+                    if not result.startswith("HANG:"):
+                        log.info(
+                            "HANG RECOVERY: T%s resolved on attempt %d",
+                            hang_turn,
+                            attempt,
+                        )
+                        break  # success — fall through to normal processing
+                else:
+                    # All retries exhausted
+                    earlier = max(1, hang_turn_int - 3)
                     log.error(
-                        "HANG RECOVERY: retry also hung at T%s "
-                        "— deterministic hang",
+                        "HANG RECOVERY: all %d attempts failed for T%s",
+                        _MAX_HANG_RETRIES,
                         hang_turn,
                     )
                     return (
-                        f"AI turn hung at T{hang_turn} after automatic "
-                        f"restart + retry. This appears to be a deterministic "
-                        f"hang. Try restart_and_load with an earlier save "
-                        f"(e.g. 0_MCP_{earlier:04d})."
+                        f"AI turn hung at T{hang_turn} after "
+                        f"{_MAX_HANG_RETRIES} automatic restart attempts "
+                        f"with escalating waits. The hang may be "
+                        f"probabilistic — another attempt could work. "
+                        f"Try restart_and_load('0_MCP_{earlier:04d}') "
+                        f"to skip back a few turns."
                     )
-
-                # Success — fall through to normal result processing
-                log.info(
-                    "HANG RECOVERY: T%s recovered successfully after restart",
-                    hang_turn,
-                )
             except Exception:
                 log.error("HANG RECOVERY: failed", exc_info=True)
-                gs._hang_retry_active = False
                 return (
                     f"HANG RECOVERY FAILED at T{hang_turn}: "
                     f"restart_and_load threw an exception. "
                     f"Try restart_and_load('{hang_save}') manually."
                 )
+            finally:
+                gs._hang_retry_active = False
 
     # Clear stale camera events on successful turn advance
     turn_advanced = (
@@ -2453,7 +2490,6 @@ async def run_lua(ctx: Context, code: str, context: str = "gamecore") -> str:
 # ---------------------------------------------------------------------------
 
 
-
 @mcp.tool(annotations={"readOnlyHint": True})
 async def list_saves(ctx: Context) -> str:
     """List available save files (normal, autosave).
@@ -2568,7 +2604,56 @@ async def restart_and_load(ctx: Context, save_name: str | None = None) -> str:
 
     After completion, wait ~10 seconds then call get_game_overview to verify.
     """
-    return await game_launcher.restart_and_load(save_name)
+    gs = _get_game(ctx)
+    identity_before = gs._game_identity
+
+    result = await game_launcher.restart_and_load(save_name)
+
+    # Reconnect and verify correct game loaded
+    conn = gs.conn
+    for attempt in range(30):
+        try:
+            await conn.reconnect()
+            if conn.gamecore_index is not None:
+                break
+        except ConnectionError:
+            pass
+        await asyncio.sleep(1)
+
+    if conn.gamecore_index is not None and identity_before is not None:
+        try:
+            actual = await gs.get_game_identity()
+            if actual != identity_before:
+                log.warning(
+                    "restart_and_load: wrong game loaded "
+                    "(expected %s, got %s) — retrying",
+                    identity_before,
+                    actual,
+                )
+                result2 = await game_launcher.restart_and_load(save_name)
+                for attempt in range(30):
+                    try:
+                        await conn.reconnect()
+                        if conn.gamecore_index is not None:
+                            break
+                    except ConnectionError:
+                        pass
+                    await asyncio.sleep(1)
+                try:
+                    actual2 = await gs.get_game_identity()
+                    if actual2 != identity_before:
+                        return (
+                            f"{result2} | WARNING: Wrong game loaded "
+                            f"(expected {identity_before[0]}, "
+                            f"got {actual2[0]}). Manual recovery needed."
+                        )
+                except Exception:
+                    pass
+                return f"{result2} | Reloaded after wrong-game detection."
+        except Exception:
+            log.debug("Post-load identity check failed", exc_info=True)
+
+    return result
 
 
 async def _narrate(
