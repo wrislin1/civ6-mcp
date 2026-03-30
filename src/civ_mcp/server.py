@@ -62,7 +62,24 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
     Called during lifespan when CIV_MCP_SAVE_FILE is set (eval mode).
     Blocks until the game is loaded and ready for play.
     """
+    import glob
+
     from civ_mcp.game_lifecycle import load_game_save
+
+    # 0. Clear stale MCP autosaves. These are the saves that the main
+    # menu's "Continue Game" button would load. If a previous run
+    # crashed at T197, "Continue Game" resumes T197 instead of loading
+    # the scenario save. Clearing them makes "Continue Game" harmless
+    # (it would load the scenario save or nothing).
+    # This does NOT break --resume-save which loads by name via Lua.
+    stale = glob.glob(os.path.join(game_launcher.SINGLE_SAVE_DIR, "0_MCP_*.Civ6Save"))
+    if stale:
+        for f in stale:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+        log.info("Auto-boot: cleared %d stale MCP autosave(s)", len(stale))
 
     # 1. Launch game (or reuse if already running).
     # The eval runner's ensure_game_ready() typically launches the game

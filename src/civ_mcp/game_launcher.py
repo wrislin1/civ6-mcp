@@ -361,25 +361,29 @@ def _click_continue_positional() -> None:
     # Try multiple positions — the button's relative position varies across
     # resolutions and window modes (observed: 38%/75% on 4K, 35%/82% on 1080p).
     positions = [(0.38, 0.75), (0.35, 0.82), (0.38, 0.80), (0.35, 0.78)]
+
+    # Log all positions upfront for debugging
+    coords = [
+        (win.x + int(win.w * px), content_y + int(content_h * py), px, py)
+        for px, py in positions
+    ]
+    log.info(
+        "Positional click grid [%d positions]: %s "
+        "[window %dx%d at (%d,%d), content_y=%d content_h=%d]",
+        len(coords),
+        ", ".join(f"({x},{y})[{px:.0%},{py:.0%}]" for x, y, px, py in coords),
+        win.w,
+        win.h,
+        win.x,
+        win.y,
+        content_y,
+        content_h,
+    )
+
     _bring_to_front()
     time.sleep(0.3)
-    for pct_x, pct_y in positions:
-        abs_x = win.x + int(win.w * pct_x)
-        abs_y = content_y + int(content_h * pct_y)
-        log.info(
-            "Positional click: CONTINUE at (%d,%d) [%.0f%%,%.0f%%] "
-            "[window %dx%d at (%d,%d), content_y=%d content_h=%d]",
-            abs_x,
-            abs_y,
-            pct_x * 100,
-            pct_y * 100,
-            win.w,
-            win.h,
-            win.x,
-            win.y,
-            content_y,
-            content_h,
-        )
+    for i, (abs_x, abs_y, pct_x, pct_y) in enumerate(coords, 1):
+        log.info("Grid click [%d/%d] at (%d,%d) [%.0f%%,%.0f%%]", i, len(coords), abs_x, abs_y, pct_x * 100, pct_y * 100)
         _click(abs_x, abs_y)
         time.sleep(0.5)
 
@@ -2067,17 +2071,87 @@ def _navigate_to_save_sync(save_name: str, tab: str | None = "Autosaves") -> str
 
     log.info("[6/6] Waiting 15s for save to load, then looking for CONTINUE GAME...")
     time.sleep(15)
-    match = _wait_for_text("CONTINUE", timeout=105, interval=2.5)
-    if match:
-        text, x, y, w, h = match
-        log.info("Found '%s' at (%d,%d) — clicking", text, x, y)
-        _bring_to_front()
-        _click(x, y)
-        time.sleep(3)
-        steps.append("Clicked CONTINUE")
-    else:
-        # OCR failed — click the button by its known relative position
-        log.warning("OCR: CONTINUE not found after 90s — using positional click")
+
+    # Screen-aware CONTINUE detection: poll OCR and check WHAT we see.
+    # If we see "Single Player" / "Multiplayer", we're on the main menu
+    # (save load failed) — redo the navigation instead of blindly clicking.
+    continue_found = False
+    main_menu_detected = False
+    poll_start = time.time()
+    poll_timeout = 105
+    last_status_log = 0
+
+    while time.time() - poll_start < poll_timeout:
+        elapsed = time.time() - poll_start
+        win = _find_game_window()
+        try:
+            results = _ocr_game_window(win) if win else _ocr_fullscreen()
+        except Exception:
+            results = _ocr_fullscreen()
+
+        # Check for CONTINUE (leader screen — good)
+        match = _find_text(results, "CONTINUE")
+        if match:
+            text, x, y, w, h = match
+            log.info("CONTINUE wait: found '%s' at (%d,%d) after %.0fs — clicking", text, x, y, elapsed)
+            _bring_to_front()
+            _click(x, y)
+            time.sleep(3)
+            continue_found = True
+            steps.append("Clicked CONTINUE")
+            break
+
+        # Check for main menu (wrong screen — save load failed)
+        menu_match = _find_text(results, "Single Player")
+        if menu_match and elapsed > 20:  # give 20s grace for loading transition
+            log.warning(
+                "CONTINUE wait: ABORT — detected main menu ('Single Player' visible) "
+                "after %.0fs. Save load likely failed. Will retry navigation.",
+                elapsed,
+            )
+            main_menu_detected = True
+            steps.append("ABORT: main menu detected during CONTINUE wait")
+            break
+
+        # Periodic status log (every 15s)
+        if int(elapsed) // 15 > last_status_log:
+            last_status_log = int(elapsed) // 15
+            seen = [t for t, *_ in (results or [])[:8]]
+            log.info("CONTINUE wait: %.0fs elapsed, OCR sees: %s", elapsed, seen)
+
+        time.sleep(2.5)
+
+    if main_menu_detected:
+        # Save load failed — we're back at main menu. Redo from step 1.
+        log.warning("Restarting save navigation from main menu")
+        if _click_text("Single Player", timeout=15, post_delay=2):
+            _click_text("Load Game", timeout=10, post_delay=1, prefer_bottom=False)
+            time.sleep(1)
+            if _click_text(save_name, timeout=15, post_delay=0.5):
+                _click_text("Load Game", timeout=10, post_delay=1, prefer_bottom=True, min_y_fraction=0.7)
+                time.sleep(15)
+                # One more attempt at CONTINUE
+                retry_match = _wait_for_text("CONTINUE", timeout=60, interval=2.5)
+                if retry_match:
+                    text, x, y, w, h = retry_match
+                    log.info("Retry: found CONTINUE at (%d,%d) — clicking", x, y)
+                    _bring_to_front()
+                    _click(x, y)
+                    time.sleep(3)
+                    steps.append("Retry: clicked CONTINUE after re-navigation")
+                else:
+                    log.warning("Retry: CONTINUE still not found — using positional click")
+                    _click_continue_positional()
+                    time.sleep(3)
+                    steps.append("Retry: CONTINUE not found — positional click")
+            else:
+                steps.append("Retry: could not find save name in list")
+        else:
+            steps.append("Retry: could not find Single Player menu item")
+    elif not continue_found:
+        # OCR timeout — neither CONTINUE nor main menu detected.
+        # Use positional click grid as last resort.
+        log.warning("OCR: CONTINUE not found after %ds — using positional click grid", poll_timeout)
         _click_continue_positional()
         time.sleep(3)
         steps.append("CONTINUE not found via OCR — used positional click fallback")
