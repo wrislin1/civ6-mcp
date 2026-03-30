@@ -435,7 +435,29 @@ if item == nil then {_bail(f"ERR:ITEM_NOT_FOUND|{item_name}")} end
 local bq = pCity:GetBuildQueue()
 local isCorrupted = bq:GetSize() > 0 and bq:GetCurrentProductionTypeHash() == 0
 if not bq:CanProduce(item.Hash, true) then
-    {_bail(f"ERR:CANNOT_PRODUCE|{item_name} cannot be produced in this city")}
+    -- Diagnose why production is blocked
+    local reason = ""
+    pcall(function()
+        if item.PrereqDistrict then
+            local hasDistrict = false
+            for _, d in pCity:GetDistricts():Members() do
+                local dInfo = GameInfo.Districts[d:GetType()]
+                if dInfo and dInfo.DistrictType == item.PrereqDistrict then hasDistrict = true; break end
+            end
+            if not hasDistrict then reason = " (requires " .. item.PrereqDistrict .. " district)" end
+        end
+        if reason == "" and item.PrereqBuildingType then
+            reason = " (requires " .. item.PrereqBuildingType .. ")"
+        end
+        if reason == "" then
+            -- Check if building is already built in this city
+            local buildings = pCity:GetBuildings()
+            if buildings and buildings:HasBuilding(item.Index) then
+                reason = " (already built)"
+            end
+        end
+    end)
+    {_bail_lua(f'"ERR:CANNOT_PRODUCE|{item_name} cannot be produced in this city" .. reason')}
 end
 {
         ""
