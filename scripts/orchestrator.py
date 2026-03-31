@@ -253,6 +253,17 @@ class Machine:
             log.warning("Sync failed on %s: %s", self.name, out[:200])
         return rc == 0
 
+    def clear_local_telemetry(self) -> str:
+        """Remove all local diary/log/spatial files. Azure has backups."""
+        if self.os == "windows":
+            rc, out = self.ssh(
+                'powershell -Command "Remove-Item $env:USERPROFILE\\.civ6-mcp\\* -Force -ErrorAction SilentlyContinue; echo CLEARED"',
+                timeout=15,
+            )
+        else:
+            rc, out = self.ssh("rm -rf ~/.civ6-mcp/* && echo CLEARED", timeout=10)
+        return out
+
     def tail_log(self, n: int = 10) -> str:
         if self.os == "windows":
             rc, out = self.ssh(
@@ -497,6 +508,8 @@ def cmd_launch(
         if m and m.is_reachable():
             m.clear_completion_sentinel()
             m.clean_autosaves()
+            m.clear_local_telemetry()
+            log.info("  %s: cleaned", name)
 
     # Build job queue: interleave models across machines so each machine
     # runs a DIFFERENT model in each round. Round 1: machine[0]→model[0],
