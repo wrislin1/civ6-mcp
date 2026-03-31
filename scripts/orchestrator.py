@@ -484,14 +484,15 @@ def cmd_launch(
     stall_kill_min = defaults.get("stall_kill_minutes", 60)
     max_retries = defaults.get("max_retries", 2)
 
-    # Build job queue: assign models to machines round-robin
+    # Build job queue: interleave models across machines so each machine
+    # runs a DIFFERENT model in each round. Round 1: machine[0]→model[0],
+    # machine[1]→model[1], machine[2]→model[2]. Round 2: same assignment.
     jobs: dict[str, Job] = {}
     machine_list = [machines[n] for n in machine_names if n in machines]
-    job_idx = 0
     for scenario in scenarios:
-        for model in models:
-            for run_num in range(1, runs + 1):
-                machine = machine_list[job_idx % len(machine_list)]
+        for run_num in range(1, runs + 1):
+            for m_idx, model in enumerate(models):
+                machine = machine_list[m_idx % len(machine_list)]
                 jid = f"{machine.name}_{model.rsplit('/', 1)[-1]}_{scenario}_{run_num}"
                 jobs[jid] = Job(
                     id=jid,
@@ -500,7 +501,6 @@ def cmd_launch(
                     scenario=scenario,
                     run_num=run_num,
                 )
-                job_idx += 1
 
     # Persist initial state
     state = {"started_at": time.time(), "jobs": {jid: j.to_dict() for jid, j in jobs.items()}}
@@ -564,11 +564,14 @@ def cmd_launch(
 
             m = machines[job.machine_name]
 
-            # Check runner alive
+            # Check runner alive (grace period: 3 min after launch for game to start)
+            launch_age = time.time() - job.started_at
+            if launch_age < 180:
+                continue  # too early to check — game still loading
             if not m.is_runner_running():
-                # Runner died — check if game completed or crashed
+                # Runner died — confirm after short delay
                 time.sleep(5)
-                if not m.is_runner_running():  # confirm after delay
+                if not m.is_runner_running():
                     if job.retries < max_retries:
                         job.retries += 1
                         job.status = "pending"  # will relaunch on next loop
