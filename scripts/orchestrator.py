@@ -1,0 +1,682 @@
+#!/usr/bin/env python3
+"""CivBench Orchestrator — dispatch, monitor, and manage benchmark runs.
+
+Manages a fleet of machines running CivBench scenarios via SSH.
+Config-driven (no hardcoded IPs/paths), with health monitoring,
+failure recovery, and automatic result collection.
+
+Usage:
+    python scripts/orchestrator.py preflight [--machines M1,M2]
+    python scripts/orchestrator.py launch --scenarios S --models M --runs N --machines M1,M2
+    python scripts/orchestrator.py status
+    python scripts/orchestrator.py kill-all
+    python scripts/orchestrator.py resume
+
+Config: ~/.civbench/machines.yaml
+State:  ~/.civbench/state.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import logging
+import subprocess
+import sys
+import time
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+log = logging.getLogger("orchestrator")
+
+CONFIG_DIR = Path.home() / ".civbench"
+CONFIG_PATH = CONFIG_DIR / "machines.yaml"
+STATE_PATH = CONFIG_DIR / "state.json"
+
+# ---------------------------------------------------------------------------
+# Config loading
+# ---------------------------------------------------------------------------
+
+
+def load_config() -> dict[str, Any]:
+    if not CONFIG_PATH.exists():
+        log.error("Config not found: %s", CONFIG_PATH)
+        sys.exit(1)
+    with open(CONFIG_PATH) as f:
+        return yaml.safe_load(f)
+
+
+# ---------------------------------------------------------------------------
+# Machine abstraction
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Machine:
+    name: str
+    ssh_target: str
+    os: str  # "windows" | "linux" | "macos"
+    repo: str
+    display_env: dict[str, str] = field(default_factory=dict)
+    ssh_timeout: int = 20
+
+    def ssh(self, cmd: str, timeout: int | None = None) -> tuple[int, str]:
+        """Run command via SSH. Returns (returncode, stdout)."""
+        t = timeout or self.ssh_timeout
+        try:
+            r = subprocess.run(
+                ["ssh", "-o", f"ConnectTimeout={t}", "-o", "BatchMode=yes",
+                 self.ssh_target, cmd],
+                capture_output=True, text=True, timeout=t + 10,
+            )
+            return r.returncode, r.stdout.strip()
+        except subprocess.TimeoutExpired:
+            return -1, "SSH_TIMEOUT"
+        except Exception as e:
+            return -1, str(e)
+
+    def is_reachable(self) -> bool:
+        rc, _ = self.ssh("echo ok", timeout=10)
+        return rc == 0
+
+    def get_version(self) -> str:
+        if self.os == "windows":
+            cmd = f'cd {self.repo} && git describe --tags --always 2>nul'
+        else:
+            cmd = f'cd {self.repo} && git describe --tags --always'
+        rc, out = self.ssh(cmd)
+        return out if rc == 0 else "UNKNOWN"
+
+    def is_game_running(self) -> bool:
+        if self.os == "windows":
+            rc, out = self.ssh(
+                'tasklist /FI "IMAGENAME eq CivilizationVI_DX12.exe" /NH 2>nul '
+                '| findstr /I Civ >nul && echo YES || echo NO'
+            )
+        else:
+            rc, out = self.ssh("pgrep -x Civ6Sub >/dev/null 2>&1 && echo YES || echo NO")
+        return "YES" in out
+
+    def is_runner_running(self) -> bool:
+        if self.os == "windows":
+            # Match runner.py specifically, not any python.exe
+            rc, out = self.ssh(
+                'powershell -Command "if (Get-Process python -ErrorAction SilentlyContinue '
+                "| Where-Object { $_.CommandLine -match 'runner.py' }) "
+                '{ echo YES } else { echo NO }"',
+                timeout=15,
+            )
+        else:
+            rc, out = self.ssh(
+                'pgrep -f "evals/runner.py\\|inspect eval" >/dev/null 2>&1 '
+                '&& echo YES || echo NO'
+            )
+        return "YES" in out
+
+    def check_completed(self) -> bool:
+        """Check if runner left a completion sentinel."""
+        if self.os == "windows":
+            rc, out = self.ssh('if exist %USERPROFILE%\\civbench_done (echo YES) else (echo NO)', timeout=10)
+        else:
+            rc, out = self.ssh("test -f ~/civbench_done && echo YES || echo NO", timeout=10)
+        return "YES" in out
+
+    def clear_completion_sentinel(self) -> None:
+        if self.os == "windows":
+            self.ssh('del %USERPROFILE%\\civbench_done 2>nul', timeout=5)
+        else:
+            self.ssh("rm -f ~/civbench_done", timeout=5)
+
+    def get_latest_turn(self) -> int | None:
+        """Parse the last diary entry for turn number."""
+        if self.os == "windows":
+            diary_dir = f"{self.repo}\\..\\.civ6-mcp"
+            # Hacky but works — find newest diary, read last line
+            cmd = (
+                f'powershell -Command "'
+                f"$f = Get-ChildItem '{diary_dir}\\diary_*.jsonl' -Exclude '*cities*' "
+                f"| Sort-Object LastWriteTime -Descending | Select-Object -First 1; "
+                f"if ($f) {{ (Get-Content $f.FullName -Tail 1 | ConvertFrom-Json).turn }}"
+                f'"'
+            )
+        else:
+            cmd = (
+                "ls -t ~/.civ6-mcp/diary_*.jsonl 2>/dev/null | grep -v cities | head -1 "
+                "| xargs -I{} tail -1 {} 2>/dev/null "
+                "| python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"turn\",\"\"))' 2>/dev/null"
+            )
+        rc, out = self.ssh(cmd, timeout=15)
+        try:
+            return int(out.strip()) if out.strip().isdigit() else None
+        except (ValueError, AttributeError):
+            return None
+
+    def kill_game(self) -> None:
+        if self.os == "windows":
+            self.ssh('taskkill /F /IM CivilizationVI_DX12.exe 2>nul', timeout=10)
+            self.ssh('taskkill /F /IM CivilizationVI.exe 2>nul', timeout=10)
+        else:
+            self.ssh("killall -9 Civ6Sub Civ6 2>/dev/null", timeout=10)
+
+    def kill_runner(self) -> None:
+        if self.os == "windows":
+            self.ssh('taskkill /F /IM python.exe 2>nul', timeout=10)
+            self.ssh('schtasks /End /TN CivBench 2>nul', timeout=10)
+        else:
+            self.ssh("tmux kill-session -t civbench 2>/dev/null; pkill -f runner.py 2>/dev/null", timeout=10)
+
+    def clean_autosaves(self) -> str:
+        if self.os == "windows":
+            # Windows save path
+            save_dir = "C:\\Users\\%USERNAME%\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single"
+            rc, out = self.ssh(f'del /Q "{save_dir}\\0_MCP_*.Civ6Save" 2>nul && echo CLEANED || echo NONE')
+        else:
+            save_dir = "~/.local/share/aspyr-media/Sid\\ Meier\\'s\\ Civilization\\ VI/Saves/Single"
+            rc, out = self.ssh(f'rm -f {save_dir}/0_MCP_*.Civ6Save 2>/dev/null && echo CLEANED || echo NONE')
+        return out
+
+    def launch_runner(self, model: str, scenario: str, runs: int = 1) -> bool:
+        """Launch the benchmark runner. Returns True if launch command succeeded."""
+        if self.os == "windows":
+            # Write batch file via PowerShell base64 to avoid all escaping issues
+            bat_content = (
+                f"@echo off\r\n"
+                f"cd /d {self.repo}\r\n"
+                f".venv\\Scripts\\python.exe -u evals/runner.py "
+                f"--model {model} --scenarios {scenario} --runs {runs} "
+                f">> %USERPROFILE%\\civbench_run.log 2>&1\r\n"
+                f"echo DONE > %USERPROFILE%\\civbench_done\r\n"
+            )
+            encoded = base64.b64encode(bat_content.encode("utf-8")).decode("ascii")
+            self.ssh(
+                f"powershell -Command \"[System.Text.Encoding]::UTF8.GetString("
+                f"[System.Convert]::FromBase64String('{encoded}'))"
+                f" | Set-Content -Path '{self.repo}\\run_bench.bat' -NoNewline\""
+            )
+            self.ssh('schtasks /Create /TN "CivBench" /TR '
+                     f'"{self.repo}\\run_bench.bat" /SC ONCE /ST 00:00 /RL HIGHEST /F')
+            rc, out = self.ssh('schtasks /Run /TN "CivBench"')
+            return "SUCCESS" in out or rc == 0
+        else:
+            env_parts = [f"export {k}={v};" for k, v in self.display_env.items()]
+            env_str = " ".join(env_parts)
+            rc, out = self.ssh(
+                f'{env_str} tmux new-session -d -s civbench '
+                f'"cd {self.repo} && uv run python -u evals/runner.py '
+                f'--model {model} --scenarios {scenario} --runs {runs} '
+                f'2>&1 | tee ~/civbench_run.log; touch ~/civbench_done"'
+            )
+            return rc == 0
+
+    def tail_log(self, n: int = 10) -> str:
+        if self.os == "windows":
+            rc, out = self.ssh(
+                f'powershell -Command "Get-Content %USERPROFILE%\\civbench_run.log -Tail {n}"',
+                timeout=15,
+            )
+        else:
+            rc, out = self.ssh(f"tail -{n} ~/civbench_run.log 2>/dev/null", timeout=10)
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Job tracking
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Job:
+    id: str
+    machine_name: str
+    model: str
+    scenario: str
+    run_num: int
+    status: str = "pending"  # pending, launching, running, completing, done, failed
+    run_id: str | None = None
+    started_at: float = 0
+    last_turn: int = 0
+    last_turn_change: float = 0
+    retries: int = 0
+    fail_reason: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Job:
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+# ---------------------------------------------------------------------------
+# State persistence
+# ---------------------------------------------------------------------------
+
+
+def load_state() -> dict[str, Any]:
+    if STATE_PATH.exists():
+        return json.loads(STATE_PATH.read_text())
+    return {"jobs": {}}
+
+
+def save_state(state: dict[str, Any]) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_PATH.write_text(json.dumps(state, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Alert
+# ---------------------------------------------------------------------------
+
+
+def alert(message: str) -> None:
+    """Send ntfy alert + log."""
+    log.warning("ALERT: %s", message)
+    config = load_config()
+    # Try to read webhook from config or environment
+    webhook = config.get("defaults", {}).get("alert_webhook", "")
+    if not webhook:
+        return
+    try:
+        import urllib.request
+        payload = json.dumps({"message": message, "title": "CivBench Orchestrator", "priority": 4, "tags": ["warning"]}).encode()
+        req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_preflight(machines: dict[str, Machine], machine_names: list[str] | None) -> bool:
+    """Validate all machines are ready. Returns True if all pass."""
+    targets = {n: machines[n] for n in (machine_names or machines.keys()) if n in machines}
+    all_ok = True
+
+    for name, m in targets.items():
+        print(f"\n  {name} ({m.os}, {m.ssh_target})")
+        print(f"  {'─' * 40}")
+
+        # Reachable
+        if not m.is_reachable():
+            print(f"    ✗ OFFLINE")
+            all_ok = False
+            continue
+        print(f"    ✓ Reachable")
+
+        # Version
+        version = m.get_version()
+        print(f"    {'✓' if version != 'UNKNOWN' else '✗'} Version: {version}")
+        if version == "UNKNOWN":
+            all_ok = False
+
+        # Game running
+        game = m.is_game_running()
+        runner = m.is_runner_running()
+        print(f"    {'●' if game else '○'} Civ VI: {'running' if game else 'not running'}")
+        print(f"    {'●' if runner else '○'} Runner: {'active' if runner else 'idle'}")
+
+        # Save files
+        if m.os == "windows":
+            rc, out = m.ssh(f'dir {m.repo}\\evals\\saves\\0A_GROUND_CONTROL.Civ6Save 2>nul && echo FOUND || echo MISSING')
+        else:
+            rc, out = m.ssh(f'test -f {m.repo}/evals/saves/0A_GROUND_CONTROL.Civ6Save && echo FOUND || echo MISSING')
+        has_saves = "FOUND" in out
+        print(f"    {'✓' if has_saves else '✗'} Saves: {'present' if has_saves else 'MISSING'}")
+        if not has_saves:
+            all_ok = False
+
+    print()
+    return all_ok
+
+
+def cmd_status(machines: dict[str, Machine]) -> None:
+    """Show fleet status dashboard."""
+    state = load_state()
+    jobs = state.get("jobs", {})
+
+    print(f"\n╔═══════════════════════════════════════════════════╗")
+    print(f"║  CivBench Orchestrator     {time.strftime('%H:%M %b %d %Y')}  ║")
+    print(f"╚═══════════════════════════════════════════════════╝")
+
+    print(f"\nFleet")
+    print(f"  {'─' * 50}")
+    for name, m in machines.items():
+        reachable = m.is_reachable()
+        if not reachable:
+            print(f"  {name:<12} OFFLINE")
+            continue
+        version = m.get_version()
+        game = m.is_game_running()
+        runner = m.is_runner_running()
+        turn = m.get_latest_turn()
+        turn_str = f"T{turn}" if turn is not None else ""
+        print(f"  {name:<12} {version:<20} "
+              f"{'CIV' if game else '   '} "
+              f"{'RUN' if runner else '   '} "
+              f"{turn_str}")
+
+    active_jobs = {k: v for k, v in jobs.items() if v.get("status") in ("launching", "running", "completing")}
+    pending_jobs = {k: v for k, v in jobs.items() if v.get("status") == "pending"}
+    done_jobs = {k: v for k, v in jobs.items() if v.get("status") == "done"}
+    failed_jobs = {k: v for k, v in jobs.items() if v.get("status") == "failed"}
+
+    if active_jobs:
+        print(f"\nActive Jobs")
+        print(f"  {'─' * 50}")
+        for jid, j in active_jobs.items():
+            elapsed = (time.time() - j.get("started_at", 0)) / 3600
+            print(f"  {j.get('machine_name', '?'):<12} {j.get('model', '?').rsplit('/', 1)[-1]:<20} "
+                  f"T{j.get('last_turn', '?'):>3}  {elapsed:.1f}h  {j.get('run_id', '?')}")
+
+    if pending_jobs:
+        print(f"\nPending: {len(pending_jobs)} jobs")
+    if done_jobs:
+        print(f"Done: {len(done_jobs)} jobs")
+    if failed_jobs:
+        print(f"Failed: {len(failed_jobs)} jobs")
+        for jid, j in failed_jobs.items():
+            print(f"  {jid}: {j.get('fail_reason', '?')}")
+    print()
+
+
+def cmd_kill_all(machines: dict[str, Machine]) -> None:
+    """Kill all runners and games on all machines."""
+    for name, m in machines.items():
+        print(f"  Killing {name}... ", end="", flush=True)
+        if not m.is_reachable():
+            print("OFFLINE")
+            continue
+        m.kill_runner()
+        m.kill_game()
+        print("done")
+
+    # Update state
+    state = load_state()
+    for jid, j in state.get("jobs", {}).items():
+        if j.get("status") in ("launching", "running"):
+            j["status"] = "failed"
+            j["fail_reason"] = "killed by operator"
+    save_state(state)
+    print("  All jobs marked as failed.")
+
+
+def cmd_launch(
+    machines: dict[str, Machine],
+    machine_names: list[str],
+    models: list[str],
+    scenarios: list[str],
+    runs: int,
+    config: dict[str, Any],
+) -> None:
+    """Launch benchmark runs and monitor until completion."""
+    defaults = config.get("defaults", {})
+    poll_interval = defaults.get("poll_interval", 30)
+    stall_alert_min = defaults.get("stall_alert_minutes", 30)
+    stall_kill_min = defaults.get("stall_kill_minutes", 60)
+    max_retries = defaults.get("max_retries", 2)
+
+    # Build job queue: assign models to machines round-robin
+    jobs: dict[str, Job] = {}
+    machine_list = [machines[n] for n in machine_names if n in machines]
+    job_idx = 0
+    for scenario in scenarios:
+        for model in models:
+            for run_num in range(1, runs + 1):
+                machine = machine_list[job_idx % len(machine_list)]
+                jid = f"{machine.name}_{model.rsplit('/', 1)[-1]}_{scenario}_{run_num}"
+                jobs[jid] = Job(
+                    id=jid,
+                    machine_name=machine.name,
+                    model=model,
+                    scenario=scenario,
+                    run_num=run_num,
+                )
+                job_idx += 1
+
+    # Persist initial state
+    state = {"started_at": time.time(), "jobs": {jid: j.to_dict() for jid, j in jobs.items()}}
+    save_state(state)
+
+    print(f"\nScheduled {len(jobs)} jobs across {len(machine_list)} machines:")
+    for jid, j in jobs.items():
+        print(f"  {j.machine_name:<12} {j.model.rsplit('/', 1)[-1]:<25} {j.scenario:<20} run {j.run_num}")
+    print()
+
+    # Track which machine is busy
+    machine_jobs: dict[str, str | None] = {n: None for n in machine_names}
+
+    while True:
+        # Dispatch pending jobs to idle machines
+        for jid, job in jobs.items():
+            if job.status != "pending":
+                continue
+            m_name = job.machine_name
+            if machine_jobs.get(m_name) is not None:
+                continue  # machine busy
+
+            m = machines[m_name]
+            log.info("Launching %s on %s", jid, m_name)
+            job.status = "launching"
+
+            # Pre-flight
+            if not m.is_reachable():
+                job.status = "failed"
+                job.fail_reason = "machine unreachable"
+                alert(f"Cannot launch {jid}: {m_name} unreachable")
+                continue
+
+            # Clean autosaves + stale completion sentinel
+            m.clean_autosaves()
+            m.clear_completion_sentinel()
+
+            # Kill any stale processes
+            if m.is_runner_running():
+                m.kill_runner()
+                time.sleep(3)
+
+            # Launch
+            ok = m.launch_runner(job.model, job.scenario, 1)  # 1 run at a time
+            if not ok:
+                job.status = "failed"
+                job.fail_reason = "launch command failed"
+                alert(f"Launch failed: {jid}")
+                continue
+
+            job.status = "running"
+            job.started_at = time.time()
+            job.last_turn_change = time.time()
+            machine_jobs[m_name] = jid
+            log.info("Running: %s", jid)
+
+        # Poll active jobs
+        for jid, job in jobs.items():
+            if job.status != "running":
+                continue
+
+            m = machines[job.machine_name]
+
+            # Check runner alive
+            if not m.is_runner_running():
+                # Runner died — check if game completed or crashed
+                time.sleep(5)
+                if not m.is_runner_running():  # confirm after delay
+                    if job.retries < max_retries:
+                        job.retries += 1
+                        job.status = "pending"  # will relaunch on next loop
+                        machine_jobs[job.machine_name] = None
+                        log.warning("Runner died on %s, retry %d/%d", jid, job.retries, max_retries)
+                        alert(f"Runner died: {jid} — retry {job.retries}/{max_retries}")
+                    else:
+                        job.status = "failed"
+                        job.fail_reason = "runner died after max retries"
+                        machine_jobs[job.machine_name] = None
+                        alert(f"Job failed: {jid} — runner died after {max_retries} retries")
+                    continue
+
+            # Check turn progress
+            turn = m.get_latest_turn()
+            if turn is not None:
+                if turn != job.last_turn:
+                    job.last_turn = turn
+                    job.last_turn_change = time.time()
+                else:
+                    stall_min = (time.time() - job.last_turn_change) / 60
+                    if stall_min > stall_kill_min:
+                        log.error("Stall timeout: %s at T%d for %.0fm", jid, turn, stall_min)
+                        m.kill_runner()
+                        m.kill_game()
+                        if job.retries < max_retries:
+                            job.retries += 1
+                            job.status = "pending"
+                            machine_jobs[job.machine_name] = None
+                            alert(f"Stall kill: {jid} T{turn} ({stall_min:.0f}m) — retry {job.retries}")
+                        else:
+                            job.status = "failed"
+                            job.fail_reason = f"stall at T{turn} for {stall_min:.0f}m"
+                            machine_jobs[job.machine_name] = None
+                            alert(f"Job failed: {jid} — stall timeout")
+                    elif stall_min > stall_alert_min:
+                        log.warning("Stall: %s at T%d for %.0fm", jid, turn, stall_min)
+
+        # Check for completed jobs via sentinel file (not process death)
+        for jid, job in jobs.items():
+            if job.status != "running":
+                continue
+            m = machines[job.machine_name]
+            if m.check_completed():
+                job.status = "done"
+                machine_jobs[job.machine_name] = None
+                m.clear_completion_sentinel()
+                elapsed = (time.time() - job.started_at) / 3600
+                log.info("Completed: %s T%d in %.1fh", jid, job.last_turn, elapsed)
+                alert(f"Done: {jid} | T{job.last_turn} | {elapsed:.1f}h")
+
+        # Persist state
+        state = {"started_at": state.get("started_at", time.time()),
+                 "jobs": {jid: j.to_dict() for jid, j in jobs.items()}}
+        save_state(state)
+
+        # Check if all done
+        statuses = [j.status for j in jobs.values()]
+        if all(s in ("done", "failed") for s in statuses):
+            done_count = statuses.count("done")
+            fail_count = statuses.count("failed")
+            print(f"\n{'═' * 50}")
+            print(f"  All jobs complete: {done_count} done, {fail_count} failed")
+            print(f"{'═' * 50}")
+            alert(f"CivBench batch complete: {done_count} done, {fail_count} failed")
+            break
+
+        # Print compact status line
+        running = sum(1 for j in jobs.values() if j.status == "running")
+        pending = sum(1 for j in jobs.values() if j.status == "pending")
+        done = sum(1 for j in jobs.values() if j.status == "done")
+        failed = sum(1 for j in jobs.values() if j.status == "failed")
+        active_info = " | ".join(
+            f"{j.machine_name}:T{j.last_turn}"
+            for j in jobs.values() if j.status == "running"
+        )
+        sys.stdout.write(
+            f"\r  [{done}✓ {running}▶ {pending}… {failed}✗] {active_info}    "
+        )
+        sys.stdout.flush()
+
+        time.sleep(poll_interval)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    parser = argparse.ArgumentParser(description="CivBench Orchestrator")
+    sub = parser.add_subparsers(dest="command")
+
+    # preflight
+    p_pre = sub.add_parser("preflight", help="Validate machines are ready")
+    p_pre.add_argument("--machines", help="Comma-separated machine names")
+
+    # launch
+    p_launch = sub.add_parser("launch", help="Launch benchmark runs")
+    p_launch.add_argument("--scenarios", required=True, help="Comma-separated scenario IDs")
+    p_launch.add_argument("--models", required=True, help="Comma-separated model aliases or full IDs")
+    p_launch.add_argument("--runs", type=int, default=3, help="Runs per (model, scenario)")
+    p_launch.add_argument("--machines", required=True, help="Comma-separated machine names")
+
+    # status
+    sub.add_parser("status", help="Show fleet status")
+
+    # kill-all
+    sub.add_parser("kill-all", help="Kill all runners and games")
+
+    # resume
+    sub.add_parser("resume", help="Resume from saved state")
+
+    args = parser.parse_args()
+    if not args.command:
+        parser.print_help()
+        return
+
+    config = load_config()
+    machine_defs = config.get("machines", {})
+    defaults = config.get("defaults", {})
+    aliases = config.get("model_aliases", {})
+
+    # Build Machine objects
+    machines: dict[str, Machine] = {}
+    for name, mdef in machine_defs.items():
+        machines[name] = Machine(
+            name=name,
+            ssh_target=mdef["ssh"],
+            os=mdef["os"],
+            repo=mdef["repo"],
+            display_env=mdef.get("display_env", {}),
+            ssh_timeout=defaults.get("ssh_timeout", 20),
+        )
+
+    if args.command == "preflight":
+        names = args.machines.split(",") if args.machines else None
+        ok = cmd_preflight(machines, names)
+        sys.exit(0 if ok else 1)
+
+    elif args.command == "status":
+        cmd_status(machines)
+
+    elif args.command == "kill-all":
+        cmd_kill_all(machines)
+
+    elif args.command == "launch":
+        machine_names = [n.strip() for n in args.machines.split(",")]
+        unknown = [n for n in machine_names if n not in machines]
+        if unknown:
+            log.error("Unknown machines: %s (available: %s)", unknown, list(machines.keys()))
+            sys.exit(1)
+        scenario_list = [s.strip() for s in args.scenarios.split(",")]
+        model_list = [aliases.get(m.strip(), m.strip()) for m in args.models.split(",")]
+        cmd_launch(machines, machine_names, model_list, scenario_list, args.runs, config)
+
+    elif args.command == "resume":
+        state = load_state()
+        if not state.get("jobs"):
+            print("No saved state to resume.")
+            return
+        # Rebuild jobs and relaunch pending/running ones
+        print("Resume not yet implemented — use launch with explicit args")
+
+
+if __name__ == "__main__":
+    main()
