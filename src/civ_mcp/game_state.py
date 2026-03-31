@@ -1432,11 +1432,16 @@ class GameState:
                     cb.currently_building != "NONE"
                     and ca.currently_building != cb.currently_building
                 ):
+                    now = ca.currently_building
+                    if now in ("NONE", "nothing"):
+                        now = "nothing"
+                    elif now == "CORRUPTED_QUEUE":
+                        now = "nothing (queue invalidated — set new production)"
                     events.append(
                         lq.TurnEvent(
                             priority=2,
                             category="city",
-                            message=f"{ca.name} finished building {cb.currently_building}. Now: {ca.currently_building if ca.currently_building != 'NONE' else 'nothing (queue empty)'}.",
+                            message=f"{ca.name} finished building {cb.currently_building}. Now: {now}.",
                         )
                     )
 

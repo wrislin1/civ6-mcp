@@ -379,7 +379,7 @@ def narrate_cities(
             )
         if c.currently_building == "CORRUPTED_QUEUE":
             lines.append(
-                f"    !! CORRUPTED QUEUE: ghost entry (hash=0). Load earlier autosave to fix."
+                f"    !! QUEUE EMPTY (stale entry cleared) — set new production with set_city_production"
             )
         for t in c.attack_targets:
             lines.append(f"    >> CAN ATTACK: {t}")

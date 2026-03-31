@@ -30,7 +30,10 @@ for i, c in Players[me]:GetCities():Members() do
     if bq:GetSize() > 0 then
         local h = bq:GetCurrentProductionTypeHash()
         if h == 0 then
-            producing = "CORRUPTED_QUEUE"
+            -- Ghost entry (Babylon eureka can obsolete queued items).
+            -- Try to clear it so the city reports as idle.
+            pcall(function() bq:RemoveAt(0) end)
+            producing = "nothing"
         else
             producing = hashName[h] or "UNKNOWN"
         end
