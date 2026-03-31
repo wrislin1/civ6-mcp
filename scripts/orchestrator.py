@@ -813,7 +813,21 @@ def cmd_launch(
         )
         sys.stdout.flush()
 
+        last_poll = time.time()
         time.sleep(poll_interval)
+
+        # Detect sleep/suspend: if wall clock jumped far beyond poll interval,
+        # the host was asleep. Reset stall timers so we don't kill healthy jobs.
+        wake_gap = time.time() - last_poll - poll_interval
+        if wake_gap > poll_interval * 2:
+            log.warning(
+                "Time jump detected (%.0fs gap) — likely sleep/suspend. "
+                "Resetting stall timers for all running jobs.",
+                wake_gap + poll_interval,
+            )
+            for job in jobs.values():
+                if job.status == "running":
+                    job.last_turn_change = time.time()
 
 
 # ---------------------------------------------------------------------------
