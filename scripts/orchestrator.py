@@ -587,6 +587,52 @@ def cmd_preflight(
         )
         print(f"    {'●' if runner else '○'} Runner: {'active' if runner else 'idle'}")
 
+        # Steam running (Linux only — required for game launch)
+        if m.os == "linux":
+            rc, out = m.ssh("pgrep -x steam >/dev/null 2>&1 && echo YES || echo NO")
+            steam_ok = "YES" in out
+            print(
+                f"    {'✓' if steam_ok else '✗'} Steam: "
+                f"{'running' if steam_ok else 'NOT RUNNING — start in desktop session'}"
+            )
+            if not steam_ok:
+                all_ok = False
+
+        # Stale processes (orphans from previous runs)
+        if not game and not runner:
+            if m.os == "windows":
+                ps = "(Get-Process python,'civ-mcp' -EA Silent | Measure).Count"
+                encoded = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
+                rc, out = m.ssh(f"powershell -EncodedCommand {encoded}", timeout=15)
+            else:
+                rc, out = m.ssh("pgrep -c 'Civ6|Civ6Sub|civ-mcp' 2>/dev/null || echo 0")
+            last_word = out.strip().split()[-1] if out.strip() else "0"
+            count = int(last_word) if last_word.isdigit() else 0
+            if count > 0:
+                print(f"    ✗ Stale processes: {count} orphan(s) — kill before launch")
+                all_ok = False
+            else:
+                print("    ✓ No stale processes")
+
+        # Stale telemetry / heartbeat files
+        if m.os == "windows":
+            rc, out = m.ssh(
+                'powershell -Command "'
+                "(Get-ChildItem $env:USERPROFILE\\.civ6-mcp -File -EA Silent | Measure).Count"
+                '"',
+                timeout=10,
+            )
+        else:
+            rc, out = m.ssh("ls ~/.civ6-mcp/ 2>/dev/null | wc -l")
+        file_count = int(out.strip()) if out.strip().isdigit() else 0
+        if file_count == 0:
+            print("    ✓ Telemetry: clean")
+        else:
+            print(
+                f"    ! Telemetry: {file_count} stale file(s)"
+                " — will be cleared at launch"
+            )
+
         # Save files
         if m.os == "windows":
             rc, out = m.ssh(
@@ -601,6 +647,25 @@ def cmd_preflight(
             f"    {'✓' if has_saves else '✗'} Saves: {'present' if has_saves else 'MISSING'}"
         )
         if not has_saves:
+            all_ok = False
+
+        # API credentials (evals/.env)
+        if m.os == "windows":
+            rc, out = m.ssh(
+                f'cd /d {m.repo} && findstr "AZURE_OPENAI_API_KEY" evals\\.env >nul 2>nul '
+                f"&& echo CREDS_OK || echo CREDS_MISSING"
+            )
+        else:
+            rc, out = m.ssh(
+                f"cd {m.repo} && grep -q AZURE_OPENAI_API_KEY evals/.env 2>/dev/null "
+                f"&& echo CREDS_OK || echo CREDS_MISSING"
+            )
+        creds_ok = "CREDS_OK" in out
+        print(
+            f"    {'✓' if creds_ok else '✗'} API credentials: "
+            f"{'present' if creds_ok else 'MISSING in evals/.env'}"
+        )
+        if not creds_ok:
             all_ok = False
 
     print()
