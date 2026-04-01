@@ -13,6 +13,7 @@ export interface Filters {
   victoryTypes: Set<string>;
   scenarios: Set<string>;
   difficulties: Set<string>;
+  evalTracks: Set<string>;
 }
 
 export type SortKey = "updated" | "score" | "turns";
@@ -34,12 +35,14 @@ const EMPTY_FILTERS: Filters = {
   victoryTypes: new Set(),
   scenarios: new Set(),
   difficulties: new Set(),
+  evalTracks: new Set(),
 };
 
 export function hasActiveFilters(f: Filters): boolean {
   return (
     f.status.size + f.civs.size + f.providers.size + f.models.size +
-    f.victoryTypes.size + f.scenarios.size + f.difficulties.size > 0
+    f.victoryTypes.size + f.scenarios.size + f.difficulties.size +
+    f.evalTracks.size > 0
   );
 }
 
@@ -110,7 +113,12 @@ export function useGameFilters(
     ].sort(
       (a, b) => (DIFFICULTY_META[a]?.order ?? 99) - (DIFFICULTY_META[b]?.order ?? 99),
     );
-    return { civs, providers, models, victoryTypes, scenarios, difficulties };
+    const evalTracks = [
+      ...new Set(
+        games.map((g) => g.evalTrack).filter((t): t is string => !!t),
+      ),
+    ].sort();
+    return { civs, providers, models, victoryTypes, scenarios, difficulties, evalTracks };
   }, [games]);
 
   // Filter
@@ -130,6 +138,8 @@ export function useGameFilters(
       if (filters.scenarios.size > 0 && (!game.scenarioId || !filters.scenarios.has(game.scenarioId)))
         return false;
       if (filters.difficulties.size > 0 && (!game.difficulty || !filters.difficulties.has(game.difficulty)))
+        return false;
+      if (filters.evalTracks.size > 0 && (!game.evalTrack || !filters.evalTracks.has(game.evalTrack)))
         return false;
       return true;
     });

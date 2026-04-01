@@ -32,3 +32,19 @@ export function deriveVictoryLabel(game: DiaryFile): string | null {
   if (!game.outcome?.victoryType) return null;
   return getVictoryTypeMeta(game.outcome.victoryType).label;
 }
+
+const TRACK_LABELS: Record<string, string> = {
+  civbench_standard: "Standard",
+  civbench_open: "Open",
+  development: "Development",
+};
+
+export function formatEvalTrack(track: string): string {
+  return TRACK_LABELS[track] ?? track;
+}
+
+export function formatExcludeReason(reason: string): string {
+  return reason
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}

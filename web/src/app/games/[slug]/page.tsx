@@ -48,7 +48,9 @@ export default function GameDetailPage() {
     rawTab === "spatial" || rawTab === "map" ? "map" :
     "diary";
 
-  const { runId, evalFiles } = useDiarySummary(filename);
+  const { runId, evalFiles, evalTrack, gitDescribe } = useDiarySummary(filename);
+  // excludeReason comes from the summary too but isn't in DiarySummary yet —
+  // we'll read it from the games list hook if needed in the future
   const logUrl = BLOB_BASE && runId ? `${BLOB_BASE}/runs/${runId}/log.jsonl` : null;
 
   const setTab = (t: Tab) => {
@@ -65,6 +67,17 @@ export default function GameDetailPage() {
           <TabButton tab="diary" active={tab} label="Diary" setTab={setTab} />
           <TabButton tab="map" active={tab} label="Map" setTab={setTab} />
           <div className="ml-auto flex items-center gap-2">
+            {runId && (
+              <span className="font-mono text-[10px] text-marble-400">{runId}</span>
+            )}
+            {evalTrack && evalTrack !== "civbench_standard" && (
+              <span className="rounded-sm bg-marble-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-marble-500">
+                {evalTrack === "development" ? "Dev" : evalTrack}
+              </span>
+            )}
+            {gitDescribe && (
+              <span className="font-mono text-[10px] text-marble-300">{gitDescribe}</span>
+            )}
             {logUrl && (
               <a
                 href={logUrl}

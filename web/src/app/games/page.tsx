@@ -19,7 +19,7 @@ import {
 } from "@/components/game-status-badge";
 import { SCENARIOS, DIFFICULTY_META } from "@/lib/scenarios";
 import { chipBase, chipDefault, chipActive } from "@/lib/chip-styles";
-import { formatTimeAgo, deriveProvider } from "@/lib/game-utils";
+import { formatTimeAgo, deriveProvider, formatEvalTrack } from "@/lib/game-utils";
 import {
   useGameFilters,
   SORT_OPTIONS,
@@ -377,6 +377,17 @@ function GamesPageInner() {
                   />
                 )}
 
+                {/* Eval track dropdown */}
+                {filterOptions.evalTracks.length > 1 && (
+                  <DropdownFilter
+                    label="Track"
+                    options={filterOptions.evalTracks}
+                    selected={filters.evalTracks}
+                    onToggle={(v) => toggleFilter("evalTracks", v)}
+                    renderOption={(t) => formatEvalTrack(t)}
+                  />
+                )}
+
                 {active && (
                   <button
                     className="inline-flex items-center gap-0.5 text-xs font-medium text-marble-500 transition-colors hover:text-marble-700"
@@ -465,10 +476,12 @@ function GamesPageInner() {
                           ? getModelMeta(game.agentModel)
                           : null;
 
+                        const isExcluded = !!game.excludeReason;
+
                         return (
                           <tr
                             key={game.filename}
-                            className="border-b border-marble-300/30 last:border-0 transition-colors hover:bg-marble-100/50 cursor-pointer focus-within:bg-marble-100/50"
+                            className={`border-b border-marble-300/30 last:border-0 transition-colors hover:bg-marble-100/50 cursor-pointer focus-within:bg-marble-100/50 ${isExcluded ? "opacity-50" : ""}`}
                             style={{
                               borderLeftWidth: 5,
                               borderLeftColor: getGameStatusColor(
@@ -515,6 +528,11 @@ function GamesPageInner() {
                                           &middot; {game.difficulty}
                                         </span>
                                       )}
+                                    </p>
+                                  )}
+                                  {game.runId && (
+                                    <p className="mt-0.5 font-mono text-[10px] text-marble-400">
+                                      {game.runId}
                                     </p>
                                   )}
                                 </div>

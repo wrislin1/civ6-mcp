@@ -65,12 +65,14 @@ export const MODEL_REGISTRY: Record<string, ModelMeta> = {
   "claude-opus-4-20250514": m("claude-opus-4-20250514", "Claude Opus 4", "anthropic"),
   // ── Google ──
   "gemini-3.1-pro-preview": m("gemini-3.1-pro-preview", "Gemini 3.1 Pro", "google"),
+  "gemini-3.1-flash-lite-preview": m("gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash Lite", "google"),
   "gemini-3-pro-preview": m("gemini-3-pro-preview", "Gemini 3 Pro", "google"),
   "gemini-3-flash-preview": m("gemini-3-flash-preview", "Gemini 3 Flash", "google"),
   "gemini-2.5-pro": m("gemini-2.5-pro", "Gemini 2.5 Pro", "google"),
   "gemini-2.5-flash": m("gemini-2.5-flash", "Gemini 2.5 Flash", "google"),
   "gemini-2.5-flash-lite": m("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", "google"),
   // ── OpenAI ──
+  "gpt-5.4": m("gpt-5.4", "GPT-5.4", "openai"),
   "gpt-5.2": m("gpt-5.2", "GPT-5.2", "openai"),
   "gpt-5.1": m("gpt-5.1", "GPT-5.1", "openai"),
   "gpt-5": m("gpt-5", "GPT-5", "openai"),

@@ -390,6 +390,10 @@ export interface DiaryFile {
   mapType?: string;
   mapSize?: string;
   evalTrack?: string;
+  // Data provenance
+  runId?: string;
+  excludeReason?: string;
+  gitDescribe?: string;
 }
 
 // === Shared helpers ===

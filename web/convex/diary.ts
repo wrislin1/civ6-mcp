@@ -119,6 +119,7 @@ export const getGameSummary = query({
       gameSpeed: game.gameSpeed ?? null,
       evalTrack: game.evalTrack ?? null,
       runId: game.runId ?? null,
+      gitDescribe: game.gitDescribe ?? null,
       evalFiles: game.evalFiles ?? null,
     };
   },

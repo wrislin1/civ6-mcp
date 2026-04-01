@@ -33,6 +33,9 @@ export function useDiaryListConvex(): DiaryFile[] {
     mapType: g.mapType ?? undefined,
     mapSize: g.mapSize ?? undefined,
     evalTrack: g.evalTrack ?? undefined,
+    runId: g.runId ?? undefined,
+    excludeReason: g.excludeReason ?? undefined,
+    gitDescribe: g.gitDescribe ?? undefined,
   }));
 }
 
@@ -62,6 +65,7 @@ export interface DiarySummary {
   gameSpeed: string | null;
   evalTrack: string | null;
   runId: string | null;
+  gitDescribe: string | null;
   evalFiles: string[] | null;
 }
 
@@ -99,6 +103,7 @@ export function useDiarySummaryConvex(filename: string | null): DiarySummary {
     gameSpeed: summary?.gameSpeed ?? null,
     evalTrack: summary?.evalTrack ?? null,
     runId: summary?.runId ?? null,
+    gitDescribe: summary?.gitDescribe ?? null,
     evalFiles: summary?.evalFiles ?? null,
   };
 }

@@ -181,6 +181,7 @@ function useDiarySummaryFs(filename: string | null): DiarySummary {
     gameSpeed: null,
     evalTrack: null,
     runId: null,
+    gitDescribe: null,
     evalFiles: null,
   };
 }
