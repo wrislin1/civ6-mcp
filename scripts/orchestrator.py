@@ -780,8 +780,10 @@ def cmd_launch(
                 alert(f"Cannot launch {jid}: {m_name} unreachable")
                 continue
 
-            # Clean autosaves + stale completion sentinel
-            m.clean_autosaves()
+            # Only clean autosaves on first attempt — retries should
+            # resume from the existing autosave, not restart from T1.
+            if job.retries == 0:
+                m.clean_autosaves()
             m.clear_completion_sentinel()
 
             # Kill any stale processes
