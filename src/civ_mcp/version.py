@@ -14,7 +14,9 @@ def _get_version() -> str:
     pyproject = Path(__file__).resolve().parent.parent.parent / "pyproject.toml"
     if pyproject.exists():
         for line in pyproject.read_text().splitlines():
-            if line.strip().startswith("version =") or line.strip().startswith("version="):
+            if line.strip().startswith("version =") or line.strip().startswith(
+                "version="
+            ):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
     return "0.0.0-dev"
 

@@ -137,7 +137,7 @@ def build_scenario_prompt(
     if resume_save:
         parts.append(
             f"### Getting Started\n\n"
-            f"Call `load_game_save(\"{load_save}\")` to load the autosave and "
+            f'Call `load_game_save("{load_save}")` to load the autosave and '
             f"continue the game. Wait ~10 seconds for the save to load, then call "
             f"`get_game_overview` to orient yourself and begin playing.\n\n"
         )
@@ -152,7 +152,7 @@ def build_scenario_prompt(
         f"### Save Management\n\n"
         f"The game auto-saves every turn as `0_MCP_NNNN`. If you need "
         f"to recover from a crash or bad state, call `list_saves` to find the "
-        f"most recent MCP autosave, then `load_game_save(\"0_MCP_NNNN\")` "
+        f'most recent MCP autosave, then `load_game_save("0_MCP_NNNN")` '
         f"to reload it. Do NOT load `{start_save}` to recover — that is the "
         f"Turn 1 starting save and will erase all progress."
     )

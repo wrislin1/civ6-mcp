@@ -108,12 +108,16 @@ def _get_fs() -> Any:
             _fs_cache = fsspec.filesystem("az", account_name=account, account_key=key)
         elif account:
             from azure.identity import DefaultAzureCredential
+
             _fs_cache = fsspec.filesystem(
                 "az", account_name=account, credential=DefaultAzureCredential()
             )
         else:
-            print("Error: Need AZURE_STORAGE_ACCOUNT_NAME (+ KEY) or "
-                  "AZURE_STORAGE_CONNECTION_STRING in evals/.env", file=sys.stderr)
+            print(
+                "Error: Need AZURE_STORAGE_ACCOUNT_NAME (+ KEY) or "
+                "AZURE_STORAGE_CONNECTION_STRING in evals/.env",
+                file=sys.stderr,
+            )
             sys.exit(1)
     return _fs_cache
 
@@ -220,21 +224,32 @@ def cmd_games(args):
     if args.model:
         games = _games_by_model(args.model, games)
 
-    headers = ["Model", "Scenario", "Turns", "Score", "Result", "Victory", "Winner", "RunID"]
+    headers = [
+        "Model",
+        "Scenario",
+        "Turns",
+        "Score",
+        "Result",
+        "Victory",
+        "Winner",
+        "RunID",
+    ]
     align = ["<", "<", ">", ">", "<", "<", "<", "<"]
     rows = []
     for g in games:
         o = g.get("outcome") or {}
-        rows.append([
-            g.get("agentModel") or "?",
-            g.get("scenarioId") or "?",
-            int(g.get("count") or 0),
-            int(g.get("score") or 0),
-            o.get("result") or g.get("status", "?"),
-            o.get("victoryType") or "",
-            o.get("winnerCiv") or "",
-            g.get("runId") or "?",
-        ])
+        rows.append(
+            [
+                g.get("agentModel") or "?",
+                g.get("scenarioId") or "?",
+                int(g.get("count") or 0),
+                int(g.get("score") or 0),
+                o.get("result") or g.get("status", "?"),
+                o.get("victoryType") or "",
+                o.get("winnerCiv") or "",
+                g.get("runId") or "?",
+            ]
+        )
     _table(headers, rows, align)
 
 
@@ -294,9 +309,11 @@ def cmd_tools(args):
         o = g.get("outcome") or {}
         result = o.get("result") or g.get("status", "?")
 
-        print(f"\n{'='*70}")
-        print(f"  {rid} | {model} | {g.get('label','?')} | {result} | T{int(g.get('count') or 0)}")
-        print(f"{'='*70}")
+        print(f"\n{'=' * 70}")
+        print(
+            f"  {rid} | {model} | {g.get('label', '?')} | {result} | T{int(g.get('count') or 0)}"
+        )
+        print(f"{'=' * 70}")
 
         entries = cloud_log(rid)
         stats = _analyze_log(entries)
@@ -307,15 +324,21 @@ def cmd_tools(args):
         # Category breakdown
         cats = stats["categories"]
         total = stats["total"]
-        print(f"\n  Total calls: {total} | Errors: {stats['errors']} ({_pct(stats['errors'], total)})")
-        print(f"  Query: {cats.get('query',0)} ({_pct(cats.get('query',0), total)}) | "
-              f"Action: {cats.get('action',0)} ({_pct(cats.get('action',0), total)}) | "
-              f"Turn: {cats.get('turn',0)} ({_pct(cats.get('turn',0), total)})")
+        print(
+            f"\n  Total calls: {total} | Errors: {stats['errors']} ({_pct(stats['errors'], total)})"
+        )
+        print(
+            f"  Query: {cats.get('query', 0)} ({_pct(cats.get('query', 0), total)}) | "
+            f"Action: {cats.get('action', 0)} ({_pct(cats.get('action', 0), total)}) | "
+            f"Turn: {cats.get('turn', 0)} ({_pct(cats.get('turn', 0), total)})"
+        )
 
         # Calls per turn
         tc = stats["per_turn_counts"]
-        print(f"\n  Calls/turn: min={tc[0]}  med={tc[len(tc)//2]}  "
-              f"mean={sum(tc)/len(tc):.1f}  p95={_percentile(tc, 0.95):.0f}  max={tc[-1]}")
+        print(
+            f"\n  Calls/turn: min={tc[0]}  med={tc[len(tc) // 2]}  "
+            f"mean={sum(tc) / len(tc):.1f}  p95={_percentile(tc, 0.95):.0f}  max={tc[-1]}"
+        )
 
         # Top 20 tools
         print(f"\n  Top 20 tools:")
@@ -325,7 +348,7 @@ def cmd_tools(args):
         for tool, count in stats["tools"].most_common(20):
             errs = stats["error_tools"].get(tool, 0)
             durs = sorted(stats["durations_by_tool"].get(tool, []))
-            med = f"{durs[len(durs)//2]:.0f}" if durs else "-"
+            med = f"{durs[len(durs) // 2]:.0f}" if durs else "-"
             rows.append([tool, count, _pct(count, total), errs, med])
         _table(headers, rows, align)
 
@@ -334,7 +357,9 @@ def cmd_tools(args):
             print(f"\n  Top error tools:")
             for tool, count in stats["error_tools"].most_common(10):
                 total_for_tool = stats["tools"][tool]
-                print(f"    {tool:<30} {count:>4} errors / {total_for_tool:>4} calls ({_pct(count, total_for_tool)})")
+                print(
+                    f"    {tool:<30} {count:>4} errors / {total_for_tool:>4} calls ({_pct(count, total_for_tool)})"
+                )
 
         # Slowest tools (by median)
         print(f"\n  Slowest tools (median ms):")
@@ -369,7 +394,9 @@ def cmd_compare(args):
     for model in model_names:
         gg = model_games[model]
         wins = sum(1 for g in gg if (g.get("outcome") or {}).get("result") == "victory")
-        defeats = sum(1 for g in gg if (g.get("outcome") or {}).get("result") == "defeat")
+        defeats = sum(
+            1 for g in gg if (g.get("outcome") or {}).get("result") == "defeat"
+        )
         live = sum(1 for g in gg if g.get("status") == "live" or not g.get("outcome"))
         print(f"    {model:<20} {wins}W / {defeats}L / {live}live  ({len(gg)} games)")
 
@@ -462,7 +489,15 @@ def cmd_compare(args):
     print(f"\n  Yield Milestones (agent player)")
     print("  " + "-" * 50)
     milestones = [50, 100, 150, 200, 250]
-    for metric in ["score", "science", "culture", "gold", "military", "cities", "territory"]:
+    for metric in [
+        "score",
+        "science",
+        "culture",
+        "gold",
+        "military",
+        "cities",
+        "territory",
+    ]:
         print(f"\n    {metric}:")
         headers = ["Turn"] + model_names
         align = [">"] + [">"] * len(model_names)
@@ -473,7 +508,9 @@ def cmd_compare(args):
                 # Average across games for this model
                 game_vals = []
                 for g in model_games[model]:
-                    summary = convex_query("diary:getGameSummary", {"gameId": g["gameId"]})
+                    summary = convex_query(
+                        "diary:getGameSummary", {"gameId": g["gameId"]}
+                    )
                     if not summary or not summary.get("turnSeries"):
                         continue
                     ts = summary["turnSeries"]
@@ -504,10 +541,12 @@ def cmd_strategy(args):
     model = g.get("agentModel") or "?"
     o = g.get("outcome") or {}
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  Strategy Analysis: {rid} | {model}")
-    print(f"  {g.get('label','?')} ({g.get('leader','?')}) | {o.get('result', g.get('status','?'))}")
-    print(f"{'='*70}")
+    print(
+        f"  {g.get('label', '?')} ({g.get('leader', '?')}) | {o.get('result', g.get('status', '?'))}"
+    )
+    print(f"{'=' * 70}")
 
     entries = cloud_log(rid)
     tool_calls = [e for e in entries if e.get("type") == "tool_call"]
@@ -534,14 +573,16 @@ def cmd_strategy(args):
         gaps = [turns[i + 1] - turns[i] for i in range(len(turns) - 1)]
         max_gap = max(gaps) if gaps else 0
         avg_gap = sum(gaps) / len(gaps) if gaps else 0
-        rows.append([
-            tool,
-            len(turns),
-            turns[0],
-            turns[-1],
-            max_gap,
-            f"{avg_gap:.0f}",
-        ])
+        rows.append(
+            [
+                tool,
+                len(turns),
+                turns[0],
+                turns[-1],
+                max_gap,
+                f"{avg_gap:.0f}",
+            ]
+        )
     _table(headers, rows, align)
 
     # --- Large gaps (>30 turns without checking) ---
@@ -555,7 +596,7 @@ def cmd_strategy(args):
         for i in range(len(turns) - 1):
             gap = turns[i + 1] - turns[i]
             if gap > 30:
-                print(f"    {tool}: T{turns[i]} → T{turns[i+1]} ({gap} turns)")
+                print(f"    {tool}: T{turns[i]} → T{turns[i + 1]} ({gap} turns)")
                 found_gap = True
     if not found_gap:
         print("    (none)")
@@ -587,7 +628,9 @@ def cmd_strategy(args):
                 for metric in ["score", "science", "culture", "military"]:
                     series = pdata.get("metrics", {}).get(metric, [])
                     if series:
-                        print(f"    {metric:<12}: {_sparkline(series)}  (final: {series[-1]:.0f})")
+                        print(
+                            f"    {metric:<12}: {_sparkline(series)}  (final: {series[-1]:.0f})"
+                        )
 
     # --- Research changes ---
     print(f"\n  Research Activity")
@@ -599,14 +642,14 @@ def cmd_strategy(args):
         for e in research_calls[:10]:
             p = e.get("params", {})
             tech = p.get("tech") or p.get("tech_or_civic") or "?"
-            print(f"      T{e.get('turn',0):>3}: {tech}")
+            print(f"      T{e.get('turn', 0):>3}: {tech}")
         if len(research_calls) > 15:
             print(f"      ... ({len(research_calls) - 15} more)")
         if len(research_calls) > 10:
             for e in research_calls[-5:]:
                 p = e.get("params", {})
                 tech = p.get("tech") or p.get("tech_or_civic") or "?"
-                print(f"      T{e.get('turn',0):>3}: {tech}")
+                print(f"      T{e.get('turn', 0):>3}: {tech}")
 
     # --- Diary reflections (planning field) ---
     print(f"\n  Agent Planning Reflections (from diary)")
@@ -638,7 +681,9 @@ def cmd_strategy(args):
             error_by_turn[bucket] += 1
         print(f"    Errors by era:")
         for bucket in sorted(error_by_turn.keys()):
-            print(f"      T{bucket:>3}-T{bucket+49:>3}: {error_by_turn[bucket]:>3} errors")
+            print(
+                f"      T{bucket:>3}-T{bucket + 49:>3}: {error_by_turn[bucket]:>3} errors"
+            )
 
         # Common error messages
         error_msgs = Counter()
@@ -694,16 +739,20 @@ def cmd_turns(args):
                 for metric in metrics:
                     series = pdata.get("metrics", {}).get(metric, [])
                     if series:
-                        sliced = series[max(0, start - 1):end]
+                        sliced = series[max(0, start - 1) : end]
                         mn = min(sliced) if sliced else 0
                         mx = max(sliced) if sliced else 0
-                        print(f"    {metric:<15}: {_sparkline(sliced, 50)}  ({mn:.0f} → {mx:.0f})")
+                        print(
+                            f"    {metric:<15}: {_sparkline(sliced, 50)}  ({mn:.0f} → {mx:.0f})"
+                        )
 
     # Per-turn tool heatmap
     print(f"\n  Tool calls per turn (T{start}-T{end}):")
     total_per_turn = [(t, sum(per_turn[t].values())) for t in turns]
     vals = [v for _, v in total_per_turn]
-    print(f"    Total calls:  {_sparkline(vals, 50)}  (min={min(vals)} max={max(vals)})")
+    print(
+        f"    Total calls:  {_sparkline(vals, 50)}  (min={min(vals)} max={max(vals)})"
+    )
 
     # Show turns with unusually high call counts
     mean = sum(vals) / len(vals)
@@ -726,7 +775,9 @@ def cmd_turns(args):
             errors_per_turn[e.get("turn", 0)] += 1
     if errors_per_turn:
         err_vals = [errors_per_turn.get(t, 0) for t in turns]
-        print(f"\n    Errors/turn:  {_sparkline(err_vals, 50)}  (total={sum(err_vals)})")
+        print(
+            f"\n    Errors/turn:  {_sparkline(err_vals, 50)}  (total={sum(err_vals)})"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -735,25 +786,56 @@ def cmd_turns(args):
 
 # Tools classified by attention type for sensorium analysis
 REACTIVE_TOOLS = {
-    "unit_action", "set_city_production", "set_research", "end_turn",
-    "respond_to_diplomacy", "respond_to_trade", "promote_unit",
-    "choose_pantheon", "choose_dedication", "set_policies",
-    "skip_remaining_units", "purchase_item", "purchase_tile",
-    "found_religion", "send_envoy", "dismiss_popup",
+    "unit_action",
+    "set_city_production",
+    "set_research",
+    "end_turn",
+    "respond_to_diplomacy",
+    "respond_to_trade",
+    "promote_unit",
+    "choose_pantheon",
+    "choose_dedication",
+    "set_policies",
+    "skip_remaining_units",
+    "purchase_item",
+    "purchase_tile",
+    "found_religion",
+    "send_envoy",
+    "dismiss_popup",
 }
 PROACTIVE_TOOLS = {
-    "get_victory_progress", "get_religion_spread", "get_diplomacy",
-    "get_great_people", "get_strategic_map", "get_global_settle_advisor",
-    "get_empire_resources", "get_trade_routes", "get_world_congress",
-    "get_city_states", "get_spies", "get_builder_tasks",
-    "get_district_advisor", "get_wonder_advisor",
+    "get_victory_progress",
+    "get_religion_spread",
+    "get_diplomacy",
+    "get_great_people",
+    "get_strategic_map",
+    "get_global_settle_advisor",
+    "get_empire_resources",
+    "get_trade_routes",
+    "get_world_congress",
+    "get_city_states",
+    "get_spies",
+    "get_builder_tasks",
+    "get_district_advisor",
+    "get_wonder_advisor",
 }
 ORIENTATION_TOOLS = {
-    "get_game_overview", "get_units", "get_cities", "get_map_area",
-    "get_notifications", "get_tech_civics", "get_city_production",
-    "get_policies", "get_governors", "get_purchasable_tiles",
-    "get_settle_advisor", "get_pathing_estimate", "get_unit_promotions",
-    "get_pending_diplomacy", "get_pending_trades", "get_trade_destinations",
+    "get_game_overview",
+    "get_units",
+    "get_cities",
+    "get_map_area",
+    "get_notifications",
+    "get_tech_civics",
+    "get_city_production",
+    "get_policies",
+    "get_governors",
+    "get_purchasable_tiles",
+    "get_settle_advisor",
+    "get_pathing_estimate",
+    "get_unit_promotions",
+    "get_pending_diplomacy",
+    "get_pending_trades",
+    "get_trade_destinations",
     "get_trade_options",
 }
 
@@ -789,9 +871,9 @@ def cmd_sensorium(args):
         model = g.get("agentModel") or "?"
         o = g.get("outcome") or {}
 
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"  Sensorium Analysis: {rid} | {model} | T{int(g.get('count') or 0)}")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         entries = cloud_log(rid)
         tool_calls = [e for e in entries if e.get("type") == "tool_call"]
@@ -814,7 +896,9 @@ def cmd_sensorium(args):
 
         proactive_ratio = attn.get("proactive", 0) / total if total else 0
         print(f"\n  Proactive attention ratio: {proactive_ratio:.3f}")
-        print(f"  Proactive calls per 100 turns: {100 * attn.get('proactive', 0) / n_turns:.1f}")
+        print(
+            f"  Proactive calls per 100 turns: {100 * attn.get('proactive', 0) / n_turns:.1f}"
+        )
 
         # --- Per-domain monitoring frequency ---
         print(f"\n  Domain Monitoring (calls & gaps)")
@@ -832,9 +916,9 @@ def cmd_sensorium(args):
         align = ["<", ">", ">", ">", ">", ">", ">"]
         rows = []
         for domain, tools in domains.items():
-            domain_turns = sorted(set(
-                e.get("turn", 0) for e in tool_calls if e["tool"] in tools
-            ))
+            domain_turns = sorted(
+                set(e.get("turn", 0) for e in tool_calls if e["tool"] in tools)
+            )
             count = sum(1 for e in tool_calls if e["tool"] in tools)
             per100 = f"{100 * count / n_turns:.1f}" if n_turns else "0"
 
@@ -842,8 +926,10 @@ def cmd_sensorium(args):
                 rows.append([domain, 0, "0", "-", "-", "-", "100%"])
                 continue
 
-            gaps = [domain_turns[i + 1] - domain_turns[i]
-                    for i in range(len(domain_turns) - 1)]
+            gaps = [
+                domain_turns[i + 1] - domain_turns[i]
+                for i in range(len(domain_turns) - 1)
+            ]
             max_gap = max(gaps) if gaps else 0
             # Blind%: fraction of turns with no check in surrounding ±10 turns
             checked = set()
@@ -851,19 +937,29 @@ def cmd_sensorium(args):
                 for dt in range(-5, 6):
                     checked.add(t + dt)
             blind_pct = 1 - len(checked.intersection(turns)) / n_turns
-            rows.append([
-                domain, count, per100,
-                domain_turns[0], domain_turns[-1],
-                max_gap, f"{100 * blind_pct:.0f}%",
-            ])
+            rows.append(
+                [
+                    domain,
+                    count,
+                    per100,
+                    domain_turns[0],
+                    domain_turns[-1],
+                    max_gap,
+                    f"{100 * blind_pct:.0f}%",
+                ]
+            )
         _table(headers, rows, align)
 
         # --- Blind-spot windows (>20 turns without any proactive check) ---
         print(f"\n  Blind-Spot Windows (>20 turns with zero proactive calls)")
         print("  " + "-" * 50)
-        proactive_turns = sorted(set(
-            e.get("turn", 0) for e in tool_calls if _classify_tool(e["tool"]) == "proactive"
-        ))
+        proactive_turns = sorted(
+            set(
+                e.get("turn", 0)
+                for e in tool_calls
+                if _classify_tool(e["tool"]) == "proactive"
+            )
+        )
         if proactive_turns:
             # Include game start and end
             all_boundaries = [turns[0]] + proactive_turns + [turns[-1]]
@@ -883,8 +979,11 @@ def cmd_sensorium(args):
         # --- Proactive attention sparkline ---
         proactive_per_turn = []
         for t in turns:
-            n = sum(1 for e in tool_calls
-                    if e.get("turn") == t and _classify_tool(e["tool"]) == "proactive")
+            n = sum(
+                1
+                for e in tool_calls
+                if e.get("turn") == t and _classify_tool(e["tool"]) == "proactive"
+            )
             proactive_per_turn.append(n)
         print(f"\n  Proactive calls/turn: {_sparkline(proactive_per_turn, 50)}")
 
@@ -904,9 +1003,9 @@ def cmd_reflection_gap(args):
     rid = g["runId"]
     model = g.get("agentModel") or "?"
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  Reflection-Action Gap: {rid} | {model}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     diary = cloud_diary(rid)
     entries = cloud_log(rid)
@@ -936,8 +1035,10 @@ def cmd_reflection_gap(args):
             spend_mentions += 1
             # Check if purchase_item was actually called within ±3 turns
             nearby_purchases = [
-                e for e in tool_calls
-                if e["tool"] in ("purchase_item", "purchase_tile", "patronize_great_person")
+                e
+                for e in tool_calls
+                if e["tool"]
+                in ("purchase_item", "purchase_tile", "patronize_great_person")
                 and abs(e.get("turn", 0) - turn) <= 3
             ]
             if nearby_purchases:
@@ -945,7 +1046,9 @@ def cmd_reflection_gap(args):
 
     if spend_mentions:
         print(f"    Mentioned spending: {spend_mentions} diary entries")
-        print(f"    Actually purchased: {spend_actions} ({_pct(spend_actions, spend_mentions)} follow-through)")
+        print(
+            f"    Actually purchased: {spend_actions} ({_pct(spend_actions, spend_mentions)} follow-through)"
+        )
     else:
         print(f"    No spending plans found in diary")
 
@@ -967,17 +1070,23 @@ def cmd_reflection_gap(args):
             planning = (row.get("reflections") or {}).get("planning", "")
             if keyword in planning.lower():
                 mentions += 1
-                nearby = [e for e in tool_calls
-                          if e["tool"] in check_tools
-                          and abs(e.get("turn", 0) - turn) <= 5]
+                nearby = [
+                    e
+                    for e in tool_calls
+                    if e["tool"] in check_tools and abs(e.get("turn", 0) - turn) <= 5
+                ]
                 if nearby:
                     followed += 1
         if mentions:
             pct = _pct(followed, mentions)
-            print(f"    {keyword:<15} mentioned {mentions:>3}x, followed through {followed:>3}x ({pct})")
+            print(
+                f"    {keyword:<15} mentioned {mentions:>3}x, followed through {followed:>3}x ({pct})"
+            )
 
     # --- Repeated unfulfilled intentions ---
-    print(f"\n  Repeated Unfulfilled Intentions (≥3 consecutive mentions without action)")
+    print(
+        f"\n  Repeated Unfulfilled Intentions (≥3 consecutive mentions without action)"
+    )
     print("  " + "-" * 50)
     # Track consecutive planning mentions of keywords without matching action
     action_keywords = {
@@ -1000,10 +1109,14 @@ def cmd_reflection_gap(args):
                     streak_start = turn
                 streak += 1
                 # Check for action within ±5 turns
-                nearby = [e for e in tool_calls
-                          if e["tool"] in action_tools
-                          and keyword.upper().replace(" ", "_") in str(e.get("params", "")).upper()
-                          and abs(e.get("turn", 0) - turn) <= 5]
+                nearby = [
+                    e
+                    for e in tool_calls
+                    if e["tool"] in action_tools
+                    and keyword.upper().replace(" ", "_")
+                    in str(e.get("params", "")).upper()
+                    and abs(e.get("turn", 0) - turn) <= 5
+                ]
                 if nearby:
                     streak = 0  # resolved
             else:
@@ -1011,12 +1124,18 @@ def cmd_reflection_gap(args):
                 streak = 0
         max_streak = max(max_streak, streak)
         if max_streak >= 3:
-            print(f"    '{keyword}' — {max_streak} consecutive diary mentions without action (from ~T{streak_start})")
+            print(
+                f"    '{keyword}' — {max_streak} consecutive diary mentions without action (from ~T{streak_start})"
+            )
 
     # --- Diary planning vs production timeline ---
     print(f"\n  Production Alignment")
     print("  " + "-" * 50)
-    prod_calls = [e for e in tool_calls if e["tool"] == "set_city_production" and e.get("success", True)]
+    prod_calls = [
+        e
+        for e in tool_calls
+        if e["tool"] == "set_city_production" and e.get("success", True)
+    ]
     if prod_calls:
         # Group by 50-turn eras
         era_items: dict[int, Counter] = defaultdict(Counter)
@@ -1027,7 +1146,7 @@ def cmd_reflection_gap(args):
         for bucket in sorted(era_items.keys()):
             top = era_items[bucket].most_common(5)
             items_str = ", ".join(f"{item}({n})" for item, n in top)
-            print(f"    T{bucket:>3}-T{bucket+49}: {items_str}")
+            print(f"    T{bucket:>3}-T{bucket + 49}: {items_str}")
 
 
 # ---------------------------------------------------------------------------
@@ -1066,12 +1185,16 @@ def main():
     p_turns.add_argument("--metric", help="Metrics to show (comma-separated)")
 
     # sensorium
-    p_sensor = sub.add_parser("sensorium", help="Sensorium effect analysis (paper §5.2)")
+    p_sensor = sub.add_parser(
+        "sensorium", help="Sensorium effect analysis (paper §5.2)"
+    )
     p_sensor.add_argument("game_ids", nargs="*", help="Game/run IDs")
     p_sensor.add_argument("--model", help="Analyze all games for a model")
 
     # reflection-gap
-    p_refl = sub.add_parser("reflection-gap", help="Reflection-action gap analysis (paper §5.3)")
+    p_refl = sub.add_parser(
+        "reflection-gap", help="Reflection-action gap analysis (paper §5.3)"
+    )
     p_refl.add_argument("game_id", help="Game or run ID")
 
     args = parser.parse_args()

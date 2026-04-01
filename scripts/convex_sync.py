@@ -289,7 +289,9 @@ def discover_eval_files(run_id: str) -> list[str]:
             paths = fs.glob(f"{prefix}/runs/{run_id}/*.eval")
             names = [p.rsplit("/", 1)[-1] for p in paths]
             if names:
-                log.debug("Found %d .eval file(s) in cloud for run %s", len(names), run_id)
+                log.debug(
+                    "Found %d .eval file(s) in cloud for run %s", len(names), run_id
+                )
                 return names
         except Exception:
             log.debug("Could not list .eval files in cloud for run %s", run_id)
@@ -341,7 +343,10 @@ async def _complete_game(
         )
         log.info(
             "Marked %s completed: %s — %s (%s)",
-            game_id, outcome["result"], outcome["winnerCiv"], outcome["victoryType"],
+            game_id,
+            outcome["result"],
+            outcome["winnerCiv"],
+            outcome["victoryType"],
         )
     else:
         await client.mutation("ingest:markGameCompleted", {"gameId": game_id})
@@ -810,11 +815,13 @@ def _chunk_map_frames(
     def _flush() -> None:
         nonlocal cur_o, cur_c, cur_r, cur_size
         if cur_o or cur_c or cur_r:
-            chunks.append({
-                "ownerFrames": json.dumps(cur_o),
-                "cityFrames": json.dumps(cur_c),
-                "roadFrames": json.dumps(cur_r),
-            })
+            chunks.append(
+                {
+                    "ownerFrames": json.dumps(cur_o),
+                    "cityFrames": json.dumps(cur_c),
+                    "roadFrames": json.dumps(cur_r),
+                }
+            )
         cur_o, cur_c, cur_r, cur_size = [], [], [], 0
 
     for o, c, r in per_turn:
@@ -947,14 +954,19 @@ async def sync_map_data(
         static_payload["frameChunks"] = len(chunks)
         await client.mutation("ingest:ingestMapData", static_payload)
         for i, chunk in enumerate(chunks):
-            await client.mutation("ingest:ingestMapFrames", {
-                "gameId": game_id,
-                "chunk": i,
-                **chunk,
-            })
+            await client.mutation(
+                "ingest:ingestMapFrames",
+                {
+                    "gameId": game_id,
+                    "chunk": i,
+                    **chunk,
+                },
+            )
         log.info(
             "map %s: frames split into %d chunks (%dKB total)",
-            game_id, len(chunks), frames_bytes // 1024,
+            game_id,
+            len(chunks),
+            frames_bytes // 1024,
         )
 
     log.info(
@@ -1212,8 +1224,10 @@ async def watch_loop_cloud(bucket_url: str, client: ConvexClient) -> None:
                         )
                         log.info(
                             "Marked %s completed: %s — %s (%s)",
-                            game_id, outcome["result"],
-                            outcome["winnerCiv"], outcome["victoryType"],
+                            game_id,
+                            outcome["result"],
+                            outcome["winnerCiv"],
+                            outcome["victoryType"],
                         )
                         completed_runs.add(run_id)
             except Exception:

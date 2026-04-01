@@ -1,4 +1,5 @@
 """Decision quality scanners — LLM analysis of strategic reasoning."""
+
 from inspect_scout import Scanner, Transcript, llm_scanner, scanner
 
 

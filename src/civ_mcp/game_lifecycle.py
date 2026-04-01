@@ -233,9 +233,7 @@ async def dismiss_popup(conn: GameConnection) -> str:
                             timeout=2.0,
                         )
                         if any("DISMISSED" in l for l in close_lines):
-                            dismissed.append(
-                                f"{state_name} (probed state {probe_idx})"
-                            )
+                            dismissed.append(f"{state_name} (probed state {probe_idx})")
                             remaining.remove(state_name)
                             conn.lua_states[probe_idx] = state_name
                             log.info(
@@ -274,7 +272,6 @@ async def dismiss_popup(conn: GameConnection) -> str:
 # ------------------------------------------------------------------
 # Save / Load
 # ------------------------------------------------------------------
-
 
 
 async def save_game(conn: GameConnection, name: str) -> str:

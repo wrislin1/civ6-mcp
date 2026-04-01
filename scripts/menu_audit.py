@@ -43,22 +43,28 @@ def capture_and_ocr(stage: str) -> dict:
     try:
         if sys.platform == "linux":
             import mss
+
             with mss.mss() as sct:
                 monitor = {"top": win.y, "left": win.x, "width": win.w, "height": win.h}
                 img = sct.grab(monitor)
                 from PIL import Image
+
                 pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
                 path = AUDIT_DIR / f"{ts}_{stage}.png"
                 pil_img.save(str(path))
                 print(f"  [{stage}] Screenshot saved: {path}")
         elif sys.platform == "darwin":
             from civ_mcp.game_launcher import _capture_window
+
             cg_image = _capture_window(win.window_id)
             # Save via CoreGraphics
             import Quartz
+
             url = Quartz.CFURLCreateWithFileSystemPath(
-                None, str(AUDIT_DIR / f"{ts}_{stage}.png"),
-                Quartz.kCFURLPOSIXPathStyle, False
+                None,
+                str(AUDIT_DIR / f"{ts}_{stage}.png"),
+                Quartz.kCFURLPOSIXPathStyle,
+                False,
             )
             dest = Quartz.CGImageDestinationCreateWithURL(url, "public.png", 1, None)
             Quartz.CGImageDestinationAddImage(dest, cg_image, None)
@@ -67,6 +73,7 @@ def capture_and_ocr(stage: str) -> dict:
         else:
             # Windows — use PIL grab
             from PIL import ImageGrab
+
             img = ImageGrab.grab(bbox=(win.x, win.y, win.x + win.w, win.y + win.h))
             path = AUDIT_DIR / f"{ts}_{stage}.png"
             img.save(str(path))
@@ -90,27 +97,45 @@ def capture_and_ocr(stage: str) -> dict:
             y = item[2] if len(item) > 2 else 0
             w = item[3] if len(item) > 3 else 0
             h = item[4] if len(item) > 4 else 0
-            ocr_items.append({
-                "text": text,
-                "x": x, "y": y, "w": w, "h": h,
-                "pct_x": round(x / win.w, 3) if win.w else 0,
-                "pct_y": round(y / win.h, 3) if win.h else 0,
-            })
+            ocr_items.append(
+                {
+                    "text": text,
+                    "x": x,
+                    "y": y,
+                    "w": w,
+                    "h": h,
+                    "pct_x": round(x / win.w, 3) if win.w else 0,
+                    "pct_y": round(y / win.h, 3) if win.h else 0,
+                }
+            )
             # Highlight key items
             text_lower = text.lower()
             marker = ""
-            for keyword in ["single player", "load game", "continue", "multiplayer",
-                          "game options", "0a_ground", "ground_control"]:
+            for keyword in [
+                "single player",
+                "load game",
+                "continue",
+                "multiplayer",
+                "game options",
+                "0a_ground",
+                "ground_control",
+            ]:
                 if keyword in text_lower:
                     marker = " <<<<<"
                     break
-            print(f"    '{text}' at ({x},{y}) [{w}x{h}] pct=({ocr_items[-1]['pct_x']},{ocr_items[-1]['pct_y']}){marker}")
+            print(
+                f"    '{text}' at ({x},{y}) [{w}x{h}] pct=({ocr_items[-1]['pct_x']},{ocr_items[-1]['pct_y']}){marker}"
+            )
 
     print(f"  [{stage}] {len(ocr_items)} OCR items")
 
     # Save OCR results
-    result = {"stage": stage, "window": {"x": win.x, "y": win.y, "w": win.w, "h": win.h},
-              "results": ocr_items, "timestamp": time.time()}
+    result = {
+        "stage": stage,
+        "window": {"x": win.x, "y": win.y, "w": win.w, "h": win.h},
+        "results": ocr_items,
+        "timestamp": time.time(),
+    }
     with open(AUDIT_DIR / f"{ts}_{stage}_ocr.json", "w") as f:
         json.dump(result, f, indent=2)
 
@@ -119,9 +144,12 @@ def capture_and_ocr(stage: str) -> dict:
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Menu navigation audit")
     parser.add_argument("--save", default="0A_GROUND_CONTROL", help="Save to load")
-    parser.add_argument("--skip-launch", action="store_true", help="Skip game launch (already running)")
+    parser.add_argument(
+        "--skip-launch", action="store_true", help="Skip game launch (already running)"
+    )
     args = parser.parse_args()
 
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -172,8 +200,9 @@ def main():
 
     # Step 5: Click "Load Game" button (bottom)
     print("Step 5: Click 'Load Game' button")
-    clicked = game_launcher._click_text("Load Game", timeout=10, post_delay=1,
-                                         prefer_bottom=True, min_y_fraction=0.7)
+    clicked = game_launcher._click_text(
+        "Load Game", timeout=10, post_delay=1, prefer_bottom=True, min_y_fraction=0.7
+    )
     print(f"  Clicked: {clicked is not None}")
     print()
 
@@ -183,8 +212,9 @@ def main():
     leader = capture_and_ocr("06_leader_screen")
 
     # Check if CONTINUE is visible
-    continue_found = any("continue" in item.get("text", "").lower()
-                        for item in leader.get("results", []))
+    continue_found = any(
+        "continue" in item.get("text", "").lower() for item in leader.get("results", [])
+    )
     print(f"  CONTINUE visible to OCR: {continue_found}")
     print()
 
@@ -204,9 +234,9 @@ def main():
     start = time.time()
     clicked = game_launcher._click_text("CONTINUE", timeout=30, post_delay=1)
     if clicked:
-        print(f"  OCR click succeeded in {time.time()-start:.1f}s")
+        print(f"  OCR click succeeded in {time.time() - start:.1f}s")
     else:
-        print(f"  OCR failed after {time.time()-start:.1f}s — using positional click")
+        print(f"  OCR failed after {time.time() - start:.1f}s — using positional click")
         game_launcher._click_continue_positional()
     print()
 

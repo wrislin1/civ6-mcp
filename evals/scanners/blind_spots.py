@@ -1,4 +1,5 @@
 """Blind spots scanners — LLM detection of missed strategic monitoring."""
+
 from inspect_scout import Scanner, Transcript, llm_scanner, scanner
 
 

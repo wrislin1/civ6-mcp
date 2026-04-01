@@ -526,9 +526,7 @@ class TelemetryEmitter:
         """
         from civ_mcp.run_id import generate_run_id
 
-        self._run_id = (
-            run_id or os.environ.get("CIV_MCP_RUN_ID") or generate_run_id()
-        )
+        self._run_id = run_id or os.environ.get("CIV_MCP_RUN_ID") or generate_run_id()
         if metadata is not None:
             self._metadata = metadata
         else:

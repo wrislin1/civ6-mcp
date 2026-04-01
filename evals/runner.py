@@ -324,7 +324,10 @@ def run_scenario(
     clean_model = model.rsplit("/", 1)[-1]
     # Resolve inspect CLI from the same venv as the running Python interpreter
     import shutil
-    inspect_bin = shutil.which("inspect") or str(Path(sys.executable).parent / "inspect")
+
+    inspect_bin = shutil.which("inspect") or str(
+        Path(sys.executable).parent / "inspect"
+    )
     cmd = [
         inspect_bin,
         "eval",
@@ -473,7 +476,9 @@ def main():
             for run_num in range(1, runs + 1):
                 current += 1
                 run_label = f" (run {run_num}/{runs})" if runs > 1 else ""
-                print(f"\n[{current}/{total}] Running {scenario} with {model}{run_label}")
+                print(
+                    f"\n[{current}/{total}] Running {scenario} with {model}{run_label}"
+                )
                 rc = run_scenario(
                     model=model,
                     scenario=scenario,

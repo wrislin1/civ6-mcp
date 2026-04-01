@@ -460,7 +460,11 @@ if not bq:CanProduce(item.Hash, true) then
             end
         end
     end)
-    {_bail_lua(f'"ERR:CANNOT_PRODUCE|{item_name} cannot be produced in this city" .. reason')}
+    {
+        _bail_lua(
+            f'"ERR:CANNOT_PRODUCE|{item_name} cannot be produced in this city" .. reason'
+        )
+    }
 end
 {
         ""

@@ -168,7 +168,6 @@ def score_ground_control(calls: list[ToolCall]) -> dict[str, float]:
     }
 
 
-
 def score_snowflake(calls: list[ToolCall]) -> dict[str, float]:
     """Snowflake: strategic reframing — science civ, domination only."""
     tagged = _tag_calls_with_turns(calls)

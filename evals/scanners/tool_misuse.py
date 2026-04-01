@@ -1,15 +1,18 @@
 """Tool misuse scanners — pattern-based detection of errors and stuck loops."""
+
 from inspect_scout import Result, Scanner, Transcript, grep_scanner, scanner
 
 
 @scanner(messages=["tool"])
 def tool_errors() -> Scanner[Transcript]:
     """Count tool error responses (ERR:, Error:, Runtime Error)."""
-    return grep_scanner([
-        "ERR:",
-        "Error:",
-        "SILENT_FAILURE",
-    ])
+    return grep_scanner(
+        [
+            "ERR:",
+            "Error:",
+            "SILENT_FAILURE",
+        ]
+    )
 
 
 @scanner(messages=["tool"])
@@ -44,7 +47,9 @@ def repeated_failures() -> Scanner[Transcript]:
 
         return Result(
             value=len(sequences),
-            explanation=f"Stuck loops: {', '.join(sequences)}" if sequences else "No stuck loops",
+            explanation=f"Stuck loops: {', '.join(sequences)}"
+            if sequences
+            else "No stuck loops",
         )
 
     return scan
