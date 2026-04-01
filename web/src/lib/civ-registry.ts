@@ -490,12 +490,14 @@ export const CIV_REGISTRY: CivEntry[] = [
 
 // ─── Normalization ──────────────────────────────────────────────────────────
 
-/** Normalize a string for lookup: strip diacritics, persona suffixes, lowercase. */
+/** Normalize a string for lookup: strip diacritics, enum prefixes, persona suffixes, lowercase. */
 function normalize(s: string): string {
   return s
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "") // strip combining diacritical marks
+    .replace(/^(LEADER_|CIVILIZATION_)/i, "") // strip Lua enum prefixes
     .replace(/\s*\(.*?\)\s*$/, "") // strip persona suffix: "Cleopatra (Ptolemaic)" → "Cleopatra"
+    .replace(/_/g, " ") // underscores to spaces
     .toLowerCase()
     .trim();
 }
