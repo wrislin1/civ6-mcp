@@ -78,10 +78,22 @@ for i, u in Players[id]:GetUnits():Members() do
                             for other in plotUnits:Units() do
                                 local otherOwner = other:GetOwner()
                                 if otherOwner ~= id and (otherOwner == 63 or Players[id]:GetDiplomacy():IsAtWarWith(otherOwner)) then
-                                    local eInfo = GameInfo.Units[other:GetType()]
-                                    local eName = eInfo and eInfo.UnitType or "UNKNOWN"
-                                    local eHP = other:GetMaxDamage() - other:GetDamage()
-                                    table.insert(tgtList, eName .. "@" .. tx .. "," .. ty .. "(" .. eHP .. "hp)")
+                                    -- LOS check for ranged units (d>1): verify the
+                                    -- game engine agrees we can actually fire there.
+                                    -- Melee (d==1) doesn't need LOS.
+                                    local losOK = true
+                                    if rs > 0 and d > 1 then
+                                        local lp = {{}}
+                                        lp[UnitOperationTypes.PARAM_X] = tx
+                                        lp[UnitOperationTypes.PARAM_Y] = ty
+                                        losOK = UnitManager.CanStartOperation(u, UnitOperationTypes.RANGE_ATTACK, nil, lp)
+                                    end
+                                    if losOK then
+                                        local eInfo = GameInfo.Units[other:GetType()]
+                                        local eName = eInfo and eInfo.UnitType or "UNKNOWN"
+                                        local eHP = other:GetMaxDamage() - other:GetDamage()
+                                        table.insert(tgtList, eName .. "@" .. tx .. "," .. ty .. "(" .. eHP .. "hp)")
+                                    end
                                 end
                             end
                         end
