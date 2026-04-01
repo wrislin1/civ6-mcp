@@ -371,7 +371,7 @@ def narrate_cities(
             )
         elif c.food_surplus == 0 and c.turns_to_grow <= 0:
             lines.append(
-                f"    !! STAGNANT: 0 food surplus — needs farm, granary, or trade route"
+                "    !! STAGNANT: 0 food surplus — needs farm, granary, or trade route"
             )
         elif c.turns_to_grow > 15:
             lines.append(
@@ -379,7 +379,7 @@ def narrate_cities(
             )
         if c.currently_building == "CORRUPTED_QUEUE":
             lines.append(
-                f"    !! QUEUE EMPTY (stale entry cleared) — set new production with set_city_production"
+                "    !! QUEUE EMPTY (stale entry cleared) — set new production with set_city_production"
             )
         for t in c.attack_targets:
             lines.append(f"    >> CAN ATTACK: {t}")
@@ -975,7 +975,7 @@ def narrate_deal_options(opts: lq.DealOptions) -> str:
     lines = [
         f"Trade options with {opts.other_civ_name} (player {opts.other_player_id}):"
     ]
-    lines.append(f"\nEconomy:")
+    lines.append("\nEconomy:")
     lines.append(
         f"  Our gold: {opts.our_gold} ({opts.our_gpt:+d}/turn) | Favor: {opts.our_favor}"
     )
@@ -983,13 +983,13 @@ def narrate_deal_options(opts: lq.DealOptions) -> str:
         f"  Their gold: {opts.their_gold} ({opts.their_gpt:+d}/turn) | Favor: {opts.their_favor}"
     )
     if opts.our_luxuries or opts.our_strategics:
-        lines.append(f"\nOur tradeable resources:")
+        lines.append("\nOur tradeable resources:")
         if opts.our_luxuries:
             lines.append(f"  Luxuries: {', '.join(opts.our_luxuries)}")
         if opts.our_strategics:
             lines.append(f"  Strategics: {', '.join(opts.our_strategics)}")
     if opts.their_luxuries or opts.their_strategics:
-        lines.append(f"\nTheir tradeable resources:")
+        lines.append("\nTheir tradeable resources:")
         if opts.their_luxuries:
             lines.append(f"  Luxuries: {', '.join(opts.their_luxuries)}")
         if opts.their_strategics:
@@ -1004,18 +1004,18 @@ def narrate_deal_options(opts: lq.DealOptions) -> str:
         for c in opts.their_cities:
             cap = " (CAPITAL)" if c.is_capital else ""
             lines.append(f"  {c.name} (id={c.city_id}, pop {c.population}){cap}")
-    lines.append(f"\nAgreements:")
+    lines.append("\nAgreements:")
     ob_status = "active" if opts.has_open_borders else "not active (available)"
     lines.append(f"  Open borders: {ob_status}")
     if opts.current_alliance:
         lines.append(f"  Alliance: {opts.current_alliance} (active)")
     elif opts.alliance_eligible:
         lines.append(
-            f"  Alliance: eligible (MILITARY, RESEARCH, CULTURAL, ECONOMIC, RELIGIOUS)"
+            "  Alliance: eligible (MILITARY, RESEARCH, CULTURAL, ECONOMIC, RELIGIOUS)"
         )
     else:
         lines.append(
-            f"  Alliance: not eligible (requires declared friendship + Diplomatic Service civic)"
+            "  Alliance: not eligible (requires declared friendship + Diplomatic Service civic)"
         )
     return "\n".join(lines)
 
@@ -1467,7 +1467,7 @@ def narrate_trade_routes(status: lq.TradeRouteStatus) -> str:
             if t.is_domestic:
                 label = "Domestic"
             elif t.is_city_state:
-                label = f"City-State"
+                label = "City-State"
             else:
                 label = t.route_owner or "?"
             parts = [f"  Trader (id:{t.unit_id}) {origin} -> {dest} ({label})"]
@@ -1578,7 +1578,7 @@ def narrate_world_congress(status: lq.WorldCongressStatus) -> str:
             for i, c in enumerate(costs):
                 n = i + 1  # 1-indexed vote count
                 if n == 1:
-                    cost_entries.append(f"1 vote=free")
+                    cost_entries.append("1 vote=free")
                 else:
                     cost_entries.append(f"{n}={c}")
                 if c > status.favor:

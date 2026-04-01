@@ -1799,7 +1799,7 @@ async def end_turn(
                     gs._diary_written_turn,
                 )
                 # Re-emit merged row so CloudSink gets the updated reflections
-                await _emitter.emit(EVENT_DIARY_ROW, merged_row)
+                await _get_logger(ctx)._emitter.emit(EVENT_DIARY_ROW, merged_row)
         except Exception:
             log.warning("Diary: failed to merge reflections", exc_info=True)
     elif (

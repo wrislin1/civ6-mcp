@@ -705,7 +705,6 @@ def parse_combat_estimate(
             my_hp = int(p[7])
             enemy_hp = int(p[8])
             # Civ 6 damage formula: BASE * 10^((att-def)/30)
-            import math
 
             base_damage = 24
             if eff_att > 0 and eff_def > 0:
