@@ -73,11 +73,11 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
       {/* Turn navigation */}
       <div className="shrink-0 border-b border-marble-300 bg-marble-50/50 px-3 py-2 sm:px-6">
         <div className="mx-auto flex max-w-4xl items-center justify-center gap-1">
-          <button onClick={goFirst} disabled={index === 0} className="rounded-sm p-1.5 text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700 disabled:opacity-30" title="First entry (Home)">
-            <ChevronsLeft className="h-4 w-4" />
+          <button onClick={goFirst} disabled={index === 0} aria-label="First entry" className="rounded-sm p-2.5 text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700 disabled:opacity-30" title="First entry (Home)">
+            <ChevronsLeft className="h-5 w-5" />
           </button>
-          <button onClick={goPrev} disabled={index === 0} className="rounded-sm p-1.5 text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700 disabled:opacity-30" title="Previous entry (Left arrow)">
-            <ChevronLeft className="h-4 w-4" />
+          <button onClick={goPrev} disabled={index === 0} aria-label="Previous entry" className="rounded-sm p-2.5 text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700 disabled:opacity-30" title="Previous entry (Left arrow)">
+            <ChevronLeft className="h-5 w-5" />
           </button>
 
           {hasTurns && (
@@ -92,11 +92,11 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
             />
           )}
 
-          <button onClick={goNext} disabled={index >= maxIdx} className="rounded-sm p-1.5 text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700 disabled:opacity-30" title="Next entry (Right arrow)">
-            <ChevronRight className="h-4 w-4" />
+          <button onClick={goNext} disabled={index >= maxIdx} aria-label="Next entry" className="rounded-sm p-2.5 text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700 disabled:opacity-30" title="Next entry (Right arrow)">
+            <ChevronRight className="h-5 w-5" />
           </button>
-          <button onClick={goLast} disabled={index >= maxIdx} className="rounded-sm p-1.5 text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700 disabled:opacity-30" title="Last entry (End)">
-            <ChevronsRight className="h-4 w-4" />
+          <button onClick={goLast} disabled={index >= maxIdx} aria-label="Last entry" className="rounded-sm p-2.5 text-marble-500 transition-colors hover:bg-marble-200 hover:text-marble-700 disabled:opacity-30" title="Last entry (End)">
+            <ChevronsRight className="h-5 w-5" />
           </button>
 
           {currentTurn && (
@@ -109,7 +109,7 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
               className="ml-1.5 rounded-sm px-1.5 py-0.5 font-display text-xs font-bold uppercase tracking-[0.08em]"
               style={{
                 color: statusColor(outcome.result === "victory" ? "victory" : "defeat"),
-                backgroundColor: outcome.result === "victory" ? "rgba(61,139,110,0.1)" : "rgba(192,80,58,0.1)",
+                backgroundColor: outcome.result === "victory" ? "var(--status-victory-bg)" : "var(--status-defeat-bg)",
               }}
             >
               {outcome.result === "victory" ? "Victory" : "Defeat"} T{outcome.turn}
@@ -246,7 +246,7 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
 
         {/* Sparkline sidebar — desktop */}
         {hasTurns && turnSeries && (
-          <div className="hidden w-96 shrink-0 overflow-y-auto border-l border-marble-300 bg-marble-50 p-4 lg:block">
+          <div className="hidden w-80 shrink-0 overflow-y-auto border-l border-marble-300 bg-marble-50 p-4 lg:block xl:w-96">
             <SparklineSidebar turnSeries={turnSeries} currentIndex={index} />
           </div>
         )}

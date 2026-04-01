@@ -48,3 +48,13 @@ export function formatExcludeReason(reason: string): string {
     .replace(/-/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+/** Clean raw enum-style names: "CIVILIZATION_BABYLON" → "Babylon", "LEADER_HAMMURABI" → "Hammurabi" */
+export function cleanEnumName(raw: string): string {
+  return raw
+    .replace(/^CIVILIZATION_/, "")
+    .replace(/^LEADER_/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\bStk\b/, ""); // strip "Stk" suffix from labels
+}

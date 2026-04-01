@@ -16,10 +16,10 @@ import { CivIcon, CivSymbol } from "./civ-icon";
 import { PulsingDot } from "./pulsing-dot";
 
 const STATUS_COLORS: Record<string, string> = {
-  live: "#7A9B8A",
-  victory: "#3D8B6E",
-  defeat: "#C0503A",
-  unfinished: "#B0A99F",
+  live: "var(--status-live)",
+  victory: "var(--status-victory)",
+  defeat: "var(--status-defeat)",
+  unfinished: "var(--status-unfinished)",
 };
 
 /** Returns a color for a simple status string (live, victory, defeat, unfinished). */
@@ -136,17 +136,19 @@ export function OutcomeBanner({ outcome }: { outcome: GameOutcome }) {
   const vt = getVictoryTypeMeta(outcome.victoryType);
   const VtIcon = vt.icon;
   const bgColor = isVictory
-    ? "rgba(61,139,110,0.08)"
-    : "rgba(192,80,58,0.08)";
+    ? "var(--status-victory-bg)"
+    : "var(--status-defeat-bg)";
   const borderColor = isVictory
-    ? "rgba(61,139,110,0.25)"
-    : "rgba(192,80,58,0.25)";
+    ? "var(--status-victory-border)"
+    : "var(--status-defeat-border)";
   const headColor = isVictory
     ? STATUS_COLORS.victory
     : STATUS_COLORS.defeat;
 
   return (
     <div
+      role="status"
+      aria-label={isVictory ? `Victory: ${vt.label}` : `Defeat: ${vt.label} victory by ${outcome.winnerCiv}`}
       className="mx-auto w-full max-w-2xl animate-[banner-enter_0.4s_ease-out] rounded-sm border px-4 py-3 motion-reduce:animate-none"
       style={{ backgroundColor: bgColor, borderColor }}
     >

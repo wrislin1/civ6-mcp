@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -19,7 +20,7 @@ import {
 } from "@/components/game-status-badge";
 import { SCENARIOS, DIFFICULTY_META } from "@/lib/scenarios";
 import { chipBase, chipDefault, chipActive } from "@/lib/chip-styles";
-import { formatTimeAgo, deriveProvider, formatEvalTrack } from "@/lib/game-utils";
+import { formatTimeAgo, deriveProvider, formatEvalTrack, cleanEnumName } from "@/lib/game-utils";
 import {
   useGameFilters,
   SORT_OPTIONS,
@@ -489,11 +490,7 @@ function GamesPageInner() {
                                 game.outcome,
                               ),
                             }}
-                            tabIndex={0}
-                            onClick={() => {
-                              router.push(`/games/${slug}`);
-                            }}
-                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/games/${slug}`); } }}
+                            onClick={() => router.push(`/games/${slug}`)}
                           >
                             {/* Game — portrait + civ info */}
                             <td className="px-3 py-2">
@@ -507,13 +504,17 @@ function GamesPageInner() {
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5">
                                     <CivSymbol civ={game.label} />
-                                    <span className="font-display text-sm font-bold tracking-wide uppercase text-marble-800">
-                                      {game.label}
-                                    </span>
+                                    <Link
+                                      href={`/games/${slug}`}
+                                      className="font-display text-sm font-bold tracking-wide uppercase text-marble-800 hover:text-gold-dark focus:outline-none focus-visible:ring-1 focus-visible:ring-gold-dark"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {cleanEnumName(game.label)}
+                                    </Link>
                                   </div>
                                   {game.leader && (
                                     <p className="mt-0.5 max-w-[200px] text-xs text-marble-500 truncate">
-                                      {game.leader}
+                                      {cleanEnumName(game.leader)}
                                     </p>
                                   )}
                                   {game.scenarioId && SCENARIOS[game.scenarioId] && (

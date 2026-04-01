@@ -32,17 +32,17 @@ import {
 // Attention type metadata for display
 const ATTENTION_TYPES = [
   { key: "deliberate_scan" as const, label: "Deliberate Scan", color: "#9333EA", icon: Crosshair },
-  { key: "deliberate_action" as const, label: "Deliberate Action", color: "#D4A853", icon: MousePointerClick },
-  { key: "survey" as const, label: "Survey", color: "#44B3EA", icon: Radar },
-  { key: "peripheral" as const, label: "Peripheral", color: "#7A9B8A", icon: Radio },
-  { key: "reactive" as const, label: "Reactive", color: "#C4785C", icon: Bell },
+  { key: "deliberate_action" as const, label: "Deliberate Action", color: "var(--gold)", icon: MousePointerClick },
+  { key: "survey" as const, label: "Survey", color: "var(--ocean)", icon: Radar },
+  { key: "peripheral" as const, label: "Peripheral", color: "var(--patina)", icon: Radio },
+  { key: "reactive" as const, label: "Reactive", color: "var(--terracotta)", icon: Bell },
 ] as const;
 
 // ── Shared chart styling ─────────────────────────────────────────────────
 
-const AXIS_STYLE = { fontSize: 11, fill: "#A39B8F", fontFamily: "monospace" };
-const GRID_STROKE = "#E0DBD3";
-const REFERENCE_LINE_COLOR = "#D4A853";
+const AXIS_STYLE = { fontSize: 11, fill: "var(--marble-500)", fontFamily: "monospace" };
+const GRID_STROKE = "var(--marble-300)";
+const REFERENCE_LINE_COLOR = "var(--gold)";
 
 function turnFormatter(v: number) {
   return `T${v}`;

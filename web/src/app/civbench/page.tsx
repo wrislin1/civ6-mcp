@@ -195,7 +195,7 @@ export default function CivBenchPage() {
             <h2 className="font-display text-sm font-bold uppercase tracking-[0.08em] text-marble-500">
               How It Works
             </h2>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-sm border border-marble-300/50 bg-marble-50 p-3">
                 <div className="flex items-center gap-2">
                   <CivIcon

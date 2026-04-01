@@ -35,6 +35,12 @@
   --color-vein: var(--vein);
   --color-vein-dark: var(--vein-dark);
 
+  /* Game status — resolved via CSS vars for theme switching */
+  --color-status-live: var(--status-live);
+  --color-status-victory: var(--status-victory);
+  --color-status-defeat: var(--status-defeat);
+  --color-status-unfinished: var(--status-unfinished);
+
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -99,6 +105,16 @@
   --vein: #D4CFC8;
   --vein-dark: #8A8279;
 
+  /* Game status colors */
+  --status-live: #7A9B8A;
+  --status-victory: #3D8B6E;
+  --status-defeat: #C0503A;
+  --status-unfinished: #B0A99F;
+  --status-victory-bg: rgba(61,139,110,0.08);
+  --status-defeat-bg: rgba(192,80,58,0.08);
+  --status-victory-border: rgba(61,139,110,0.25);
+  --status-defeat-border: rgba(192,80,58,0.25);
+
   /* Shadcn semantic tokens */
   --background: #FAFAF8;
   --foreground: #3D3832;
@@ -156,6 +172,16 @@
   --ocean: #6DA4B8;
   --vein: #443F39;
   --vein-dark: #7A7269;
+
+  /* Game status colors — brightened for dark bg */
+  --status-live: #8FB09E;
+  --status-victory: #5AAF8E;
+  --status-defeat: #D4886C;
+  --status-unfinished: #A39B8F;
+  --status-victory-bg: rgba(90,175,142,0.12);
+  --status-defeat-bg: rgba(212,136,108,0.12);
+  --status-victory-border: rgba(90,175,142,0.3);
+  --status-defeat-border: rgba(212,136,108,0.3);
 
   /* Shadcn semantic tokens */
   --background: #1C1916;

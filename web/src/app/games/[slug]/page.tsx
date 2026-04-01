@@ -89,18 +89,17 @@ export default function GameDetailPage() {
                 Turn Log
               </a>
             )}
-            {BLOB_BASE && runId && evalFiles?.map((name, i) => (
+            {BLOB_BASE && runId && evalFiles && evalFiles.length > 0 && (
               <a
-                key={name}
-                href={`${BLOB_BASE}/runs/${runId}/${name}`}
+                href={`${BLOB_BASE}/runs/${runId}/${evalFiles[evalFiles.length - 1]}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 border-b-2 border-transparent px-4 py-2 text-sm font-medium text-marble-500 transition-colors hover:text-marble-700"
               >
                 <Download className="h-3.5 w-3.5" />
-                Eval Log{evalFiles.length > 1 ? ` (${i + 1})` : ""}
+                Eval Log
               </a>
-            ))}
+            )}
           </div>
         </div>
       </div>
