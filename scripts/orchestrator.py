@@ -920,8 +920,9 @@ def cmd_launch(
                     job.run_id = hb["run_id"]
 
                 # Boot phases get 5 min (OCR/loading is slow); playing gets
-                # 3 min (a single turn with many tool calls can take 2+ min)
-                stale_threshold = 300 if phase != "playing" else 180
+                # 10 min (model inference can take 3-5 min on complex turns,
+                # and heartbeat only refreshes when a tool call completes)
+                stale_threshold = 300 if phase != "playing" else 600
 
                 if phase in ("error", "finished"):
                     # Will be caught by completion sentinel check below
