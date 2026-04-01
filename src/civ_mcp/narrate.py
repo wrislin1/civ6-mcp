@@ -1720,13 +1720,17 @@ def narrate_victory_progress(vp: lq.VictoryProgress) -> str:
                 icons = {
                     "completed": "[DONE]",
                     "building": "[>>>]",
-                    "available": "[READY]",
+                    "ready": "[READY]",
+                    "unlocked": "[UNLOCKED]",
+                    "available": "[READY]",  # legacy compat
                     "locked": "[LOCKED]",
                 }
                 icon = icons.get(sp.status, sp.status.upper())
                 detail = f"    {icon} {sp.name}"
                 if sp.status == "building":
                     detail += f" -- {sp.progress_pct}% ({sp.turns_remaining} turns) in {sp.city_name}"
+                if sp.status == "unlocked":
+                    detail += " -- tech done, but need to complete prior projects first or build a Spaceport"
                 if sp.status == "locked":
                     tech_status = "HAVE" if sp.has_tech else "NEED"
                     tech_name = (

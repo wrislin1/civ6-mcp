@@ -176,15 +176,21 @@ for i = 0, 62 do
                                 status = "completed"
                                 completedCount = completedCount + 1
                             elseif hasTech then
-                                status = "available"
+                                -- Check if any city with a spaceport can actually build it
+                                local canBuild = false
+                                pcall(function()
+                                    for _, city in p:GetCities():Members() do
+                                        local bq = city:GetBuildQueue()
+                                        local c = bq:GetProductionCost(projRow.Hash)
+                                        if c and c > 0 then
+                                            cost = math.floor(c)
+                                            canBuild = true
+                                            break
+                                        end
+                                    end
+                                end)
+                                status = canBuild and "ready" or "unlocked"
                             end
-                            pcall(function()
-                                for _, city in p:GetCities():Members() do
-                                    local bq = city:GetBuildQueue()
-                                    local c = bq:GetProductionCost(projRow.Hash)
-                                    if c and c > 0 then cost = math.floor(c); break end
-                                end
-                            end)
                         end
                         print("SPACEPROJ|" .. projType .. "|" .. projName .. "|" .. status .. "|" .. progPct .. "|" .. turnsLeft .. "|" .. cost .. "|" .. techType .. "|" .. tostring(hasTech) .. "|" .. cityBuild)
                     end
