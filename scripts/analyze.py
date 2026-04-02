@@ -1197,12 +1197,17 @@ def _agent_at_turn(rows: list[dict], turn: int) -> dict | None:
     return result
 
 
-def _percentile(value: float, all_values: list[float]) -> float:
-    """Percentile rank of value among all_values (0-100)."""
-    if not all_values:
+def _rank_score(value: float, all_values: list[float]) -> float:
+    """Rank-based score: 1st among N = 100, last = 0. Handles ties via midrank."""
+    if not all_values or len(all_values) <= 1:
         return 50.0
+    n = len(all_values)
     below = sum(1 for v in all_values if v < value)
-    return min(100, below / len(all_values) * 100)
+    equal = sum(1 for v in all_values if v == value)
+    # Midrank method: rank = below + 0.5 * equal (includes self)
+    midrank = below + 0.5 * equal
+    # Scale to 0-100 where top rank = 100
+    return min(100, midrank / (n - 1) * 100) if n > 1 else 50.0
 
 
 def _clamp(v: float, lo: float = 0, hi: float = 100) -> float:
@@ -1265,13 +1270,19 @@ def score_economic(diary: list[dict]) -> dict:
         if not agent_row:
             continue
 
-        # Combined yield = science + culture + gold_per_turn
+        # Combined yield — production isn't in per-player diary rows
+        # (it's per-city), so we use science + culture + gold + faith as proxy
         def combined(r):
-            return r.get("science", 0) + r.get("culture", 0) + r.get("gold_per_turn", 0)
+            return (
+                r.get("science", 0)
+                + r.get("culture", 0)
+                + r.get("gold_per_turn", 0)
+                + r.get("faith_per_turn", 0)
+            )
 
         agent_yield = combined(agent_row)
         all_yields = [combined(r) for r in all_players]
-        scores[cp] = _percentile(agent_yield, all_yields)
+        scores[cp] = _rank_score(agent_yield, all_yields)
 
     # Hoarding penalty: count turns where gold > 1000 (late-game economies
     # naturally sit above 500; 1000+ with no spending plan is the real issue)
@@ -1310,7 +1321,7 @@ def score_military(diary: list[dict], log: list[dict]) -> dict:
             continue
         mil = agent_row.get("military", 0)
         all_mils = [r.get("military", 0) for r in all_players]
-        scores[cp] = _percentile(mil, all_mils)
+        scores[cp] = _rank_score(mil, all_mils)
 
     # Attack efficiency from log
     tool_calls = [e for e in log if e.get("type") == "tool_call"]
@@ -1356,7 +1367,7 @@ def score_scientific(diary: list[dict]) -> dict:
         # Also factor in science yield percentile
         agent_sci = agent_row.get("science", 0)
         all_sci = [r.get("science", 0) for r in all_players]
-        sci_pct = _percentile(agent_sci, all_sci)
+        sci_pct = _rank_score(agent_sci, all_sci)
         scores[cp] = tech_parity * 0.6 + sci_pct * 0.4
 
     avg = sum(scores.values()) / len(scores) if scores else 50
@@ -1447,7 +1458,7 @@ def score_spatial(diary: list[dict], log: list[dict]) -> dict:
     # Territory percentile at final turn
     last = agent[-1]
     all_final = _all_at_turn(diary, last.get("turn", 0))
-    territory_pct = _percentile(
+    territory_pct = _rank_score(
         last.get("territory", 0),
         [r.get("territory", 0) for r in all_final],
     )
@@ -1546,12 +1557,17 @@ def score_coherence(diary: list[dict], log: list[dict]) -> dict:
         n_players = len(scores_at)
         if n_players > 1:
             ranks.append(rank / n_players)  # 0=first, 1=last
-    rank_stability = 0
-    if len(ranks) >= 2:
-        import statistics
-
-        variance = statistics.variance(ranks)
-        rank_stability = _clamp((1 - min(variance * 10, 1)) * 100)
+    # Trajectory score: reward maintaining or improving rank over time.
+    # Compare first-half average rank to second-half (lower = better rank).
+    # Improvement = positive score, decline = negative.
+    trajectory_score = 50  # neutral default
+    if len(ranks) >= 4:
+        mid = len(ranks) // 2
+        first_half = sum(ranks[:mid]) / mid
+        second_half = sum(ranks[mid:]) / (len(ranks) - mid)
+        # Improvement: second_half < first_half means rank got better
+        delta = first_half - second_half  # positive = improved
+        trajectory_score = _clamp(50 + delta * 200)  # 0.25 rank improvement = 100
 
     # 2. Proactive attention ratio
     proactive_count = sum(
@@ -1585,12 +1601,12 @@ def score_coherence(diary: list[dict], log: list[dict]) -> dict:
                     follow_throughs += 1
     follow_rate = follow_throughs / max(planning_mentions, 1) * 100
 
-    final = _clamp(rank_stability * 0.3 + proactive_score * 0.4 + follow_rate * 0.3)
+    final = _clamp(trajectory_score * 0.3 + proactive_score * 0.4 + follow_rate * 0.3)
 
     return {
         "score": round(final),
         "details": (
-            f"Rank stability {rank_stability:.0f}, "
+            f"Trajectory {trajectory_score:.0f}, "
             f"proactive {proactive_ratio:.1%}, "
             f"follow-through {follow_rate:.0f}%"
         ),
