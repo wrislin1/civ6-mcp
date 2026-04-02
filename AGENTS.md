@@ -144,7 +144,7 @@ Some paths close. It's worth checking periodically via `get_victory_progress`:
 | Barbarian Warrior | 20 | — | — |
 
 - Ranged attacks don't take damage; melee attacks do
-- Forests/mountains block ranged LOS → `ERR:NO_LOS`
+- Forests/mountains block ranged LOS — targets with blocked LOS are filtered from `get_units` attack lists
 - Fortified units: +4 defense, heal each turn
 - Combat estimates include promotion CS bonuses, flanking (+2 per adjacent friendly to defender), support (+2 per defender's adjacent friendly), and forest/jungle defense (+3)
 
