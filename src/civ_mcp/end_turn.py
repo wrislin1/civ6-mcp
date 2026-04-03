@@ -936,30 +936,15 @@ async def execute_end_turn(gs: GameState) -> str:
     # Phase 2: Slow polling (5 min) — AI can take 1-5 min on large maps,
     # especially during wars with many units. GameCore-only queries.
     if not advanced:
+        # 10 min total: AI can take several minutes on large maps with wars.
+        # Quick polls early (catch fast turns), then escalate to 30s intervals.
         for delay in [
-            2.0,
-            2.0,
-            3.0,
-            3.0,
-            5.0,
-            5.0,
-            5.0,
-            5.0,
-            10.0,
-            10.0,
-            10.0,
-            10.0,
-            10.0,
-            10.0,
-            15.0,
-            15.0,
-            15.0,
-            15.0,
-            15.0,
-            15.0,
-            20.0,
-            20.0,
-            20.0,
+            2.0, 2.0, 3.0, 3.0, 5.0, 5.0,           # 20s: catch fast turns
+            10.0, 10.0, 10.0, 10.0, 10.0, 10.0,       # 80s: mid wait
+            15.0, 15.0, 15.0, 15.0,                    # 140s
+            20.0, 20.0, 20.0, 20.0,                    # 220s
+            30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, # 430s
+            30.0, 30.0, 30.0, 30.0,                    # 550s (~9 min)
         ]:
             await asyncio.sleep(delay)
             turn_after = await _get_turn_number(gs)
