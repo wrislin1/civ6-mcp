@@ -109,8 +109,12 @@ def build_config(
         poll_interval=raw_defaults.get("poll_interval", 30),
         stall_alert_minutes=raw_defaults.get("stall_alert_minutes", 30),
         stall_kill_minutes=raw_defaults.get("stall_kill_minutes", 60),
-        max_boot_retries=raw_defaults.get("max_boot_retries", 3),
-        max_game_retries=raw_defaults.get("max_game_retries", 2),
+        max_boot_retries=raw_defaults.get(
+            "max_boot_retries", raw_defaults.get("max_retries", 3)
+        ),
+        max_game_retries=raw_defaults.get(
+            "max_game_retries", raw_defaults.get("max_retries", 2)
+        ),
         boot_timeout=raw_defaults.get("boot_timeout", 600),
         playing_timeout=raw_defaults.get("playing_timeout", 600),
         alert_webhook=raw_defaults.get("alert_webhook", ""),

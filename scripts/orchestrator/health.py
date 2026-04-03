@@ -50,11 +50,14 @@ def is_heartbeat_stale(hb_info: dict, job: JobState, defaults: Defaults) -> bool
     age = hb_info["age"]
     phase = hb_info["phase"]
 
-    # Unified 600s threshold — both boot and playing
-    threshold = defaults.playing_timeout
-
     if phase in ("error", "finished"):
         return False  # Terminal states are not stale
+
+    # Use boot_timeout for boot phases, playing_timeout for gameplay
+    if phase in ("starting", "launching", "connecting", "loading"):
+        threshold = defaults.boot_timeout
+    else:
+        threshold = defaults.playing_timeout
 
     return age > threshold
 

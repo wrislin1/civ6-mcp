@@ -348,11 +348,14 @@ def main() -> None:
         if not state.jobs:
             print("No saved state to resume.")
             return
-        # Re-activate jobs that were in-flight
+        # Validate machine references and re-activate in-flight jobs
         for j in state.jobs.values():
+            if j.state not in ("done", "failed") and j.machine not in config.machines:
+                log.error("Job %s references unknown machine '%s'", j.id, j.machine)
+                j.transition("failed", f"machine '{j.machine}' not in config")
+                continue
             if j.state in ("launching", "booting", "running"):
                 log.info("Resuming %s from state %s at T%d", j.id, j.state, j.turn)
-                # Keep state as-is — dispatch loop will re-poll
         pending = sum(1 for j in state.jobs.values() if j.state == "pending")
         active = sum(
             1

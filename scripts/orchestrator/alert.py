@@ -28,4 +28,4 @@ def send_alert(message: str, webhook: str = "") -> None:
         )
         urllib.request.urlopen(req, timeout=5)
     except Exception:
-        pass
+        log.debug("Alert delivery failed", exc_info=True)

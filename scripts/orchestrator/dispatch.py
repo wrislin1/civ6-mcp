@@ -267,13 +267,19 @@ def run_batch(config: Config, state: BatchState | None = None) -> None:
 
     while True:
         # Dispatch pending jobs to idle machines
+        dispatching: set[str] = set()
         for jid, job in state.jobs.items():
             if job.state != "pending":
                 continue
             machine = machines.get(job.machine)
-            if not machine or state.machine_busy(job.machine):
+            if (
+                not machine
+                or state.machine_busy(job.machine)
+                or job.machine in dispatching
+            ):
                 continue
 
+            dispatching.add(job.machine)
             is_retry = job.boot_retries > 0 or job.game_retries > 0
             log.info("Launching %s on %s", jid, job.machine)
             dispatch_job(job, machine, is_retry=is_retry)
