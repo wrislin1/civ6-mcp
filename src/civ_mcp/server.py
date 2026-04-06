@@ -112,11 +112,11 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
 
     # 2b. Verify Lua states exist (port can open before game initialises).
     # A hung splash screen ("Loading, Please Wait...") has port open but
-    # GameCore never appears. Retry for 60s, then kill and relaunch.
-    # Skip on Linux — the main menu legitimately has no GameCore; it only
-    # appears after a save is loaded (step 3). The splash hang is a
-    # Windows-only issue (Aspyr launcher).
-    if conn.gamecore_index is None and sys.platform != "linux":
+    # GameCore never appears. Skip this check — the main menu legitimately
+    # has no GameCore on any platform; it only appears after a save is
+    # loaded (step 3). The splash hang detection was causing false kills
+    # when autosaves were cleaned (game stays at main menu, no GameCore).
+    if conn.gamecore_index is None and False:  # disabled — see comment above
         log.warning(
             "Auto-boot: FireTuner connected but GameCore not found "
             "— game may be hung at splash screen"

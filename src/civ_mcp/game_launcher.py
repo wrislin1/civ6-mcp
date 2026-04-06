@@ -378,9 +378,11 @@ def _click_continue_positional() -> None:
     # resolutions and window modes:
     #   4K fullscreen:    ~38%, 75%
     #   1080p fullscreen: ~35%, 82%
+    #   1280x962 window:  ~32%, 77% (Linux windowed, empirically verified)
     #   1600x900 window:  ~15%, 88% (button shifts left on smaller windows)
     #   1280x973 window:  ~15-20%, 85-88%
     positions = [
+        (0.32, 0.77),  # 1280x962 Linux windowed (verified on MAEVE)
         (0.15, 0.88),  # small windowed (left-aligned panel)
         (0.20, 0.86),  # small windowed (slight offset)
         (0.15, 0.85),  # small windowed (slightly higher)
