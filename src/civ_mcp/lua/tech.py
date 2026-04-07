@@ -132,9 +132,10 @@ for civic in GameInfo.Civics() do
         end
     end
 end
--- Locked civics: all eras, have unmet prerequisites
+-- Locked civics: within curEra + 2 only (skip far-future clutter)
 for civic in GameInfo.Civics() do
-    if not cu:HasCivic(civic.Index) then
+    local civicEra = eraLookup[civic.EraType] or 99
+    if not cu:HasCivic(civic.Index) and civicEra <= curEra + 2 then
         local missing = {}
         if prereqs[civic.CivicType] then
             for _, pType in ipairs(prereqs[civic.CivicType]) do
@@ -153,9 +154,10 @@ for civic in GameInfo.Civics() do
         end
     end
 end
--- Locked techs: all eras, have unmet prerequisites
+-- Locked techs: within curEra + 2 only (skip far-future clutter)
 for tech in GameInfo.Technologies() do
-    if not te:HasTech(tech.Index) and not te:CanResearch(tech.Index) then
+    local techEra = eraLookup[tech.EraType] or 99
+    if not te:HasTech(tech.Index) and not te:CanResearch(tech.Index) and techEra <= curEra + 2 then
         local missing = {}
         if techPrereqs[tech.TechnologyType] then
             for _, pType in ipairs(techPrereqs[tech.TechnologyType]) do

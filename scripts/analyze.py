@@ -388,6 +388,60 @@ def cmd_compare(args):
         if m in model_names:
             model_games[m].append(g)
 
+    # --- Outcome Aggregation (from Azure diary) ---
+    print(f"\n  Outcome Aggregation")
+    print("  " + "-" * 50)
+    headers = ["Model", "Games", "Victories", "Defeats", "Incomplete", "Avg Turn", "Avg Score"]
+    align = ["<", ">", ">", ">", ">", ">", ">"]
+    agg_rows = []
+    for model in model_names:
+        gg = model_games[model]
+        victories = 0
+        defeats = 0
+        incomplete = 0
+        final_turns = []
+        final_scores = []
+        for g in gg:
+            rid = g.get("runId", "")
+            if not rid:
+                continue
+            diary = cloud_diary(rid)
+            agent = _agent_rows(diary)
+            if agent:
+                last = agent[-1]
+                final_turns.append(last.get("turn", 0))
+                if last.get("score") is not None:
+                    final_scores.append(last["score"])
+            go = _find_game_over(diary)
+            if go:
+                result = go.get("result") or go.get("outcome", {}).get("result", "")
+                if "victory" in str(result).lower():
+                    victories += 1
+                elif "defeat" in str(result).lower():
+                    defeats += 1
+                else:
+                    incomplete += 1
+            else:
+                o = g.get("outcome") or {}
+                if o.get("result") == "victory":
+                    victories += 1
+                elif o.get("result") == "defeat":
+                    defeats += 1
+                else:
+                    incomplete += 1
+        avg_turn = f"{sum(final_turns) / len(final_turns):.0f}" if final_turns else "-"
+        avg_score = f"{sum(final_scores) / len(final_scores):.0f}" if final_scores else "-"
+        agg_rows.append([
+            model.rsplit("/", 1)[-1][:25],
+            len(gg),
+            victories,
+            defeats,
+            incomplete,
+            avg_turn,
+            avg_score,
+        ])
+    _table(headers, agg_rows, align)
+
     # --- Win/Loss ---
     print("\n  Win/Loss Record")
     print("  " + "-" * 50)
@@ -1770,6 +1824,483 @@ def cmd_scorecard(args):
 
 
 # ---------------------------------------------------------------------------
+# Cross-model analysis helpers
+# ---------------------------------------------------------------------------
+
+_substantial_cache: list[dict] | None = None
+
+
+def _all_substantial_games(
+    model_filter: str | None = None, scenario_filter: str | None = None
+) -> list[dict]:
+    """Fetch manifests + diary stats for all runs with diary > 50KB.
+
+    Returns list of dicts with keys: run_id, model_id, scenario_id,
+    manifest (full dict), diary_size.  Caches aggressively.
+    """
+    global _substantial_cache
+    if _substantial_cache is None:
+        fs = _get_fs()
+        try:
+            run_dirs = fs.ls("telemetry/runs/", detail=False)
+        except FileNotFoundError:
+            print("Warning: telemetry/runs/ not found in Azure", file=sys.stderr)
+            return []
+
+        results = []
+        for run_dir in run_dirs:
+            run_id = run_dir.rstrip("/").rsplit("/", 1)[-1]
+            # Check diary size
+            diary_path = f"telemetry/runs/{run_id}/diary.jsonl"
+            try:
+                info = fs.info(diary_path)
+                size = info.get("size") or info.get("content_length") or 0
+            except (FileNotFoundError, Exception):
+                continue
+            if size < 50 * 1024:
+                continue
+
+            # Read manifest
+            manifest_path = f"telemetry/runs/{run_id}/manifest.json"
+            try:
+                raw = fs.cat_file(manifest_path)
+                manifest = json.loads(raw)
+            except (FileNotFoundError, Exception):
+                manifest = {}
+
+            metadata = manifest.get("metadata", {})
+            results.append(
+                {
+                    "run_id": run_id,
+                    "model_id": metadata.get("model_id", "unknown"),
+                    "scenario_id": metadata.get("scenario_id", "unknown"),
+                    "manifest": manifest,
+                    "diary_size": size,
+                }
+            )
+        _substantial_cache = results
+
+    out = _substantial_cache
+    if model_filter:
+        out = [g for g in out if model_filter.lower() in g["model_id"].lower()]
+    if scenario_filter:
+        out = [g for g in out if scenario_filter.lower() in g["scenario_id"].lower()]
+    return out
+
+
+def _scoreboard_at_turn(diary: list[dict], target_turn: int) -> dict | None:
+    """Find the scoreboard entry closest to (but <= ) target_turn for the agent."""
+    best = None
+    for row in diary:
+        if not row.get("is_agent"):
+            continue
+        t = row.get("turn", 0)
+        if t <= target_turn:
+            best = row
+    return best
+
+
+def _find_game_over(diary: list[dict]) -> dict | None:
+    """Find a game_over entry in diary."""
+    for row in reversed(diary):
+        if row.get("game_over") or row.get("type") == "game_over":
+            return row
+    return None
+
+
+def _rank_among_players(diary: list[dict], turn: int) -> int | None:
+    """Get agent's rank among all players at a given turn."""
+    by_turn = _diary_by_turn(diary)
+    # Find nearest turn <= target
+    for t in range(turn, -1, -1):
+        if t in by_turn:
+            rows = by_turn[t]
+            if len(rows) < 2:
+                continue
+            scores = sorted(
+                [(r.get("score", 0), r.get("is_agent", False)) for r in rows],
+                key=lambda x: -x[0],
+            )
+            for rank, (sc, is_agent) in enumerate(scores, 1):
+                if is_agent:
+                    return rank
+            break
+    return None
+
+
+# ---------------------------------------------------------------------------
+# New subcommands
+# ---------------------------------------------------------------------------
+
+
+def cmd_performance(args):
+    """Cross-model performance scorecard from Azure diary data."""
+    games = _all_substantial_games(
+        model_filter=args.model, scenario_filter=args.scenario
+    )
+    if not games:
+        print("No substantial games found (diary > 50KB)")
+        return
+
+    checkpoints = [50, 100, 150, 200, 250]
+
+    # Group by model
+    by_model: dict[str, list[dict]] = defaultdict(list)
+    for g in games:
+        by_model[g["model_id"]].append(g)
+
+    model_names = sorted(by_model.keys())
+    print(f"\n  Cross-Model Performance Scorecard ({len(games)} games)")
+    print(f"  {'=' * 70}")
+
+    # --- Outcome summary ---
+    print(f"\n  Outcome Summary")
+    print("  " + "-" * 50)
+    headers = ["Model", "Games", "Victories", "Defeats", "Incomplete", "Avg Turn"]
+    align = ["<", ">", ">", ">", ">", ">"]
+    rows = []
+    for model in model_names:
+        gg = by_model[model]
+        victories = 0
+        defeats = 0
+        incomplete = 0
+        final_turns = []
+        for g in gg:
+            diary = cloud_diary(g["run_id"])
+            agent = _agent_rows(diary)
+            if agent:
+                final_turns.append(agent[-1].get("turn", 0))
+            go = _find_game_over(diary)
+            if go:
+                result = go.get("result") or go.get("outcome", {}).get("result", "")
+                if "victory" in str(result).lower():
+                    victories += 1
+                elif "defeat" in str(result).lower():
+                    defeats += 1
+                else:
+                    incomplete += 1
+            else:
+                incomplete += 1
+        avg_turn = f"{sum(final_turns) / len(final_turns):.0f}" if final_turns else "-"
+        rows.append(
+            [
+                model.rsplit("/", 1)[-1][:30],
+                len(gg),
+                victories,
+                defeats,
+                incomplete,
+                avg_turn,
+            ]
+        )
+    _table(headers, rows, align)
+
+    # --- Checkpoint comparison ---
+    print(f"\n  Score at Checkpoints (agent score, avg across games)")
+    print("  " + "-" * 50)
+    headers = ["Turn"] + [m.rsplit("/", 1)[-1][:20] for m in model_names]
+    align = [">"] + [">"] * len(model_names)
+    rows = []
+    for cp in checkpoints:
+        vals = []
+        for model in model_names:
+            scores = []
+            for g in by_model[model]:
+                diary = cloud_diary(g["run_id"])
+                row = _scoreboard_at_turn(diary, cp)
+                if row and row.get("score") is not None:
+                    scores.append(row["score"])
+            if scores:
+                vals.append(f"{sum(scores) / len(scores):.0f}")
+            else:
+                vals.append("-")
+        rows.append([f"T{cp}"] + vals)
+    _table(headers, rows, align)
+
+    # --- Cities at checkpoints ---
+    print(f"\n  Cities at Checkpoints (avg)")
+    print("  " + "-" * 50)
+    rows = []
+    for cp in checkpoints:
+        vals = []
+        for model in model_names:
+            cities_list = []
+            for g in by_model[model]:
+                diary = cloud_diary(g["run_id"])
+                row = _scoreboard_at_turn(diary, cp)
+                if row and row.get("cities") is not None:
+                    cities_list.append(row["cities"])
+            if cities_list:
+                vals.append(f"{sum(cities_list) / len(cities_list):.1f}")
+            else:
+                vals.append("-")
+        rows.append([f"T{cp}"] + vals)
+    _table(headers, rows, align)
+
+    # --- Science at checkpoints ---
+    print(f"\n  Science at Checkpoints (avg)")
+    print("  " + "-" * 50)
+    rows = []
+    for cp in checkpoints:
+        vals = []
+        for model in model_names:
+            sci_list = []
+            for g in by_model[model]:
+                diary = cloud_diary(g["run_id"])
+                row = _scoreboard_at_turn(diary, cp)
+                if row and row.get("science") is not None:
+                    sci_list.append(row["science"])
+            if sci_list:
+                vals.append(f"{sum(sci_list) / len(sci_list):.1f}")
+            else:
+                vals.append("-")
+        rows.append([f"T{cp}"] + vals)
+    _table(headers, rows, align)
+
+    # --- Rank at checkpoints ---
+    print(f"\n  Agent Rank vs Rivals at Checkpoints (avg, 1=best)")
+    print("  " + "-" * 50)
+    rows = []
+    for cp in checkpoints:
+        vals = []
+        for model in model_names:
+            ranks = []
+            for g in by_model[model]:
+                diary = cloud_diary(g["run_id"])
+                r = _rank_among_players(diary, cp)
+                if r is not None:
+                    ranks.append(r)
+            if ranks:
+                vals.append(f"{sum(ranks) / len(ranks):.1f}")
+            else:
+                vals.append("-")
+        rows.append([f"T{cp}"] + vals)
+    _table(headers, rows, align)
+
+
+def cmd_efficiency(args):
+    """Tool efficiency analysis by game phase."""
+    games = _all_substantial_games(model_filter=args.model)
+    if not games:
+        print("No substantial games found (diary > 50KB)")
+        return
+
+    phases = [
+        ("Early (T1-50)", 1, 50),
+        ("Mid (T51-150)", 51, 150),
+        ("Late (T150+)", 151, 9999),
+    ]
+
+    by_model: dict[str, list[dict]] = defaultdict(list)
+    for g in games:
+        by_model[g["model_id"]].append(g)
+
+    model_names = sorted(by_model.keys())
+    print(f"\n  Tool Efficiency by Game Phase ({len(games)} games)")
+    print(f"  {'=' * 70}")
+
+    for model in model_names:
+        print(f"\n  Model: {model.rsplit('/', 1)[-1]}")
+        print("  " + "-" * 50)
+
+        phase_stats: dict[str, dict] = {}
+        for phase_name, t_start, t_end in phases:
+            all_calls_per_turn = []
+            all_unique_per_turn = []
+            all_score_per_call = []
+            all_redundant = []
+
+            for g in by_model[model]:
+                log = cloud_log(g["run_id"])
+                diary = cloud_diary(g["run_id"])
+                tool_calls = [
+                    e
+                    for e in log
+                    if e.get("type") == "tool_call"
+                    and t_start <= (e.get("turn") or 0) <= t_end
+                ]
+                if not tool_calls:
+                    continue
+
+                # Calls per turn
+                per_turn: dict[int, list[str]] = defaultdict(list)
+                for e in tool_calls:
+                    per_turn[e.get("turn", 0)].append(e["tool"])
+
+                if per_turn:
+                    for t, tools in per_turn.items():
+                        all_calls_per_turn.append(len(tools))
+                        all_unique_per_turn.append(len(set(tools)))
+                        # Redundant: same tool called 2+ times in same turn
+                        tool_counts = Counter(tools)
+                        redundant = sum(c - 1 for c in tool_counts.values() if c > 1)
+                        all_redundant.append(redundant)
+
+                # Score per call
+                score_start_row = _scoreboard_at_turn(diary, t_start)
+                score_end_row = _scoreboard_at_turn(diary, t_end)
+                if score_start_row and score_end_row:
+                    s0 = score_start_row.get("score", 0)
+                    s1 = score_end_row.get("score", 0)
+                    n_calls = len(tool_calls)
+                    if n_calls > 0:
+                        all_score_per_call.append((s1 - s0) / n_calls)
+
+            avg_calls = (
+                f"{sum(all_calls_per_turn) / len(all_calls_per_turn):.1f}"
+                if all_calls_per_turn
+                else "-"
+            )
+            avg_unique = (
+                f"{sum(all_unique_per_turn) / len(all_unique_per_turn):.1f}"
+                if all_unique_per_turn
+                else "-"
+            )
+            avg_spc = (
+                f"{sum(all_score_per_call) / len(all_score_per_call):.2f}"
+                if all_score_per_call
+                else "-"
+            )
+            avg_redundant = (
+                f"{sum(all_redundant) / len(all_redundant):.1f}"
+                if all_redundant
+                else "-"
+            )
+
+            phase_stats[phase_name] = {
+                "calls/turn": avg_calls,
+                "unique/turn": avg_unique,
+                "score/call": avg_spc,
+                "redundant/turn": avg_redundant,
+            }
+
+        headers = ["Metric"] + [p[0] for p in phases]
+        align = ["<"] + [">"] * len(phases)
+        rows = []
+        for metric in ["calls/turn", "unique/turn", "score/call", "redundant/turn"]:
+            row = [metric]
+            for phase_name, _, _ in phases:
+                row.append(phase_stats.get(phase_name, {}).get(metric, "-"))
+            rows.append(row)
+        _table(headers, rows, align)
+
+    # --- Redundant call detail ---
+    print(f"\n  Redundant Call Hotspots (same tool 2+ times in one turn)")
+    print("  " + "-" * 50)
+    redundant_counter: Counter = Counter()
+    for g in games:
+        log = cloud_log(g["run_id"])
+        tool_calls = [e for e in log if e.get("type") == "tool_call"]
+        per_turn: dict[int, list[str]] = defaultdict(list)
+        for e in tool_calls:
+            per_turn[e.get("turn", 0)].append(e["tool"])
+        for t, tools in per_turn.items():
+            for tool, count in Counter(tools).items():
+                if count >= 2:
+                    redundant_counter[tool] += count - 1
+
+    headers = ["Tool", "Redundant Calls"]
+    align = ["<", ">"]
+    rows = [[tool, count] for tool, count in redundant_counter.most_common(15)]
+    _table(headers, rows, align)
+
+
+def cmd_context_growth(args):
+    """Context size estimation from result_summary lengths."""
+    games = _all_substantial_games(model_filter=args.model)
+    if not games:
+        print("No substantial games found (diary > 50KB)")
+        return
+
+    by_model: dict[str, list[dict]] = defaultdict(list)
+    for g in games:
+        by_model[g["model_id"]].append(g)
+
+    model_names = sorted(by_model.keys())
+    print(f"\n  Context Growth Analysis ({len(games)} games)")
+    print(f"  {'=' * 70}")
+
+    checkpoints = [50, 100, 150]
+
+    # --- Per-model context at checkpoints ---
+    print(f"\n  Avg Cumulative Context Size at Checkpoints (chars)")
+    print("  " + "-" * 50)
+    headers = ["Turn"] + [m.rsplit("/", 1)[-1][:20] for m in model_names]
+    align = [">"] + [">"] * len(model_names)
+    rows = []
+    for cp in checkpoints:
+        vals = []
+        for model in model_names:
+            sizes = []
+            for g in by_model[model]:
+                log = cloud_log(g["run_id"])
+                cum = 0
+                for e in log:
+                    if (e.get("turn") or 0) <= cp:
+                        cum += len(e.get("result_summary", ""))
+                if cum > 0:
+                    sizes.append(cum)
+            if sizes:
+                avg = sum(sizes) / len(sizes)
+                vals.append(f"{avg / 1000:.0f}K")
+            else:
+                vals.append("-")
+        rows.append([f"T{cp}"] + vals)
+    _table(headers, rows, align)
+
+    # --- Top 5 context-heavy tools ---
+    print(f"\n  Top 10 Context-Heavy Tools (total result_summary chars across all games)")
+    print("  " + "-" * 50)
+    tool_chars: Counter = Counter()
+    tool_call_count: Counter = Counter()
+    for g in games:
+        log = cloud_log(g["run_id"])
+        for e in log:
+            if e.get("type") == "tool_call":
+                chars = len(e.get("result_summary", ""))
+                tool_chars[e["tool"]] += chars
+                tool_call_count[e["tool"]] += 1
+
+    headers = ["Tool", "Total Chars", "Calls", "Avg Chars/Call"]
+    align = ["<", ">", ">", ">"]
+    rows = []
+    for tool, total_chars in tool_chars.most_common(10):
+        calls = tool_call_count[tool]
+        avg = total_chars / calls if calls else 0
+        rows.append(
+            [
+                tool,
+                f"{total_chars / 1000:.0f}K",
+                calls,
+                f"{avg:.0f}",
+            ]
+        )
+    _table(headers, rows, align)
+
+    # --- Context per turn sparklines ---
+    print(f"\n  Context Chars/Turn Sparklines")
+    print("  " + "-" * 50)
+    for model in model_names:
+        for g in by_model[model]:
+            log = cloud_log(g["run_id"])
+            if not log:
+                continue
+            per_turn: dict[int, int] = defaultdict(int)
+            for e in log:
+                t = e.get("turn") or 0
+                per_turn[t] += len(e.get("result_summary", ""))
+            if not per_turn:
+                continue
+            max_turn = max(per_turn.keys())
+            vals = [per_turn.get(t, 0) for t in range(1, max_turn + 1)]
+            if vals:
+                label = f"{model.rsplit('/', 1)[-1][:15]} {g['run_id'][:8]}"
+                total = sum(vals)
+                print(
+                    f"    {label:<28} {_sparkline(vals, 40)}  ({total / 1000:.0f}K total)"
+                )
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1825,6 +2356,19 @@ def main():
     p_card = sub.add_parser("scorecard", help="Side-by-side model scorecard")
     p_card.add_argument("--models", help="Comma-separated model names")
 
+    # performance
+    p_perf = sub.add_parser("performance", help="Cross-model performance scorecard")
+    p_perf.add_argument("--model", help="Filter by model name")
+    p_perf.add_argument("--scenario", help="Filter by scenario")
+
+    # efficiency
+    p_eff = sub.add_parser("efficiency", help="Tool efficiency by game phase")
+    p_eff.add_argument("--model", help="Filter by model name")
+
+    # context
+    p_ctx = sub.add_parser("context", help="Context growth analysis")
+    p_ctx.add_argument("--model", help="Filter by model name")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -1840,6 +2384,9 @@ def main():
         "reflection-gap": cmd_reflection_gap,
         "score": cmd_score,
         "scorecard": cmd_scorecard,
+        "performance": cmd_performance,
+        "efficiency": cmd_efficiency,
+        "context": cmd_context_growth,
     }
     dispatch[args.command](args)
 
