@@ -340,6 +340,10 @@ def run_scenario(
         f"model_id={clean_model}",
         "--max-samples",
         "1",  # one game at a time
+        "--attempt-timeout",
+        "600",  # 10 min max per API call — prevents indefinite hangs
+        "--max-retries",
+        "6",
     ]
     # Azure doesn't support the OpenAI Responses API
     deployment = clean_model
