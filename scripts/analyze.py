@@ -205,6 +205,7 @@ def _pct(num: int, den: int) -> str:
 def _percentile(vals: list[float], p: float) -> float:
     if not vals:
         return 0.0
+    vals = sorted(vals)
     k = (len(vals) - 1) * p
     f = int(k)
     c = f + 1
@@ -259,10 +260,10 @@ def _analyze_log(entries: list[dict]) -> dict:
     if not tool_calls:
         return {}
 
-    tools = Counter(e["tool"] for e in tool_calls)
-    cats = Counter(e["category"] for e in tool_calls)
+    tools = Counter(e.get("tool", "unknown") for e in tool_calls)
+    cats = Counter(e.get("category", "unknown") for e in tool_calls)
     errors = [e for e in tool_calls if not e.get("success", True)]
-    error_tools = Counter(e["tool"] for e in errors)
+    error_tools = Counter(e.get("tool", "unknown") for e in errors)
 
     # Per-turn stats
     per_turn: dict[int, int] = defaultdict(int)
@@ -275,7 +276,7 @@ def _analyze_log(entries: list[dict]) -> dict:
     for e in tool_calls:
         d = e.get("duration_ms")
         if d is not None:
-            durations_by_tool[e["tool"]].append(d)
+            durations_by_tool[e.get("tool", "unknown")].append(d)
 
     turns = sorted(set(e.get("turn") for e in tool_calls if e.get("turn") is not None))
 
@@ -543,6 +544,7 @@ def cmd_compare(args):
     print(f"\n  Yield Milestones (agent player)")
     print("  " + "-" * 50)
     milestones = [50, 100, 150, 200, 250]
+    _summary_cache: dict[str, dict | None] = {}
     for metric in [
         "score",
         "science",
@@ -562,9 +564,12 @@ def cmd_compare(args):
                 # Average across games for this model
                 game_vals = []
                 for g in model_games[model]:
-                    summary = convex_query(
-                        "diary:getGameSummary", {"gameId": g["gameId"]}
-                    )
+                    gid = g["gameId"]
+                    if gid not in _summary_cache:
+                        _summary_cache[gid] = convex_query(
+                            "diary:getGameSummary", {"gameId": gid}
+                        )
+                    summary = _summary_cache[gid]
                     if not summary or not summary.get("turnSeries"):
                         continue
                     ts = summary["turnSeries"]
@@ -611,10 +616,10 @@ def cmd_strategy(args):
 
     strategic_calls: dict[str, list[int]] = defaultdict(list)
     for e in tool_calls:
-        if e["tool"] in STRATEGIC_TOOLS:
+        if e.get("tool", "unknown") in STRATEGIC_TOOLS:
             t = e.get("turn")
             if t is not None:
-                strategic_calls[e["tool"]].append(int(t))
+                strategic_calls[e.get("tool", "unknown")].append(int(t))
 
     headers = ["Tool", "Count", "First", "Last", "Max Gap", "Avg Gap"]
     align = ["<", ">", ">", ">", ">", ">"]
@@ -689,7 +694,7 @@ def cmd_strategy(args):
     # --- Research changes ---
     print(f"\n  Research Activity")
     print("  " + "-" * 50)
-    research_calls = [e for e in tool_calls if e["tool"] == "set_research"]
+    research_calls = [e for e in tool_calls if e.get("tool") == "set_research"]
     if research_calls:
         print(f"    Total set_research calls: {len(research_calls)}")
         # Show first 10 and last 5
@@ -775,7 +780,7 @@ def cmd_turns(args):
     # Per-turn tool counts
     per_turn: dict[int, Counter] = defaultdict(Counter)
     for e in in_range:
-        per_turn[e.get("turn", 0)][e["tool"]] += 1
+        per_turn[e.get("turn", 0)][e.get("tool", "unknown")] += 1
 
     turns = sorted(per_turn.keys())
     if not turns:
@@ -939,7 +944,7 @@ def cmd_sensorium(args):
         n_turns = len(turns) or 1
 
         # --- Attention classification ---
-        attn = Counter(_classify_tool(e["tool"]) for e in tool_calls)
+        attn = Counter(_classify_tool(e.get("tool", "unknown")) for e in tool_calls)
         total = len(tool_calls)
         print(f"\n  Attention Classification ({total} calls across {n_turns} turns)")
         print("  " + "-" * 50)
@@ -971,9 +976,9 @@ def cmd_sensorium(args):
         rows = []
         for domain, tools in domains.items():
             domain_turns = sorted(
-                set(e.get("turn", 0) for e in tool_calls if e["tool"] in tools)
+                set(e.get("turn", 0) for e in tool_calls if e.get("tool") in tools)
             )
-            count = sum(1 for e in tool_calls if e["tool"] in tools)
+            count = sum(1 for e in tool_calls if e.get("tool") in tools)
             per100 = f"{100 * count / n_turns:.1f}" if n_turns else "0"
 
             if not domain_turns:
@@ -1011,7 +1016,7 @@ def cmd_sensorium(args):
             set(
                 e.get("turn", 0)
                 for e in tool_calls
-                if _classify_tool(e["tool"]) == "proactive"
+                if _classify_tool(e.get("tool", "unknown")) == "proactive"
             )
         )
         if proactive_turns:
@@ -1036,7 +1041,7 @@ def cmd_sensorium(args):
             n = sum(
                 1
                 for e in tool_calls
-                if e.get("turn") == t and _classify_tool(e["tool"]) == "proactive"
+                if e.get("turn") == t and _classify_tool(e.get("tool", "unknown")) == "proactive"
             )
             proactive_per_turn.append(n)
         print(f"\n  Proactive calls/turn: {_sparkline(proactive_per_turn, 50)}")
@@ -1091,7 +1096,7 @@ def cmd_reflection_gap(args):
             nearby_purchases = [
                 e
                 for e in tool_calls
-                if e["tool"]
+                if e.get("tool")
                 in ("purchase_item", "purchase_tile", "patronize_great_person")
                 and abs(e.get("turn", 0) - turn) <= 3
             ]
@@ -1127,7 +1132,7 @@ def cmd_reflection_gap(args):
                 nearby = [
                     e
                     for e in tool_calls
-                    if e["tool"] in check_tools and abs(e.get("turn", 0) - turn) <= 5
+                    if e.get("tool") in check_tools and abs(e.get("turn", 0) - turn) <= 5
                 ]
                 if nearby:
                     followed += 1
@@ -1166,7 +1171,7 @@ def cmd_reflection_gap(args):
                 nearby = [
                     e
                     for e in tool_calls
-                    if e["tool"] in action_tools
+                    if e.get("tool") in action_tools
                     and keyword.upper().replace(" ", "_")
                     in str(e.get("params", "")).upper()
                     and abs(e.get("turn", 0) - turn) <= 5
@@ -1188,7 +1193,7 @@ def cmd_reflection_gap(args):
     prod_calls = [
         e
         for e in tool_calls
-        if e["tool"] == "set_city_production" and e.get("success", True)
+        if e.get("tool") == "set_city_production" and e.get("success", True)
     ]
     if prod_calls:
         # Group by 50-turn eras
@@ -1603,11 +1608,7 @@ def score_coherence(diary: list[dict], log: list[dict]) -> dict:
         players = by_turn[turn]
         scores_at = sorted([r.get("score", 0) for r in players], reverse=True)
         agent_score = next((r.get("score", 0) for r in players if r.get("is_agent")), 0)
-        rank = (
-            scores_at.index(agent_score) + 1
-            if agent_score in scores_at
-            else len(scores_at)
-        )
+        rank = 1 + sum(1 for s in scores_at if s > agent_score)
         n_players = len(scores_at)
         if n_players > 1:
             ranks.append(rank / n_players)  # 0=first, 1=last
@@ -1950,6 +1951,7 @@ def cmd_performance(args):
         by_model[g["model_id"]].append(g)
 
     model_names = sorted(by_model.keys())
+    _parsed_diary: dict[str, list[dict]] = {}
     print(f"\n  Cross-Model Performance Scorecard ({len(games)} games)")
     print(f"  {'=' * 70}")
 
@@ -1966,7 +1968,10 @@ def cmd_performance(args):
         incomplete = 0
         final_turns = []
         for g in gg:
-            diary = cloud_diary(g["run_id"])
+            rid = g["run_id"]
+            if rid not in _parsed_diary:
+                _parsed_diary[rid] = cloud_diary(rid)
+            diary = _parsed_diary[rid]
             agent = _agent_rows(diary)
             if agent:
                 final_turns.append(agent[-1].get("turn", 0))
@@ -2005,7 +2010,10 @@ def cmd_performance(args):
         for model in model_names:
             scores = []
             for g in by_model[model]:
-                diary = cloud_diary(g["run_id"])
+                rid = g["run_id"]
+                if rid not in _parsed_diary:
+                    _parsed_diary[rid] = cloud_diary(rid)
+                diary = _parsed_diary[rid]
                 row = _scoreboard_at_turn(diary, cp)
                 if row and row.get("score") is not None:
                     scores.append(row["score"])
@@ -2025,7 +2033,10 @@ def cmd_performance(args):
         for model in model_names:
             cities_list = []
             for g in by_model[model]:
-                diary = cloud_diary(g["run_id"])
+                rid = g["run_id"]
+                if rid not in _parsed_diary:
+                    _parsed_diary[rid] = cloud_diary(rid)
+                diary = _parsed_diary[rid]
                 row = _scoreboard_at_turn(diary, cp)
                 if row and row.get("cities") is not None:
                     cities_list.append(row["cities"])
@@ -2045,7 +2056,10 @@ def cmd_performance(args):
         for model in model_names:
             sci_list = []
             for g in by_model[model]:
-                diary = cloud_diary(g["run_id"])
+                rid = g["run_id"]
+                if rid not in _parsed_diary:
+                    _parsed_diary[rid] = cloud_diary(rid)
+                diary = _parsed_diary[rid]
                 row = _scoreboard_at_turn(diary, cp)
                 if row and row.get("science") is not None:
                     sci_list.append(row["science"])
@@ -2065,7 +2079,10 @@ def cmd_performance(args):
         for model in model_names:
             ranks = []
             for g in by_model[model]:
-                diary = cloud_diary(g["run_id"])
+                rid = g["run_id"]
+                if rid not in _parsed_diary:
+                    _parsed_diary[rid] = cloud_diary(rid)
+                diary = _parsed_diary[rid]
                 r = _rank_among_players(diary, cp)
                 if r is not None:
                     ranks.append(r)
@@ -2095,6 +2112,8 @@ def cmd_efficiency(args):
         by_model[g["model_id"]].append(g)
 
     model_names = sorted(by_model.keys())
+    _parsed_log: dict[str, list[dict]] = {}
+    _parsed_diary: dict[str, list[dict]] = {}
     print(f"\n  Tool Efficiency by Game Phase ({len(games)} games)")
     print(f"  {'=' * 70}")
 
@@ -2110,8 +2129,13 @@ def cmd_efficiency(args):
             all_redundant = []
 
             for g in by_model[model]:
-                log = cloud_log(g["run_id"])
-                diary = cloud_diary(g["run_id"])
+                rid = g["run_id"]
+                if rid not in _parsed_log:
+                    _parsed_log[rid] = cloud_log(rid)
+                log = _parsed_log[rid]
+                if rid not in _parsed_diary:
+                    _parsed_diary[rid] = cloud_diary(rid)
+                diary = _parsed_diary[rid]
                 tool_calls = [
                     e
                     for e in log
@@ -2124,7 +2148,7 @@ def cmd_efficiency(args):
                 # Calls per turn
                 per_turn: dict[int, list[str]] = defaultdict(list)
                 for e in tool_calls:
-                    per_turn[e.get("turn", 0)].append(e["tool"])
+                    per_turn[e.get("turn", 0)].append(e.get("tool", "unknown"))
 
                 if per_turn:
                     for t, tools in per_turn.items():
@@ -2188,11 +2212,14 @@ def cmd_efficiency(args):
     print("  " + "-" * 50)
     redundant_counter: Counter = Counter()
     for g in games:
-        log = cloud_log(g["run_id"])
+        rid = g["run_id"]
+        if rid not in _parsed_log:
+            _parsed_log[rid] = cloud_log(rid)
+        log = _parsed_log[rid]
         tool_calls = [e for e in log if e.get("type") == "tool_call"]
         per_turn: dict[int, list[str]] = defaultdict(list)
         for e in tool_calls:
-            per_turn[e.get("turn", 0)].append(e["tool"])
+            per_turn[e.get("turn", 0)].append(e.get("tool", "unknown"))
         for t, tools in per_turn.items():
             for tool, count in Counter(tools).items():
                 if count >= 2:
@@ -2216,6 +2243,7 @@ def cmd_context_growth(args):
         by_model[g["model_id"]].append(g)
 
     model_names = sorted(by_model.keys())
+    _parsed_log: dict[str, list[dict]] = {}
     print(f"\n  Context Growth Analysis ({len(games)} games)")
     print(f"  {'=' * 70}")
 
@@ -2232,7 +2260,10 @@ def cmd_context_growth(args):
         for model in model_names:
             sizes = []
             for g in by_model[model]:
-                log = cloud_log(g["run_id"])
+                rid = g["run_id"]
+                if rid not in _parsed_log:
+                    _parsed_log[rid] = cloud_log(rid)
+                log = _parsed_log[rid]
                 cum = 0
                 for e in log:
                     if (e.get("turn") or 0) <= cp:
@@ -2253,12 +2284,15 @@ def cmd_context_growth(args):
     tool_chars: Counter = Counter()
     tool_call_count: Counter = Counter()
     for g in games:
-        log = cloud_log(g["run_id"])
+        rid = g["run_id"]
+        if rid not in _parsed_log:
+            _parsed_log[rid] = cloud_log(rid)
+        log = _parsed_log[rid]
         for e in log:
             if e.get("type") == "tool_call":
                 chars = len(e.get("result_summary", ""))
-                tool_chars[e["tool"]] += chars
-                tool_call_count[e["tool"]] += 1
+                tool_chars[e.get("tool", "unknown")] += chars
+                tool_call_count[e.get("tool", "unknown")] += 1
 
     headers = ["Tool", "Total Chars", "Calls", "Avg Chars/Call"]
     align = ["<", ">", ">", ">"]
@@ -2281,7 +2315,10 @@ def cmd_context_growth(args):
     print("  " + "-" * 50)
     for model in model_names:
         for g in by_model[model]:
-            log = cloud_log(g["run_id"])
+            rid = g["run_id"]
+            if rid not in _parsed_log:
+                _parsed_log[rid] = cloud_log(rid)
+            log = _parsed_log[rid]
             if not log:
                 continue
             per_turn: dict[int, int] = defaultdict(int)
