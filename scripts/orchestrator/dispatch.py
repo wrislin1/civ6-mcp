@@ -78,12 +78,13 @@ def dispatch_job(job: JobState, machine: Machine, is_retry: bool = False) -> boo
     machine.clear_completion_sentinel()
     machine.clear_heartbeat()
 
-    # Kill stale processes — only kill the game on retries (fresh dispatches
-    # must not destroy a running game from a previous orchestrator instance)
-    machine.kill_runner()
+    # Only kill processes on retries — fresh dispatches must not destroy
+    # a running game from a previous orchestrator instance. Discovery
+    # (in run_batch) already verified the machine is free before we get here.
     if is_retry:
+        machine.kill_runner()
         machine.kill_game()
-    time.sleep(5)
+        time.sleep(5)
 
     # Launch
     ok = machine.launch_runner(job.model, job.scenario, 1)
@@ -194,31 +195,42 @@ def poll_jobs(
                 post_game_pipeline(job, machine, config)
                 continue
 
-            # Heartbeat stale check
+            # Heartbeat stale check — don't auto-kill, flag for human review
             if is_heartbeat_stale(hb_info, job, config.defaults):
                 # Double-check after short delay
                 time.sleep(5)
                 hb2 = machine.read_heartbeat()
                 hb2_ts = hb2.get("ts", 0) if hb2 else 0
                 if time.time() - hb2_ts > config.defaults.playing_timeout:
+                    age = int(hb_info["age"])
                     log.warning(
-                        "Heartbeat stale: %s (phase=%s, T%d, age=%.0fs)",
-                        jid,
-                        phase,
-                        job.turn,
-                        hb_info["age"],
+                        "Heartbeat stale: %s (phase=%s, T%d, age=%ds)",
+                        jid, phase, job.turn, age,
                     )
-                    machine.kill_runner()
-                    machine.kill_game()
-                    handle_failure(job, machine, "heartbeat stale", config)
+                    job.transition(
+                        "needs_attention",
+                        f"heartbeat stale ({age}s) at T{job.turn}",
+                    )
+                    send_alert(
+                        f"⚠️ STALL: {jid} T{job.turn} — heartbeat stale {age}s. "
+                        f"Use 'orchestrator retry {jid}' or 'abandon {jid}'",
+                        config.defaults.alert_webhook,
+                    )
                     continue
 
-            # Stall detection (turn not advancing)
+            # Stall detection (turn not advancing) — flag, don't kill
             if job.state == "running" and is_stalled(job, config.defaults):
-                log.error("Stall timeout: %s at T%d", jid, job.turn)
-                machine.kill_runner()
-                machine.kill_game()
-                handle_failure(job, machine, f"stall at T{job.turn}", config)
+                stall_min = int((time.time() - job.last_turn_change) / 60)
+                log.error("Stall timeout: %s at T%d (%dm)", jid, job.turn, stall_min)
+                job.transition(
+                    "needs_attention",
+                    f"stall at T{job.turn} ({stall_min}m no turn advance)",
+                )
+                send_alert(
+                    f"⚠️ STALL: {jid} T{job.turn} — no turn advance for {stall_min}m. "
+                    f"Use 'orchestrator retry {jid}' or 'abandon {jid}'",
+                    config.defaults.alert_webhook,
+                )
                 continue
 
             if job.state == "running" and is_stall_warning(job, config.defaults):
@@ -261,11 +273,52 @@ def run_batch(config: Config, state: BatchState | None = None) -> None:
                 "job_count": sum(s.runs for s in config.jobs),
             },
         )
-        # Initial cleanup on all machines in the job matrix
+        # Discovery: check each machine for running games before cleaning
         machine_names = {s.machine for s in config.jobs}
         for name in machine_names:
             m = machines.get(name)
-            if m and m.is_reachable():
+            if not m or not m.is_reachable():
+                continue
+            hb = m.read_heartbeat()
+            if hb and hb.get("phase") in ("playing", "connecting", "loading"):
+                # A game is running — try to adopt it into a pending job
+                hb_model = hb.get("model_id", "")
+                hb_scenario = hb.get("scenario_id", "")
+                adopted = False
+                for jid, job in state.jobs.items():
+                    if (
+                        job.machine == name
+                        and job.state == "pending"
+                        and hb_model  # guard: empty string matches everything
+                        and hb_scenario
+                        and job.model.rsplit("/", 1)[-1] == hb_model
+                        and job.scenario == hb_scenario
+                    ):
+                        hb_turn = hb.get("turn", 0)
+                        if isinstance(hb_turn, str) and hb_turn.isdigit():
+                            hb_turn = int(hb_turn)
+                        elif not isinstance(hb_turn, int):
+                            hb_turn = 0
+                        job.transition("running", f"adopted at T{hb_turn}")
+                        job.run_id = hb.get("run_id", "")
+                        job.turn = hb_turn
+                        job.last_heartbeat_ts = hb.get("ts", 0)
+                        job.started_at = hb.get("ts", 0) or time.time()
+                        job.last_turn_change = time.time()
+                        log.info(
+                            "Adopted running game on %s: %s at T%s",
+                            name, jid, hb_turn,
+                        )
+                        adopted = True
+                        break
+                if not adopted:
+                    log.warning(
+                        "Running game on %s (model=%s, scenario=%s) "
+                        "doesn't match any pending job — leaving it alone",
+                        name, hb_model, hb_scenario,
+                    )
+            else:
+                # No running game — safe to clean
                 clean_machine(m)
                 log.info("  %s: cleaned", name)
 
@@ -301,6 +354,18 @@ def run_batch(config: Config, state: BatchState | None = None) -> None:
             log.info("Launching %s on %s", jid, job.machine)
             dispatch_job(job, machine, is_retry=is_retry)
 
+        # Re-read state from disk to pick up external retry/abandon mutations
+        # (must happen BEFORE poll_jobs so polling operates on merged state)
+        if poll_count > 0 and poll_count % 5 == 0:
+            disk_state = BatchState.load()
+            for jid, disk_job in disk_state.jobs.items():
+                if jid in state.jobs and disk_job.state != state.jobs[jid].state:
+                    log.info(
+                        "External state change: %s %s → %s",
+                        jid, state.jobs[jid].state, disk_job.state,
+                    )
+                    state.jobs[jid] = disk_job
+
         # Poll active jobs
         poll_jobs(state, machines, config)
 
@@ -328,9 +393,11 @@ def run_batch(config: Config, state: BatchState | None = None) -> None:
             for j in state.jobs.values()
             if j.state in ("booting", "running")
         )
+        attn = counts.get("needs_attention", 0)
+        attn_str = f" {attn}attn" if attn else ""
         sys.stdout.write(
             f"\r  [{counts.get('done', 0)}ok {counts.get('running', 0) + counts.get('booting', 0)}run "
-            f"{counts.get('pending', 0)}wait {counts.get('failed', 0)}fail] {active_info}    "
+            f"{counts.get('pending', 0)}wait {counts.get('failed', 0)}fail{attn_str}] {active_info}    "
         )
         sys.stdout.flush()
 

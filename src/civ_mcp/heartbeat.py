@@ -18,6 +18,8 @@ HEARTBEAT_PATH = Path.home() / ".civ6-mcp" / "heartbeat.json"
 _run_id: str = ""
 _civ: str = ""
 _seed: int = 0
+_model_id: str = ""
+_scenario_id: str = ""
 
 
 def init(run_id: str) -> None:
@@ -33,6 +35,13 @@ def bind_game(civ: str, seed: int) -> None:
     _seed = seed
 
 
+def bind_eval(model_id: str, scenario_id: str) -> None:
+    """Set model/scenario so the orchestrator can identify this game."""
+    global _model_id, _scenario_id
+    _model_id = model_id
+    _scenario_id = scenario_id
+
+
 def write(phase: str, turn: int = 0) -> None:
     """Write heartbeat.json atomically (tmp + rename)."""
     try:
@@ -45,6 +54,8 @@ def write(phase: str, turn: int = 0) -> None:
             "run_id": _run_id,
             "civ": _civ,
             "seed": _seed,
+            "model_id": _model_id,
+            "scenario_id": _scenario_id,
         }
         tmp = HEARTBEAT_PATH.with_suffix(".tmp")
         tmp.write_text(json.dumps(data))

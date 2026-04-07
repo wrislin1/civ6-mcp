@@ -14,11 +14,12 @@ log = logging.getLogger("orchestrator")
 
 # Valid state transitions
 TRANSITIONS = {
-    "pending": {"launching", "failed"},
+    "pending": {"launching", "failed", "running"},  # running = adopted from discovery
     "launching": {"booting", "failed", "pending"},  # pending = retry
-    "booting": {"running", "failed", "pending"},
-    "running": {"completing", "failed", "pending"},
+    "booting": {"running", "failed", "pending", "needs_attention"},
+    "running": {"completing", "failed", "pending", "needs_attention"},
     "completing": {"done", "failed"},
+    "needs_attention": {"pending", "failed"},  # human decides: retry or abandon
     "done": set(),
     "failed": {"pending"},  # retry
 }
@@ -139,10 +140,10 @@ class BatchState:
         ]
 
     def machine_busy(self, machine: str) -> bool:
-        """Is a machine currently running a job?"""
+        """Is a machine currently running a job (or awaiting human intervention)?"""
         return any(
             j.machine == machine
-            and j.state in ("launching", "booting", "running", "completing")
+            and j.state in ("launching", "booting", "running", "completing", "needs_attention")
             for j in self.jobs.values()
         )
 

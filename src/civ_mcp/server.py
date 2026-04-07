@@ -297,6 +297,16 @@ async def lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         emitter.add_sink(AlertSink(alert_webhook))
     emitter.start()
     heartbeat.init(emitter.run_id)
+    # Bind eval identity so the orchestrator can match running games to jobs
+    eval_model = os.environ.get("CIV_MCP_AGENT_MODEL", "")
+    eval_metadata = os.environ.get("CIV_MCP_METADATA", "")
+    eval_scenario = ""
+    if eval_metadata:
+        try:
+            eval_scenario = json.loads(eval_metadata).get("scenario_id", "")
+        except Exception:
+            pass
+    heartbeat.bind_eval(eval_model, eval_scenario)
     heartbeat.write("starting")
 
     logger = GameLogger(emitter)

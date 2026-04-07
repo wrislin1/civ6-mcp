@@ -294,6 +294,18 @@ def main() -> None:
     # summary
     sub.add_parser("summary", help="Aggregate results by model and scenario")
 
+    # retry — recover a stalled job
+    p_retry = sub.add_parser(
+        "retry", help="Kill and retry a needs_attention or failed job"
+    )
+    p_retry.add_argument("job_id", help="Job ID to retry")
+
+    # abandon — give up on a stalled job
+    p_abandon = sub.add_parser(
+        "abandon", help="Mark a needs_attention job as failed"
+    )
+    p_abandon.add_argument("job_id", help="Job ID to abandon")
+
     # logs
     p_logs = sub.add_parser("logs", help="Tail remote runner logs")
     p_logs.add_argument("--machine", required=True)
@@ -368,6 +380,47 @@ def main() -> None:
             f"Resuming: {active} active, {pending} pending, {done} done, {failed} failed"
         )
         run_batch(config, state=state)
+
+    elif args.command == "retry":
+        state = BatchState.load()
+        job = state.jobs.get(args.job_id)
+        if not job:
+            print(f"Unknown job: {args.job_id}")
+            sys.exit(1)
+        if job.state not in ("needs_attention", "failed"):
+            print(f"Job {args.job_id} is in state '{job.state}' — can only retry needs_attention or failed")
+            sys.exit(1)
+        m = machines.get(job.machine)
+        if m and m.is_reachable():
+            print(f"  Killing processes on {job.machine}...")
+            m.kill_runner()
+            m.kill_game()
+            m.clear_heartbeat()
+        job.turn = 0
+        job.transition("pending", "retried by operator")
+        state.save()
+        print(f"  {args.job_id} → pending (will dispatch on next orchestrator poll)")
+        return
+
+    elif args.command == "abandon":
+        state = BatchState.load()
+        job = state.jobs.get(args.job_id)
+        if not job:
+            print(f"Unknown job: {args.job_id}")
+            sys.exit(1)
+        if job.state != "needs_attention":
+            print(f"Job {args.job_id} is in state '{job.state}' — can only abandon needs_attention")
+            sys.exit(1)
+        m = machines.get(job.machine)
+        if m and m.is_reachable():
+            print(f"  Killing processes on {job.machine}...")
+            m.kill_runner()
+            m.kill_game()
+            m.clear_heartbeat()
+        job.transition("failed", "abandoned by operator")
+        state.save()
+        print(f"  {args.job_id} → failed")
+        return
 
     elif args.command == "sync":
         names = (
