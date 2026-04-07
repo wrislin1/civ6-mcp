@@ -190,14 +190,18 @@ def _find_state_for_job(job_id: str) -> BatchState | None:
 
 
 def _load_all_states() -> BatchState:
-    """Load and merge all state files into one view."""
+    """Load and merge all state files into one view.
+
+    Per-machine files take precedence over legacy state.json.
+    """
     merged = BatchState()
+    # Legacy first (lowest priority)
+    legacy = BatchState.load()
+    merged.jobs.update(legacy.jobs)
+    # Per-machine files overwrite legacy on collision
     for p in CONFIG_DIR.glob("state_*.json"):
         state = BatchState.load(p)
         merged.jobs.update(state.jobs)
-    # Also check legacy state.json
-    legacy = BatchState.load()
-    merged.jobs.update(legacy.jobs)
     return merged
 
 
@@ -392,7 +396,10 @@ def main() -> None:
         run_batch(config)
 
     elif args.command == "resume":
-        state = BatchState.load()
+        # Derive state path from machine config
+        machine_names = {m for m in config.machines}
+        state_path = BatchState.path_for_machines(machine_names)
+        state = BatchState.load(state_path)
         if not state.jobs:
             print("No saved state to resume.")
             return
@@ -476,7 +483,7 @@ def main() -> None:
             print("OK" if m.sync_to_convex() else "FAILED")
 
     elif args.command == "summary":
-        state = BatchState.load()
+        state = _load_all_states()
         if not state.jobs:
             print("No jobs in state.")
         else:

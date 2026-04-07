@@ -135,8 +135,8 @@ class BatchState:
                 _path=p,
             )
         except Exception:
-            log.warning("Failed to load state file, starting fresh", exc_info=True)
-            return cls()
+            log.warning("Failed to load state file %s, starting fresh", p, exc_info=True)
+            return cls(_path=p)
 
     def active_jobs(self) -> list[JobState]:
         """Jobs that are in-flight (not done/failed/pending)."""
