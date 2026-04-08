@@ -187,12 +187,24 @@ def build_gameover_check_gamecore() -> str:
     return f"""
 local winTeam = -1
 pcall(function() winTeam = Game.GetWinningTeam() end)
+local me = Game.GetLocalPlayer()
 if winTeam < 0 then
-    print("GAME_ACTIVE")
+    -- No formal winner yet — but check if the player has been eliminated.
+    -- Player elimination triggers a defeat screen without setting a winning
+    -- team (no civ has achieved a victory condition, the player just lost
+    -- all cities). Detect via IsAlive() which returns false when eliminated.
+    local meAlive = true
+    pcall(function() meAlive = Players[me]:IsAlive() end)
+    if meAlive then
+        print("GAME_ACTIVE")
+        print("{SENTINEL}")
+        return
+    end
+    -- Player eliminated — report as defeat with no specific winner
+    print("GAME_OVER|DEFEAT|Unknown|Elimination|dead|Unknown|-1")
     print("{SENTINEL}")
     return
 end
-local me = Game.GetLocalPlayer()
 local winnerId = -1
 local winnerName = "Unknown"
 local winnerLeader = "Unknown"
@@ -229,16 +241,27 @@ def build_gameover_check() -> str:
 -- EndGameMenu control lookup can fail when blockers coexist with victory screen.
 local winTeam = -1
 pcall(function() winTeam = Game.GetWinningTeam() end)
+local me = Game.GetLocalPlayer()
 if winTeam < 0 then
-    -- No winner — also check EndGameMenu as fallback
+    -- No formal winner — check EndGameMenu as fallback
     local egm = ContextPtr:LookUpControl("/InGame/EndGameMenu")
     if not egm or egm:IsHidden() then
-        print("GAME_ACTIVE")
+        -- EndGameMenu not visible — also check player elimination.
+        -- Player can be defeated (all cities lost) without any civ
+        -- achieving a formal victory condition.
+        local meAlive = true
+        pcall(function() meAlive = Players[me]:IsAlive() end)
+        if meAlive then
+            print("GAME_ACTIVE")
+            print("{SENTINEL}")
+            return
+        end
+        -- Player eliminated — report as defeat
+        print("GAME_OVER|DEFEAT|Unknown|Elimination|dead|Unknown|-1")
         print("{SENTINEL}")
         return
     end
 end
-local me = Game.GetLocalPlayer()
 local meAlive = Players[me]:IsAlive()
 local winTeam = -1
 pcall(function() winTeam = Game.GetWinningTeam() end)
