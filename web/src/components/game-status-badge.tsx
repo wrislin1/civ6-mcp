@@ -9,6 +9,7 @@ import {
   Church,
   Landmark,
   Luggage,
+  Timer,
 } from "lucide-react";
 import type { GameOutcome } from "@/lib/diary-types";
 import { CIV6_COLORS } from "@/lib/civ-colors";
@@ -54,6 +55,8 @@ const VICTORY_TYPE_MAP: Record<string, VictoryMeta> = {
   culture: { icon: Luggage, color: CIV6_COLORS.tourism, label: "Cultural" },
   cultural: { icon: Luggage, color: CIV6_COLORS.tourism, label: "Cultural" },
   score: { icon: Trophy, color: CIV6_COLORS.goldMetal, label: "Score" },
+  elimination: { icon: Skull, color: CIV6_COLORS.military, label: "Eliminated" },
+  turnlimit: { icon: Timer, color: CIV6_COLORS.goldMetal, label: "Time" },
 };
 
 const FALLBACK_VICTORY: VictoryMeta = {
@@ -100,21 +103,23 @@ export function GameStatusBadge({
     const vt = getVictoryTypeMeta(outcome.victoryType);
     const Icon = vt.icon;
     return (
-      <div className="text-right">
+      <div className="shrink-0 text-right">
         <div className="flex items-center justify-end gap-1">
           <span
-            className="font-display text-xs font-bold uppercase tracking-[0.08em]"
+            className="font-display text-xs font-bold uppercase tracking-[0.08em] whitespace-nowrap"
             style={{ color: isVictory ? STATUS_COLORS.victory : STATUS_COLORS.defeat }}
           >
             {isVictory ? "Victory" : "Defeated"}
           </span>
-          <span className="font-mono text-xs tabular-nums text-marble-500">
-            T{outcome.turn}
-          </span>
+          {outcome.turn != null && (
+            <span className="font-mono text-xs tabular-nums text-marble-500">
+              T{outcome.turn}
+            </span>
+          )}
         </div>
         <div className="mt-0.5 flex items-center justify-end gap-1">
           <CivIcon icon={Icon} color={vt.color} size="sm" />
-          <span className="text-xs" style={{ color: vt.color }}>{vt.label}</span>
+          <span className="text-xs truncate max-w-[5rem]" style={{ color: vt.color }}>{vt.label}</span>
         </div>
       </div>
     );

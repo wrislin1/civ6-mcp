@@ -9,6 +9,7 @@ import { CivSymbol } from "./civ-icon";
 import { LeaderPortrait } from "@/components/leader-portrait";
 import { GameStatusBadge, getGameStatusColor } from "@/components/game-status-badge";
 import { formatModelName } from "@/lib/model-registry";
+import { cleanEnumName } from "@/lib/game-utils";
 import { SkeletonBlock, SkeletonLine } from "./skeleton";
 
 export function RecentGames() {
@@ -86,12 +87,12 @@ export function RecentGames() {
                   <div className="flex items-center gap-1">
                     <CivSymbol civ={game.label} />
                     <span className="font-display text-sm font-bold tracking-wide uppercase text-marble-800">
-                      {game.label}
+                      {cleanEnumName(game.label)}
                     </span>
                   </div>
                   {game.leader && (
                     <p className="text-xs text-marble-500 truncate">
-                      {game.leader}
+                      {cleanEnumName(game.leader)}
                     </p>
                   )}
                   {game.agentModel && (
