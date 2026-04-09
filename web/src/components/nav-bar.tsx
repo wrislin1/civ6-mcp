@@ -16,15 +16,15 @@ export function NavBar({ active, turn }: NavBarProps) {
         {/* Left — civ6-mcp brand + project nav */}
         <div className="flex items-center gap-3 sm:gap-6 lg:pr-12">
           <Link href="/">
-            <h1
+            <span
               className={`brand-glow font-display text-sm font-bold tracking-[0.08em] uppercase transition-all duration-300 hover:text-gold-dark ${
                 active === "home" ? "text-gold-dark" : "text-marble-800"
               }`}
             >
               civ6-mcp
-            </h1>
+            </span>
           </Link>
-          <nav className="flex gap-4">
+          <nav aria-label="Main navigation" className="flex gap-4">
             <Link
               href="/about"
               className={`text-sm transition-colors ${
@@ -86,7 +86,7 @@ export function NavBar({ active, turn }: NavBarProps) {
               CivBench
             </span>
           </Link>
-          <nav className="flex items-baseline gap-4">
+          <nav aria-label="Benchmark navigation" className="flex items-baseline gap-4">
             <Link
               href="/games"
               className={`text-sm transition-colors ${

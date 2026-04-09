@@ -25,9 +25,26 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "civ6-mcp",
+  metadataBase: new URL("https://civ6-mcp.lwilko.com"),
+  title: {
+    default: "civ6-mcp",
+    template: "%s | civ6-mcp",
+  },
   description:
-    "An MCP server that lets LLM agents play full games of Civilization VI",
+    "An MCP environment for evaluating LLM agents in Civilization VI",
+  openGraph: {
+    type: "website",
+    siteName: "civ6-mcp",
+    title: "civ6-mcp",
+    description:
+      "An MCP environment for evaluating LLM agents in Civilization VI",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "civ6-mcp",
+    description:
+      "An MCP environment for evaluating LLM agents in Civilization VI",
+  },
 };
 
 export default function RootLayout({

@@ -19,7 +19,11 @@ export function PageShell({
       {children}
       {footer && (
         <footer className="border-t border-marble-300 px-6 py-4 text-center">
-          <p className="font-mono text-xs text-marble-500">MIT License</p>
+          <p className="font-mono text-xs text-marble-500">
+            MIT License
+            <span className="mx-1.5 text-marble-400">&middot;</span>
+            <span className="text-marble-400">{process.env.NEXT_PUBLIC_GIT_VERSION}</span>
+          </p>
         </footer>
       )}
     </div>

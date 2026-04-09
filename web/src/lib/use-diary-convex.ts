@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -14,29 +14,55 @@ import type {
 } from "./diary-types";
 import { slugFromFilename, groupTurnData } from "./diary-types";
 
-/** Convex-backed diary list — real-time, no polling. */
+/** Convex-backed diary list — real-time, no polling.
+ *
+ *  Uses a structural fingerprint (game count + total turns + outcome count)
+ *  to avoid re-rendering downstream components when only ephemeral fields
+ *  like `lastUpdated` change from live game heartbeats. */
 export function useDiaryListConvex(): DiaryFile[] {
   const games = useQuery(api.diary.listGames, {}) ?? [];
-  return games.map((g) => ({
-    filename: g.filename,
-    label: g.label,
-    count: g.count,
-    hasCities: g.hasCities,
-    leader: g.leader,
-    status: g.status as "live" | "completed",
-    outcome: g.outcome ?? null,
-    agentModel: g.agentModel ?? undefined,
-    lastUpdated: g.lastUpdated,
-    score: g.score ?? undefined,
-    scenarioId: g.scenarioId ?? undefined,
-    difficulty: g.difficulty ?? undefined,
-    mapType: g.mapType ?? undefined,
-    mapSize: g.mapSize ?? undefined,
-    evalTrack: g.evalTrack ?? undefined,
-    runId: g.runId ?? undefined,
-    excludeReason: g.excludeReason ?? undefined,
-    gitDescribe: g.gitDescribe ?? undefined,
-  }));
+  const prevRef = useRef<DiaryFile[]>([]);
+  const prevFingerprintRef = useRef("");
+
+  const mapped = useMemo(
+    () =>
+      games.map((g) => ({
+        filename: g.filename,
+        label: g.label,
+        count: g.count,
+        hasCities: g.hasCities,
+        leader: g.leader,
+        status: g.status as "live" | "completed",
+        outcome: g.outcome ?? null,
+        agentModel: g.agentModel ?? undefined,
+        lastUpdated: g.lastUpdated,
+        score: g.score ?? undefined,
+        scenarioId: g.scenarioId ?? undefined,
+        difficulty: g.difficulty ?? undefined,
+        mapType: g.mapType ?? undefined,
+        mapSize: g.mapSize ?? undefined,
+        evalTrack: g.evalTrack ?? undefined,
+        runId: g.runId ?? undefined,
+        excludeReason: g.excludeReason ?? undefined,
+        gitDescribe: g.gitDescribe ?? undefined,
+      })),
+    [games],
+  );
+
+  // Structural fingerprint: only re-render when games are added/removed,
+  // outcomes change, or turn counts change meaningfully (not every heartbeat).
+  const fingerprint = useMemo(() => {
+    return mapped
+      .map((g) => `${g.filename}:${g.count}:${g.status}:${g.outcome?.result ?? ""}`)
+      .join("|");
+  }, [mapped]);
+
+  if (fingerprint !== prevFingerprintRef.current) {
+    prevFingerprintRef.current = fingerprint;
+    prevRef.current = mapped;
+  }
+
+  return prevRef.current;
 }
 
 /** Strip Convex system fields from a document */
