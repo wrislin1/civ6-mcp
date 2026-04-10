@@ -58,6 +58,7 @@ export function useGameFilters(
     }
     return EMPTY_FILTERS;
   });
+  const [admissibleOnly, setAdmissibleOnly] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("updated");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -121,9 +122,12 @@ export function useGameFilters(
     return { civs, providers, models, victoryTypes, scenarios, difficulties, evalTracks };
   }, [games]);
 
+  const toggleAdmissible = useCallback(() => setAdmissibleOnly((v) => !v), []);
+
   // Filter
   const filtered = useMemo(() => {
     return games.filter((game) => {
+      if (admissibleOnly && !game.admissible) return false;
       if (filters.status.size > 0 && !filters.status.has(deriveStatus(game)))
         return false;
       if (filters.civs.size > 0 && !filters.civs.has(game.label)) return false;
@@ -143,7 +147,7 @@ export function useGameFilters(
         return false;
       return true;
     });
-  }, [games, filters]);
+  }, [games, filters, admissibleOnly]);
 
   // Sort
   const sorted = useMemo(() => {
@@ -169,16 +173,18 @@ export function useGameFilters(
     });
   }, [filtered, sortKey, sortDir]);
 
-  const active = hasActiveFilters(filters);
+  const active = hasActiveFilters(filters) || !admissibleOnly;
 
   return {
     filters,
+    admissibleOnly,
     sortKey,
     sortDir,
     filterOptions,
     sorted,
     active,
     toggleFilter,
+    toggleAdmissible,
     clearFilters,
     handleSort,
   };

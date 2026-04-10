@@ -76,7 +76,7 @@ export default function LandingPage() {
                 An MCP server that connects LLM agents to live games of
                 Civilization VI. The agent reads full game state, moves units,
                 manages cities, conducts diplomacy, and plays complete games
-                through the engine&apos;s own rule-enforcing APIs.
+                &mdash; all through the engine&apos;s own rules.
               </p>
               <div className="mt-5">
                 <a

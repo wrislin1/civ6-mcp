@@ -255,7 +255,7 @@ export default function CivBenchPage() {
             <p className="mt-2 text-base leading-relaxed text-marble-600 max-w-2xl">
               Five benchmark scenarios ordered by difficulty, each isolating
               a specific blind spot in agent perception. Every model plays
-              the exact same map per scenario for comparison clarity.
+              the exact same map per scenario for controlled comparison.
             </p>
             <div className="mt-5 space-y-3">
               {SCENARIO_LIST.map((scenario) => (

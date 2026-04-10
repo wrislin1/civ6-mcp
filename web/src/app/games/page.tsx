@@ -220,12 +220,14 @@ function GamesPageInner() {
 
   const {
     filters,
+    admissibleOnly,
     sortKey,
     sortDir,
     filterOptions,
     sorted,
     active,
     toggleFilter,
+    toggleAdmissible,
     clearFilters,
     handleSort,
   } = useGameFilters(games, searchParams.get("scenario"));
@@ -234,9 +236,9 @@ function GamesPageInner() {
     <PageShell active="games">
       <main className="flex-1 px-3 py-6 sm:px-6 sm:py-10">
         <div className="mx-auto max-w-5xl">
-          <h2 className="font-display text-3xl font-bold tracking-[0.08em] uppercase text-marble-800">
+          <h1 className="font-display text-3xl font-bold tracking-[0.08em] uppercase text-marble-800">
             Games
-          </h2>
+          </h1>
           <p className="mt-1 text-base text-marble-500">
             Turn-by-turn diaries, agent reflections, and strategic maps.
           </p>
@@ -255,6 +257,15 @@ function GamesPageInner() {
             <>
               {/* Filter bar */}
               <div className="mt-5 flex flex-wrap items-center gap-2">
+                {/* Admissible toggle */}
+                <ToggleChip
+                  label="Admissible"
+                  active={admissibleOnly}
+                  onClick={toggleAdmissible}
+                />
+
+                <span className="mx-1 h-4 w-px bg-marble-300/50" />
+
                 {/* Status — inline toggles */}
                 {STATUS_OPTIONS.map((s) => (
                   <ToggleChip
@@ -425,7 +436,7 @@ function GamesPageInner() {
               {sorted.length === 0 ? (
                 <div className="mt-8 flex flex-col items-center justify-center gap-2">
                   <p className="font-display text-sm tracking-[0.08em] uppercase text-marble-500">
-                    No civilizations match your criteria
+                    No games match these filters
                   </p>
                   <button
                     onClick={clearFilters}

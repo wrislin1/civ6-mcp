@@ -45,6 +45,7 @@ export function useDiaryListConvex(): DiaryFile[] {
         runId: g.runId ?? undefined,
         excludeReason: g.excludeReason ?? undefined,
         gitDescribe: g.gitDescribe ?? undefined,
+        admissible: g.admissible ?? undefined,
       })),
     [games],
   );

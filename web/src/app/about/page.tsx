@@ -32,9 +32,9 @@ const DOMAINS = [
 ];
 
 const STATS = [
-  { value: "76", label: "MCP tools" },
+  { value: "76", label: "tools" },
   { value: "300+", label: "turns per game" },
-  { value: "3,000+", label: "tool calls per episode" },
+  { value: "3,000+", label: "tool calls per game" },
   { value: "6", label: "victory conditions" },
 ];
 

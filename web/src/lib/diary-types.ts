@@ -394,6 +394,7 @@ export interface DiaryFile {
   runId?: string;
   excludeReason?: string;
   gitDescribe?: string;
+  admissible?: boolean | null;
 }
 
 // === Shared helpers ===

@@ -239,7 +239,7 @@ export function FullLeaderboard({ filter }: { filter?: EloFilter } = {}) {
   if (models.length === 0) {
     return (
       <div className="flex items-center justify-center py-20 text-sm text-marble-400">
-        No completed games yet. Play some games to see ELO ratings.
+        No completed games yet. Ratings will appear once games finish.
       </div>
     );
   }
