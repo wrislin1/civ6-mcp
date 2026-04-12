@@ -685,7 +685,12 @@ function MapRenderer({ gameId, mapData, spatialMap, spatialTurns }: {
       if (el?.contains(app.canvas)) {
         el.removeChild(app.canvas);
       }
-      app.destroy(true, { children: true });
+      try {
+        app.destroy(true, { children: true });
+      } catch {
+        // app.init() may not have completed yet (e.g. tab switch
+        // during load) — safe to ignore, GC handles the rest.
+      }
       cleanupRectListeners?.();
     };
   }, [
