@@ -230,7 +230,7 @@ function GamesPageInner() {
     toggleAdmissible,
     clearFilters,
     handleSort,
-  } = useGameFilters(games, searchParams.get("scenario"));
+  } = useGameFilters(games, searchParams.get("scenario"), searchParams.get("model"));
 
   return (
     <PageShell active="games">

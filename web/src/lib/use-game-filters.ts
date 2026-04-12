@@ -52,12 +52,17 @@ export function hasActiveFilters(f: Filters): boolean {
 export function useGameFilters(
   games: DiaryFile[],
   initialScenario?: string | null,
+  initialModel?: string | null,
 ) {
   const [filters, setFilters] = useState<Filters>(() => {
+    const base = { ...EMPTY_FILTERS };
     if (initialScenario && SCENARIOS[initialScenario]) {
-      return { ...EMPTY_FILTERS, scenarios: new Set([initialScenario]) };
+      base.scenarios = new Set([initialScenario]);
     }
-    return EMPTY_FILTERS;
+    if (initialModel) {
+      base.models = new Set([initialModel]);
+    }
+    return base;
   });
   const [admissibleOnly, setAdmissibleOnly] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("updated");
