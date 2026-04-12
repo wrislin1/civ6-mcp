@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useDeferredValue } from "react";
 import { AgentOverview } from "@/components/agent-overview";
 import { LeaderboardTable } from "@/components/leaderboard-table";
 import { CitiesPanel } from "@/components/cities-panel";
@@ -58,12 +58,25 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
   const { index, goPrev, goNext, goFirst, goLast, seek } =
     useTurnNavigation(maxIdx);
 
-  // Turn detail subscriptions — ~12 docs each
-  const selectedTurn = navTurns[index];
-  const prevTurnNum = index > 0 ? navTurns[index - 1] : undefined;
+  // Defer the turn detail fetch so the slider stays responsive during drags.
+  // `index` updates immediately (smooth slider), `deferredIndex` catches up
+  // when React has idle time, avoiding hundreds of Convex queries per drag.
+  const deferredIndex = useDeferredValue(index);
+  const selectedTurn = navTurns[deferredIndex];
+  const prevTurnNum = deferredIndex > 0 ? navTurns[deferredIndex - 1] : undefined;
 
-  const currentTurn = useDiaryTurn(filename, selectedTurn, agentModelOverride);
-  const prevTurn = useDiaryTurn(filename, prevTurnNum, agentModelOverride);
+  const currentTurnRaw = useDiaryTurn(filename, selectedTurn, agentModelOverride);
+  const prevTurnRaw = useDiaryTurn(filename, prevTurnNum, agentModelOverride);
+  const isStale = deferredIndex !== index;
+
+  // Keep showing the last valid turn data while new data loads,
+  // preventing blank flashes during navigation.
+  const lastCurrentRef = useRef(currentTurnRaw);
+  const lastPrevRef = useRef(prevTurnRaw);
+  if (currentTurnRaw) lastCurrentRef.current = currentTurnRaw;
+  if (prevTurnRaw) lastPrevRef.current = prevTurnRaw;
+  const currentTurn = currentTurnRaw ?? lastCurrentRef.current;
+  const prevTurn = prevTurnRaw ?? lastPrevRef.current;
 
   const hasTurns = navTurns.length > 1;
   const isLastTurn = index === maxIdx;
@@ -99,9 +112,9 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
             <ChevronsRight className="h-5 w-5" />
           </button>
 
-          {currentTurn && (
-            <span className="ml-2 font-mono text-xs tabular-nums text-marble-500">
-              Turn {currentTurn.turn}
+          {navTurns[index] !== undefined && (
+            <span className={`ml-2 font-mono text-xs tabular-nums transition-opacity ${isStale ? "text-marble-400 opacity-60" : "text-marble-500"}`}>
+              Turn {navTurns[index]}
             </span>
           )}
           {outcome && (
@@ -120,7 +133,7 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
 
       {/* Main content */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6">
+        <div className={`flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6 transition-opacity duration-150 ${isStale ? "opacity-70" : ""}`}>
           {loading && (
             <div className="mx-auto max-w-2xl space-y-4">
               {/* Agent overview skeleton */}
