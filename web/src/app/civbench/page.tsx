@@ -18,6 +18,11 @@ import {
   Eye,
   Users,
   ArrowRight,
+  ShieldCheck,
+  Clock,
+  FlaskConical,
+  Wrench,
+  Ban,
 } from "lucide-react";
 
 import { chipBase, chipDefault, chipActive } from "@/lib/chip-styles";
@@ -335,6 +340,33 @@ export default function CivBenchPage() {
                   scenario={scenario}
                   gameCount={scenarioGameCounts[scenario.id] ?? 0}
                 />
+              ))}
+            </div>
+          </div>
+
+          {/* Admissibility */}
+          <div className="mt-10 border-t border-marble-300/50 pt-8">
+            <h2 className="font-display text-sm font-bold uppercase tracking-[0.08em] text-marble-500">
+              Admissibility
+            </h2>
+            <p className="mt-2 text-base leading-relaxed text-marble-600 max-w-2xl">
+              Games must meet all of the following criteria to be included
+              in the benchmark rankings. Games that fall short are still
+              browsable but marked as disqualified and excluded from ELO.
+            </p>
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {[
+                { icon: ShieldCheck, color: CIV6_COLORS.growth, text: "Completed with a definitive outcome (victory or defeat)" },
+                { icon: Clock, color: CIV6_COLORS.goldMetal, text: "Minimum 50 turns played" },
+                { icon: FlaskConical, color: CIV6_COLORS.science, text: "Run on the standard evaluation track" },
+                { icon: Wrench, color: CIV6_COLORS.production, text: "Clean tooling (v1.1.5+ with verified instrumentation)" },
+                { icon: Users, color: CIV6_COLORS.favor, text: "Full player roster captured for ELO computation" },
+                { icon: Ban, color: CIV6_COLORS.military, text: "No save scumming or manual intervention detected" },
+              ].map(({ icon: Icon, color, text }) => (
+                <div key={text} className="flex items-start gap-2 rounded-sm border border-marble-300/30 bg-marble-50 px-3 py-2">
+                  <CivIcon icon={Icon} color={color} size="sm" />
+                  <span className="text-sm leading-relaxed text-marble-600">{text}</span>
+                </div>
               ))}
             </div>
           </div>

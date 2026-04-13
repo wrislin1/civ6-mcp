@@ -118,6 +118,8 @@ export const getGameSummary = query({
       runId: game.runId ?? null,
       gitDescribe: game.gitDescribe ?? null,
       evalFiles: game.evalFiles ?? null,
+      admissible: game.admissible ?? null,
+      excludeReason: game.excludeReason ?? null,
     };
   },
 });

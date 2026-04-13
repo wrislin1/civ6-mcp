@@ -183,6 +183,8 @@ function useDiarySummaryFs(filename: string | null): DiarySummary {
     runId: null,
     gitDescribe: null,
     evalFiles: null,
+    admissible: null,
+    excludeReason: null,
   };
 }
 

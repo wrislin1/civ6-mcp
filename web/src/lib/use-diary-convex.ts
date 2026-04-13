@@ -94,6 +94,8 @@ export interface DiarySummary {
   runId: string | null;
   gitDescribe: string | null;
   evalFiles: string[] | null;
+  admissible: boolean | null;
+  excludeReason: string | null;
 }
 
 /** Game summary subscription — 1 doc read. Returns sparkline series + metadata. */
@@ -132,6 +134,8 @@ export function useDiarySummaryConvex(filename: string | null): DiarySummary {
     runId: summary?.runId ?? null,
     gitDescribe: summary?.gitDescribe ?? null,
     evalFiles: summary?.evalFiles ?? null,
+    admissible: summary?.admissible ?? null,
+    excludeReason: summary?.excludeReason ?? null,
   };
 }
 

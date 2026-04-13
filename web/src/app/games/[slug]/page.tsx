@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
+import { AdmissibilityBadge } from "@/components/admissibility-badge";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { GameDiaryView } from "@/components/game-diary-view";
 import { useDiarySummary } from "@/lib/use-diary";
 import { SkeletonBlock } from "@/components/skeleton";
@@ -48,9 +50,7 @@ export default function GameDetailPage() {
     rawTab === "spatial" || rawTab === "map" ? "map" :
     "diary";
 
-  const { runId, evalFiles, evalTrack, gitDescribe } = useDiarySummary(filename);
-  // excludeReason comes from the summary too but isn't in DiarySummary yet —
-  // we'll read it from the games list hook if needed in the future
+  const { runId, evalFiles, evalTrack, gitDescribe, admissible, excludeReason, status } = useDiarySummary(filename);
   const logUrl = BLOB_BASE && runId ? `${BLOB_BASE}/runs/${runId}/log.jsonl` : null;
 
   const setTab = (t: Tab) => {
@@ -68,7 +68,17 @@ export default function GameDetailPage() {
           <TabButton tab="map" active={tab} label="Map" setTab={setTab} />
           <div className="ml-auto flex items-center gap-2">
             {runId && (
-              <span className="font-mono text-[10px] text-marble-400">{runId}</span>
+              <TooltipProvider>
+              <span className="flex items-center gap-1 font-mono text-[10px] text-marble-400">
+                {runId}
+                <AdmissibilityBadge
+                  admissible={admissible}
+                  excludeReason={excludeReason}
+                  status={status}
+                  evalTrack={evalTrack}
+                />
+              </span>
+              </TooltipProvider>
             )}
             {evalTrack && evalTrack !== "civbench_standard" && (
               <span className="rounded-sm bg-marble-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-marble-500">

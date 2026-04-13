@@ -6,6 +6,8 @@ import { useState, useRef, useEffect } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Globe, X } from "lucide-react";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { AdmissibilityBadge } from "@/components/admissibility-badge";
 import { PageShell } from "@/components/page-shell";
 import { useDiaryList } from "@/lib/use-diary";
 import { slugFromFilename } from "@/lib/diary-types";
@@ -446,6 +448,7 @@ function GamesPageInner() {
                   </button>
                 </div>
               ) : (
+                <TooltipProvider>
                 <div className="mt-3 overflow-x-auto rounded-sm border border-marble-300/50">
                   <table className="w-full text-sm">
                     <thead>
@@ -543,8 +546,14 @@ function GamesPageInner() {
                                     </p>
                                   )}
                                   {game.runId && (
-                                    <p className="mt-0.5 font-mono text-[10px] text-marble-400">
+                                    <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-marble-400">
                                       {game.runId}
+                                      <AdmissibilityBadge
+                                        admissible={game.admissible}
+                                        excludeReason={game.excludeReason}
+                                        status={game.status}
+                                        evalTrack={game.evalTrack}
+                                      />
                                     </p>
                                   )}
                                 </div>
@@ -620,6 +629,7 @@ function GamesPageInner() {
                     </tbody>
                   </table>
                 </div>
+                </TooltipProvider>
               )}
             </>
           )}
