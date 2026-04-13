@@ -148,12 +148,16 @@ export const ingestPlayerRows = mutation({
 
     if (game) {
       const patch: Record<string, unknown> = {
-        lastTurn: Math.max(game.lastTurn, maxTurn),
+        lastTurn: Math.max(game.lastTurn ?? 0, maxTurn),
         lastUpdated: Date.now(),
-        turnCount: Math.max(game.turnCount, maxTurn),
-        status: "live" as const,
+        turnCount: Math.max(game.turnCount ?? 0, maxTurn),
         ...evalMeta,
       };
+      // Don't regress a completed game back to "live" when the sync
+      // watcher delivers late diary rows after completeGame has run.
+      if (game.status !== "completed") {
+        patch.status = "live";
+      }
       // Diary has canonical display names (e.g. "Babylon" vs log's "babylon_stk")
       if (leader) patch.leader = leader;
       if (civ) patch.civ = civ;
