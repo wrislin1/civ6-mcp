@@ -144,6 +144,22 @@ VERTEX_MODELS = [
 
 ALL_MODELS = AZURE_MODELS + VERTEX_MODELS
 
+# ---------------------------------------------------------------------------
+# Register custom model context windows not in inspect's built-in database.
+# inspect falls back to 128K when unknown, which causes premature compaction.
+# ---------------------------------------------------------------------------
+
+def _register_custom_models() -> None:
+    from inspect_ai.model import ModelInfo, set_model_info
+
+    # Kimi-K2.5: 256K context (canonical name: openai/Kimi-K2.5 after azure prefix strip)
+    _kimi_info = ModelInfo(context_length=262_144, output_tokens=16_384, organization="Moonshot AI")
+    set_model_info("openai/Kimi-K2.5", _kimi_info)
+    set_model_info("openai/Kimi-K2-Thinking", _kimi_info)
+
+
+_register_custom_models()
+
 ALL_SCENARIOS = [
     "ground_control",
     "snowflake",
