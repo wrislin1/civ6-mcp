@@ -49,9 +49,7 @@ class TestSetCityProductionVerification:
             write_lines=[["OK:PRODUCING|UNIT_TRADER|1 turns"]],
             read_lines=[["NOT_SET|current=nil|expected=UNIT_TRADER"]],
         )
-        result = asyncio.run(
-            gs.set_city_production(262145, "UNIT", "UNIT_TRADER")
-        )
+        result = asyncio.run(gs.set_city_production(262145, "UNIT", "UNIT_TRADER"))
         assert "SILENT_FAILURE" in result
         assert "UNIT_TRADER" in result
         assert "purchase_item" in result
@@ -74,6 +72,7 @@ class TestSetCityProductionVerification:
 
     def test_verify_failure_falls_through(self):
         """If verify itself throws, return the original OK optimistically."""
+
         class _ThrowingConn:
             async def execute_write(self, lua):
                 return ["OK:PRODUCING|UNIT_WARRIOR|2 turns"]
@@ -83,7 +82,5 @@ class TestSetCityProductionVerification:
 
         gs = GameState.__new__(GameState)
         gs.conn = _ThrowingConn()
-        result = asyncio.run(
-            gs.set_city_production(65536, "UNIT", "UNIT_WARRIOR")
-        )
+        result = asyncio.run(gs.set_city_production(65536, "UNIT", "UNIT_WARRIOR"))
         assert result == "PRODUCING|UNIT_WARRIOR|2 turns"

@@ -41,7 +41,9 @@ def _list(fs, prefix: str) -> list[dict]:
     return fs.ls(prefix, detail=True)
 
 
-def _enumerate_jobs(fs, raw_dir: Path, inspect_dir: Path) -> list[tuple[str, Path, int]]:
+def _enumerate_jobs(
+    fs, raw_dir: Path, inspect_dir: Path
+) -> list[tuple[str, Path, int]]:
     """Walk the container and produce (blob_path, local_path, size) triples
     for every file whose local copy is missing or wrong-sized.
     """

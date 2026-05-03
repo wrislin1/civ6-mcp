@@ -64,7 +64,9 @@ def dispatch_job(job: JobState, machine: Machine, is_retry: bool = False) -> boo
     # Verify inspect CLI exists — if not, try uv sync
     pkg_ok, pkg_info = machine.verify_packages()
     if not pkg_ok:
-        log.warning("Packages missing on %s: %s — running uv sync", machine.name, pkg_info)
+        log.warning(
+            "Packages missing on %s: %s — running uv sync", machine.name, pkg_info
+        )
         machine.sync_packages()
         pkg_ok, pkg_info = machine.verify_packages()
         if not pkg_ok:
@@ -208,7 +210,10 @@ def poll_jobs(
                     age = int(hb_info["age"])
                     log.warning(
                         "Heartbeat stale: %s (phase=%s, T%d, age=%ds)",
-                        jid, phase, job.turn, age,
+                        jid,
+                        phase,
+                        job.turn,
+                        age,
                     )
                     job.transition(
                         "needs_attention",
@@ -315,7 +320,9 @@ def run_batch(config: Config, state: BatchState | None = None) -> None:
                         job.last_turn_change = time.time()
                         log.info(
                             "Adopted running game on %s: %s at T%s",
-                            name, jid, hb_turn,
+                            name,
+                            jid,
+                            hb_turn,
                         )
                         adopted = True
                         break
@@ -323,7 +330,9 @@ def run_batch(config: Config, state: BatchState | None = None) -> None:
                     log.warning(
                         "Running game on %s (model=%s, scenario=%s) "
                         "doesn't match any pending job — leaving it alone",
-                        name, hb_model, hb_scenario,
+                        name,
+                        hb_model,
+                        hb_scenario,
                     )
             else:
                 # No running game — safe to clean
@@ -370,7 +379,9 @@ def run_batch(config: Config, state: BatchState | None = None) -> None:
                 if jid in state.jobs and disk_job.state != state.jobs[jid].state:
                     log.info(
                         "External state change: %s %s → %s",
-                        jid, state.jobs[jid].state, disk_job.state,
+                        jid,
+                        state.jobs[jid].state,
+                        disk_job.state,
                     )
                     state.jobs[jid] = disk_job
 

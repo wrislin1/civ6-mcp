@@ -48,7 +48,9 @@ class GameState:
         self._high_water_turn: int = 0  # highest turn seen (for regression detection)
         self._local_player_id: int = 0  # human player (always 0 in single-player)
         self._hang_retry_active: bool = False  # guard against recursive hang recovery
-        self._last_game_over: lq.GameOverStatus | None = None  # captured by execute_end_turn for server.py
+        self._last_game_over: lq.GameOverStatus | None = (
+            None  # captured by execute_end_turn for server.py
+        )
         # (ts, turn, save_name) for each successful save load — used to detect
         # save scumming in _check_save_scumming(). Bounded to last 50 entries.
         self._save_load_history: list[tuple[float, int, str]] = []
@@ -134,9 +136,7 @@ class GameState:
             log.debug("Game-over check failed in InGame, trying GameCore")
         # Fallback: GameCore-only check (survives defeat screen)
         try:
-            lines = await self.conn.execute_read(
-                lq.build_gameover_check_gamecore()
-            )
+            lines = await self.conn.execute_read(lq.build_gameover_check_gamecore())
             return lq.parse_gameover_response(lines)
         except Exception:
             log.debug("Game-over check failed in GameCore too", exc_info=True)
@@ -1704,6 +1704,7 @@ class GameState:
     def _record_save_load(self, save_name: str) -> None:
         """Record a successful save load for scumming detection."""
         import time
+
         ts = time.time()
         turn = self._high_water_turn
         self._save_load_history.append((ts, turn, save_name))

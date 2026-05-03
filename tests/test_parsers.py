@@ -224,7 +224,9 @@ class TestParseThreatScan:
         assert t.unit_id == 42
 
     def test_city_state_threat(self):
-        line = "THREAT|10|Zanzibar|UNIT_ARCHER|8,12|80/100|CS:25|RS:25|dist:2|cs:1|uid:5"
+        line = (
+            "THREAT|10|Zanzibar|UNIT_ARCHER|8,12|80/100|CS:25|RS:25|dist:2|cs:1|uid:5"
+        )
         threats = parse_threat_scan_response([line])
         assert threats[0].is_city_state is True
 
@@ -354,7 +356,9 @@ class TestParseEndTurnBlocking:
         assert parse_end_turn_blocking(["NONE"]) == []
 
     def test_single_blocker(self):
-        blockers = parse_end_turn_blocking(["BLOCKING|UNIT_NEEDS_ORDERS|Warrior at 10,24"])
+        blockers = parse_end_turn_blocking(
+            ["BLOCKING|UNIT_NEEDS_ORDERS|Warrior at 10,24"]
+        )
         assert len(blockers) == 1
         assert blockers[0] == ("UNIT_NEEDS_ORDERS", "Warrior at 10,24")
 

@@ -393,9 +393,7 @@ def _extract_outcome(log_lines: list[str]) -> dict[str, Any] | None:
 _DEFEAT_RE = re.compile(
     r"GAME OVER — DEFEAT\. (.+?) of (.+?) won a (.+?) victory", re.IGNORECASE
 )
-_VICTORY_RE = re.compile(
-    r"GAME OVER — VICTORY! You won a (.+?) victory", re.IGNORECASE
-)
+_VICTORY_RE = re.compile(r"GAME OVER — VICTORY! You won a (.+?) victory", re.IGNORECASE)
 
 
 def _extract_outcome_from_tool_calls(
@@ -1192,8 +1190,12 @@ async def check_idle_games(state: dict, client: ConvexClient) -> None:
                 except Exception:
                     pass
             await _complete_game(
-                game_id, client, log_lines,
-                civ=civ, leader=leader, agent_model=agent_model,
+                game_id,
+                client,
+                log_lines,
+                civ=civ,
+                leader=leader,
+                agent_model=agent_model,
             )
             del state["game_last_seen"][game_id]
 
@@ -1254,8 +1256,12 @@ async def batch_upload(directory: Path, client: ConvexClient) -> None:
             except Exception:
                 pass
         await _complete_game(
-            gid, client, log_lines,
-            civ=civ, leader=leader, agent_model=agent_model,
+            gid,
+            client,
+            log_lines,
+            civ=civ,
+            leader=leader,
+            agent_model=agent_model,
         )
 
         elapsed = time.time() - game_start
@@ -1387,8 +1393,7 @@ async def backfill_outcomes(bucket_url: str, client: ConvexClient) -> None:
     all_games = data.get("value", [])
 
     missing = [
-        g for g in all_games
-        if g.get("status") == "completed" and not g.get("outcome")
+        g for g in all_games if g.get("status") == "completed" and not g.get("outcome")
     ]
     if not missing:
         log.info("All completed games have outcomes — nothing to backfill")
@@ -1471,7 +1476,9 @@ async def backfill_outcomes(bucket_url: str, client: ConvexClient) -> None:
             )
             patched += 1
         else:
-            log.warning("  %s: no outcome found in cloud log (%d lines)", game_id, len(lines))
+            log.warning(
+                "  %s: no outcome found in cloud log (%d lines)", game_id, len(lines)
+            )
 
     log.info("=== Backfill complete: %d/%d outcomes patched ===", patched, len(missing))
 

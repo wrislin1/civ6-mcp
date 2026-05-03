@@ -21,9 +21,7 @@ def _make_gs():
     # Bind the real method so threshold logic is exercised
     gs.ADVISOR_BUDGET_SOFT = GameState.ADVISOR_BUDGET_SOFT
     gs.ADVISOR_BUDGET_HARD = GameState.ADVISOR_BUDGET_HARD
-    gs._advisor_budget_check = types.MethodType(
-        GameState._advisor_budget_check, gs
-    )
+    gs._advisor_budget_check = types.MethodType(GameState._advisor_budget_check, gs)
     return gs
 
 
@@ -68,7 +66,7 @@ class TestAdvisorBudget:
         # Calls 1-20 are allowed (with soft warnings from 10+)
         for i in range(20):
             hard, soft = gs._advisor_budget_check()
-            assert hard is None, f"call {i+1} should not be hard-capped"
+            assert hard is None, f"call {i + 1} should not be hard-capped"
         # Call 21: HARD STOP
         hard, soft = gs._advisor_budget_check()
         assert hard is not None

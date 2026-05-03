@@ -129,7 +129,9 @@ def _get_fs() -> Any:  # Public API: imported by civbench_data.py
     return _fs_cache
 
 
-def _cloud_jsonl(run_id: str, filename: str) -> list[dict]:  # Public API: imported by civbench_data.py
+def _cloud_jsonl(
+    run_id: str, filename: str
+) -> list[dict]:  # Public API: imported by civbench_data.py
     """Fetch and cache a JSONL file from Azure blob storage."""
     CACHE_DIR.mkdir(exist_ok=True)
     cache_path = CACHE_DIR / f"{filename.replace('.jsonl', '')}_{run_id}.jsonl"
@@ -399,7 +401,15 @@ def cmd_compare(args):
     # --- Outcome Aggregation (from Azure diary) ---
     print(f"\n  Outcome Aggregation")
     print("  " + "-" * 50)
-    headers = ["Model", "Games", "Victories", "Defeats", "Incomplete", "Avg Turn", "Avg Score"]
+    headers = [
+        "Model",
+        "Games",
+        "Victories",
+        "Defeats",
+        "Incomplete",
+        "Avg Turn",
+        "Avg Score",
+    ]
     align = ["<", ">", ">", ">", ">", ">", ">"]
     agg_rows = []
     for model in model_names:
@@ -438,16 +448,20 @@ def cmd_compare(args):
                 else:
                     incomplete += 1
         avg_turn = f"{sum(final_turns) / len(final_turns):.0f}" if final_turns else "-"
-        avg_score = f"{sum(final_scores) / len(final_scores):.0f}" if final_scores else "-"
-        agg_rows.append([
-            model.rsplit("/", 1)[-1][:25],
-            len(gg),
-            victories,
-            defeats,
-            incomplete,
-            avg_turn,
-            avg_score,
-        ])
+        avg_score = (
+            f"{sum(final_scores) / len(final_scores):.0f}" if final_scores else "-"
+        )
+        agg_rows.append(
+            [
+                model.rsplit("/", 1)[-1][:25],
+                len(gg),
+                victories,
+                defeats,
+                incomplete,
+                avg_turn,
+                avg_score,
+            ]
+        )
     _table(headers, agg_rows, align)
 
     # --- Win/Loss ---
@@ -1048,7 +1062,8 @@ def cmd_sensorium(args):
             n = sum(
                 1
                 for e in tool_calls
-                if e.get("turn") == t and _classify_tool(e.get("tool", "unknown")) == "proactive"
+                if e.get("turn") == t
+                and _classify_tool(e.get("tool", "unknown")) == "proactive"
             )
             proactive_per_turn.append(n)
         print(f"\n  Proactive calls/turn: {_sparkline(proactive_per_turn, 50)}")
@@ -1139,7 +1154,8 @@ def cmd_reflection_gap(args):
                 nearby = [
                     e
                     for e in tool_calls
-                    if e.get("tool") in check_tools and abs(e.get("turn", 0) - turn) <= 5
+                    if e.get("tool") in check_tools
+                    and abs(e.get("turn", 0) - turn) <= 5
                 ]
                 if nearby:
                     followed += 1
@@ -1236,7 +1252,9 @@ def _diary_by_turn(diary: list[dict]) -> dict[int, list[dict]]:
     return by_turn
 
 
-def _agent_rows(diary: list[dict]) -> list[dict]:  # Public API: imported by civbench_data.py
+def _agent_rows(
+    diary: list[dict],
+) -> list[dict]:  # Public API: imported by civbench_data.py
     """Extract agent-only rows, one per turn (last entry wins)."""
     by_turn: dict[int, dict] = {}
     for row in diary:
@@ -2286,7 +2304,9 @@ def cmd_context_growth(args):
     _table(headers, rows, align)
 
     # --- Top 5 context-heavy tools ---
-    print(f"\n  Top 10 Context-Heavy Tools (total result_summary chars across all games)")
+    print(
+        f"\n  Top 10 Context-Heavy Tools (total result_summary chars across all games)"
+    )
     print("  " + "-" * 50)
     tool_chars: Counter = Counter()
     tool_call_count: Counter = Counter()
@@ -2378,7 +2398,8 @@ def _analyze_scumming(run_id: str, log: list[dict]) -> dict:
             save_events.append((i, e.get("turn", 0) or 0, tool))
 
     load_events = [
-        se for se in save_events
+        se
+        for se in save_events
         if se[2] in ("load_game_save", "load_save", "restart_and_load")
     ]
 
@@ -2450,8 +2471,11 @@ def _analyze_scumming(run_id: str, log: list[dict]) -> dict:
         for j in range(max(0, idx - 5), idx):
             prior = tool_calls[j]
             prior_result = str(prior.get("result", ""))
-            if ("HANG" in prior_result or "Blocker:" in prior_result
-                    or prior.get("type") == "error"):
+            if (
+                "HANG" in prior_result
+                or "Blocker:" in prior_result
+                or prior.get("type") == "error"
+            ):
                 hang_recovery += 1
                 break
 
@@ -2581,7 +2605,9 @@ def cmd_scumming(args):
                 r["play_load_count"],
                 r["distinct_play_turns"],
                 len(r["real_regressions"]),
-                f"{r['hang_recovery_loads']}/{r['play_load_count']}" if r["play_load_count"] else "-",
+                f"{r['hang_recovery_loads']}/{r['play_load_count']}"
+                if r["play_load_count"]
+                else "-",
                 r["run_id"][:40],
             ]
         )
@@ -2589,8 +2615,10 @@ def cmd_scumming(args):
 
     counts = Counter(r["verdict"] for r in results)
     print()
-    print(f"  Summary: CLEAN={counts['CLEAN']}  MINOR={counts['MINOR']}  "
-          f"SUSPICIOUS={counts['SUSPICIOUS']}  SCUMMING={counts['SCUMMING']}")
+    print(
+        f"  Summary: CLEAN={counts['CLEAN']}  MINOR={counts['MINOR']}  "
+        f"SUSPICIOUS={counts['SUSPICIOUS']}  SCUMMING={counts['SCUMMING']}"
+    )
 
     scumming = [r for r in results if r["verdict"] == "SCUMMING"]
     if scumming:
@@ -2620,11 +2648,17 @@ def cmd_scumming(args):
         url = prod_env.get("CONVEX_URL", "").rstrip("/")
         key = prod_env.get("CONVEX_DEPLOY_KEY", "")
         if not url or not key:
-            print("  Error: need CONVEX_URL and CONVEX_DEPLOY_KEY in web/.env.prod", file=sys.stderr)
+            print(
+                "  Error: need CONVEX_URL and CONVEX_DEPLOY_KEY in web/.env.prod",
+                file=sys.stderr,
+            )
             return
         client = httpx.Client(
             timeout=30,
-            headers={"Content-Type": "application/json", "Authorization": f"Convex {key}"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Convex {key}",
+            },
         )
         for r in scumming:
             resp = client.post(
@@ -2718,7 +2752,8 @@ def main():
     p_scum = sub.add_parser("scumming", help="Detect save-scumming patterns")
     p_scum.add_argument("--game-id", help="Analyze a single game")
     p_scum.add_argument(
-        "--apply", action="store_true",
+        "--apply",
+        action="store_true",
         help="Mark detected scumming games as excludeReason='save_scumming'",
     )
 

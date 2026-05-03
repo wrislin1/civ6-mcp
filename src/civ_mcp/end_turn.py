@@ -49,13 +49,9 @@ async def _check_mid_turn_diplomacy(
         if war_sessions:
             war_names = []
             for ws in war_sessions:
-                close_lua = lq.build_diplomacy_respond(
-                    ws.other_player_id, "EXIT"
-                )
+                close_lua = lq.build_diplomacy_respond(ws.other_player_id, "EXIT")
                 await gs.conn.execute_write(close_lua)
-                war_names.append(
-                    f"{ws.other_civ_name} ({ws.other_leader_name})"
-                )
+                war_names.append(f"{ws.other_civ_name} ({ws.other_leader_name})")
                 log.info(
                     "Auto-dismissed war declaration from %s",
                     ws.other_civ_name,
@@ -100,40 +96,28 @@ async def _check_mid_turn_diplomacy(
                 if s.deal_summary
                 else ("goodbye" if s.buttons == "GOODBYE" else "active")
             )
-            session_info.append(
-                f"{s.other_civ_name} ({s.other_leader_name}) [{phase}]"
-            )
+            session_info.append(f"{s.other_civ_name} ({s.other_leader_name}) [{phase}]")
         has_deal = any(s.deal_summary for s in mid_sessions)
         lines: list[str] = []
         if war_sessions:
-            war_names_str = ", ".join(
-                f"{ws.other_civ_name}" for ws in war_sessions
-            )
-            lines.append(
-                f"WAR DECLARED by {war_names_str}! (auto-dismissed)"
-            )
+            war_names_str = ", ".join(f"{ws.other_civ_name}" for ws in war_sessions)
+            lines.append(f"WAR DECLARED by {war_names_str}! (auto-dismissed)")
         lines.append(
             f"Turn paused — AI diplomatic proposal from {', '.join(session_info)}.",
         )
         for s in mid_sessions:
             if s.dialogue_text:
-                lines.append(
-                    f'{s.other_civ_name} says: "{s.dialogue_text}"'
-                )
+                lines.append(f'{s.other_civ_name} says: "{s.dialogue_text}"')
             if s.reason_text:
                 lines.append(f"Reason: {s.reason_text}")
             if s.deal_summary:
-                lines.append(
-                    f"Deal from {s.other_civ_name}: {s.deal_summary}"
-                )
+                lines.append(f"Deal from {s.other_civ_name}: {s.deal_summary}")
         if has_deal:
             lines.append(
                 "Use respond_to_trade(other_player_id=X, accept=True/False) to handle it, then end_turn again."
             )
         else:
-            lines.append(
-                "Use respond_to_diplomacy to handle it, then end_turn again."
-            )
+            lines.append("Use respond_to_diplomacy to handle it, then end_turn again.")
         return "\n".join(lines), False
     except Exception:
         log.debug("Mid-turn diplomacy check failed", exc_info=True)
@@ -1199,12 +1183,37 @@ async def execute_end_turn(gs: GameState) -> str:
         diplomacy_probed = False
         cumulative_wait = 4.0  # Phase 1 already waited ~4s
         for delay in [
-            2.0, 2.0, 3.0, 3.0, 5.0, 5.0,           # 20s: catch fast turns
-            10.0, 10.0, 10.0, 10.0, 10.0, 10.0,       # 80s: mid wait
-            15.0, 15.0, 15.0, 15.0,                    # 140s
-            20.0, 20.0, 20.0, 20.0,                    # 220s
-            30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, # 430s
-            30.0, 30.0, 30.0, 30.0,                    # 550s (~9 min)
+            2.0,
+            2.0,
+            3.0,
+            3.0,
+            5.0,
+            5.0,  # 20s: catch fast turns
+            10.0,
+            10.0,
+            10.0,
+            10.0,
+            10.0,
+            10.0,  # 80s: mid wait
+            15.0,
+            15.0,
+            15.0,
+            15.0,  # 140s
+            20.0,
+            20.0,
+            20.0,
+            20.0,  # 220s
+            30.0,
+            30.0,
+            30.0,
+            30.0,
+            30.0,
+            30.0,
+            30.0,  # 430s
+            30.0,
+            30.0,
+            30.0,
+            30.0,  # 550s (~9 min)
         ]:
             await asyncio.sleep(delay)
             cumulative_wait += delay
@@ -1225,9 +1234,11 @@ async def execute_end_turn(gs: GameState) -> str:
                     gs._pending_end_turn = False
                     gs._pending_end_turn_from = None
                     gs._last_game_over = gameover
-                    vtype = gameover.victory_type.replace(
-                        "VICTORY_", ""
-                    ).replace("_", " ").title()
+                    vtype = (
+                        gameover.victory_type.replace("VICTORY_", "")
+                        .replace("_", " ")
+                        .title()
+                    )
                     if gameover.is_defeat:
                         return (
                             f"GAME OVER — DEFEAT. {gameover.winner_leader} "

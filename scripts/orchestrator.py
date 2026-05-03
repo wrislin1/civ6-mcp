@@ -333,7 +333,13 @@ def cmd_kill_all(machines: dict[str, Machine]) -> None:
         state = BatchState.load(p)
         changed = False
         for j in state.jobs.values():
-            if j.state in ("launching", "booting", "running", "completing", "needs_attention"):
+            if j.state in (
+                "launching",
+                "booting",
+                "running",
+                "completing",
+                "needs_attention",
+            ):
                 j.transition("failed", "killed by operator")
                 changed = True
         if changed:
@@ -341,7 +347,13 @@ def cmd_kill_all(machines: dict[str, Machine]) -> None:
     # Also check legacy
     state = BatchState.load()
     for j in state.jobs.values():
-        if j.state in ("launching", "booting", "running", "completing", "needs_attention"):
+        if j.state in (
+            "launching",
+            "booting",
+            "running",
+            "completing",
+            "needs_attention",
+        ):
             j.transition("failed", "killed by operator")
     state.save()
     print("  All active jobs marked as failed.")
@@ -415,9 +427,7 @@ def main() -> None:
     p_retry.add_argument("job_id", help="Job ID to retry")
 
     # abandon — give up on a stalled job
-    p_abandon = sub.add_parser(
-        "abandon", help="Mark a needs_attention job as failed"
-    )
+    p_abandon = sub.add_parser("abandon", help="Mark a needs_attention job as failed")
     p_abandon.add_argument("job_id", help="Job ID to abandon")
 
     # logs
@@ -470,6 +480,7 @@ def main() -> None:
 
         # Discipline gate 1: local working tree must be clean.
         import subprocess
+
         result = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
             capture_output=True,
@@ -487,9 +498,7 @@ def main() -> None:
                 "Untracked files (??) are also blocked — `git add` or move "
                 "them out of the repo."
             )
-            log.error(
-                "Commit and push first, or pass --allow-dirty to proceed anyway."
-            )
+            log.error("Commit and push first, or pass --allow-dirty to proceed anyway.")
             sys.exit(1)
         if dirty and args.allow_dirty:
             log.warning("Launching with dirty working tree (--allow-dirty)")
@@ -554,8 +563,7 @@ def main() -> None:
         # Convex; `needs_attention` is included so retried jobs have a live
         # watcher waiting.
         resume_targets = {
-            j.machine for j in state.jobs.values()
-            if j.state in ACTIVE_JOB_STATES
+            j.machine for j in state.jobs.values() if j.state in ACTIVE_JOB_STATES
         }
         targets = {n: machines[n] for n in resume_targets if n in machines}
         _ensure_watchers(targets)
@@ -569,7 +577,9 @@ def main() -> None:
             sys.exit(1)
         job = state.jobs[args.job_id]
         if job.state not in ("needs_attention", "failed"):
-            print(f"Job {args.job_id} is in state '{job.state}' — can only retry needs_attention or failed")
+            print(
+                f"Job {args.job_id} is in state '{job.state}' — can only retry needs_attention or failed"
+            )
             sys.exit(1)
         m = machines.get(job.machine)
         if m and m.is_reachable():
@@ -590,7 +600,9 @@ def main() -> None:
             sys.exit(1)
         job = state.jobs[args.job_id]
         if job.state != "needs_attention":
-            print(f"Job {args.job_id} is in state '{job.state}' — can only abandon needs_attention")
+            print(
+                f"Job {args.job_id} is in state '{job.state}' — can only abandon needs_attention"
+            )
             sys.exit(1)
         m = machines.get(job.machine)
         if m and m.is_reachable():

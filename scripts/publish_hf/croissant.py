@@ -73,20 +73,26 @@ def _record_set_for_parquet(
     schema = pq.read_schema(parquet_path)
     fields = []
     for field in schema:
-        is_json_blob = (
-            field.name in {
-                "stockpiles", "luxuries", "unit_composition", "diplo_states",
-                "envoys_sent", "gp_points", "governors", "trade_routes",
-                "reflections", "policies", "techs", "civics",
-                "religion_beliefs", "eloPlayers", "turnSeries",
-                "outcome", "dimensionScores",
-            }
-        )
-        description = (
-            "JSON-encoded blob; parse client-side."
-            if is_json_blob
-            else None
-        )
+        is_json_blob = field.name in {
+            "stockpiles",
+            "luxuries",
+            "unit_composition",
+            "diplo_states",
+            "envoys_sent",
+            "gp_points",
+            "governors",
+            "trade_routes",
+            "reflections",
+            "policies",
+            "techs",
+            "civics",
+            "religion_beliefs",
+            "eloPlayers",
+            "turnSeries",
+            "outcome",
+            "dimensionScores",
+        }
+        description = "JSON-encoded blob; parse client-side." if is_json_blob else None
         f: dict = {
             "@type": "cr:Field",
             "@id": f"{table_name}/{field.name}",
@@ -119,8 +125,6 @@ def _record_set_for_parquet(
         if keys:
             rs["key"] = [{"@id": f"{table_name}/{k}"} for k in keys]
     return rs
-
-
 
 
 def run(staging: Path, repo: str, version: str) -> int:

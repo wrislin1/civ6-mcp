@@ -121,7 +121,9 @@ def cmd_all(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument(
         "--staging",
         type=Path,
@@ -141,21 +143,27 @@ def main() -> int:
     p_export.add_argument("--prod", action="store_true", default=True)
     p_export.set_defaults(func=cmd_export_tables)
 
-    sub.add_parser("hash", help="Stage 3: SHA-256 everything").set_defaults(func=cmd_hash)
+    sub.add_parser("hash", help="Stage 3: SHA-256 everything").set_defaults(
+        func=cmd_hash
+    )
 
     p_cr = sub.add_parser("croissant", help="Stage 4: write croissant.json")
-    p_cr.add_argument("--repo", required=True, help="HF repo id, e.g. civbench/civbench-v1")
+    p_cr.add_argument(
+        "--repo", required=True, help="HF repo id, e.g. civbench/civbench-v1"
+    )
     p_cr.add_argument("--version", default="1.0.0")
     p_cr.set_defaults(func=cmd_croissant)
 
-    sub.add_parser("validate", help="Stage 5: mlcroissant validate + load").set_defaults(
-        func=cmd_validate
-    )
+    sub.add_parser(
+        "validate", help="Stage 5: mlcroissant validate + load"
+    ).set_defaults(func=cmd_validate)
 
     p_push = sub.add_parser("push", help="Stage 6: upload to HF (destructive)")
     p_push.add_argument("--repo", required=True)
     p_push.add_argument("--private", action="store_true")
-    p_push.add_argument("--confirm", action="store_true", help="Required to actually push")
+    p_push.add_argument(
+        "--confirm", action="store_true", help="Required to actually push"
+    )
     p_push.set_defaults(func=cmd_push)
 
     p_all = sub.add_parser("all", help="Run every stage in order")

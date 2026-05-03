@@ -57,8 +57,11 @@ def _read_manifest(run_dir: Path) -> dict | None:
 # Fields that could deanonymize the submission (git SHAs link to the repo,
 # agent_client* identifies the MCP server package name).
 _REDACT_FIELDS = {
-    "mcp_git_sha", "mcp_git_describe", "mcp_version",
-    "agent_client", "agent_client_ver",
+    "mcp_git_sha",
+    "mcp_git_describe",
+    "mcp_version",
+    "agent_client",
+    "agent_client_ver",
 }
 
 

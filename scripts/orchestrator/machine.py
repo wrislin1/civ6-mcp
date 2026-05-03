@@ -78,15 +78,9 @@ class Machine:
     def verify_packages(self) -> tuple[bool, str]:
         """Check that inspect CLI and key packages are installed."""
         if self.os == "windows":
-            cmd = (
-                f"cd /d {self.repo} && "
-                f".venv\\Scripts\\inspect.exe --version 2>nul"
-            )
+            cmd = f"cd /d {self.repo} && .venv\\Scripts\\inspect.exe --version 2>nul"
         else:
-            cmd = (
-                f"cd {self.repo} && "
-                f".venv/bin/inspect --version 2>/dev/null"
-            )
+            cmd = f"cd {self.repo} && .venv/bin/inspect --version 2>/dev/null"
         rc, out = self.ssh(cmd, timeout=15)
         if rc != 0:
             return False, "inspect CLI not found"
@@ -105,7 +99,7 @@ class Machine:
         # Reject markers with shell metacharacters — the Python one-liner is
         # embedded in a double-quoted string inside an SSH command, and any
         # &|<>^"\' in the identifier would break the shell parsing silently.
-        unsafe = set('^&|<>"\'`$;()')
+        unsafe = set("^&|<>\"'`$;()")
         for module, attr in markers:
             combined = module + attr
             if any(c in combined for c in unsafe):
@@ -119,15 +113,9 @@ class Machine:
             checks.append(f"assert hasattr(m{i}, {attr!r}), {module + '.' + attr!r}")
         py = "; ".join(imports + checks)
         if self.os == "windows":
-            cmd = (
-                f"cd /d {self.repo} && "
-                f'.venv\\Scripts\\python.exe -c "{py}" 2>&1'
-            )
+            cmd = f'cd /d {self.repo} && .venv\\Scripts\\python.exe -c "{py}" 2>&1'
         else:
-            cmd = (
-                f"cd {self.repo} && "
-                f'.venv/bin/python -c "{py}" 2>&1'
-            )
+            cmd = f'cd {self.repo} && .venv/bin/python -c "{py}" 2>&1'
         rc, out = self.ssh(cmd, timeout=20)
         if rc != 0:
             stripped = out.strip()
@@ -343,7 +331,7 @@ class Machine:
             rc, out = self.ssh(
                 f"tmux new-session -d -s civbench-sync "
                 f'"cd {self.repo} && uv run python scripts/convex_sync.py '
-                f"--watch --prod 2>&1 | tee -a ~/civbench_sync.log\"",
+                f'--watch --prod 2>&1 | tee -a ~/civbench_sync.log"',
                 timeout=15,
             )
             return rc == 0

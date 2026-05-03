@@ -33,10 +33,12 @@ class TestSaveScumming:
         assert hard_stop is False
 
     def test_two_loads_no_warning(self):
-        gs = _make_gs([
-            (1000.0, 100, "AutoSave_0100"),
-            (1001.0, 101, "AutoSave_0101"),
-        ])
+        gs = _make_gs(
+            [
+                (1000.0, 100, "AutoSave_0100"),
+                (1001.0, 101, "AutoSave_0101"),
+            ]
+        )
         events, hard_stop = _check_save_scumming(gs)
         assert events == []
         assert hard_stop is False

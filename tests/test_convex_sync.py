@@ -91,17 +91,19 @@ class TestExtractOutcome:
     def test_victory(self):
         lines = [
             json.dumps({"type": "turn_start", "turn": 100}),
-            json.dumps({
-                "type": "game_over",
-                "turn": 100,
-                "outcome": {
-                    "is_defeat": False,
-                    "winner_civ": "CIVILIZATION_INDIA",
-                    "winner_leader": "Gandhi",
-                    "victory_type": "SCIENCE",
-                    "player_alive": True,
-                },
-            }),
+            json.dumps(
+                {
+                    "type": "game_over",
+                    "turn": 100,
+                    "outcome": {
+                        "is_defeat": False,
+                        "winner_civ": "CIVILIZATION_INDIA",
+                        "winner_leader": "Gandhi",
+                        "victory_type": "SCIENCE",
+                        "player_alive": True,
+                    },
+                }
+            ),
         ]
         result = _extract_outcome(lines)
         assert result is not None
@@ -114,17 +116,19 @@ class TestExtractOutcome:
 
     def test_defeat(self):
         lines = [
-            json.dumps({
-                "type": "game_over",
-                "turn": 200,
-                "outcome": {
-                    "is_defeat": True,
-                    "winner_civ": "CIVILIZATION_SUMERIA",
-                    "winner_leader": "Gilgamesh",
-                    "victory_type": "DOMINATION",
-                    "player_alive": False,
-                },
-            }),
+            json.dumps(
+                {
+                    "type": "game_over",
+                    "turn": 200,
+                    "outcome": {
+                        "is_defeat": True,
+                        "winner_civ": "CIVILIZATION_SUMERIA",
+                        "winner_leader": "Gilgamesh",
+                        "victory_type": "DOMINATION",
+                        "player_alive": False,
+                    },
+                }
+            ),
         ]
         result = _extract_outcome(lines)
         assert result["result"] == "defeat"
@@ -142,8 +146,12 @@ class TestExtractOutcome:
 
     def test_multiple_game_over_last_wins(self):
         lines = [
-            json.dumps({"type": "game_over", "turn": 50, "outcome": {"winner_civ": "A"}}),
-            json.dumps({"type": "game_over", "turn": 100, "outcome": {"winner_civ": "B"}}),
+            json.dumps(
+                {"type": "game_over", "turn": 50, "outcome": {"winner_civ": "A"}}
+            ),
+            json.dumps(
+                {"type": "game_over", "turn": 100, "outcome": {"winner_civ": "B"}}
+            ),
         ]
         result = _extract_outcome(lines)
         assert result["winnerCiv"] == "B"
@@ -161,18 +169,24 @@ class TestExtractOutcome:
 class TestExtractOutcomeFromToolCalls:
     def test_defeat_from_end_turn_result(self):
         lines = [
-            json.dumps({"type": "tool_call", "tool": "get_units", "turn": 320, "result": "..."}),
-            json.dumps({
-                "type": "tool_call",
-                "tool": "end_turn",
-                "turn": 326,
-                "result": (
-                    "GAME OVER — DEFEAT. Hojo Tokimune of Japan won a Culture victory. "
-                    "The game has ended. No further actions are possible."
-                ),
-            }),
+            json.dumps(
+                {"type": "tool_call", "tool": "get_units", "turn": 320, "result": "..."}
+            ),
+            json.dumps(
+                {
+                    "type": "tool_call",
+                    "tool": "end_turn",
+                    "turn": 326,
+                    "result": (
+                        "GAME OVER — DEFEAT. Hojo Tokimune of Japan won a Culture victory. "
+                        "The game has ended. No further actions are possible."
+                    ),
+                }
+            ),
         ]
-        result = _extract_outcome_from_tool_calls(lines, civ="Babylon", leader="Hammurabi")
+        result = _extract_outcome_from_tool_calls(
+            lines, civ="Babylon", leader="Hammurabi"
+        )
         assert result is not None
         assert result["result"] == "defeat"
         assert result["winnerLeader"] == "Hojo Tokimune"
@@ -183,17 +197,21 @@ class TestExtractOutcomeFromToolCalls:
 
     def test_victory_from_end_turn_result(self):
         lines = [
-            json.dumps({
-                "type": "tool_call",
-                "tool": "end_turn",
-                "turn": 238,
-                "result": (
-                    "Turn 237 -> 238\n"
-                    "GAME OVER — VICTORY! You won a Technology victory! The game has ended."
-                ),
-            }),
+            json.dumps(
+                {
+                    "type": "tool_call",
+                    "tool": "end_turn",
+                    "turn": 238,
+                    "result": (
+                        "Turn 237 -> 238\n"
+                        "GAME OVER — VICTORY! You won a Technology victory! The game has ended."
+                    ),
+                }
+            ),
         ]
-        result = _extract_outcome_from_tool_calls(lines, civ="Babylon", leader="Hammurabi")
+        result = _extract_outcome_from_tool_calls(
+            lines, civ="Babylon", leader="Hammurabi"
+        )
         assert result is not None
         assert result["result"] == "victory"
         assert result["winnerCiv"] == "Babylon"
@@ -204,8 +222,17 @@ class TestExtractOutcomeFromToolCalls:
 
     def test_no_game_over_in_tool_calls(self):
         lines = [
-            json.dumps({"type": "tool_call", "tool": "end_turn", "turn": 10, "result": "Turn 10 -> 11"}),
-            json.dumps({"type": "tool_call", "tool": "get_units", "turn": 11, "result": "..."}),
+            json.dumps(
+                {
+                    "type": "tool_call",
+                    "tool": "end_turn",
+                    "turn": 10,
+                    "result": "Turn 10 -> 11",
+                }
+            ),
+            json.dumps(
+                {"type": "tool_call", "tool": "get_units", "turn": 11, "result": "..."}
+            ),
         ]
         assert _extract_outcome_from_tool_calls(lines) is None
 
@@ -221,17 +248,21 @@ class TestExtractOutcomeFromToolCalls:
 
     def test_elimination_detected(self):
         lines = [
-            json.dumps({
-                "type": "tool_call",
-                "tool": "end_turn",
-                "turn": 150,
-                "result": (
-                    "GAME OVER — DEFEAT. Alexander of Macedon won a Domination victory. "
-                    "You have been eliminated. The game has ended."
-                ),
-            }),
+            json.dumps(
+                {
+                    "type": "tool_call",
+                    "tool": "end_turn",
+                    "turn": 150,
+                    "result": (
+                        "GAME OVER — DEFEAT. Alexander of Macedon won a Domination victory. "
+                        "You have been eliminated. The game has ended."
+                    ),
+                }
+            ),
         ]
-        result = _extract_outcome_from_tool_calls(lines, civ="Egypt", leader="Cleopatra")
+        result = _extract_outcome_from_tool_calls(
+            lines, civ="Egypt", leader="Cleopatra"
+        )
         assert result is not None
         assert result["result"] == "defeat"
         assert result["playerAlive"] is False
@@ -247,12 +278,14 @@ class TestChunkMapFrames:
         assert _chunk_map_frames([]) == []
 
     def test_single_turn_fits_one_chunk(self):
-        entries = [{
-            "turn": 1,
-            "owners": [10, 0, 15, 1],  # 2 ownership changes
-            "cities": [{"x": 5, "y": 6, "pid": 0, "pop": 3}],
-            "roads": [],
-        }]
+        entries = [
+            {
+                "turn": 1,
+                "owners": [10, 0, 15, 1],  # 2 ownership changes
+                "cities": [{"x": 5, "y": 6, "pid": 0, "pop": 3}],
+                "roads": [],
+            }
+        ]
         chunks = _chunk_map_frames(entries)
         assert len(chunks) == 1
         # Verify the packed format
@@ -289,8 +322,10 @@ class TestChunkMapFrames:
         # Create entries large enough to exceed the 700KB limit
         # Each int takes ~5 chars in JSON, so 200K ints ~ 1MB
         big_owners = list(range(200_000))
-        entries = [{"turn": i, "owners": big_owners, "cities": [], "roads": []}
-                   for i in range(3)]
+        entries = [
+            {"turn": i, "owners": big_owners, "cities": [], "roads": []}
+            for i in range(3)
+        ]
         chunks = _chunk_map_frames(entries)
         assert len(chunks) > 1
         # Each chunk should be valid JSON

@@ -70,6 +70,7 @@ _load_local_env()
 # Game list
 # ---------------------------------------------------------------------------
 
+
 def list_games(include_excluded: bool = False) -> pd.DataFrame:
     """Fetch all games from Convex as a DataFrame."""
     raw = _list_games()
@@ -78,26 +79,30 @@ def list_games(include_excluded: bool = False) -> pd.DataFrame:
         if not include_excluded and g.get("excludeReason"):
             continue
         o = g.get("outcome") or {}
-        rows.append({
-            "run_id": g.get("runId", ""),
-            "game_id": g.get("gameId", ""),
-            "model": (g.get("agentModel") or "").rsplit("/", 1)[-1],
-            "model_full": g.get("agentModel", ""),
-            "scenario": g.get("scenarioId", ""),
-            "turns": g.get("turnCount", 0),
-            "score": g.get("lastScore", 0),
-            "status": g.get("status", ""),
-            "result": o.get("result", ""),
-            "victory_type": o.get("victoryType", ""),
-            "winner": o.get("winnerCiv", ""),
-            "admissible": g.get("admissible", False),
-            "exclude_reason": g.get("excludeReason", ""),
-        })
+        rows.append(
+            {
+                "run_id": g.get("runId", ""),
+                "game_id": g.get("gameId", ""),
+                "model": (g.get("agentModel") or "").rsplit("/", 1)[-1],
+                "model_full": g.get("agentModel", ""),
+                "scenario": g.get("scenarioId", ""),
+                "turns": g.get("turnCount", 0),
+                "score": g.get("lastScore", 0),
+                "status": g.get("status", ""),
+                "result": o.get("result", ""),
+                "victory_type": o.get("victoryType", ""),
+                "winner": o.get("winnerCiv", ""),
+                "admissible": g.get("admissible", False),
+                "exclude_reason": g.get("excludeReason", ""),
+            }
+        )
     df = pd.DataFrame(rows)
     if not df.empty:
         df["turns"] = df["turns"].astype("Int64")
         df["score"] = df["score"].astype("Int64")
-        df["admissible"] = df["admissible"].map(lambda x: bool(x) if x is not None else False)
+        df["admissible"] = df["admissible"].map(
+            lambda x: bool(x) if x is not None else False
+        )
     return df
 
 

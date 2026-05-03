@@ -6,18 +6,24 @@ from civ_mcp.run_id import generate_run_id
 class TestRunId:
     def test_deterministic_same_inputs(self):
         a = generate_run_id(
-            model_id="opus", scenario_id="ground_control",
-            timestamp=1775915000, hostname="solomon",
+            model_id="opus",
+            scenario_id="ground_control",
+            timestamp=1775915000,
+            hostname="solomon",
         )
         b = generate_run_id(
-            model_id="opus", scenario_id="ground_control",
-            timestamp=1775915000, hostname="solomon",
+            model_id="opus",
+            scenario_id="ground_control",
+            timestamp=1775915000,
+            hostname="solomon",
         )
         assert a == b
 
     def test_hostname_differentiates(self):
         kwargs = dict(
-            model_id="gpt-5.4", scenario_id="ground_control", timestamp=1775915000,
+            model_id="gpt-5.4",
+            scenario_id="ground_control",
+            timestamp=1775915000,
         )
         sol = generate_run_id(hostname="solomon", **kwargs)
         ste = generate_run_id(hostname="steed", **kwargs)
@@ -29,22 +35,29 @@ class TestRunId:
     def test_hour_bucket_stable_within_hour(self):
         # 5 minutes apart, same hour bucket
         a = generate_run_id(
-            model_id="opus", scenario_id="snowflake",
-            timestamp=1775915000, hostname="test",
+            model_id="opus",
+            scenario_id="snowflake",
+            timestamp=1775915000,
+            hostname="test",
         )
         b = generate_run_id(
-            model_id="opus", scenario_id="snowflake",
-            timestamp=1775915300, hostname="test",
+            model_id="opus",
+            scenario_id="snowflake",
+            timestamp=1775915300,
+            hostname="test",
         )
         assert a == b
 
     def test_hour_bucket_changes_across_hours(self):
         a = generate_run_id(
-            model_id="opus", scenario_id="snowflake",
-            timestamp=1775915000, hostname="test",
+            model_id="opus",
+            scenario_id="snowflake",
+            timestamp=1775915000,
+            hostname="test",
         )
         b = generate_run_id(
-            model_id="opus", scenario_id="snowflake",
+            model_id="opus",
+            scenario_id="snowflake",
             timestamp=1775918700,  # > 1 hour later
             hostname="test",
         )
@@ -59,15 +72,16 @@ class TestRunId:
             timestamp=1775915000,
         )
         ids = {
-            generate_run_id(hostname=h, **kwargs)
-            for h in ("solomon", "steed", "maeve")
+            generate_run_id(hostname=h, **kwargs) for h in ("solomon", "steed", "maeve")
         }
         assert len(ids) == 3
 
     def test_format(self):
         rid = generate_run_id(
-            model_id="opus", scenario_id="ground_control",
-            timestamp=1775915000, hostname="test",
+            model_id="opus",
+            scenario_id="ground_control",
+            timestamp=1775915000,
+            hostname="test",
         )
         parts = rid.split("-")
         assert len(parts) == 4

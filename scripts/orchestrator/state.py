@@ -135,7 +135,9 @@ class BatchState:
                 _path=p,
             )
         except Exception:
-            log.warning("Failed to load state file %s, starting fresh", p, exc_info=True)
+            log.warning(
+                "Failed to load state file %s, starting fresh", p, exc_info=True
+            )
             return cls(_path=p)
 
     def active_jobs(self) -> list[JobState]:
@@ -158,7 +160,8 @@ class BatchState:
         """Is a machine currently running a job (or awaiting human intervention)?"""
         return any(
             j.machine == machine
-            and j.state in ("launching", "booting", "running", "completing", "needs_attention")
+            and j.state
+            in ("launching", "booting", "running", "completing", "needs_attention")
             for j in self.jobs.values()
         )
 
