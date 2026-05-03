@@ -8,7 +8,7 @@ Connect any MCP-compatible client — Claude Code, Codex, Gemini CLI, or your ow
 
 ## Capabilities
 
-70+ tools covering the full gameplay loop:
+76 tools covering the full gameplay loop:
 
 - **Units** — list, move, attack, fortify, found cities, build improvements, promote, upgrade
 - **Cities** — inspect, set production, purchase units/buildings with gold, manage focus
@@ -22,7 +22,7 @@ Connect any MCP-compatible client — Claude Code, Codex, Gemini CLI, or your ow
 - **Great People** — recruit, patronize, reject
 - **World Congress** — vote on resolutions, manage diplomatic favor
 - **Victory** — track progress across all victory conditions
-- **Game lifecycle** — save, load, launch, restart, screenshot
+- **Game lifecycle** — save, load, launch, restart, kill
 
 Every turn, `end_turn` takes before/after snapshots and reports what happened: units damaged, cities grew, production completed, threats spotted near your cities.
 
@@ -36,7 +36,7 @@ Enable the FireTuner debug interface and configure recommended settings:
 |---------|-------|-----|
 | **Tuner** | Enabled | Required — opens the TCP debug port the MCP server connects to. Disables achievements. |
 | **Auto End Turn** | Disabled | The agent controls when turns end. Auto-end interferes with the blocker resolution flow. |
-| **Windowed mode** | Recommended | Lets you watch the game while the agent plays, and required for the screenshot tool. |
+| **Windowed mode** | Recommended | Lets you watch the game while the agent plays. Required for OCR-based save loading. |
 
 **Windows:** All three settings are available in the in-game Options menu. The Tuner setting appears as "Tuner (disables achievements)" under gameplay options.
 

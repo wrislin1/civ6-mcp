@@ -33,7 +33,7 @@ Record map seed, game seed, game version, and DLC list for each save. One save p
 
 The experimental control. Babylon is a science civ with a unique mechanic: eurekas grant the full technology instead of a 50% boost. The agent's default preference for science is correct here. Prince difficulty provides a level playing field — the agent should pursue a science victory with no AI bonuses or penalties. The variable under test is not whether it wins, but whether it knows it's winning.
 
-Three opponents are genuine science competitors: Korea (Seowon engine), Scotland (science when happy + Great Scientists), Australia (production bonuses for space projects). On Warlord they are slower than the agent, but they still pursue the space race. Netherlands adds balanced trade/science competition. Rome, Mapuche, and Japan provide non-science pressure (expansion, loyalty/combat) without derailing the science race framing.
+Three opponents are genuine science competitors: Korea (Seowon engine), Scotland (science when happy + Great Scientists), Australia (production bonuses for space projects). On Prince they compete on equal footing with the agent, and they still pursue the space race. Netherlands adds balanced trade/science competition. Rome, Mapuche, and Japan provide non-science pressure (expansion, loyalty/combat) without derailing the science race framing.
 
 Babylon's eureka mechanic adds a secondary signal: eurekas reward engagement with wider game mechanics — building specific improvements, meeting civilisations, training units, founding cities, winning combats. An agent that pursues eureka conditions is interacting with the full game; an agent that brute-forces research is ignoring its kit and playing a generic science civ.
 
