@@ -20,9 +20,14 @@ dependencies = [
     "mcp>=1.20",
     "fastapi[standard]>=0.128",
     "anthropic>=0.84.0",
+    "openai>=1.0",
 ]
 
 [project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+]
 evals = [
     "inspect-ai>=0.3.203",
     "openai>=1.0",
@@ -80,6 +85,9 @@ packages = ["src/civ_mcp"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [
