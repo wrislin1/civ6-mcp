@@ -79,6 +79,7 @@ Repository = "https://github.com/lmwilki/civ6-mcp"
 [project.scripts]
 civ-mcp = "civ_mcp.server:main"
 civ-arena = "civ_mcp.arena.arena:main"
+civ-arena-analyze = "civ_mcp.arena.analyze:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/civ_mcp"]

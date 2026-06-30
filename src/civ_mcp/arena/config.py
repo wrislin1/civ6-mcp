@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 # Canonical in-process LLM gateway endpoint; single source of truth for both the
 # ArenaConfig default and the --gateway-url CLI default.
-DEFAULT_GATEWAY_URL = "http://192.168.20.196:11430/v1"
+DEFAULT_GATEWAY_URL = "http://192.168.20.196:11444/v1"
 
 CLI_PROVIDER_COMMANDS = {"cli-claude": "claude", "cli-codex": "codex"}
 _CLI_PROVIDERS = set(CLI_PROVIDER_COMMANDS)
@@ -41,3 +41,6 @@ class ArenaConfig:
     idle_poll_limit: int = 600
     cost_path: str = "arena_cost.jsonl"
     puppet_ids: list[int] = field(default_factory=list)
+    run_id: str = ""
+    transcript_dir: str = "arena_runs"
+    transcript_enabled: bool = True

@@ -19,11 +19,31 @@ def test_build_policies_routes_by_provider():
         PlayerSpec(3, "cli-codex", "gpt-5.5"),
     ]
     cfg = ArenaConfig(players=specs)
-    policies, backend = build_policies(specs, FakeCost(), cfg)
+    policies, local_backends = build_policies(specs, FakeCost(), cfg)
     assert isinstance(policies[1], LLMPolicy)        # local → in-process LLM
     assert isinstance(policies[2], CLIAgentPolicy)   # cli-claude → CLI subprocess
     assert isinstance(policies[3], CLIAgentPolicy)   # cli-codex → CLI subprocess
-    assert backend is not None                       # an in-process backend was constructed
+    assert len(local_backends) == 1                  # one local spec → one backend
+
+
+def test_build_policies_two_local_specs_two_backends():
+    """Two local players must each get their own backend (old code silently dropped the first)."""
+    specs = [
+        PlayerSpec(1, "local", "model-a"),
+        PlayerSpec(2, "local", "model-b"),
+    ]
+    cfg = ArenaConfig(players=specs)
+    policies, local_backends = build_policies(specs, FakeCost(), cfg)
+    assert isinstance(policies[1], LLMPolicy)
+    assert isinstance(policies[2], LLMPolicy)
+    assert len(local_backends) == 2
+
+
+def test_build_policies_cli_only_empty_local_backends():
+    specs = [PlayerSpec(1, "cli-claude", ""), PlayerSpec(2, "cli-codex", "gpt-5.5")]
+    cfg = ArenaConfig(players=specs)
+    policies, local_backends = build_policies(specs, FakeCost(), cfg)
+    assert local_backends == []
 
 
 def test_build_args_accepts_idle_poll_limit():
@@ -33,7 +53,7 @@ def test_build_args_accepts_idle_poll_limit():
     assert args.idle_poll_limit == 12
 
 
-def test_cli_preflight_raises_when_claude_not_on_path(monkeypatch):
+def test_cli_preflight_raises_when_claude_not_on_path(monkeypatch, tmp_path):
     """_run raises SystemExit before driving any turns if cli spec present but claude missing."""
     monkeypatch.setattr(shutil, "which", lambda name: None)
 
@@ -42,15 +62,18 @@ def test_cli_preflight_raises_when_claude_not_on_path(monkeypatch):
         max_puppet_turns = 1
         gateway_url = "http://localhost:11430/v1"
         api_key_env = "LITELLM_OPENAI_API_KEY"
-        cost_path = "/tmp/test_arena_preflight.jsonl"
+        cost_path = str(tmp_path / "cost.jsonl")
         max_agent_steps = 6
         dry_run = False
+        run_id = ""
+        transcript_dir = str(tmp_path / "runs")
+        no_transcript = True
 
     with pytest.raises(SystemExit, match="claude"):
         asyncio.run(_run(Args()))
 
 
-def test_cli_preflight_raises_when_codex_not_on_path(monkeypatch):
+def test_cli_preflight_raises_when_codex_not_on_path(monkeypatch, tmp_path):
     """_run raises SystemExit before driving turns if a cli-codex spec is present but codex is missing."""
     monkeypatch.setattr(shutil, "which", lambda name: None)
 
@@ -59,15 +82,18 @@ def test_cli_preflight_raises_when_codex_not_on_path(monkeypatch):
         max_puppet_turns = 1
         gateway_url = "http://localhost:11430/v1"
         api_key_env = "LITELLM_OPENAI_API_KEY"
-        cost_path = "/tmp/test_arena_preflight.jsonl"
+        cost_path = str(tmp_path / "cost.jsonl")
         max_agent_steps = 6
         dry_run = False
+        run_id = ""
+        transcript_dir = str(tmp_path / "runs")
+        no_transcript = True
 
     with pytest.raises(SystemExit, match="codex"):
         asyncio.run(_run(Args()))
 
 
-def test_cli_preflight_raises_when_mcp_config_missing(monkeypatch):
+def test_cli_preflight_raises_when_mcp_config_missing(monkeypatch, tmp_path):
     """_run fails loudly if a cli spec is present but .mcp.json is not in CWD.
 
     The CLI civ uses project auto-discovery; without the project config, the headless
@@ -81,9 +107,12 @@ def test_cli_preflight_raises_when_mcp_config_missing(monkeypatch):
         max_puppet_turns = 1
         gateway_url = "http://localhost:11430/v1"
         api_key_env = "LITELLM_OPENAI_API_KEY"
-        cost_path = "/tmp/test_arena_preflight.jsonl"
+        cost_path = str(tmp_path / "cost.jsonl")
         max_agent_steps = 6
         dry_run = False
+        run_id = ""
+        transcript_dir = str(tmp_path / "runs")
+        no_transcript = True
 
     with pytest.raises(SystemExit, match=".mcp.json"):
         asyncio.run(_run(Args()))

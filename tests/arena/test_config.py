@@ -28,7 +28,16 @@ def test_rejects_unknown_provider():
         parse_player_spec("1:typo:model")
 
 def test_arena_config_gateway_url_default():
-    assert ArenaConfig(players=[]).gateway_url == "http://192.168.20.196:11430/v1"
+    assert ArenaConfig(players=[]).gateway_url == "http://192.168.20.196:11444/v1"
 
 def test_arena_config_idle_poll_limit_default():
     assert ArenaConfig(players=[]).idle_poll_limit == 600
+
+def test_arena_config_run_id_default():
+    assert ArenaConfig(players=[]).run_id == ""
+
+def test_arena_config_transcript_dir_default():
+    assert ArenaConfig(players=[]).transcript_dir == "arena_runs"
+
+def test_arena_config_transcript_enabled_default():
+    assert ArenaConfig(players=[]).transcript_enabled is True

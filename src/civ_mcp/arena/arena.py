@@ -13,20 +13,21 @@ from civ_mcp.arena.cost import CostLog
 from civ_mcp.arena.coordinator import run_arena, ScriptedPolicy
 
 def build_policies(specs, cost, cfg):
-    """Pure: specs -> ({player_id: policy}, in_proc_backend|None). No network on construct."""
+    """Pure: specs -> ({player_id: policy}, local_backends). No network on construct."""
     from civ_mcp.arena.cli_agent import CLIAgentPolicy
     from civ_mcp.arena.backends import OpenAICompatBackend
     from civ_mcp.arena.agent import LLMPolicy
-    policies, in_proc_backend = {}, None
+    policies, local_backends = {}, []
     for spec in specs:
         if spec.driver_kind() == "cli":
             policies[spec.player_id] = CLIAgentPolicy(
                 spec.provider, cost, project_dir=os.getcwd(), model=spec.model)
         else:  # in_process local
-            in_proc_backend = OpenAICompatBackend(
+            backend = OpenAICompatBackend(
                 cfg.gateway_url, os.environ.get(cfg.api_key_env, "x"), spec.model)
-            policies[spec.player_id] = LLMPolicy(in_proc_backend, cost, max_steps=cfg.max_agent_steps)
-    return policies, in_proc_backend
+            local_backends.append(backend)
+            policies[spec.player_id] = LLMPolicy(backend, cost, max_steps=cfg.max_agent_steps)
+    return policies, local_backends
 
 def build_args(argv=None):
     ap = argparse.ArgumentParser(prog="civ-arena")
@@ -34,7 +35,10 @@ def build_args(argv=None):
     ap.add_argument("--max-puppet-turns", type=int, default=1)
     ap.add_argument("--gateway-url", default=DEFAULT_GATEWAY_URL)
     ap.add_argument("--api-key-env", default="LITELLM_OPENAI_API_KEY")
-    ap.add_argument("--cost-path", default="arena_cost.jsonl")
+    ap.add_argument("--cost-path", default="", help="path for cost log (default: auto under run dir)")
+    ap.add_argument("--run-id", default="", help="run ID (generated if empty)")
+    ap.add_argument("--transcript-dir", default="arena_runs", help="base directory for run dirs")
+    ap.add_argument("--no-transcript", action="store_true", help="disable transcript writing")
     ap.add_argument("--max-agent-steps", type=int, default=6)
     ap.add_argument("--idle-poll-limit", type=int, default=600,
                     help="number of 1s polls to wait for puppet turns before exiting")
@@ -42,20 +46,33 @@ def build_args(argv=None):
     return ap.parse_args(argv)
 
 async def _run(args):
+    from pathlib import Path
+    from civ_mcp.run_id import generate_run_id
+    from civ_mcp.arena.transcript import TranscriptSink, NullSink
     specs = [parse_player_spec(s) for s in args.player]
+    run_id = args.run_id or generate_run_id(model_id="arena")
+    run_dir = Path(args.transcript_dir) / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)            # BEFORE CostLog (cost.py opens path directly)
+    cost_path = args.cost_path or str(run_dir / "arena_cost.jsonl")
+    cost = CostLog(cost_path)
+    transcript = (TranscriptSink(str(run_dir / "transcript.jsonl"))
+                  if not args.no_transcript else NullSink())
     cfg = ArenaConfig(players=specs, max_puppet_turns=args.max_puppet_turns,
                       gateway_url=args.gateway_url, api_key_env=args.api_key_env,
                       dry_run=args.dry_run, max_agent_steps=args.max_agent_steps,
                       idle_poll_limit=getattr(args, "idle_poll_limit", 600),
-                      cost_path=args.cost_path, puppet_ids=[s.player_id for s in specs])
-    cost = CostLog(cfg.cost_path)
-    policies, in_proc_backend = build_policies(specs, cost, cfg)
+                      cost_path=cost_path, puppet_ids=[s.player_id for s in specs])
+    cfg.run_id = run_id
+    cfg.transcript_dir = args.transcript_dir
+    cfg.transcript_enabled = not args.no_transcript
+    policies, local_backends = build_policies(specs, cost, cfg)
     if args.dry_run:
         sp = ScriptedPolicy()
         policy_for = lambda pid: sp
     else:
-        if in_proc_backend is not None and not await in_proc_backend.reachable():
-            raise SystemExit(f"in-process backend not reachable at {cfg.gateway_url}")
+        for b in local_backends:                              # check EVERY local model
+            if not await b.reachable():
+                raise SystemExit(f"local backend not reachable at {cfg.gateway_url} (model {b.model})")
         if any(s.driver_kind() == "cli" for s in specs):
             for cmd in sorted({CLI_PROVIDER_COMMANDS[s.provider] for s in specs if s.driver_kind() == "cli"}):
                 if shutil.which(cmd) is None:
@@ -73,7 +90,7 @@ async def _run(args):
         policy_for = lambda pid: policies[pid]
     conn = GameConnection(); await conn.connect()
     gs = GameState(conn)
-    result = await run_arena(conn, gs, cfg, policy_for=policy_for)
+    result = await run_arena(conn, gs, cfg, policy_for=policy_for, transcript=transcript)
     print(json.dumps({"result": result, "cost": cost.summary()}, indent=2))
 
 def main():
