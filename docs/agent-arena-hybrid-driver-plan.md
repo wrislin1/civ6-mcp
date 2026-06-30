@@ -1,5 +1,13 @@
 # Civ Arena — Hybrid Driver Implementation Plan
 
+> **Status (2026-06-30): IMPLEMENTED + live-verified.** The hybrid driver shipped on `main`
+> (through `f62854e`). Both CLI paths are live-verified on the gaming PC: `cli-codex` and
+> `cli-claude` each drove real puppet turns with clean human hand-back. Security remediation
+> (host lockdown, server-side `run_lua`/lifecycle removal, cancellation-safe handback) landed
+> across `25f390e`..`19cfb81`. See `arena-live-gate-cli-mcp-loading-issue.md` for the resolved
+> CLI-MCP loading investigation and the cli-claude live-verification record. Remaining checkboxes
+> below are historical task tracking, not open work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps
 > use checkbox (`- [ ]`) syntax for tracking.

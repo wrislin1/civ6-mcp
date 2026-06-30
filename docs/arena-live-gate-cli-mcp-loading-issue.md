@@ -1,9 +1,12 @@
 # Arena live-gate finding: headless CLI civ loads no civ6 MCP tools
 
-**Status:** CODEX PATH VERIFIED — Claude path remains blocked by account/session limits during
-testing; Codex CLI path works on the gaming PC.
+**Status:** RESOLVED — both CLI paths live-verified on the gaming PC (`riz@192.168.20.141`).
+Codex verified 2026-06-30; **`cli-claude` path live-verified end-to-end 2026-06-30** (2 puppet
+turns driven, security contract intact, clean human handback). See "2026-06-30 — Claude path
+live-verified end-to-end" below.
 **Found:** live gate on the gaming PC (`riz@192.168.20.141`, WSL2), branch `arena-vertical-slice` @ `19cfb81`.
-**Severity:** High — the CLI-civ driver is non-functional for actual play (it has no tools to call).
+**Severity:** High at discovery — the CLI-civ driver had no tools to call. Now resolved; the driver
+fix shipped on `main` (`c35a462`).
 
 ## 2026-06-30 update
 
@@ -52,6 +55,33 @@ Cost logging:
 - Codex JSON reports tokens but not USD.
 - Set `CIV_ARENA_CLI_CODEX_PROMPT_USD_PER_1K` and
   `CIV_ARENA_CLI_CODEX_COMPLETION_USD_PER_1K` when you want dollar estimates.
+
+## 2026-06-30 — Claude path live-verified end-to-end
+
+The earlier "Claude path remains blocked" status was a testing/account limitation, not a code
+problem. With the shipped driver fix (auto-discovery + `--setting-sources project,local`, no
+`--tools ""`, no `--mcp-config`), the `cli-claude` path was verified two ways:
+
+- **Offline on riz-llm (no live game):** the arena lifespan does not connect to FireTuner at startup
+  (`_auto_boot` is gated on `CIV_MCP_SAVE_FILE`, unset in arena), so the server still advertises its
+  tools. A diagnostic `claude -p` called `get_game_overview` and returned the verbatim
+  `Cannot connect to Civ 6 at 127.0.0.1:4318` — proving the tool **loaded**. Security checks passed
+  behaviorally: Bash → "not enabled in this context"; `mcp__serena__*` → not present; `run_lua` →
+  **ABSENT** (server removed it via the two-hop env relay — non-vacuous, see below).
+
+- **Live on `.141` (real game):** one hybrid cycle
+  `--player 1:local:gemma4:26b --player 2:cli-claude: --max-puppet-turns 2 --idle-poll-limit 1800`
+  returned `puppet_turns_played: 2`. Seat 2 (cli-claude, default model) founded Sparta at (22,33)
+  with site reasoning, set research, queued a Scout, fortified the Warrior — exit 0, $0.666. Seat 1
+  (gemma4:26b local) founded Stirling, set Pottery. Human control restored, watcher exited cleanly,
+  no orphan processes. This exercised the single-FireTuner-slot handoff (coordinator releases tuner
+  → Claude's civ6-MCP child grabs 4318 → drives turn → coordinator reclaims → restores human) that
+  the offline test could not.
+
+The live run also surfaced a cosmetic hygiene issue: the host-tool denylist on `main` still names
+`MultiEdit` / `NotebookRead` / `LS`, which no longer exist in Claude Code 2.1.196 and emit harmless
+"deny rule matches no known tool" warnings. Security is unaffected (host built-ins are gated by
+`--allowedTools mcp__civ6`). Cleaned up in `chore(arena): drop stale host-tool denylist names`.
 
 ## Symptom
 
@@ -106,10 +136,11 @@ Project auto-discovery without those flags did expose civ6 tools.
 
 ## Consequence for the security gate
 
-The live "`run_lua` is absent" check is currently **vacuous**: *all* civ6 tools are absent, not just
-`run_lua`, so the two-hop `CIV_MCP_DISABLE_LUA` relay's runtime effect cannot be proven until the
-server actually loads. (The **server-side** removal is proven deterministically: importing the server
-and applying `main()`'s gate removes `run_lua` while keeping the other 75 tools.)
+~~The live "`run_lua` is absent" check is currently **vacuous**~~ — **RESOLVED 2026-06-30.** Now
+proven non-vacuously: with the driver fix the other civ6 tools load (`get_game_overview` works) while
+`run_lua` alone is **ABSENT**, confirming the two-hop `CIV_MCP_DISABLE_LUA` relay's runtime effect.
+(The **server-side** removal is also proven deterministically: importing the server and applying
+`main()`'s gate removes `run_lua` while keeping the other 75 tools.)
 
 ## What the gate DID prove (unaffected by this issue)
 
