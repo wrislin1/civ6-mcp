@@ -85,6 +85,23 @@ def test_timeout_kills_process_group(monkeypatch):
     assert kills_fallback == []  # fallback must NOT have fired
 
 
+def test_strict_mcp_config_scopes_to_civ6_only():
+    """--mcp-config .mcp.json + --strict-mcp-config must be present (layer 3 lockdown).
+
+    This ensures the CLI civ subprocess only sees the civ6 MCP server and cannot
+    reach user-scope servers (serena, Gmail, Google Drive, Claude Code Remote, etc.)
+    which would otherwise be auto-approved under bypassPermissions.
+    """
+    pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir=".", max_turns=5)
+    argv = pol._build_argv(player_id=2, turn=5)
+    # layer 3: --mcp-config .mcp.json limits which servers are loaded
+    assert "--mcp-config" in argv
+    mcp_config_idx = argv.index("--mcp-config")
+    assert argv[mcp_config_idx + 1] == ".mcp.json"
+    # --strict-mcp-config disables auto-discovery / inherited user-scope servers
+    assert "--strict-mcp-config" in argv
+
+
 def test_parse_claude_usage():
     pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir="/x")
     blob = json.dumps({"type": "result", "subtype": "success", "result": "settled & moved",

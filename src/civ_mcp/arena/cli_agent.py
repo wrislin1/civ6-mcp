@@ -1,10 +1,17 @@
 from __future__ import annotations
 import asyncio, json, os, signal
 
-# Two-layer lockdown for CLI civ security:
+# Three-layer lockdown for CLI civ security:
 # 1. --tools "" disables all host built-in tools (Bash/Write/Edit/Read)
 # 2. _DENIED_CIV6_TOOLS blocks destructive MCP civ6 tools — the host ends turns and manages
 #    the game lifecycle, so the CLI civ must never end_turn, kill/reload, or load saves.
+# 3. --mcp-config .mcp.json --strict-mcp-config scopes the subprocess to ONLY the civ6 MCP
+#    server defined in the project's .mcp.json.  Without this, the CLI civ inherits all
+#    user-scope MCP servers (serena, Gmail, Google Drive, Google Calendar, Claude Code Remote,
+#    Empower, …) and under bypassPermissions every one of those tools is auto-approved —
+#    allowing arbitrary host-file mutation (serena/write_memory/replace_content) or persistent
+#    scheduled agents (Claude Code Remote/create_trigger).  --strict-mcp-config disables
+#    auto-discovery and inherited user-scope servers entirely; only the civ6 server loads.
 _DENIED_CIV6_TOOLS = [
     "mcp__civ6__end_turn",
     "mcp__civ6__kill_game",
@@ -38,6 +45,7 @@ class CLIAgentPolicy:
                     "--tools", "",
                     "--allowedTools", "mcp__civ6",
                     "--disallowedTools", " ".join(_DENIED_CIV6_TOOLS),
+                    "--mcp-config", ".mcp.json", "--strict-mcp-config",
                     "--max-turns", str(self.max_turns)]
             if self.model:
                 argv += ["--model", self.model]
