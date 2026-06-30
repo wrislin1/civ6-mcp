@@ -29,3 +29,94 @@ async def test_policy_executes_one_tool_then_stops():
     assert gs.calls == [("fortify", 0)]
     assert be.n == 2           # one tool round + one final no-tool round
     assert cost.total == 60    # tokens summed across rounds
+
+
+# ---------------------------------------------------------------------------
+# Task-2 tests: transcript payload
+# ---------------------------------------------------------------------------
+
+class FakeBackendTranscript:
+    """First reply: one known + one unknown tool call.  Second reply: text."""
+    def __init__(self):
+        self.n = 0
+        self.last_messages = None
+
+    async def chat(self, messages, tools):
+        self.n += 1
+        self.last_messages = messages
+        if self.n == 1:
+            return Reply(
+                text=None,
+                tool_calls=[
+                    {"id": "tc1", "name": "fortify_unit", "arguments": '{"unit_index": 0}'},
+                    {"id": "tc2", "name": "bogus_tool",   "arguments": '{}'},
+                ],
+                prompt_tokens=50,
+                completion_tokens=5,
+            )
+        return Reply(text="all done", tool_calls=[], prompt_tokens=10, completion_tokens=2)
+
+
+@pytest.mark.asyncio
+async def test_transcript_payload():
+    gs, be, cost = FakeGS(), FakeBackendTranscript(), FakeCost()
+    pol = LLMPolicy(be, cost, max_steps=4)
+    out = await pol(gs, player_id=1, turn=3)
+
+    # --- behavior-neutral: existing action/message lines unchanged ---
+    # actions list truncated to [:300] as before
+    assert out["actions"][0]["result"] == str("FORTIFIED")[:300]
+    # dispatch for unknown tool still returns ERROR string
+    assert out["actions"][1]["result"].startswith("ERROR:")
+
+    # tool messages sent to model were [:1500] (verified via messages captured
+    # in the SECOND backend.chat call, which receives the tool replies)
+    tool_msgs = [m for m in be.last_messages if m["role"] == "tool"]
+    assert tool_msgs[0]["content"] == str("FORTIFIED")[:1500]
+
+    # --- transcript key present and structured ---
+    assert "transcript" in out
+    t = out["transcript"]
+
+    # two tool calls → two steps
+    assert len(t["steps"]) == 2
+
+    step0 = t["steps"][0]
+    assert step0["tool_name"] == "fortify_unit"
+    assert step0["tool_result_full"] == "FORTIFIED"
+    assert step0["result_total_chars"] == len("FORTIFIED")
+    assert step0["result_chars_fed_to_model"] == min(len("FORTIFIED"), 1500)
+    assert step0["truncated"] is False
+
+    # --- unknown tool classified in invalid_tool_calls ---
+    assert any(
+        ic["name"] == "bogus_tool" and ic["reason"] == "unknown_tool"
+        for ic in t["invalid_tool_calls"]
+    )
+
+    # --- aggregate token sums ---
+    assert t["prompt_tokens"] == 60       # 50 + 10
+    assert t["completion_tokens"] == 7    # 5 + 2
+
+    # --- control fields ---
+    assert t["max_steps_reached"] is False
+    assert t["final_summary"] == "all done"
+    assert isinstance(t["wall_clock_s"], float) and t["wall_clock_s"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_transcript_max_steps_reached():
+    """When the loop exhausts max_steps, max_steps_reached=True in transcript."""
+    class AlwaysToolBackend:
+        async def chat(self, messages, tools):
+            return Reply(text=None, tool_calls=[
+                {"id": "x", "name": "fortify_unit", "arguments": '{"unit_index": 0}'}
+            ], prompt_tokens=5, completion_tokens=1)
+
+    gs, cost = FakeGS(), FakeCost()
+    pol = LLMPolicy(AlwaysToolBackend(), cost, max_steps=2)
+    out = await pol(gs, player_id=1, turn=1)
+    assert out["summary"] == "max_steps reached"
+    assert "transcript" in out
+    assert out["transcript"]["max_steps_reached"] is True
+    assert len(out["transcript"]["steps"]) == 2  # one step per loop iteration
