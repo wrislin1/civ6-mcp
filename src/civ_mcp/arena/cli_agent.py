@@ -25,6 +25,11 @@ _SERVER_ENV = {
     "CIV_MCP_ARENA_PUPPET": "1",
 }
 
+# Names must match the installed Claude Code tool registry, else each emits a harmless
+# "deny rule matches no known tool" warning on stderr. Verified against Claude Code 2.1.196:
+# MultiEdit / NotebookRead / LS no longer exist (Edit/Read/Glob subsume them) and were dropped.
+# Security does NOT rest on this list — `--allowedTools mcp__civ6` is what gates host built-ins;
+# the denylist is defense-in-depth for clients where the allowlist is advisory.
 _DENIED_HOST_TOOLS = [
     "Bash",
     "BashOutput",
@@ -32,8 +37,6 @@ _DENIED_HOST_TOOLS = [
     "Read",
     "Write",
     "Edit",
-    "MultiEdit",
-    "NotebookRead",
     "NotebookEdit",
     "WebFetch",
     "WebSearch",
@@ -41,7 +44,6 @@ _DENIED_HOST_TOOLS = [
     "TodoWrite",
     "Glob",
     "Grep",
-    "LS",
     "ExitPlanMode",
 ]
 

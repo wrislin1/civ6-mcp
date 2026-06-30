@@ -61,7 +61,11 @@ def test_host_tools_and_destructive_civ6_tools_denied_without_tools_flag():
     assert "Read" in denied_list
     assert "Write" in denied_list
     assert "Edit" in denied_list
-    assert "MultiEdit" in denied_list
+    assert "NotebookEdit" in denied_list
+    # Stale names that no longer exist in Claude Code (2.1.196) must NOT be re-added — each
+    # emits a "deny rule matches no known tool" warning on stderr and protects nothing.
+    for stale in ("MultiEdit", "NotebookRead", "LS"):
+        assert stale not in denied_list.split()
     assert "mcp__civ6__end_turn" in denied_list
     assert "mcp__civ6__kill_game" in denied_list
     # run_lua is the arbitrary-Lua escape hatch — it MUST be on the denylist too
