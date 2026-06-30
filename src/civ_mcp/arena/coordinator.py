@@ -3,6 +3,18 @@ import asyncio
 import sys
 from civ_mcp.arena import hook
 
+
+async def _reconnect_with_retry(conn, attempts=5, delay=0.5):
+    last = None
+    for _ in range(attempts):
+        try:
+            await conn.connect(); return True
+        except Exception as e:
+            last = e; await asyncio.sleep(delay)
+    print(f"[arena] WARNING: reclaim connect failed after {attempts} attempts: {last!r}", file=sys.stderr)
+    return False
+
+
 class ScriptedPolicy:
     """Deterministic no-LLM policy for the dry-run gate: observe, then skip unit 0."""
     async def __call__(self, gs, player_id: int, turn: int) -> dict:
@@ -35,7 +47,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None) -> dict:
                 result = await pol(gs, st.local, st.turn)
                 log.append({"player": st.local, "turn": st.turn, **result})
                 if exclusive and not conn.is_connected:
-                    await conn.connect()          # reclaim before we end the turn
+                    await _reconnect_with_retry(conn)   # reclaim before we end the turn
                 # End this puppet's turn and hand control back toward the human.
                 # DESIGN NOTE — the turn-end method is validated by the live dry-run gate (Task 9).
                 # Primary (verified in the feasibility spike): finish_units(K) + restore_local(0).
@@ -54,11 +66,8 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None) -> dict:
         # Human safety invariant: ALWAYS hand control back. Reclaim a released connection first,
         # then restore the human, then disable — guard each step independently so a failure in
         # one still runs the others. Must hold on success, exception, and KeyboardInterrupt.
-        try:
-            if not conn.is_connected:
-                await conn.connect()
-        except Exception as e:
-            print(f"[arena] WARNING: reconnect for restore failed in cleanup: {e!r}", file=sys.stderr)
+        if not conn.is_connected:
+            await _reconnect_with_retry(conn)
         try:
             await hook.restore_local(conn, 0)
         except Exception as e:
