@@ -496,6 +496,58 @@ def test_call_success_attaches_transcript_codex(monkeypatch):
     assert len(tr["steps"]) >= 1
 
 
+def test_call_success_transcript_carries_token_counts(monkeypatch):
+    """SUCCESS path: transcript must include prompt_tokens and completion_tokens (Finding 2)."""
+    class FakeProc:
+        pid = 1
+        returncode = 0
+        async def communicate(self):
+            return (_CLAUDE_STREAM_FIXTURE.encode(), b"")
+        async def wait(self):
+            pass
+
+    async def fake_create(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+    pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir="/x", timeout_s=5)
+    result = asyncio.run(pol(None, player_id=1, turn=1))
+
+    tr = result["transcript"]
+    assert tr["prompt_tokens"] == 500
+    assert tr["completion_tokens"] == 100
+
+
+def test_call_timeout_transcript_carries_zero_token_counts(monkeypatch):
+    """TIMEOUT path: transcript must include prompt_tokens=0 and completion_tokens=0 (Finding 2)."""
+    class FakeProc:
+        pid = 55555
+        returncode = -9
+
+        async def communicate(self):
+            await asyncio.sleep(10)
+
+        async def wait(self):
+            pass
+
+        def kill(self):
+            pass
+
+    async def fake_create(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+    monkeypatch.setattr(os, "getpgid", lambda pid: 99998)
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: None)
+
+    pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir="/x", timeout_s=0.01)
+    result = asyncio.run(pol(None, player_id=1, turn=1))
+
+    tr = result["transcript"]
+    assert tr["prompt_tokens"] == 0
+    assert tr["completion_tokens"] == 0
+
+
 def test_call_parser_exception_yields_empty_steps(monkeypatch):
     """If _stream_steps_claude raises unexpectedly, steps=[]; summary/usage must be unchanged."""
     class FakeProc:

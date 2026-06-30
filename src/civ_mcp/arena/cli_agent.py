@@ -343,6 +343,8 @@ class CLIAgentPolicy:
                 "cli_exit": None,
                 "cli_stderr_tail": "",
                 "invalid_tool_calls": [],
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
             }
             return result
         except BaseException:
@@ -384,5 +386,7 @@ class CLIAgentPolicy:
             "cli_exit": proc.returncode,
             "cli_stderr_tail": stderr_tail,
             "invalid_tool_calls": [],
+            "prompt_tokens": pt,
+            "completion_tokens": ct,
         }
         return result
