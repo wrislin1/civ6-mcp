@@ -2,6 +2,8 @@ from __future__ import annotations
 import json
 import time
 
+MODEL_FEED_CHAR_CAP = 1500  # max chars of a tool result fed to the model
+
 def _tool(name, desc, props=None, required=None):
     return {"type": "function", "function": {"name": name, "description": desc,
             "parameters": {"type": "object", "properties": props or {}, "required": required or []}}}
@@ -122,14 +124,14 @@ class LLMPolicy:
                     "tool_args": _tool_args,
                     "tool_result_full": _s,
                     "result_total_chars": _l,
-                    "result_chars_fed_to_model": min(_l, 1500),
-                    "truncated": _l > 1500,
+                    "result_chars_fed_to_model": min(_l, MODEL_FEED_CHAR_CAP),
+                    "truncated": _l > MODEL_FEED_CHAR_CAP,
                     "prompt_tokens": reply.prompt_tokens,
                     "completion_tokens": reply.completion_tokens,
                 })
                 actions.append({"tool": tc["name"], "result": str(result)[:300]})
                 messages.append({"role": "tool", "tool_call_id": tc["id"],
-                                 "content": str(result)[:1500]})
+                                 "content": str(result)[:MODEL_FEED_CHAR_CAP]})
         return {"summary": "max_steps reached", "actions": actions, "transcript": {
             "steps": steps,
             "invalid_tool_calls": invalid_tool_calls,

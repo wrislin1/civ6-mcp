@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json, os
 class TranscriptSink:
+    enabled = True
     def __init__(self, path: str): self.path = path
     def write(self, record: dict) -> None:
         with open(self.path, "a") as f: f.write(json.dumps(record) + "\n")
@@ -9,4 +10,5 @@ class TranscriptSink:
         d = os.path.join(base, run_id); os.makedirs(d, exist_ok=True)
         return cls(os.path.join(d, "transcript.jsonl"))
 class NullSink:
+    enabled = False
     def write(self, record: dict) -> None: pass

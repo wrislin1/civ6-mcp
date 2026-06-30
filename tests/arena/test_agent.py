@@ -1,6 +1,16 @@
 import pytest
+import civ_mcp.arena.agent as agent
 from civ_mcp.arena.agent import LLMPolicy
 from civ_mcp.arena.backends import Reply
+
+
+# ---------------------------------------------------------------------------
+# Task-H1 — MODEL_FEED_CHAR_CAP constant
+# ---------------------------------------------------------------------------
+
+def test_model_feed_char_cap_constant():
+    """MODULE_FEED_CHAR_CAP must equal 1500 and be exported from agent module."""
+    assert agent.MODEL_FEED_CHAR_CAP == 1500
 
 class FakeGS:
     def __init__(self): self.calls = []

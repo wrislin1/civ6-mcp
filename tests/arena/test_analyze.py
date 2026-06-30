@@ -959,3 +959,45 @@ def test_same_model_different_seat_produces_two_groups(tmp_path: Path) -> None:
     assert by_player[1]["model"] == "model-x"
     assert by_player[3]["player_id"] == 3
     assert by_player[3]["model"] == "model-x"
+
+
+# ---------------------------------------------------------------------------
+# Task-H3 — shared vocab coupling test
+# ---------------------------------------------------------------------------
+
+def test_local_tool_verbs_subset_of_known_tools():
+    """All LOCAL_TOOL_VERBS keys must appear in agent._KNOWN_TOOLS.
+
+    A rename in either place without updating the other will surface here.
+    FAILS before H3 (vocab.py does not exist yet).
+    """
+    import civ_mcp.arena.agent as agent_mod
+    from civ_mcp.arena.vocab import LOCAL_TOOL_VERBS
+
+    missing = set(LOCAL_TOOL_VERBS) - agent_mod._KNOWN_TOOLS
+    assert not missing, (
+        f"LOCAL_TOOL_VERBS keys not in agent._KNOWN_TOOLS: {missing!r}"
+    )
+
+
+def test_step_verb_uses_vocab_constants():
+    """_step_verb must map each LOCAL_TOOL_VERBS key to its verb value, and strip MCP_CIV6_PREFIX."""
+    from civ_mcp.arena.analyze import _step_verb
+    from civ_mcp.arena.vocab import LOCAL_TOOL_VERBS, MCP_CIV6_PREFIX
+
+    # Local flat names
+    for tool_name, expected_verb in LOCAL_TOOL_VERBS.items():
+        base, verb = _step_verb({"tool_name": tool_name, "tool_args": {}})
+        assert base == tool_name, f"tool_base wrong for {tool_name}: got {base!r}"
+        assert verb == expected_verb, f"verb wrong for {tool_name}: got {verb!r}, expected {expected_verb!r}"
+
+    # MCP-prefixed variant of a local tool (e.g. mcp__civ6__move_unit)
+    base, verb = _step_verb({"tool_name": MCP_CIV6_PREFIX + "move_unit", "tool_args": {}})
+    assert base == "move_unit"
+    assert verb == "move"
+
+    # CLI unit_action branch unchanged
+    base, verb = _step_verb({"tool_name": MCP_CIV6_PREFIX + "unit_action",
+                              "tool_args": {"action": "automate"}})
+    assert base == "unit_action"
+    assert verb == "automate"

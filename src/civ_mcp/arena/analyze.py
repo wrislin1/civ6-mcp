@@ -20,6 +20,8 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from civ_mcp.arena.vocab import MCP_CIV6_PREFIX, LOCAL_TOOL_VERBS
+
 
 # ---------------------------------------------------------------------------
 # I/O
@@ -90,21 +92,15 @@ def _step_verb(step: dict) -> tuple[str, str]:
       - everything else: ""
     """
     raw_name: str = step.get("tool_name") or ""
-    tool_base: str = raw_name.removeprefix("mcp__civ6__")
+    tool_base: str = raw_name.removeprefix(MCP_CIV6_PREFIX)
     tool_args = step.get("tool_args")
     if not isinstance(tool_args, dict):
         tool_args = {}
 
     if tool_base == "unit_action":
         verb: str = tool_args.get("action", "")
-    elif tool_base == "move_unit":
-        verb = "move"
-    elif tool_base == "skip_unit":
-        verb = "skip"
-    elif tool_base == "fortify_unit":
-        verb = "fortify"
-    elif tool_base == "found_city":
-        verb = "found_city"
+    elif tool_base in LOCAL_TOOL_VERBS:
+        verb = LOCAL_TOOL_VERBS[tool_base]
     else:
         verb = ""
 

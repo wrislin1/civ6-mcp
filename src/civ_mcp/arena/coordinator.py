@@ -60,6 +60,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         policy_for = lambda _pid: policy
     puppet_ids = set(config.puppet_ids or [p.player_id for p in config.players])
     played, log = 0, []
+    _tx_on = transcript is not None and getattr(transcript, "enabled", True)
     try:
         await hook.inject(conn, sorted(puppet_ids))
         remaining = config.max_puppet_turns
@@ -69,7 +70,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             if st.active and st.local in puppet_ids:
                 pol = policy_for(st.local)
                 exclusive = bool(getattr(pol, "needs_exclusive_tuner", False))
-                state_before = await _overview_snapshot(gs) if transcript is not None else None
+                state_before = await _overview_snapshot(gs) if _tx_on else None
                 if exclusive and conn.is_connected:
                     await conn.disconnect()       # free the single tuner slot for the CLI
                 result = await pol(gs, st.local, st.turn)
@@ -77,8 +78,8 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 log.append({"player": st.local, "turn": st.turn, **_log_entry})
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)   # reclaim before we end the turn
-                state_after = await _overview_snapshot(gs) if transcript is not None else None
-                if transcript is not None and result.get("transcript"):
+                state_after = await _overview_snapshot(gs) if _tx_on else None
+                if _tx_on and result.get("transcript"):
                     payload = result["transcript"]
                     steps = payload.get("steps", [])
                     if state_before is not None and state_after is not None:

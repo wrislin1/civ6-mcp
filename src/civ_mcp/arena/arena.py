@@ -64,7 +64,6 @@ async def _run(args):
                       cost_path=cost_path, puppet_ids=[s.player_id for s in specs])
     cfg.run_id = run_id
     cfg.transcript_dir = args.transcript_dir
-    cfg.transcript_enabled = not args.no_transcript
     policies, local_backends = build_policies(specs, cost, cfg)
     if args.dry_run:
         sp = ScriptedPolicy()

@@ -421,8 +421,11 @@ async def test_log_entry_excludes_transcript_key():
 
 
 @pytest.mark.asyncio
-async def test_null_sink_two_snapshot_reads_write_noop():
-    """NullSink → two snapshot reads happen (before + after), write is a no-op."""
+async def test_null_sink_zero_snapshot_reads():
+    """NullSink (enabled=False) → ZERO overview queries issued; write is a no-op.
+
+    This is the H2 gate: NullSink overhead is eliminated. FAILS before H2 (was 2).
+    """
     from civ_mcp.arena.transcript import NullSink
 
     ov_line = "1|1|CivA|Leader|100.0|5.0|10.0|8.0|20.0|Mining|Drama|2|5|50"
@@ -447,5 +450,42 @@ async def test_null_sink_two_snapshot_reads_write_noop():
     result = await run_arena(conn, gs, cfg, policy=TranscriptPolicy(), transcript=sink)
 
     assert result["puppet_turns_played"] == 1
-    # Both snapshot reads must have fired
-    assert conn.overview_queries == 2
+    # NullSink.enabled=False → coordinator must skip both snapshots entirely
+    assert conn.overview_queries == 0, (
+        f"NullSink must produce 0 overview queries, got {conn.overview_queries}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_transcript_sink_two_snapshot_reads():
+    """TranscriptSink (enabled=True) → 2 overview queries per puppet turn (before + after)."""
+    import tempfile, os
+    from civ_mcp.arena.transcript import TranscriptSink
+
+    ov_line = "1|1|CivA|Leader|100.0|5.0|10.0|8.0|20.0|Mining|Drama|2|5|50"
+
+    class CountingWriteConn(FakeConn):
+        def __init__(self):
+            super().__init__()
+            self.overview_queries = 0
+        async def execute_write(self, lua, timeout=5.0):
+            self._maybe_die()
+            if "Game.GetLocalPlayer" in lua:
+                self.overview_queries += 1
+                return [ov_line]
+            return []
+
+    conn = CountingWriteConn()
+    gs = FakeGSWithConn(conn)
+    cfg = ArenaConfig(players=[PlayerSpec(1, "local", "m")], max_puppet_turns=1,
+                      dry_run=True, puppet_ids=[1])
+
+    with tempfile.TemporaryDirectory() as td:
+        sink = TranscriptSink(os.path.join(td, "transcript.jsonl"))
+        result = await run_arena(conn, gs, cfg, policy=TranscriptPolicy(), transcript=sink)
+
+    assert result["puppet_turns_played"] == 1
+    # TranscriptSink.enabled=True → both snapshots must fire
+    assert conn.overview_queries == 2, (
+        f"TranscriptSink must produce 2 overview queries, got {conn.overview_queries}"
+    )
