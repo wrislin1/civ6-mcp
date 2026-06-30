@@ -1,6 +1,6 @@
 # src/civ_mcp/arena/arena.py
 from __future__ import annotations
-import argparse, asyncio, json, os
+import argparse, asyncio, json, os, shutil
 from civ_mcp.connection import GameConnection
 from civ_mcp.game_state import GameState
 from civ_mcp.arena.config import ArenaConfig, parse_player_spec
@@ -48,6 +48,8 @@ async def _run(args):
     else:
         if in_proc_backend is not None and not await in_proc_backend.reachable():
             raise SystemExit(f"in-process backend not reachable at {cfg.gateway_url}")
+        if any(s.driver_kind() == "cli" for s in specs) and shutil.which("claude") is None:
+            raise SystemExit("cli provider requested but 'claude' not found on PATH")
         policy_for = lambda pid: policies[pid]
     conn = GameConnection(); await conn.connect()
     gs = GameState(conn)

@@ -1,5 +1,9 @@
 # tests/arena/test_arena_wiring.py
-from civ_mcp.arena.arena import build_policies
+import asyncio
+import shutil
+import pytest
+
+from civ_mcp.arena.arena import build_policies, _run
 from civ_mcp.arena.config import PlayerSpec, ArenaConfig
 from civ_mcp.arena.agent import LLMPolicy
 from civ_mcp.arena.cli_agent import CLIAgentPolicy
@@ -14,3 +18,20 @@ def test_build_policies_routes_by_provider():
     assert isinstance(policies[1], LLMPolicy)        # local → in-process LLM
     assert isinstance(policies[2], CLIAgentPolicy)   # cli-claude → CLI subprocess
     assert backend is not None                       # an in-process backend was constructed
+
+
+def test_cli_preflight_raises_when_claude_not_on_path(monkeypatch):
+    """_run raises SystemExit before driving any turns if cli spec present but claude missing."""
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    class Args:
+        player = ["1:cli-claude:"]
+        max_puppet_turns = 1
+        gateway_url = "http://localhost:11430/v1"
+        api_key_env = "LITELLM_OPENAI_API_KEY"
+        cost_path = "/tmp/test_arena_preflight.jsonl"
+        max_agent_steps = 6
+        dry_run = False
+
+    with pytest.raises(SystemExit, match="claude"):
+        asyncio.run(_run(Args()))
