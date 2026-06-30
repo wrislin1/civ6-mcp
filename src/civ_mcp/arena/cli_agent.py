@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, json, os, signal
+import asyncio, json, os, signal, time
 
 # Four-layer lockdown for CLI civ security:
 # 1. --setting-sources project,local keeps project .mcp.json auto-discovery (the only headless
@@ -90,7 +90,9 @@ class CLIAgentPolicy:
             # explicit --mcp-config does not expose the civ6 stdio server's tools to `claude -p`,
             # while project auto-discovery does. Scope settings to project/local so user-scope
             # MCP servers are not inherited into the bypassPermissions subprocess.
-            argv = ["claude", "-p", prompt, "--output-format", "json",
+            # --output-format stream-json with --verbose emits a stream of NDJSON events so the
+            # defensive parsers can pair tool_use with tool_result and record per-step telemetry.
+            argv = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose",
                     "--permission-mode", "bypassPermissions",
                     "--allowedTools", "mcp__civ6",
                     "--disallowedTools", " ".join(_DENIED_TOOLS),
@@ -165,6 +167,142 @@ class CLIAgentPolicy:
         return (summary, prompt_tokens, completion_tokens, 0.0)
 
     @staticmethod
+    def _stream_steps_claude(stdout: str) -> list:
+        """Parse claude --output-format stream-json NDJSON into step dicts.
+
+        Pairs tool_use.id <-> tool_result.tool_use_id so each tool step carries both
+        the call and its result. Defensive: skips unparseable lines and never raises;
+        a bug here must not crash a turn or alter summary/usage.
+
+        NOTE: Fixtures are synthetic/provisional — Task 9 pins against real captured stdout.
+        """
+        steps: list[dict] = []
+        pending: dict[str, dict] = {}  # tool_use id -> step dict
+        idx = 0
+        try:
+            for line in stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                obj_type = obj.get("type")
+                if obj_type == "assistant":
+                    msg = obj.get("message") or {}
+                    content = msg.get("content", [])
+                    if not isinstance(content, list):
+                        continue
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        btype = block.get("type")
+                        if btype == "tool_use":
+                            step: dict = {
+                                "idx": idx,
+                                "role": "assistant",
+                                "text": "",
+                                "tool_name": block.get("name"),
+                                "tool_args": block.get("input"),
+                                "tool_result_full": None,
+                                "ts": 0.0,
+                            }
+                            uid = block.get("id") or ""
+                            if uid:
+                                pending[uid] = step
+                            steps.append(step)
+                            idx += 1
+                        elif btype == "text":
+                            steps.append({
+                                "idx": idx,
+                                "role": "assistant",
+                                "text": str(block.get("text") or ""),
+                                "tool_name": None,
+                                "tool_args": None,
+                                "tool_result_full": None,
+                                "ts": 0.0,
+                            })
+                            idx += 1
+                elif obj_type == "user":
+                    msg = obj.get("message") or {}
+                    content = msg.get("content", [])
+                    if not isinstance(content, list):
+                        continue
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        if block.get("type") == "tool_result":
+                            uid = block.get("tool_use_id") or ""
+                            rc = block.get("content", "")
+                            if isinstance(rc, list):
+                                rc = json.dumps(rc)
+                            else:
+                                rc = str(rc) if rc is not None else ""
+                            if uid and uid in pending:
+                                # Pair the result back into the tool_use step
+                                pending[uid]["tool_result_full"] = rc
+                            else:
+                                # Orphan result — record as its own step
+                                steps.append({
+                                    "idx": idx,
+                                    "role": "user",
+                                    "text": rc,
+                                    "tool_name": None,
+                                    "tool_args": None,
+                                    "tool_result_full": rc,
+                                    "ts": 0.0,
+                                })
+                                idx += 1
+        except Exception:
+            # Belt-and-suspenders: if any outer logic raises, return what we have so far
+            pass
+        return steps
+
+    @staticmethod
+    def _stream_steps_codex(stdout: str) -> list:
+        """Parse codex --json NDJSON into step dicts by capturing item.completed events.
+
+        Defensive: skips unparseable lines and never raises.
+
+        NOTE: Fixtures are synthetic/provisional — Task 9 pins against real captured stdout.
+        """
+        steps: list[dict] = []
+        idx = 0
+        try:
+            for line in stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if obj.get("type") != "item.completed":
+                    continue
+                item = obj.get("item") or {}
+                if not isinstance(item, dict):
+                    continue
+                raw_output = item.get("output")
+                steps.append({
+                    "idx": idx,
+                    "role": str(item.get("role") or "assistant"),
+                    "text": str(item.get("text") or ""),
+                    "tool_name": item.get("name"),
+                    "tool_args": item.get("arguments"),
+                    "tool_result_full": str(raw_output) if raw_output is not None else None,
+                    "ts": 0.0,
+                })
+                idx += 1
+        except Exception:
+            pass
+        return steps
+
+    @staticmethod
     def _kill_group(proc) -> None:
         """SIGKILL the whole process group so the civ6-MCP grandchild (holding tuner port
         4318) dies too, not just `claude`.  Falls back to killing the direct child."""
@@ -183,9 +321,11 @@ class CLIAgentPolicy:
             *argv, cwd=self.project_dir, env=env,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             start_new_session=True)
+        t0 = time.monotonic()
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=self.timeout_s)
         except asyncio.TimeoutError:
+            wall_s = time.monotonic() - t0
             self._kill_group(proc)
             await proc.wait()
             # Record the timed-out turn (zero usable work) so it is not silently missing
@@ -193,7 +333,18 @@ class CLIAgentPolicy:
             self.cost.record(player_id=player_id, model=(self.model or self.provider),
                              provider=self.provider, prompt_tokens=0, completion_tokens=0,
                              turn=turn, usd=0.0)
-            return {"summary": f"cli timeout after {self.timeout_s}s", "actions": [], "usage": {}}
+            timeout_summary = f"cli timeout after {self.timeout_s}s"
+            result: dict = {"summary": timeout_summary, "actions": [], "usage": {}}
+            result["transcript"] = {
+                "steps": [],
+                "reason": "timeout",
+                "wall_clock_s": wall_s,
+                "final_summary": timeout_summary,
+                "cli_exit": None,
+                "cli_stderr_tail": "",
+                "invalid_tool_calls": [],
+            }
+            return result
         except BaseException:
             # Real cancellation (Ctrl-C raises CancelledError, a BaseException the TimeoutError
             # branch misses) — start_new_session detached the group from the parent's SIGINT,
@@ -205,14 +356,33 @@ class CLIAgentPolicy:
             except BaseException:
                 pass
             raise
+        wall_s = time.monotonic() - t0
         stdout = out.decode("utf-8", "replace")
+        stderr_tail = err.decode("utf-8", "replace")[-400:]
         if self.provider == "cli-codex":
             summary, pt, ct, usd = self._parse_codex(stdout)
+            try:
+                steps = self._stream_steps_codex(stdout)
+            except Exception:
+                steps = []
         else:
             summary, pt, ct, usd = self._parse_claude(stdout)
+            try:
+                steps = self._stream_steps_claude(stdout)
+            except Exception:
+                steps = []
         self.cost.record(player_id=player_id, model=(self.model or self.provider),
                          provider=self.provider, prompt_tokens=pt, completion_tokens=ct,
                          turn=turn, usd=usd)
-        return {"summary": summary, "actions": [],
-                "usage": {"prompt_tokens": pt, "completion_tokens": ct, "usd": usd,
-                          "exit": proc.returncode, "stderr": err.decode("utf-8","replace")[-400:]}}
+        result = {"summary": summary, "actions": [],
+                  "usage": {"prompt_tokens": pt, "completion_tokens": ct, "usd": usd,
+                            "exit": proc.returncode, "stderr": stderr_tail}}
+        result["transcript"] = {
+            "steps": steps,
+            "wall_clock_s": wall_s,
+            "final_summary": summary,
+            "cli_exit": proc.returncode,
+            "cli_stderr_tail": stderr_tail,
+            "invalid_tool_calls": [],
+        }
+        return result

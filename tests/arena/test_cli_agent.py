@@ -11,11 +11,56 @@ class FakeCost:
     def __init__(self): self.records = []
     def record(self, **kw): self.records.append(kw)
 
+# ---------------------------------------------------------------------------
+# Synthetic fixtures for stream-json parsers
+# These are provisional — Task 9 will replace them with real captured stdout.
+# ---------------------------------------------------------------------------
+
+_CLAUDE_STREAM_FIXTURE = "\n".join([
+    json.dumps({"type": "system", "subtype": "init", "session_id": "s1"}),
+    json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": "toolu_abc",
+         "name": "mcp__civ6__get_game_overview", "input": {"turn": 3}}
+    ]}}),
+    json.dumps({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "toolu_abc",
+         "content": "Turn 3 overview data"}
+    ]}}),
+    json.dumps({"type": "result", "subtype": "success",
+                "result": "Moved scout north",
+                "usage": {"input_tokens": 500, "output_tokens": 100},
+                "total_cost_usd": 0.005}),
+])
+
+_CODEX_STREAM_FIXTURE = "\n".join([
+    json.dumps({"type": "thread.started", "thread_id": "t1"}),
+    json.dumps({"type": "item.completed", "item": {
+        "type": "function_call", "role": "assistant",
+        "name": "get_game_overview", "arguments": {"turn": 3}, "output": None
+    }}),
+    json.dumps({"type": "item.completed", "item": {
+        "type": "function_call_output", "role": "tool",
+        "name": "get_game_overview", "output": "Turn 3 overview data"
+    }}),
+    json.dumps({"type": "item.completed", "item": {
+        "type": "agent_message", "role": "assistant", "text": "Moved scout north"
+    }}),
+    json.dumps({"type": "turn.completed",
+                "usage": {"input_tokens": 300, "output_tokens": 50}}),
+])
+
+
+# ---------------------------------------------------------------------------
+# Argv tests
+# ---------------------------------------------------------------------------
+
 def test_claude_argv_contains_mcp_and_safety():
     pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir="/x", max_turns=20)
     argv = pol._build_argv(player_id=2, turn=3)
     assert argv[0] == "claude"
-    assert "-p" in argv and "--output-format" in argv and "json" in argv
+    # stream-json replaces the old plain-json flag (Task 3)
+    assert "-p" in argv and "--output-format" in argv and "stream-json" in argv
+    assert "--verbose" in argv
     # restrict to civ6 tools and forbid ending the turn (host ends it)
     assert "--allowedTools" in argv and "mcp__civ6" in " ".join(argv)
     assert "--disallowedTools" in argv and "mcp__civ6__end_turn" in " ".join(argv)
@@ -28,6 +73,20 @@ def test_claude_argv_contains_mcp_and_safety():
     assert "mcp__civ6__launch_game" in " ".join(argv)
     # the prompt names the seat
     assert any("player 2" in a for a in argv)
+
+
+def test_claude_argv_stream_json_explicit():
+    """The --output-format value must be exactly 'stream-json', not 'json'."""
+    pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir="/x", max_turns=20)
+    argv = pol._build_argv(player_id=1, turn=1)
+    fmt_idx = argv.index("--output-format")
+    assert argv[fmt_idx + 1] == "stream-json", (
+        f"Expected 'stream-json' after --output-format, got {argv[fmt_idx + 1]!r}"
+    )
+    # The bare "json" string must NOT appear at the format value position
+    assert argv[fmt_idx + 1] != "json"
+    assert "--verbose" in argv
+
 
 def test_codex_argv_contains_inline_civ6_mcp_and_safety():
     pol = CLIAgentPolicy("cli-codex", FakeCost(), project_dir="/x", model="gpt-5.5", max_turns=20)
@@ -163,8 +222,18 @@ def test_timeout_kills_process_group(monkeypatch):
     pol = CLIAgentPolicy("cli-claude", cost, project_dir="/x", timeout_s=0.01)
     result = asyncio.run(pol(None, player_id=1, turn=1))
 
-    # The timeout dict must match exactly
-    assert result == {"summary": "cli timeout after 0.01s", "actions": [], "usage": {}}
+    # Core return keys must remain unchanged — transcript is additive
+    assert result["summary"] == "cli timeout after 0.01s"
+    assert result["actions"] == []
+    assert result["usage"] == {}
+    # Transcript must be present on timeout branch
+    assert "transcript" in result
+    tr = result["transcript"]
+    assert tr["steps"] == []
+    assert tr["reason"] == "timeout"
+    assert isinstance(tr["wall_clock_s"], float) and tr["wall_clock_s"] >= 0
+    assert tr["final_summary"] == "cli timeout after 0.01s"
+    assert tr["invalid_tool_calls"] == []
     # subprocess must have been started with start_new_session=True
     assert create_calls and create_calls[0].get("start_new_session") is True
     # process-group kill must have been attempted, not the fallback proc.kill()
@@ -227,6 +296,10 @@ def test_project_auto_discovery_scoped_to_project_settings():
     assert argv[setting_sources_idx + 1] == "project,local"
 
 
+# ---------------------------------------------------------------------------
+# _parse_claude / _parse_codex — parse tuple must be byte-identical to today's
+# ---------------------------------------------------------------------------
+
 def test_parse_claude_usage():
     pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir="/x")
     blob = json.dumps({"type": "result", "subtype": "success", "result": "settled & moved",
@@ -243,6 +316,17 @@ def test_parse_claude_null_fields():
     assert summary == "" and pt == 0 and ct == 0 and usd == 0.0
 
 
+def test_parse_claude_stream_fixture_tuple_unchanged():
+    """_parse_claude must return the same (summary, in, out, usd) on stream-json fixture
+    as it would from a plain result object — the line-by-line scan finds the terminal
+    {"type":"result",...} and the tuple logic is unchanged."""
+    summary, pt, ct, usd = CLIAgentPolicy._parse_claude(_CLAUDE_STREAM_FIXTURE)
+    assert summary == "Moved scout north"
+    assert pt == 500
+    assert ct == 100
+    assert abs(usd - 0.005) < 1e-9
+
+
 def test_parse_codex_json_events():
     pol = CLIAgentPolicy("cli-codex", FakeCost(), project_dir="/x")
     blob = "\n".join([
@@ -255,3 +339,186 @@ def test_parse_codex_json_events():
     assert pt == 123
     assert ct == 45
     assert usd == 0.0
+
+
+def test_parse_codex_stream_fixture_tuple_unchanged():
+    """_parse_codex returns correct (summary, in, out, usd) from synthetic codex fixture."""
+    summary, pt, ct, usd = CLIAgentPolicy._parse_codex(_CODEX_STREAM_FIXTURE)
+    assert summary == "Moved scout north"
+    assert pt == 300
+    assert ct == 50
+    assert usd == 0.0
+
+
+# ---------------------------------------------------------------------------
+# _stream_steps_claude — defensive parser
+# ---------------------------------------------------------------------------
+
+def test_stream_steps_claude_recovers_tool_step():
+    """_stream_steps_claude must recover ≥1 tool step with paired tool_result from fixture."""
+    steps = CLIAgentPolicy._stream_steps_claude(_CLAUDE_STREAM_FIXTURE)
+    assert isinstance(steps, list)
+    assert len(steps) >= 1
+    tool_steps = [s for s in steps if s.get("tool_name")]
+    assert len(tool_steps) >= 1, f"No tool step found in: {steps}"
+    ts = tool_steps[0]
+    assert ts["tool_name"] == "mcp__civ6__get_game_overview"
+    assert ts["tool_args"] == {"turn": 3}
+    # tool_result should be paired back from the user/tool_result block
+    assert ts["tool_result_full"] is not None
+    assert "Turn 3 overview" in ts["tool_result_full"]
+
+
+def test_stream_steps_claude_step_schema():
+    """Every step dict must have the required schema keys."""
+    steps = CLIAgentPolicy._stream_steps_claude(_CLAUDE_STREAM_FIXTURE)
+    required = {"idx", "role", "text", "tool_name", "tool_args", "tool_result_full", "ts"}
+    for s in steps:
+        missing = required - set(s.keys())
+        assert not missing, f"Step {s} missing keys: {missing}"
+
+
+def test_stream_steps_claude_defensive_on_garbage():
+    """_stream_steps_claude must not raise on unparseable / empty input."""
+    assert CLIAgentPolicy._stream_steps_claude("") == []
+    assert CLIAgentPolicy._stream_steps_claude("not json\n{bad json}\n") == []
+    assert isinstance(CLIAgentPolicy._stream_steps_claude("null\n\n"), list)
+
+
+def test_stream_steps_claude_defensive_on_missing_fields():
+    """Partially malformed lines are skipped; well-formed lines still parsed."""
+    malformed_mix = "\n".join([
+        "not json at all",
+        json.dumps({"type": "assistant"}),  # missing message
+        json.dumps({"type": "assistant", "message": {"content": "not a list"}}),
+        json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "t1", "name": "mcp__civ6__get_units", "input": {}}
+        ]}}),
+        json.dumps({"type": "result", "result": "ok", "usage": {}, "total_cost_usd": 0}),
+    ])
+    steps = CLIAgentPolicy._stream_steps_claude(malformed_mix)
+    assert isinstance(steps, list)
+    # The valid tool_use must still be captured
+    assert any(s.get("tool_name") == "mcp__civ6__get_units" for s in steps)
+
+
+# ---------------------------------------------------------------------------
+# _stream_steps_codex — defensive parser
+# ---------------------------------------------------------------------------
+
+def test_stream_steps_codex_recovers_tool_step():
+    """_stream_steps_codex must recover ≥1 step with tool_name from fixture."""
+    steps = CLIAgentPolicy._stream_steps_codex(_CODEX_STREAM_FIXTURE)
+    assert isinstance(steps, list)
+    assert len(steps) >= 1
+    tool_steps = [s for s in steps if s.get("tool_name")]
+    assert len(tool_steps) >= 1, f"No tool step in: {steps}"
+
+
+def test_stream_steps_codex_step_schema():
+    """Every step dict must have the required schema keys."""
+    steps = CLIAgentPolicy._stream_steps_codex(_CODEX_STREAM_FIXTURE)
+    required = {"idx", "role", "text", "tool_name", "tool_args", "tool_result_full", "ts"}
+    for s in steps:
+        missing = required - set(s.keys())
+        assert not missing, f"Step {s} missing keys: {missing}"
+
+
+def test_stream_steps_codex_defensive_on_garbage():
+    """_stream_steps_codex must not raise on unparseable input."""
+    assert CLIAgentPolicy._stream_steps_codex("") == []
+    assert CLIAgentPolicy._stream_steps_codex("garbage\n{}\n") == []
+    assert isinstance(CLIAgentPolicy._stream_steps_codex("null\n"), list)
+
+
+# ---------------------------------------------------------------------------
+# __call__ — transcript attachment (success and timeout branches)
+# ---------------------------------------------------------------------------
+
+def test_call_success_attaches_transcript(monkeypatch):
+    """On success, __call__ must return result with transcript containing steps and metadata."""
+    class FakeProc:
+        pid = 1
+        returncode = 0
+        async def communicate(self):
+            return (
+                _CLAUDE_STREAM_FIXTURE.encode(),
+                b"some stderr output",
+            )
+        async def wait(self):
+            pass
+
+    async def fake_create(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+    pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir="/x", timeout_s=5)
+    result = asyncio.run(pol(None, player_id=1, turn=1))
+
+    # Core keys unchanged
+    assert result["summary"] == "Moved scout north"
+    assert result["actions"] == []
+    assert result["usage"]["prompt_tokens"] == 500
+    assert result["usage"]["completion_tokens"] == 100
+    # Transcript attached
+    assert "transcript" in result
+    tr = result["transcript"]
+    assert isinstance(tr["steps"], list)
+    assert len(tr["steps"]) >= 1
+    assert isinstance(tr["wall_clock_s"], float) and tr["wall_clock_s"] >= 0
+    assert tr["final_summary"] == "Moved scout north"
+    assert tr["cli_exit"] == 0
+    assert "some stderr" in tr["cli_stderr_tail"]
+    assert tr["invalid_tool_calls"] == []
+
+
+def test_call_success_attaches_transcript_codex(monkeypatch):
+    """Codex path also attaches transcript on success."""
+    class FakeProc:
+        pid = 2
+        returncode = 0
+        async def communicate(self):
+            return (_CODEX_STREAM_FIXTURE.encode(), b"")
+        async def wait(self):
+            pass
+
+    async def fake_create(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+    pol = CLIAgentPolicy("cli-codex", FakeCost(), project_dir="/x", timeout_s=5)
+    result = asyncio.run(pol(None, player_id=1, turn=1))
+
+    assert result["summary"] == "Moved scout north"
+    assert "transcript" in result
+    tr = result["transcript"]
+    assert isinstance(tr["steps"], list)
+    assert len(tr["steps"]) >= 1
+
+
+def test_call_parser_exception_yields_empty_steps(monkeypatch):
+    """If _stream_steps_claude raises unexpectedly, steps=[]; summary/usage must be unchanged."""
+    class FakeProc:
+        pid = 3
+        returncode = 0
+        async def communicate(self):
+            return (b'{"type":"result","result":"ok","usage":{"input_tokens":10,"output_tokens":5},"total_cost_usd":0.001}', b"")
+        async def wait(self):
+            pass
+
+    async def fake_create(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+
+    def boom(stdout):
+        raise RuntimeError("simulated parser crash")
+
+    monkeypatch.setattr(CLIAgentPolicy, "_stream_steps_claude", staticmethod(boom))
+    pol = CLIAgentPolicy("cli-claude", FakeCost(), project_dir="/x", timeout_s=5)
+    result = asyncio.run(pol(None, player_id=1, turn=1))
+
+    assert result["summary"] == "ok"
+    assert result["usage"]["prompt_tokens"] == 10
+    # Parser crash must NOT propagate — steps is empty list
+    assert result["transcript"]["steps"] == []
