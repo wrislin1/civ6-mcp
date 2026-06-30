@@ -101,3 +101,64 @@ async def test_coordinator_reclaim_retry_restores_human(monkeypatch):
     assert result["puppet_turns_played"] == 1
     assert conn.restored is True
     assert conn.is_connected is True
+
+
+@pytest.mark.asyncio
+async def test_coordinator_always_fail_reclaim_still_restores_human(monkeypatch):
+    """Human is restored even when reclaim ALWAYS fails (> retry budget, no exception escapes)."""
+    async def noop(_delay): pass
+    monkeypatch.setattr(asyncio, "sleep", noop)
+
+    class ExclusivePol:
+        needs_exclusive_tuner = True
+        async def __call__(self, gs, player_id, turn):
+            return {"summary": "cli ran", "actions": []}
+
+    class AlwaysFailConn(FakeConn):
+        def __init__(self):
+            super().__init__()
+            self.disable_called = False
+
+        async def connect(self):
+            raise OSError("always fails")
+
+        async def execute_read(self, lua, timeout=5.0):
+            result = await super().execute_read(lua, timeout)
+            if "DISABLED" in lua:
+                self.disable_called = True
+            return result
+
+    conn = AlwaysFailConn()
+    gs = FakeGS()
+    cfg = ArenaConfig(players=[PlayerSpec(1, "cli-claude", "")], max_puppet_turns=1,
+                      puppet_ids=[1])
+    # _reconnect_with_retry exhausts all attempts (returns False); no exception should escape
+    result = await run_arena(conn, gs, cfg, policy=ExclusivePol())
+    assert result["puppet_turns_played"] == 1
+    assert conn.restored is True       # restore_local(0) was called in finally
+    assert conn.disable_called is True  # hook.disable ran in finally
+
+
+@pytest.mark.asyncio
+async def test_coordinator_cancelled_reclaim_still_restores_and_reraises(monkeypatch):
+    """When reclaim raises CancelledError: restore_local(0) still runs, then CancelledError propagates."""
+    async def noop(_delay): pass
+    monkeypatch.setattr(asyncio, "sleep", noop)
+
+    class ExclusivePol:
+        needs_exclusive_tuner = True
+        async def __call__(self, gs, player_id, turn):
+            return {"summary": "cli ran", "actions": []}
+
+    class CancelledOnConnectConn(FakeConn):
+        async def connect(self):
+            raise asyncio.CancelledError()
+
+    conn = CancelledOnConnectConn()
+    gs = FakeGS()
+    cfg = ArenaConfig(players=[PlayerSpec(1, "cli-claude", "")], max_puppet_turns=1,
+                      puppet_ids=[1])
+    # CancelledError during reclaim must not suppress the handback
+    with pytest.raises(asyncio.CancelledError):
+        await run_arena(conn, gs, cfg, policy=ExclusivePol())
+    assert conn.restored is True  # best-effort handback still happened despite CancelledError

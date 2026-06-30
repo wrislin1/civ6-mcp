@@ -66,8 +66,15 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None) -> dict:
         # Human safety invariant: ALWAYS hand control back. Reclaim a released connection first,
         # then restore the human, then disable — guard each step independently so a failure in
         # one still runs the others. Must hold on success, exception, and KeyboardInterrupt.
+        # The reclaim is wrapped in BaseException (not just Exception) so asyncio.CancelledError
+        # during connect() is captured, restore_local/disable still run, then it's re-raised.
+        reclaim_exc = None
         if not conn.is_connected:
-            await _reconnect_with_retry(conn)
+            try:
+                await _reconnect_with_retry(conn)
+            except BaseException as e:
+                reclaim_exc = e
+                print(f"[arena] WARNING: reclaim-retry interrupted: {e!r}", file=sys.stderr)
         try:
             await hook.restore_local(conn, 0)
         except Exception as e:
@@ -76,3 +83,5 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None) -> dict:
             await hook.disable(conn)
         except Exception as e:
             print(f"[arena] WARNING: hook.disable failed in cleanup: {e!r}", file=sys.stderr)
+        if reclaim_exc is not None:
+            raise reclaim_exc
