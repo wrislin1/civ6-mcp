@@ -1,6 +1,8 @@
 from __future__ import annotations
 import asyncio
 import sys
+from datetime import datetime, timezone
+from civ_mcp import lua as lq
 from civ_mcp.arena import hook
 
 
@@ -20,6 +22,26 @@ async def _reconnect_with_retry(conn, attempts=5, delay=0.5):
     return False
 
 
+async def _overview_snapshot(gs):
+    """Bootstrap-free lightweight overview snapshot; returns dict or None on failure."""
+    try:
+        lines = await gs.conn.execute_write(lq.build_overview_query())
+        ov = lq.parse_overview_response(lines)
+        return {
+            "score":    ov.score,
+            "gold":     ov.gold,
+            "science":  ov.science_yield,
+            "culture":  ov.culture_yield,
+            "faith":    ov.faith,
+            "research": ov.current_research,
+            "civic":    ov.current_civic,
+            "cities":   ov.num_cities,
+            "units":    ov.num_units,
+        }
+    except Exception:
+        return None
+
+
 class ScriptedPolicy:
     """Deterministic no-LLM policy for the dry-run gate: observe, then skip unit 0."""
     async def __call__(self, gs, player_id: int, turn: int) -> dict:
@@ -31,7 +53,7 @@ class ScriptedPolicy:
             return {"summary": f"scripted: skip failed {e!r}", "actions": []}
         return {"summary": "scripted: observed + skipped unit 0", "actions": [{"tool": "skip_unit"}]}
 
-async def run_arena(conn, gs, config, policy=None, policy_for=None) -> dict:
+async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=None) -> dict:
     if policy_for is None:
         if policy is None:
             raise ValueError("run_arena needs policy or policy_for")
@@ -47,12 +69,42 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None) -> dict:
             if st.active and st.local in puppet_ids:
                 pol = policy_for(st.local)
                 exclusive = bool(getattr(pol, "needs_exclusive_tuner", False))
+                state_before = await _overview_snapshot(gs) if transcript is not None else None
                 if exclusive and conn.is_connected:
                     await conn.disconnect()       # free the single tuner slot for the CLI
                 result = await pol(gs, st.local, st.turn)
                 log.append({"player": st.local, "turn": st.turn, **result})
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)   # reclaim before we end the turn
+                state_after = await _overview_snapshot(gs) if transcript is not None else None
+                if transcript is not None and result.get("transcript"):
+                    payload = result["transcript"]
+                    steps = payload.get("steps", [])
+                    if state_before is not None and state_after is not None:
+                        _num = ("score", "gold", "science", "culture", "faith", "cities", "units")
+                        state_delta = {k: state_after[k] - state_before[k] for k in _num}
+                        state_delta["research"] = state_after["research"]
+                        state_delta["civic"]    = state_after["civic"]
+                    else:
+                        state_delta = None
+                    _pol_backend = getattr(pol, "backend", None)
+                    record = {
+                        **payload,
+                        "schema_version": 1,
+                        "run_id":   getattr(config, "run_id", ""),
+                        "ts":       datetime.now(timezone.utc).isoformat(),
+                        "player_id": st.local,
+                        "turn":     st.turn,
+                        "provider": getattr(pol, "provider", "local"),
+                        "model":    getattr(_pol_backend, "model", getattr(pol, "model", "")),
+                        "driver":   "cli" if str(getattr(pol, "provider", "local")).startswith("cli") else "in_process",
+                        "step_count": len(steps),
+                        "usd":      float(result.get("usage", {}).get("usd", 0.0)),
+                        "state_before": state_before,
+                        "state_after":  state_after,
+                        "state_delta":  state_delta,
+                    }
+                    transcript.write(record)
                 # End this puppet's turn and hand control back toward the human.
                 # DESIGN NOTE — the turn-end method is validated by the live dry-run gate (Task 9).
                 # Primary (verified in the feasibility spike): finish_units(K) + restore_local(0).

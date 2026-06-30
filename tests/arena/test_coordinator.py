@@ -250,3 +250,166 @@ async def test_coordinator_cancelled_in_finally_reraises_after_full_handback(mon
         await run_arena(conn, gs, cfg, policy=ExclusivePol())
     # restore_local(0) was still attempted in the handback despite the CancelledError
     assert any("SetLocalPlayerAndObserver(0)" in c for c in conn.read_calls)
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — transcript instrumentation tests
+# ---------------------------------------------------------------------------
+
+_OV_BEFORE = "1|1|CivA|Leader|100.0|5.0|10.0|8.0|20.0|Mining|Drama|2|5|50"
+_OV_AFTER  = "1|1|CivA|Leader|110.0|5.0|12.0|9.0|25.0|Mining|Drama|2|6|55"
+
+
+class FakeConnWithOverview(FakeConn):
+    """FakeConn that returns two distinct overview lines on sequential execute_write calls."""
+    def __init__(self):
+        super().__init__()
+        self._overview_calls = 0
+
+    async def execute_write(self, lua, timeout=5.0):
+        self._maybe_die()
+        if "Game.GetLocalPlayer" in lua:
+            self._overview_calls += 1
+            return [_OV_BEFORE] if self._overview_calls == 1 else [_OV_AFTER]
+        return []
+
+
+class FakeGSWithConn(FakeGS):
+    """FakeGS with a .conn attribute for _overview_snapshot."""
+    def __init__(self, conn):
+        super().__init__()
+        self.conn = conn
+
+
+class FakeSink:
+    """Recording transcript sink."""
+    def __init__(self): self.records = []
+    def write(self, record: dict): self.records.append(record)
+
+
+class TranscriptPolicy:
+    """Policy that returns a transcript payload."""
+    provider = "local"
+    model = "test-model"
+
+    async def __call__(self, gs, player_id, turn):
+        return {
+            "summary": "done",
+            "transcript": {
+                "steps": [{"tool": "get_game_overview"}, {"tool": "end_turn"}],
+                "final_answer": "ok",
+            },
+            "usage": {"usd": 0.05},
+        }
+
+
+@pytest.mark.asyncio
+async def test_transcript_write_called_once_per_puppet_turn():
+    """transcript.write is called exactly once per puppet turn, with correct payload."""
+    conn = FakeConnWithOverview()
+    gs = FakeGSWithConn(conn)
+    sink = FakeSink()
+    cfg = ArenaConfig(players=[PlayerSpec(1, "local", "m")], max_puppet_turns=1,
+                      dry_run=True, puppet_ids=[1])
+
+    result = await run_arena(conn, gs, cfg, policy=TranscriptPolicy(), transcript=sink)
+
+    assert result["puppet_turns_played"] == 1
+    assert len(sink.records) == 1
+
+    rec = sink.records[0]
+    assert rec["schema_version"] == 1
+    assert rec["player_id"] == 1
+    assert rec["turn"] == 2          # from _polls: TURN|2
+    assert rec["step_count"] == 2
+    assert rec["usd"] == pytest.approx(0.05)
+    assert rec["provider"] == "local"
+    assert rec["model"] == "test-model"
+    assert rec["driver"] == "in_process"
+    # payload keys merged in
+    assert rec["final_answer"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_transcript_state_before_after_delta():
+    """state_before / state_after / state_delta are computed from the two overview snapshots."""
+    conn = FakeConnWithOverview()
+    gs = FakeGSWithConn(conn)
+    sink = FakeSink()
+    cfg = ArenaConfig(players=[PlayerSpec(1, "local", "m")], max_puppet_turns=1,
+                      dry_run=True, puppet_ids=[1])
+
+    await run_arena(conn, gs, cfg, policy=TranscriptPolicy(), transcript=sink)
+
+    rec = sink.records[0]
+    before = rec["state_before"]
+    after = rec["state_after"]
+    delta = rec["state_delta"]
+
+    assert before["gold"] == pytest.approx(100.0)
+    assert after["gold"]  == pytest.approx(110.0)
+
+    assert delta["gold"]    == pytest.approx(10.0)
+    assert delta["science"] == pytest.approx(2.0)
+    assert delta["culture"] == pytest.approx(1.0)
+    assert delta["faith"]   == pytest.approx(5.0)
+    assert delta["score"]   == 5
+    assert delta["cities"]  == 0
+    assert delta["units"]   == 1
+    # string fields come from the after snapshot
+    assert delta["research"] == "Mining"
+    assert delta["civic"]    == "Drama"
+
+
+@pytest.mark.asyncio
+async def test_transcript_none_adds_no_snapshot_reads():
+    """transcript=None (default) → ZERO overview queries issued to the game."""
+    class CountingWriteConn(FakeConn):
+        def __init__(self):
+            super().__init__()
+            self.overview_queries = 0
+        async def execute_write(self, lua, timeout=5.0):
+            self._maybe_die()
+            if "Game.GetLocalPlayer" in lua:
+                self.overview_queries += 1
+            return []
+
+    conn = CountingWriteConn()
+    gs = FakeGSWithConn(conn)
+    cfg = ArenaConfig(players=[PlayerSpec(1, "local", "m")], max_puppet_turns=1,
+                      dry_run=True, puppet_ids=[1])
+
+    # transcript not passed → default None → behavior-neutral
+    await run_arena(conn, gs, cfg, policy=TranscriptPolicy())
+    assert conn.overview_queries == 0
+
+
+@pytest.mark.asyncio
+async def test_null_sink_two_snapshot_reads_write_noop():
+    """NullSink → two snapshot reads happen (before + after), write is a no-op."""
+    from civ_mcp.arena.transcript import NullSink
+
+    ov_line = "1|1|CivA|Leader|100.0|5.0|10.0|8.0|20.0|Mining|Drama|2|5|50"
+
+    class CountingWriteConn(FakeConn):
+        def __init__(self):
+            super().__init__()
+            self.overview_queries = 0
+        async def execute_write(self, lua, timeout=5.0):
+            self._maybe_die()
+            if "Game.GetLocalPlayer" in lua:
+                self.overview_queries += 1
+                return [ov_line]
+            return []
+
+    conn = CountingWriteConn()
+    gs = FakeGSWithConn(conn)
+    sink = NullSink()
+    cfg = ArenaConfig(players=[PlayerSpec(1, "local", "m")], max_puppet_turns=1,
+                      dry_run=True, puppet_ids=[1])
+
+    result = await run_arena(conn, gs, cfg, policy=TranscriptPolicy(), transcript=sink)
+
+    assert result["puppet_turns_played"] == 1
+    # Both snapshot reads must have fired
+    assert conn.overview_queries == 2
