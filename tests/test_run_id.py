@@ -1,5 +1,10 @@
 """Tests for run_id generation — hostname differentiation + hour bucket."""
 
+import asyncio
+import shutil
+
+import pytest
+
 from civ_mcp.run_id import generate_run_id
 
 
@@ -87,3 +92,64 @@ class TestRunId:
         assert len(parts) == 4
         assert parts[3].isdigit()
         assert len(parts[3]) == 2
+
+    def test_no_context_is_random(self):
+        """generate_run_id() with no args uses the random branch — two calls differ."""
+        a = generate_run_id()
+        b = generate_run_id()
+        assert a != b, "random branch must produce distinct IDs on successive calls"
+
+    def test_model_id_arena_is_deterministic(self):
+        """Documents the bug: model_id='arena' is deterministic within an hour.
+
+        Two bare 'civ-arena' launches on the same host in the same hour produce
+        the same run_id → transcript and cost files append-merge across games.
+        """
+        a = generate_run_id(model_id="arena", timestamp=1775915000, hostname="riz-llm")
+        b = generate_run_id(model_id="arena", timestamp=1775915000, hostname="riz-llm")
+        assert a == b, "model_id='arena' must be deterministic (documents the collision)"
+
+
+# --- Arena wiring: default run_id must not carry model_id ---
+
+def test_arena_default_run_id_no_model_id(monkeypatch, tmp_path):
+    """_run default path must call generate_run_id() with no model_id.
+
+    generate_run_id(model_id=...) is deterministic per (host, model, hour) —
+    two same-hour bare 'civ-arena' launches collide and merge transcripts.
+    The fix: call generate_run_id() with no context so the random branch fires.
+    """
+    import civ_mcp.run_id as run_id_mod
+    from civ_mcp.arena.arena import _run
+
+    captured: dict = {}
+
+    def spy(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return "stub-amber-falcon-00"
+
+    monkeypatch.setattr(run_id_mod, "generate_run_id", spy)
+    monkeypatch.setattr(shutil, "which", lambda name: None)  # trigger early SystemExit
+
+    class Args:
+        player = ["1:cli-claude:"]
+        max_puppet_turns = 1
+        gateway_url = "http://localhost:11430/v1"
+        api_key_env = "LITELLM_OPENAI_API_KEY"
+        cost_path = ""
+        max_agent_steps = 6
+        dry_run = False
+        run_id = ""  # empty → triggers generate_run_id call
+        transcript_dir = str(tmp_path / "runs")
+        no_transcript = True
+        idle_poll_limit = 600
+
+    with pytest.raises(SystemExit):
+        asyncio.run(_run(Args()))
+
+    assert captured, "generate_run_id was never called — test wiring broken"
+    assert "model_id" not in captured["kwargs"], (
+        "generate_run_id must be called without model_id; "
+        f"got kwargs={captured['kwargs']!r}"
+    )

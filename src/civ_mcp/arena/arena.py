@@ -50,7 +50,7 @@ async def _run(args):
     from civ_mcp.run_id import generate_run_id
     from civ_mcp.arena.transcript import TranscriptSink, NullSink
     specs = [parse_player_spec(s) for s in args.player]
-    run_id = args.run_id or generate_run_id(model_id="arena")
+    run_id = args.run_id or generate_run_id()
     run_dir = Path(args.transcript_dir) / run_id
     run_dir.mkdir(parents=True, exist_ok=True)            # BEFORE CostLog (cost.py opens path directly)
     cost_path = args.cost_path or str(run_dir / "arena_cost.jsonl")
