@@ -342,7 +342,7 @@ class CLIAgentPolicy:
                 "final_summary": timeout_summary,
                 "cli_exit": None,
                 "cli_stderr_tail": "",
-                "invalid_tool_calls": [],
+                "invalid_tool_calls": [],  # invalid-tool-call detection deferred to live Task 9 (needs real stream-json/codex stdout)
                 "prompt_tokens": 0,
                 "completion_tokens": 0,
             }
@@ -385,7 +385,7 @@ class CLIAgentPolicy:
             "final_summary": summary,
             "cli_exit": proc.returncode,
             "cli_stderr_tail": stderr_tail,
-            "invalid_tool_calls": [],
+            "invalid_tool_calls": [],  # invalid-tool-call detection deferred to live Task 9 (needs real stream-json/codex stdout)
             "prompt_tokens": pt,
             "completion_tokens": ct,
         }

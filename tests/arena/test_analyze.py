@@ -140,7 +140,8 @@ def run_dir(tmp_path: Path) -> Path:
 
     # Model B, Turn 1 (cli driver — no truncation field in steps):
     #   - 2 steps, no truncation tracking (cli)
-    #   - 1 invalid call (unknown_tool)
+    #   - 0 invalid calls: the CLI producer hardcodes invalid_tool_calls=[] — real detection
+    #     is deferred to live Task 9 (needs real stream-json/codex stdout).
     tr_b1 = {
         "schema_version": 1,
         "run_id": run_id,
@@ -154,9 +155,7 @@ def run_dir(tmp_path: Path) -> Path:
             {"tool_name": "get_units", "tool_result_full": "[]"},
             {"tool_name": "end_turn", "tool_result_full": "OK"},
         ],
-        "invalid_tool_calls": [
-            {"step": 0, "tool_name": "bad_tool", "reason": "unknown_tool", "raw_args": {}}
-        ],
+        "invalid_tool_calls": [],  # CLI producer cannot detect these yet (Task 9)
         "wall_clock_s": 15.0,
         "final_summary": "ended turn.",
         "prompt_tokens": 300,
@@ -297,7 +296,12 @@ def test_invalid_call_rate_model_a(run_dir: Path) -> None:
 
 
 def test_invalid_call_rate_model_b(run_dir: Path) -> None:
-    """model-b (player 2): 1 invalid call across 2+1=3 steps => rate = 1/3."""
+    """model-b (player 2): CLI producer hardcodes invalid_tool_calls=[] — rate is 0.0.
+
+    Real invalid-call detection for CLI drivers requires captured stream-json/codex stdout
+    and is deferred to live Task 9.  This test documents that gap: the fixture accurately
+    reflects what the producer emits today (an empty list), not a capability it lacks.
+    """
     from civ_mcp.arena.analyze import load_records, analyze
 
     tr = load_records(run_dir / "transcript.jsonl")
@@ -305,7 +309,7 @@ def test_invalid_call_rate_model_b(run_dir: Path) -> None:
     report = analyze(tr, co)
 
     rates_b = report["by_player"][2]["rates"]
-    assert rates_b["invalid_call_rate"] == pytest.approx(1 / 3)
+    assert rates_b["invalid_call_rate"] == pytest.approx(0.0)
 
 
 def test_truncation_incident_rate_model_a(run_dir: Path) -> None:
@@ -360,7 +364,12 @@ def test_rubric_hallucinated_tools_model_a(run_dir: Path) -> None:
 
 
 def test_rubric_hallucinated_tools_model_b(run_dir: Path) -> None:
-    """model-b (player 2) turn 1 has unknown_tool => rubric hallucinated_tools set."""
+    """model-b (player 2, CLI driver): hallucinated_tools is NOT detectable yet.
+
+    The CLI producer hardcodes invalid_tool_calls=[] — real detection requires parsing
+    captured stream-json/codex stdout, deferred to live Task 9.  This test documents
+    the gap: rubric hallucinated_tools must be None for CLI transcripts today.
+    """
     from civ_mcp.arena.analyze import load_records, analyze
 
     tr = load_records(run_dir / "transcript.jsonl")
@@ -368,8 +377,8 @@ def test_rubric_hallucinated_tools_model_b(run_dir: Path) -> None:
     report = analyze(tr, co)
 
     rubric_b = report["by_player"][2]["rubric"]
-    assert rubric_b["hallucinated_tools"] is not None
-    assert rubric_b["hallucinated_tools"]["tool_name"] == "bad_tool"
+    # CLI cannot detect hallucinated tools yet (Task 9); must be None, not a false positive.
+    assert rubric_b["hallucinated_tools"] is None
 
 
 def test_default_output_paths(tmp_path: Path) -> None:
