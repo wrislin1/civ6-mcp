@@ -111,7 +111,7 @@ def run_dir(tmp_path: Path) -> Path:
         "steps": [
             _make_step(0, tool_name="move_unit",
                        tool_args={"unit_index": 2, "x": 3, "y": 3},
-                       tool_result_full="ERROR: tile not reachable",
+                       tool_result_full="MOVING_TO|3,3|BLOCKED",
                        prompt_tokens=120, completion_tokens=60),
             _make_step(1, tool_name="skip_unit",
                        tool_args={"unit_index": 3},
@@ -687,7 +687,7 @@ def test_rubric_cli_vocabulary_mcp_prefixed(tmp_path: Path) -> None:
         "role": "tool",
         "tool_name": "mcp__civ6__unit_action",
         "tool_args": {"action": "move", "unit_id": 2, "target_x": 9, "target_y": 9},
-        "tool_result_full": "ERROR: blocked",
+        "tool_result_full": "MOVING_TO|9,9|BLOCKED",
         "truncated": False,
         "ts_start": "2026-01-01T00:00:01Z",
         "ts_end": "2026-01-01T00:00:02Z",
@@ -743,6 +743,58 @@ def test_rubric_cli_vocabulary_mcp_prefixed(tmp_path: Path) -> None:
     )
     assert rubric["set_research_or_production"] is not None, (
         "set_research_or_production must fire for mcp__civ6__set_research (non-ERROR)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fix #1 Task-A — real game failure strings are detected as errors
+# ---------------------------------------------------------------------------
+
+def test_rubric_set_research_or_production_error_result_not_counted(tmp_path: Path) -> None:
+    """A set_city_production step returning 'Error: CANNOT_START|...' must NOT be
+    counted as a successful set — rubric["set_research_or_production"] must remain None.
+    This FAILS under the old startswith("ERROR") logic (title-case 'Error:' was not caught)."""
+    from civ_mcp.arena.analyze import load_records, analyze
+
+    run_id = "set-prod-error"
+    d = tmp_path / "arena_runs" / run_id
+    d.mkdir(parents=True)
+
+    rec = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "ts": "2026-01-01T00:00:00Z",
+        "player_id": 1,
+        "turn": 1,
+        "provider": "local",
+        "model": "set-prod-model",
+        "driver": "in_process",
+        "steps": [
+            _make_step(0, tool_name="set_city_production",
+                       tool_args={"city_id": 1, "item_type": "UNIT", "item_name": "UNIT_WARRIOR"},
+                       tool_result_full="Error: CANNOT_START|UNIT_WARRIOR cannot start."),
+        ],
+        "invalid_tool_calls": [],
+        "wall_clock_s": 1.0,
+        "final_summary": "set failed",
+        "prompt_tokens": 50,
+        "completion_tokens": 10,
+        "max_steps_reached": False,
+        "step_count": 1,
+        "usd": 0.0,
+        "state_before": None,
+        "state_after": None,
+        "state_delta": None,
+    }
+    _write_jsonl(d / "transcript.jsonl", [rec])
+    _write_jsonl(d / "arena_cost.jsonl", [])
+
+    tr = load_records(d / "transcript.jsonl")
+    report = analyze(tr, [])
+    rubric = report["by_model"]["set-prod-model"]["rubric"]
+    assert rubric["set_research_or_production"] is None, (
+        "Error: CANNOT_START|... must be treated as a failure and NOT set "
+        "set_research_or_production (old startswith('ERROR') would miss this)"
     )
 
 

@@ -55,6 +55,18 @@ def _steps_of(rec: dict) -> list[dict]:
     return [s for s in (rec.get("steps") or []) if isinstance(s, dict)]
 
 
+def _is_error_result(s: str) -> bool:
+    """Return True if a tool result string represents a game-level failure.
+
+    Matches real conventions from game_state.py:
+    - Title-case ``Error: ...`` (set_city_production, set_research, found_city)
+    - Pipe-delimited ``|BLOCKED`` suffix (move_unit blocked path)
+    - Legacy all-caps ``ERROR: ...`` from agent.py exception wrapper (rare)
+    """
+    s2 = (s or "").strip().lower()
+    return s2.startswith("error") or "|blocked" in s2
+
+
 def _is_local_driver(rec: dict) -> bool:
     return rec.get("driver", "in_process") == "in_process"
 
@@ -161,7 +173,7 @@ def _rubric_for_model(records: list[dict]) -> dict:
                 tool_base = (step.get("tool_name") or "").removeprefix("mcp__civ6__")
                 result = _safe_str(step.get("tool_result_full", ""))
                 if tool_base in ("set_research", "set_city_production"):
-                    if not result.startswith("ERROR"):
+                    if not _is_error_result(result):
                         rubric["set_research_or_production"] = {
                             "turn": turn,
                             "tool": tool_base,
@@ -173,7 +185,7 @@ def _rubric_for_model(records: list[dict]) -> dict:
             for step in steps:
                 _, verb = _step_verb(step)
                 result = _safe_str(step.get("tool_result_full", ""))
-                if verb == "move" and result.startswith("ERROR"):
+                if verb == "move" and _is_error_result(result):
                     rubric["wasted_move"] = {
                         "turn": turn,
                         "note": "move returned ERROR",
