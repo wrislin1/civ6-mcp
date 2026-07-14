@@ -425,6 +425,11 @@ class TestClosedListCleanupBuilders:
         assert "WORLD_CONGRESS_LOOKED_AT_AVAILABLE" in lua
         assert "ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK" in lua
         assert "NotificationManager.Dismiss" in lua
+        # Must also hide the modal WC screens (end_turn.py precedent) or the
+        # popup can stay presented and re-surface the blocker.
+        assert "WorldCongressIntro" in lua
+        assert "WorldCongressPopup" in lua
+        assert lua.count("SetHide(true)") == 2
 
     @pytest.mark.parametrize(
         "blocking_type",

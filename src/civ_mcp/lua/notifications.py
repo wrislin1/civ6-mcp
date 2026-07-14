@@ -140,6 +140,10 @@ if list then
         end
     end
 end
+local i = ContextPtr:LookUpControl("/InGame/WorldCongressIntro")
+if i then i:SetHide(true) end
+local p = ContextPtr:LookUpControl("/InGame/WorldCongressPopup")
+if p then p:SetHide(true) end
 print("PROMPT_SEEN")
 print("{SENTINEL}")
 """
