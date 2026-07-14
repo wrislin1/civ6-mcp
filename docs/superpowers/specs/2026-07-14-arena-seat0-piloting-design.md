@@ -94,7 +94,12 @@ must be a human who clicks End Turn each round. That blocks two things:
 - Run length control stays `max_game_turns`; seat-0 turns consume the shared
   `max_puppet_turns` budget and count in `game_turns`. A repair call is part of the
   same logical turn and consumes no additional budget. Seat-0 activity refills
-  `deadline_polls` exactly as captured puppet turns do.
+  `deadline_polls` exactly as captured puppet turns do. Budgets gate admission of
+  new policy turns, not completion of one already admitted: after seat 0 consumes
+  the last slot, the coordinator still drains that turn to `advanced`,
+  `human_pending`, or clean interruption. Before the final seat-0 ACTION_ENDTURN,
+  disable the puppet hook while seat 0 is still active; the ensuing AI phase then
+  runs normally without capturing a puppet that the exhausted budget cannot admit.
 
 ### Hook additions (`hook.py`)
 
@@ -118,10 +123,11 @@ A focused `arena/seat0.py` module owns only seat-0 completion mechanics: blocker
 classification, repair state, autosave attempt, and non-blocking end-turn requests.
 It tracks each game turn through:
 
-`ready → policy_played → end_fired → ai_processing → ready`
+`ready → policy_played → end_fired → ai_processing → advanced`
 
-Exceptional transitions go to `human_pending`. The state prevents the same seat-0
-turn from being replayed on every poll:
+The turn may move directly from `end_fired` to `advanced` when no intermediate AI
+phase is observed. Exceptional transitions go to `human_pending` or `interrupted`.
+The state prevents the same seat-0 turn from being replayed on every poll:
 
 - Start only when the poll reports seat 0 local and turn-active and the current
   turn is `ready`.
@@ -130,7 +136,8 @@ turn from being replayed on every poll:
   repair/re-fire flow below.
 - Seat 0 inactive while the game turn is unchanged → `ai_processing`; GameCore
   polling only.
-- Game turn changes → reset to `ready`.
+- Game turn changes → mark the pending record `advanced`; admit the next turn as
+  `ready` only when budget remains.
 - `human_pending` → never retry the same turn automatically; reset only after the
   human advances the game turn.
 
@@ -149,10 +156,11 @@ After the pilot returns:
    set, and mark purely informational prompts such as reviewed World Congress
    results as seen.
 3. Query blockers again.
-4. If a decision blocker remains, invoke the same pilot once more with a focused
-   `blocker_block` naming the blocker and its available resolution tools.
-5. Query again. If a decision blocker remains, enter `human_pending`; never
-   substitute a coordinator choice.
+4. If a decision blocker remains **or the normal policy call failed**, invoke the
+   same pilot once more with a focused `blocker_block` naming the blockers and
+   available resolution tools, plus the prior call error when present.
+5. Query again. If a decision blocker remains, or the repair call also fails, enter
+   `human_pending`; never substitute a coordinator choice.
 
 Decision blockers include promotions, research, civics, production, policies,
 governors, pantheon/religion choices, envoys, dedications, World Congress votes,
@@ -163,9 +171,10 @@ to `human_pending`.
 The repair pass uses the same model and permissions, cannot call `end_turn`, does
 not rerun pre-model tasks, does not create a second logical turn, and runs at most
 once per game turn. Its steps and usage merge into the original seat-0 transcript
-record. This completion table remains deliberately **distinct from attention's
-`BLOCKER_IGNORE`**: that list describes what a sleeping puppet may ignore, not what
-seat 0 may resolve without model judgment.
+record. The coordinator holds that record pending until the state reaches a real
+terminal outcome. This completion table remains deliberately **distinct from
+attention's `BLOCKER_IGNORE`**: that list describes what a sleeping puppet may
+ignore, not what seat 0 may resolve without model judgment.
 
 ### Autosave and turn-end
 
@@ -202,10 +211,15 @@ path waits synchronously for the turn flip.
   `turn_kind: "played"` when either policy call completes and `"failed"` when both
   fail, separate normal/repair summaries, blocker snapshots, mechanical cleanup,
   repair result, autosave result, end-turn request count, and terminal state.
+  Because the sink is append-only, the coordinator writes the record only at
+  `advanced`, `human_pending`, or `interrupted`; `ai_processing` is an intermediate
+  state, never a terminal label.
 - **Analyze** treats player 0 like every other seat. Current grouping already uses
   `pid is not None`, so `0` is preserved; this needs regression coverage rather
-  than seat-specific production behavior. Failed records remain visible without
-  inflating successful played-turn metrics.
+  than seat-specific production behavior. `_turn_kind` is extended to recognize
+  explicit `"failed"` while preserving legacy absent-field behavior; config,
+  rubric, memory, and other success metrics accept only `"played"`, while failed
+  records remain in the series and a separate failed-turn count.
 
 ## Error handling (bounded degrade-to-human)
 
@@ -225,8 +239,9 @@ path waits synchronously for the turn flip.
     the seat-0 fields — the InGame re-query must never fire mid-AI-phase.
 - **Human pending** → emit the CRITICAL event once, leave seat 0 local, and poll
   GameCore once per second. If the observer advances the turn inside
-  `idle_poll_limit`, reset and resume; otherwise exit the watcher cleanly. No
-  unbounded blocker or ACTION_ENDTURN loop.
+  `idle_poll_limit`, reset and resume when admission budget remains (or finish the
+  in-flight drain and exit when it does not); otherwise exit the watcher cleanly.
+  No unbounded blocker or ACTION_ENDTURN loop.
 - **Shutdown invariant unchanged.** The `finally` block still does reclaim →
   `restore_local(0)` → disable. Stopping while seat 0 is mid-turn is now the
   *clean* case (a human seamlessly takes over). Stopping mid-AI-phase with a puppet
@@ -237,9 +252,9 @@ path waits synchronously for the turn flip.
 
 The human is a passive observer during normal operation. Because seat 0 is never
 grabbed, a hard-block takeover requires no control transfer: resolve the blocker
-and end the turn. The watcher detects the new turn and resumes. This is also slice
-B's seam — unattended hardening only automates what the human does in
-`human_pending`.
+and end the turn. The watcher detects the new turn and resumes when budget remains.
+This is also slice B's seam — unattended hardening only automates what the human
+does in `human_pending`.
 
 ## Execution-context discipline
 
@@ -266,7 +281,7 @@ Codifying what the attention P1 fix proved the hard way:
 - Transcript merge and synthetic failure records; player-0 analysis grouping and
   failed-vs-played metrics.
 - Autosave ordering and nonfatal failure; 3-request/5-poll bounds; budget
-  accounting and human-pending recovery.
+  admission vs in-flight drain, final-slot hook disable, and human-pending recovery.
 - No InGame query/action while seat 0 is inactive.
 - Existing puppet, attention, exclusive handoff, cancellation, and cleanup
   regressions remain green.
