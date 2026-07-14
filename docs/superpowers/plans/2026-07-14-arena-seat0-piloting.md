@@ -264,7 +264,25 @@ git commit -m "feat(arena): validate seat-zero piloting config"
 
 - [ ] **Step 1: Write failing hook tests**
 
+`tests/arena/test_hook.py` has no fake connection yet; define one at module level first:
+
 ```python
+class RecordingConn:
+    """Minimal fake: records the Lua sent to each execution context."""
+
+    def __init__(self):
+        self.reads: list[str] = []
+        self.writes: list[str] = []
+
+    async def execute_read(self, lua: str) -> list[str]:
+        self.reads.append(lua)
+        return []
+
+    async def execute_write(self, lua: str) -> list[str]:
+        self.writes.append(lua)
+        return ["OK:TURN_ENDED"]
+
+
 def test_parse_poll_includes_seat0_active():
     state = parse_poll([
         "LOCAL|0", "TURN|17", "ACTIVE|false", "LAST|2",
@@ -383,6 +401,14 @@ def test_state_does_not_readmit_same_active_turn():
         assert state.observe(turn=7, seat0_active=True) == Seat0Poll.WAIT
     assert state.observe(turn=7, seat0_active=True) == Seat0Poll.RECHECK
     assert not state.can_admit(turn=7, seat0_active=True)
+
+
+def state_after_one_end_request(turn: int) -> Seat0TurnState:
+    state = Seat0TurnState()
+    state.admit(turn)
+    state.mark_policy_played()
+    state.mark_end_fired()
+    return state
 
 
 def test_state_distinguishes_ai_processing_from_advance():
@@ -949,7 +975,7 @@ git commit -m "feat(arena): drain seat-zero turns within bounded retries"
 
 ```python
 @pytest.mark.parametrize(
-    (record, expected),
+    "record, expected",
     [
         ({"turn_kind": "failed"}, "failed"),
         ({"turn_kind": "played"}, "played"),
@@ -1069,29 +1095,29 @@ Factor small private helpers on `ScriptedPolicy` (`_choose_research`, `_choose_p
 Stage 1 config:
 
 ```yaml
-max_puppet_turns: 15
-max_game_turns: 15
+max_puppet_turns: 24
+max_game_turns: 24
 idle_poll_limit: 600
 gateway_url: http://192.168.20.196:11444/v1
 civs:
   - player: 0
     provider: scripted
     model: seat0-smoke
-    attention: {mode: off}
+    attention: {mode: "off"}
   - player: 1
     provider: local
     model: gemma4-26b
     gateway: http://192.168.20.196:11440/v1
     tools: full
     max_steps: 8
-    attention: {mode: off}
+    attention: {mode: "off"}
   - player: 2
     provider: local
     model: gemma4-26b
     gateway: http://192.168.20.196:11440/v1
     tools: full
     max_steps: 8
-    attention: {mode: off}
+    attention: {mode: "off"}
 ```
 
 Stage 2 config uses the same two puppets, `max_puppet_turns/max_game_turns: 36`, and:
@@ -1100,12 +1126,18 @@ Stage 2 config uses the same two puppets, `max_puppet_turns/max_game_turns: 36`,
   - player: 0
     provider: cli-claude
     model: ""
-    tools: full
-    max_steps: 10
-    attention: {mode: off}
+    attention: {mode: "off"}
 ```
 
 Do not bake a `run_id` into either file; live commands supply unique IDs.
+
+Two YAML traps, both load-time `ValueError`s if reintroduced: keep `mode: "off"`
+quoted — PyYAML reads a bare `off` as boolean `False` and `_parse_attention`
+rejects it — and never give `tools`/`max_steps`/`result_char_cap`/`gateway` to
+a `scripted` or `cli-claude` entry; `experiment.py` restricts those knobs to
+`local` civs. Budget rationale: 24 shared captures ≈ 8 rounds of the 3
+configured seats, so gate 1's 5–10 seat-0-turn acceptance range has slack
+(15 would land exactly on the minimum, where one failed capture fails the gate).
 
 - [ ] **Step 7: Run the complete offline verification matrix**
 
