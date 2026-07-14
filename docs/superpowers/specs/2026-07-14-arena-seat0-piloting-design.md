@@ -1,7 +1,7 @@
 # Arena Autonomous Seat-0 Piloting — v1, Attended (Design)
 
 **Date:** 2026-07-14
-**Status:** Design approved section-by-section in brainstorming session (riz, this date); document pending riz's separate-session spec review before `superpowers:writing-plans`.
+**Status:** Revised design approved section-by-section in riz's separate-session spec review (2026-07-14); written revision pending riz's final file review before `superpowers:writing-plans`.
 **Predecessor:** Attention & turn-skipping slice merged and **live-probed** — P1–P4 all passed on a live game (turns 155→225), fixes merged at `480fc8d`, 1001 tests green. This design was re-verified against `480fc8d` after the probe fixes landed.
 **Sequencing:** riz inserted this slice **before roadmap item A** (LLM↔LLM unofficial channels, spec `2026-07-09-arena-unofficial-channels-design.md`). That spec's Appendix A carried forward the autonomous-seat-0 findings and named this as its own future brainstorm — this document is that brainstorm's output. The **game-master idea is parked** (its purpose question unanswered); it comes after this slice and presumes all pilots are local LLMs.
 **Slice split (riz):** "A then B as its own slice works. As usual we start small, test, then increase complexity."
@@ -67,6 +67,12 @@ must be a human who clicks End Turn each round. That blocks two things:
 3. **Seat 0 is played in place** — never grabbed via `SetLocalPlayerAndObserver`,
    never restored. It is already the local player; the coordinator just acts while
    `Players[0]:IsTurnActive()`.
+4. **The pilot retains full decision authority.** The coordinator may clean up
+   mechanical residue after the pilot declares the turn complete, but it never
+   chooses promotions, research, civics, production, policies, governors, beliefs,
+   envoys, dedications, votes, city-capture outcomes, or other strategic actions.
+   A bounded focused policy repair pass handles a missed choice; the human is a
+   passive observer unless automation reaches a genuine hard block.
 
 ## Design
 
@@ -75,12 +81,19 @@ must be a human who clicks End Turn each round. That blocks two things:
 - Seat 0 becomes a normal `players:` entry in the experiment YAML (same `PlayerSpec`
   as puppets: backend, model, max_steps, …). `seat0_piloted = 0 in configured
   players` — no new top-level flag.
+- `ArenaConfig.puppet_ids` becomes optional so an intentionally empty puppet set is
+  distinguishable from "derive it": `None` derives all configured nonzero player
+  IDs; an explicit list is used as-is after validation. Experiment YAML and CLI
+  resolution always derive `puppet_ids` by excluding 0.
 - **Validation:** `0 in puppet_ids` is a config error (the self-loop config is
   rejected, not silently repaired). Seat 0 is **never** in the hook inject list.
+  A seat-0 `PlayerSpec` must set `attention.mode: off`; other modes fail config
+  validation instead of being silently ignored.
 - Seat 0's spec participates in the config `fingerprint()` (`config.py:71`) so runs
   are distinguishable.
 - Run length control stays `max_game_turns`; seat-0 turns consume the shared
-  `max_puppet_turns` budget and count in `game_turns`. Seat-0 activity refills
+  `max_puppet_turns` budget and count in `game_turns`. A repair call is part of the
+  same logical turn and consumes no additional budget. Seat-0 activity refills
   `deadline_polls` exactly as captured puppet turns do.
 
 ### Hook additions (`hook.py`)
@@ -94,45 +107,83 @@ must be a human who clicks End Turn each round. That blocks two things:
   definition. It is only ever called while seat 0 is local and turn-active (which,
   for a never-grabbed seat 0, is simply "while `Players[0]:IsTurnActive()`").
 
-### Coordinator seat-0 branch
+### Coordinator integration and seat-0 state
 
-Gating: fires only when (a) no puppet poll is pending service, (b) the poll shows
-seat 0 turn-active, and (c) seat 0 has not already been played this game turn.
+Generalize the coordinator's existing captured-turn path to recognize either a
+captured puppet or active local seat 0. Policy preparation, memory, task tracking,
+snapshots, transcript capture, and exclusive CLI handoff remain shared. Puppet
+turns retain priority whenever a poll reports a captured puppet.
 
-Flow per seat-0 turn:
+A focused `arena/seat0.py` module owns only seat-0 completion mechanics: blocker
+classification, repair state, autosave attempt, and non-blocking end-turn requests.
+It tracks each game turn through:
 
-1. **Snapshot** (same pre-turn overview the puppet path takes).
-2. **Policy plays the turn** — same policy interface as puppets. For `cli-claude`,
-   the existing exclusive-tuner handoff is reused, with **`end_turn` stripped from
-   the pilot's MCP config** (same sandbox-layer pattern as the arena's `run_lua`
-   removal) so the pilot cannot enter `execute_end_turn`'s blocking wait.
-3. **Deterministic blocker sweep** (below) — runs regardless of policy outcome.
-4. **Autosave** — reuse the autosave module; this is the attended-recovery anchor.
-5. **`hook.end_turn(conn)`** — coordinator fires ACTION_ENDTURN.
-6. **Back to polling.** No blocking wait; the flip shows up in the next polls.
+`ready → policy_played → end_fired → ai_processing → ready`
 
-### Blocker sweep (deterministic backstop)
+Exceptional transitions go to `human_pending`. The state prevents the same seat-0
+turn from being replayed on every poll:
 
-After the policy returns (or fails), query `build_end_turn_blocking_query()` and
-resolve every blocker with boring defaults so ACTION_ENDTURN can succeed:
+- Start only when the poll reports seat 0 local and turn-active and the current
+  turn is `ready`.
+- Seat 0 still active inside the post-request grace window → keep GameCore polling.
+- Seat 0 still active after the grace window → recheck blockers and use the bounded
+  repair/re-fire flow below.
+- Seat 0 inactive while the game turn is unchanged → `ai_processing`; GameCore
+  polling only.
+- Game turn changes → reset to `ready`.
+- `human_pending` → never retry the same turn automatically; reset only after the
+  human advances the game turn.
 
-- Units awaiting orders (`ENDTURN_BLOCKING_UNITS`) → `finish_units(0)`.
-- Promotions → `autoresolve.sweep_promotions` (existing).
-- Research/civic empty → cheapest available.
-- Production empty → first item in the city's list.
-- Policy slots → fill with first legal cards.
-- Remaining families enumerated at **plan time** from what actually fires in turns
-  1–50 (open item below).
+### Policy and blocker flow
 
-This table is deliberately **distinct from attention's `BLOCKER_IGNORE`**: that list
-means "a sleeping *puppet* may ignore this because the sleep path finish_units()es
-the seat"; the seat-0 sweep must actively *resolve* — an ignored blocker here would
-leave the turn un-endable. Do not unify the two lists.
+The normal pilot call owns every strategic choice and receives the configured arena
+toolset except `end_turn`. That restriction already exists in both CLI lockdown
+layers (`cli_agent.py` denylist and `server.py`'s `_ARENA_PUPPET_TOOLS`); the
+in-process arena registry does not expose `end_turn`.
+
+After the pilot returns:
+
+1. Query `build_end_turn_blocking_query()` while seat 0 is still active.
+2. Apply only non-strategic cleanup: `finish_units(0)` after the pilot declares the
+   turn complete, dismiss stale notifications whose underlying choice is already
+   set, and mark purely informational prompts such as reviewed World Congress
+   results as seen.
+3. Query blockers again.
+4. If a decision blocker remains, invoke the same pilot once more with a focused
+   `blocker_block` naming the blocker and its available resolution tools.
+5. Query again. If a decision blocker remains, enter `human_pending`; never
+   substitute a coordinator choice.
+
+Decision blockers include promotions, research, civics, production, policies,
+governors, pantheon/religion choices, envoys, dedications, World Congress votes,
+city captures, stacked units, and any other choice that can affect strategy. A
+blocker with no pilot-accessible resolution tool is a hard block and goes directly
+to `human_pending`.
+
+The repair pass uses the same model and permissions, cannot call `end_turn`, does
+not rerun pre-model tasks, does not create a second logical turn, and runs at most
+once per game turn. Its steps and usage merge into the original seat-0 transcript
+record. This completion table remains deliberately **distinct from attention's
+`BLOCKER_IGNORE`**: that list describes what a sleeping puppet may ignore, not what
+seat 0 may resolve without model judgment.
+
+### Autosave and turn-end
+
+After blockers clear and before ACTION_ENDTURN, attempt
+`game_lifecycle.save_game(conn, "0_MCP_NNNN")`. This best-effort call is not gated
+solely by the Python host OS because WSL may control a Windows game. Save failure is
+logged but never blocks progression; the live gate verifies whether the save lands
+in the target deployment.
+
+Then call `hook.end_turn(conn)` and return immediately to polling. No code in this
+path waits synchronously for the turn flip.
 
 ### Pilot policies
 
 - **ScriptedPolicy** (existing, `coordinator.py:125-134` observe+skip): live
-  gate stage 1, pure turn-cycling.
+  gate stage 1. For seat-0 smoke runs the scripted pilot — not the coordinator —
+  makes deterministic research/production decisions and responds to
+  `blocker_block`, preserving the policy/host authority boundary.
 - **cli-claude**: exclusive handoff + stripped `end_turn`, as above.
 - **Local LLM** (llama.cpp gateway): same interface; the eventual all-local
   configuration for GM-era runs.
@@ -141,31 +192,41 @@ leave the turn un-endable. Do not unify the two lists.
 
 - **Memory + task tracker** work unchanged with `player_id 0` (both are keyed by
   player id; no special-casing found).
-- **Attention is forced OFF for seat 0 in v1**, for two independent reasons: the
+- **Attention is rejected unless OFF for seat 0 in v1**, for two independent reasons: the
   sleep path ends with `restore_local(0)` (`coordinator.py:412-413`, `:530-531`) —
   wrong for a seat that *is* local and must instead end its turn; and
   `BLOCKER_IGNORE` semantics don't transfer (above). Attention-for-seat-0 is a
   future item, not slice B's.
-- **Transcript** records seat-0 turns with `player_id: 0`, `turn_kind: "played"`.
-  `analyze`'s treatment of player-0 records is a plan-time item.
+- **Transcript** emits one record for every attempted seat-0 turn, including
+  failures. Normal and repair steps/usage are merged. Records carry `player_id: 0`,
+  `turn_kind: "played"` when either policy call completes and `"failed"` when both
+  fail, separate normal/repair summaries, blocker snapshots, mechanical cleanup,
+  repair result, autosave result, end-turn request count, and terminal state.
+- **Analyze** treats player 0 like every other seat. Current grouping already uses
+  `pid is not None`, so `0` is preserved; this needs regression coverage rather
+  than seat-specific production behavior. Failed records remain visible without
+  inflating successful played-turn metrics.
 
-## Error handling (degrade-not-abort)
+## Error handling (bounded degrade-to-human)
 
-- **Policy failure** → logged; flow proceeds to the blocker sweep and still ends the
-  turn. A wedged pilot plays a null turn; it can never stall the game. Mirrors the
-  existing failed-puppet-turn guard.
-- **Blocker the resolver can't handle** → one retry, then a CRITICAL log naming the
-  blocker and transition to **human-pending**: the coordinator stops trying to end
-  seat 0's turn, leaves seat 0 local and active, and keeps servicing puppet polls.
-  The game is always human-playable when automation gives up. No unbounded
-  ACTION_ENDTURN spinning.
-- **End-turn fired but the turn doesn't flip** within a grace window of polls:
+- **Policy failure** → logged; the same policy may receive the one focused repair
+  call. A second model/backend failure is a genuine hard block and transitions to
+  `human_pending` rather than letting the coordinator make strategic choices.
+- **Unsupported or inaccessible blocker** → one CRITICAL structured event naming
+  the blocker and immediate `human_pending`.
+- **End-turn fired but the turn doesn't flip** within 5 GameCore polls, one second
+  apart:
   - If the poll shows seat 0 **still turn-active** → not mid-AI-phase; safe to
     re-query blockers InGame (a new one may have surfaced, e.g. a World Congress
-    session), re-sweep, re-fire. Bounded at 3 total attempts, then human-pending.
+    session), apply mechanical cleanup or the still-unused repair pass, and re-fire.
+    Bounded at 3 ACTION_ENDTURN requests total, then `human_pending`.
   - If seat 0 is **no longer active** but the turn hasn't flipped → AI phase is
     processing; do nothing but GameCore polling. This gate is why POLL_LUA carries
     the seat-0 fields — the InGame re-query must never fire mid-AI-phase.
+- **Human pending** → emit the CRITICAL event once, leave seat 0 local, and poll
+  GameCore once per second. If the observer advances the turn inside
+  `idle_poll_limit`, reset and resume; otherwise exit the watcher cleanly. No
+  unbounded blocker or ACTION_ENDTURN loop.
 - **Shutdown invariant unchanged.** The `finally` block still does reclaim →
   `restore_local(0)` → disable. Stopping while seat 0 is mid-turn is now the
   *clean* case (a human seamlessly takes over). Stopping mid-AI-phase with a puppet
@@ -174,9 +235,11 @@ leave the turn un-endable. Do not unify the two lists.
 
 ### Human takeover
 
-Because seat 0 is never grabbed, takeover requires nothing: pause/stop the watcher
-during seat 0's turn and play. This is also slice B's seam — unattended hardening
-only automates what the human would do in the human-pending state.
+The human is a passive observer during normal operation. Because seat 0 is never
+grabbed, a hard-block takeover requires no control transfer: resolve the blocker
+and end the turn. The watcher detects the new turn and resumes. This is also slice
+B's seam — unattended hardening only automates what the human does in
+`human_pending`.
 
 ## Execution-context discipline
 
@@ -194,25 +257,39 @@ Codifying what the attention P1 fix proved the hard way:
 ### Offline (TDD, existing harness patterns)
 
 - Poll parsing with the new seat-0 fields.
-- Coordinator seat-0 branch against stub conn/policies (`test_coordinator.py`
-  style): happy path, policy failure, blocker-retry exhaustion → human-pending,
-  end-turn no-flip paths (both the still-active re-fire and the AI-phase hold-off).
-- Blocker-resolver decision table over fixture blocker lists.
-- Config validation (seat 0 in `players` OK; seat 0 in `puppet_ids` rejected) and
-  fingerprint change.
+- Config derivation and explicit-empty semantics; seat 0 in `players` accepted,
+  seat 0 in `puppet_ids` rejected, non-off seat-0 attention rejected, and
+  fingerprint coverage.
+- Seat-0 state transitions and duplicate-play prevention against stub polls.
+- Mechanical-vs-decision blocker classification; focused repair exactly once;
+  unresolved repair, policy failure, and inaccessible blocker paths.
+- Transcript merge and synthetic failure records; player-0 analysis grouping and
+  failed-vs-played metrics.
+- Autosave ordering and nonfatal failure; 3-request/5-poll bounds; budget
+  accounting and human-pending recovery.
+- No InGame query/action while seat 0 is inactive.
+- Existing puppet, attention, exclusive handoff, cancellation, and cleanup
+  regressions remain green.
 
 ### Live gate — stage 1 (scripted)
 
-Small game; seat 0 on ScriptedPolicy + 2 local-LLM puppets; 5–10 turns fully
-hands-free. Validates: turn flips reliably; the sweep covers what actually fires in
-early turns; autosaves land; mid-run human takeover works; clean shutdown during
-seat 0's turn.
+Small game; seat 0 on the scripted smoke policy + 2 local-LLM puppets; 5–10 turns
+fully hands-free. The scripted policy itself makes deterministic research and
+production choices. Validate: turn flips reliably; focused blocker repair works;
+autosave evidence lands (or records the deployment limitation); and shutdown is
+clean during seat 0's turn.
 
 ### Live gate — stage 2 (LLM pilot)
 
-cli-claude (and/or a local model) on seat 0; 10–20 turns. Validates the exclusive
-handoff with `end_turn` stripped, real blocker coverage when a pilot plays
-properly, and transcript/analyze treatment of player-0 records.
+cli-claude (and/or a local model) on seat 0; 10–20 turns. Validate the exclusive
+handoff with `end_turn` stripped, full pilot-owned strategic choices, real blocker
+repair, and transcript/analyze treatment of player-0 records.
+
+### Live gate — stage 3 (human escape)
+
+Induce or wait for an unsupported hard blocker. Verify exactly one
+`human_pending` event, manually resolve and advance, then confirm the watcher
+resumes autonomous play on the next seat-0 turn.
 
 ## Out of scope (recorded)
 
@@ -223,12 +300,6 @@ properly, and transcript/analyze treatment of player-0 records.
 - **Game master** (parked brainstorm; purpose question A–D open; all pilots local).
 - **Channels (roadmap A)** — does not depend on this slice, but benefits from it
   for automated testing.
-
-## Open items for plan time
-
-1. Exact blocker-default table, enumerated from what fires live in turns 1–50.
-2. `analyze` treatment of player-0 transcript records.
-3. Grace-window size (polls) before the no-flip re-check.
 
 ## Process note
 
