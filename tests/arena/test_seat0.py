@@ -552,3 +552,22 @@ def test_merge_policy_attempts_both_missing_returns_empty_shape():
     assert merged["actions"] == []
     assert merged["summary"] == ""
     assert "usage" not in merged
+
+
+# ---------------------------------------------------------------------------
+# Task 6: repair-block shape for the coordinator's normal-exception path
+# ---------------------------------------------------------------------------
+
+
+def test_build_blocker_block_normal_exception_empty_blockers_verbatim():
+    """For a normal exception with no detected blockers the repair block still
+    leads with the header + prior error verbatim and instructs the pilot to
+    inspect and finish the turn."""
+    block = build_blocker_block([], prior_error="gateway unavailable")
+    assert block.startswith(
+        "== END-TURN REPAIR ==\nPrior policy error: gateway unavailable"
+    )
+    lowered = block.lower()
+    assert "inspect" in lowered and "finish the turn" in lowered
+    # end_turn is explicitly withheld from the repair pass.
+    assert "end_turn" in block and "not available" in lowered

@@ -2154,6 +2154,9 @@ class Seat0Harness:
         self._polls = iter(polls)
         self._last_poll = None
         self.blockers: list[dict] = []      # served by the patched query_blockers
+        # Ordered per-query blocker snapshots (Task 6). Each query_blockers call
+        # pops the next snapshot; once exhausted it falls back to self.blockers.
+        self.blocker_queue: list[list[dict]] = []
         self.anchor: dict | None = None     # canned save_recovery_anchor result
 
         async def fake_poll(conn):
@@ -2187,6 +2190,8 @@ class Seat0Harness:
 
         async def fake_query_blockers(conn):
             self.events.append(("query_blockers", conn.is_connected))
+            if self.blocker_queue:
+                return [dict(b) for b in self.blocker_queue.pop(0)]
             return [dict(b) for b in self.blockers]
 
         async def fake_save_anchor(conn, turn):
@@ -2501,3 +2506,399 @@ async def test_no_seat0_spec_keeps_puppet_only_behavior(monkeypatch, tmp_path):
     assert result["puppet_turns_played"] == 1
     assert result.get("seat0_turns_played", 0) == 0
     assert "end_turn" not in harness.names()
+
+
+# ---------------------------------------------------------------------------
+# Task 6 (seat-0 piloting) — one-shot repair & bounded human escape
+# ---------------------------------------------------------------------------
+
+
+def _blocker(blocking_type: str, message: str = "") -> dict:
+    return {"type": blocking_type, "message": message or f"msg-{blocking_type}"}
+
+
+_RESEARCH = _blocker("ENDTURN_BLOCKING_RESEARCH", "Choose Research")
+_GOVERNOR = _blocker("ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT", "Appoint a governor")
+
+
+class Seat0ScriptPolicy:
+    """Seat-0 policy whose per-call behaviour is scripted: each element of
+    ``behaviors`` is either a dict (returned) or a BaseException instance
+    (raised). Records (player_id, turn, kwargs) per call and stamps a
+    ``policy`` event into the shared harness stream."""
+
+    provider = "local"
+    model = "seat0-m"
+
+    def __init__(self, harness, behaviors, *, options=None,
+                 needs_exclusive_tuner=False):
+        self._harness = harness
+        self._behaviors = list(behaviors)
+        self.options = options or CivOptions()
+        self.needs_exclusive_tuner = needs_exclusive_tuner
+        self.calls = []
+
+    async def __call__(self, gs, player_id, turn, **kwargs):
+        idx = len(self.calls)
+        self._harness.events.append(("policy", player_id, turn))
+        self.calls.append((player_id, turn, kwargs))
+        behavior = self._behaviors[idx] if idx < len(self._behaviors) else self._behaviors[-1]
+        if isinstance(behavior, BaseException):
+            raise behavior
+        return behavior
+
+
+def _returned(summary: str) -> dict:
+    return {"summary": summary, "actions": []}
+
+
+def _critical_events(result) -> list[dict]:
+    return [e for e in result["log"] if e.get("event") == "seat0_human_pending"]
+
+
+# --- Step 1: decision blocker triggers exactly one focused repair -----------
+
+
+@pytest.mark.asyncio
+async def test_seat0_decision_blocker_triggers_one_repair(monkeypatch, tmp_path):
+    """RESEARCH -> RESEARCH -> []: normal returns, mechanical cleanup does not
+    choose a tech, and the second query drives a single focused repair that
+    receives only blocker_block + caps and clears the turn."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    harness.blocker_queue = [[_RESEARCH], [_RESEARCH], []]
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [
+        _returned("normal done"),
+        _returned("repair done"),
+    ])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-decision")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    # Same policy object, called twice, both for the SAME game turn (one
+    # logical turn, not a second admission).
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]
+    # Normal call rides the full injected-kwarg set.
+    normal_kwargs = pol.calls[0][2]
+    assert "memory_block" in normal_kwargs and "task_block" in normal_kwargs
+    assert normal_kwargs["caps"]["government"] is True
+    # Repair call gets ONLY blocker_block + caps -- no memory/task/digest/briefing.
+    repair_kwargs = pol.calls[1][2]
+    assert set(repair_kwargs) == {"blocker_block", "caps"}
+    assert repair_kwargs["blocker_block"] == seat0_mod.build_blocker_block([_RESEARCH])
+    assert "Prior policy error" not in repair_kwargs["blocker_block"]
+    assert repair_kwargs["caps"] is normal_kwargs["caps"]
+
+    # One end request; the turn plays.
+    assert harness.names().count("end_turn") == 1
+    assert result["seat0_turns_played"] == 1
+    assert result["seat0_turns_failed"] == 0
+    assert result["seat0_human_pending"] == 0
+
+    rec = sink.records[0]
+    assert rec["turn_kind"] == "played"
+    s0 = rec["seat0"]
+    assert s0["terminal_state"] == "advanced"
+    assert s0["normal"]["completed"] is True and s0["normal"]["summary"] == "normal done"
+    assert s0["repair"] == {
+        "attempted": True, "completed": True, "summary": "repair done", "error": "",
+    }
+    assert [snap["stage"] for snap in s0["blocker_snapshots"]] == [
+        "after_normal", "after_normal_cleanup", "after_repair",
+    ]
+    assert s0["blocker_snapshots"][-1]["blockers"] == []
+
+
+@pytest.mark.asyncio
+async def test_seat0_repair_does_not_rerun_pre_model_tasks(monkeypatch, tmp_path):
+    """Pre-model task follow-through runs once per logical turn, not again for
+    the repair pass."""
+    run_id = "seat0-repair-tasks"
+    task = UnitTask(
+        task_id="settle:42", kind="settle", unit_id=42, target_x=5, target_y=5,
+        created_turn=6, updated_turn=6,
+    )
+    save_task_state(str(tmp_path), run_id, 0, [task])
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7), seat0_poll(8)])
+    # after_normal -> after_normal_cleanup (governor persists) -> repair -> clear
+    harness.blocker_queue = [[_GOVERNOR], [_GOVERNOR], []]
+    gs = FakeGSWithUnit(unit_id=42, unit_index=7, x=5, y=5)
+    opts = CivOptions(task_tracker=TaskTrackerOptions(enabled=True, max_tasks=8))
+    pol = Seat0ScriptPolicy(harness, [
+        _returned("normal"), _returned("repair"),
+    ], options=opts)
+    cfg = _seat0_cfg(tmp_path, run_id=run_id)
+
+    result = await run_arena(FakeConn(), gs, cfg, policy=pol)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]  # repair happened
+    assert gs.found_city_calls == [7]                      # settle ran exactly once
+    assert result["seat0_turns_played"] == 1
+
+
+# --- Step 2: policy-error matrix -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_seat0_matrix_raise_then_repair_returns_plays(monkeypatch, tmp_path):
+    """raises -> returns -> played: the repair block carries the prior error
+    and the pilot inspects/finishes the turn; blockers clear -> end request."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    harness.blocker_queue = [[]]  # post-repair query only (raise skips normal pass)
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [
+        RuntimeError("gateway unavailable"),
+        _returned("repair recovered"),
+    ])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-raise-return")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]
+    repair_block = pol.calls[1][2]["blocker_block"]
+    assert repair_block.startswith(
+        "== END-TURN REPAIR ==\nPrior policy error: gateway unavailable"
+    )
+    assert "inspect" in repair_block.lower() or "finish" in repair_block.lower()
+    assert harness.names().count("end_turn") == 1
+    assert result["seat0_turns_played"] == 1
+    assert result["seat0_turns_failed"] == 0
+    assert result["seat0_human_pending"] == 0
+    rec = sink.records[0]
+    assert rec["turn_kind"] == "played"
+    assert rec["seat0"]["normal"]["completed"] is False
+    assert "gateway unavailable" in rec["seat0"]["normal"]["error"]
+    assert rec["seat0"]["repair"]["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_seat0_matrix_returns_then_repair_raises_human_pending(monkeypatch, tmp_path):
+    """returns -> raises -> human_pending, turn_kind played (a call returned)."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=True),
+    ])
+    harness.blocker_queue = [[_RESEARCH], [_RESEARCH]]
+    conn = FakeConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [
+        _returned("normal ok"),
+        RuntimeError("repair blew up"),
+    ])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-return-raise", idle_poll_limit=4)
+
+    result = await run_arena(conn, FakeGS(), cfg, policy=pol, transcript=sink)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]
+    assert harness.names().count("end_turn") == 0
+    assert result["seat0_human_pending"] == 1
+    assert result["seat0_turns_failed"] == 0
+    assert result["seat0_turns_played"] == 0
+    rec = sink.records[0]
+    assert rec["turn_kind"] == "played"
+    assert rec["seat0"]["terminal_state"] == "human_pending"
+    assert rec["seat0"]["repair"]["attempted"] is True
+    assert "repair blew up" in rec["seat0"]["repair"]["error"]
+    crit = _critical_events(result)
+    assert len(crit) == 1
+    assert crit[0]["turn"] == 7
+
+
+@pytest.mark.asyncio
+async def test_seat0_matrix_raise_then_repair_raises_failed(monkeypatch, tmp_path):
+    """raises -> raises -> failed + human_pending (neither call returned)."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=True),
+    ])
+    conn = FakeConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [
+        RuntimeError("gateway unavailable"),
+        RuntimeError("still down"),
+    ])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-raise-raise", idle_poll_limit=3)
+
+    result = await run_arena(conn, FakeGS(), cfg, policy=pol, transcript=sink)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]
+    assert harness.names().count("end_turn") == 0
+    assert result["seat0_turns_failed"] == 1
+    assert result["seat0_human_pending"] == 1
+    assert result["seat0_turns_played"] == 0
+    rec = sink.records[0]
+    assert rec["turn_kind"] == "failed"
+    assert rec["seat0"]["terminal_state"] == "human_pending"
+    assert rec["seat0"]["normal"]["completed"] is False
+    assert rec["seat0"]["repair"]["completed"] is False
+    crit = _critical_events(result)
+    assert len(crit) == 1
+    assert "gateway unavailable" in crit[0]["policy_errors"]["normal"]
+    assert "still down" in crit[0]["policy_errors"]["repair"]
+
+
+# --- Step 3: hard blocks and unresolved-after-repair ------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hard_type", [
+    "UNKNOWN",
+    "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE",
+])
+async def test_seat0_hard_block_goes_straight_to_human_pending(monkeypatch, tmp_path, hard_type):
+    """A hard/inaccessible blocker enters human_pending WITHOUT a repair call."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=True),
+    ])
+    hard = _blocker(hard_type, "hard block")
+    harness.blocker_queue = [[hard], [hard]]
+    conn = FakeConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-hard", idle_poll_limit=3)
+
+    result = await run_arena(conn, FakeGS(), cfg, policy=pol, transcript=sink)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7)]  # NO repair call
+    assert harness.names().count("end_turn") == 0
+    assert result["seat0_human_pending"] == 1
+    assert result["seat0_turns_failed"] == 0
+    rec = sink.records[0]
+    assert rec["turn_kind"] == "played"
+    assert rec["seat0"]["terminal_state"] == "human_pending"
+    assert rec["seat0"]["repair"]["attempted"] is False
+    crit = _critical_events(result)
+    assert len(crit) == 1
+    assert hard_type in crit[0]["blockers"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_decision_persists_after_repair_human_pending(monkeypatch, tmp_path):
+    """A supported decision blocker still present after the one repair enters
+    human_pending -- no second repair call."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=True),
+    ])
+    harness.blocker_queue = [[_RESEARCH], [_RESEARCH], [_GOVERNOR], [_GOVERNOR]]
+    conn = FakeConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [
+        _returned("normal"), _returned("repair"),
+    ])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-persist", idle_poll_limit=3)
+
+    result = await run_arena(conn, FakeGS(), cfg, policy=pol, transcript=sink)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]  # exactly one repair
+    assert result["seat0_human_pending"] == 1
+    assert result["seat0_turns_played"] == 0
+    rec = sink.records[0]
+    assert rec["turn_kind"] == "played"
+    assert rec["seat0"]["terminal_state"] == "human_pending"
+    assert rec["seat0"]["repair"]["attempted"] is True
+    crit = _critical_events(result)
+    assert len(crit) == 1
+    assert "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT" in crit[0]["blockers"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_human_pending_repeated_polls_do_not_recall(monkeypatch, tmp_path):
+    """Repeated polls of the same human-pending turn do not re-invoke the
+    policy, cleanup, blocker queries, or end-turn, and log exactly one
+    CRITICAL event."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=True),
+    ])
+    hard = _blocker("UNKNOWN", "??")
+    harness.blocker_queue = [[hard], [hard]]
+    conn = FakeConn()
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-repoll", idle_poll_limit=6)
+
+    result = await run_arena(conn, FakeGS(), cfg, policy=pol)
+
+    names = harness.names()
+    assert names.count("policy") == 1
+    assert names.count("query_blockers") == 2       # both from the single attempt
+    assert names.count("end_turn") == 0
+    assert len(_critical_events(result)) == 1
+    assert result["seat0_human_pending"] == 1
+
+
+# --- Step 4: human-resume -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_seat0_human_pending_record_once_then_resets_after_advance(monkeypatch, tmp_path):
+    """Pending record is written once at human_pending entry, is not
+    duplicated when the human advances, and the next seat-0 turn is admitted
+    only because both budgets remain."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),    # admit 7 -> hard block -> human_pending
+        seat0_poll(7, active=True),    # human still on 7 (drain)
+        seat0_poll(8, active=True),    # human advanced -> reset -> admit 8
+        seat0_poll(8, active=False),   # AI processing for turn 8
+        seat0_poll(9, active=True),    # turn 8 advanced
+    ])
+    hard = _blocker("UNKNOWN", "??")
+    harness.blocker_queue = [[hard], [hard], []]  # t7: 2 queries, t8: 1 query
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [
+        _returned("turn 7"), _returned("turn 8"),
+    ])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-resume", max_puppet_turns=2)
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 8)]
+    assert result["seat0_human_pending"] == 1
+    assert result["seat0_turns_played"] == 1
+    # Two records: turn 7 human_pending (written once at entry), turn 8 advanced.
+    t7 = [r for r in sink.records if r["turn"] == 7]
+    t8 = [r for r in sink.records if r["turn"] == 8]
+    assert len(t7) == 1 and t7[0]["seat0"]["terminal_state"] == "human_pending"
+    assert len(t8) == 1 and t8[0]["seat0"]["terminal_state"] == "advanced"
+    assert harness.names().count("end_turn") == 1   # only the turn-8 play
+
+
+@pytest.mark.asyncio
+async def test_seat0_human_pending_exits_after_idle_poll_limit(monkeypatch, tmp_path):
+    """If the human never advances, the drain exits cleanly once the idle poll
+    budget is spent -- sleeping (GameCore poll) once per idle poll."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    hard = _blocker("UNKNOWN", "??")
+    harness.blocker_queue = [[hard], [hard]]
+    conn = FakeConn()
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-idle", idle_poll_limit=5)
+
+    result = await run_arena(conn, FakeGS(), cfg, policy=pol)
+
+    # Entered human_pending and then quietly drained without further work.
+    assert result["seat0_human_pending"] == 1
+    assert harness.names().count("policy") == 1
+    assert harness.names().count("end_turn") == 0
+    assert harness.names().count("sleep") >= 1
+    # Human never advanced -> the pending turn is still counted exactly once.
+    assert result["seat0_turns_played"] == 0
