@@ -10,6 +10,7 @@ from civ_mcp.arena.config import (
     CLI_PROVIDER_COMMANDS,
     parse_player_spec,
     DEFAULT_GATEWAY_URL,
+    validate_arena_config,
 )
 from civ_mcp.arena.cost import CostLog
 from civ_mcp.arena.coordinator import run_arena, ScriptedPolicy
@@ -44,9 +45,11 @@ def build_args(argv=None):
                     help="'<id>:<provider>:<model>[@<gateway>]' (local civ may pin its own gateway)")
     ap.add_argument("--config", default="",
                     help="YAML experiment file (mutually exclusive with --player)")
-    ap.add_argument("--max-puppet-turns", type=int, default=None)
+    ap.add_argument("--max-puppet-turns", type=int, default=None,
+                    help="cap on admitted arena-policy turns, including seat 0")
     ap.add_argument("--max-game-turns", type=int, default=None,
-                    help="cap on ALL captured turns incl. slept (0 = uncapped)")
+                    help="cap on ALL captured turns incl. slept (0 = uncapped); "
+                         "covers admitted arena policy turns, including seat 0")
     ap.add_argument("--gateway-url", default=None)
     ap.add_argument("--api-key-env", default="LITELLM_OPENAI_API_KEY")
     ap.add_argument("--cost-path", default="", help="path for cost log (default: auto under run dir)")
@@ -143,6 +146,7 @@ def resolve_config(args) -> ArenaConfig:
         cfg.api_key_env = args.api_key_env
         cfg.cost_path = args.cost_path or defaults.cost_path
         cfg.transcript_dir = args.transcript_dir
+        validate_arena_config(cfg)
         return cfg
 
     specs = [parse_player_spec(s) for s in args.player]
@@ -155,14 +159,18 @@ def resolve_config(args) -> ArenaConfig:
                 spec = replace(spec, options=opts)
             updated.append(spec)
         specs = updated
-    return ArenaConfig(players=specs,
-                       max_puppet_turns=_value_or_default(max_puppet_turns_arg, defaults.max_puppet_turns),
-                       max_game_turns=_value_or_default(max_game_turns_arg, defaults.max_game_turns),
-                       gateway_url=_value_or_default(gateway_url_arg, defaults.gateway_url),
-                       api_key_env=args.api_key_env,
-                       dry_run=args.dry_run, max_agent_steps=max_agent_steps,
-                       idle_poll_limit=_value_or_default(idle_poll_limit_arg, defaults.idle_poll_limit),
-                       puppet_ids=[s.player_id for s in specs])
+    cfg = ArenaConfig(
+        players=specs,
+        max_puppet_turns=_value_or_default(max_puppet_turns_arg, defaults.max_puppet_turns),
+        max_game_turns=_value_or_default(max_game_turns_arg, defaults.max_game_turns),
+        gateway_url=_value_or_default(gateway_url_arg, defaults.gateway_url),
+        api_key_env=args.api_key_env,
+        dry_run=args.dry_run, max_agent_steps=max_agent_steps,
+        idle_poll_limit=_value_or_default(idle_poll_limit_arg, defaults.idle_poll_limit),
+        puppet_ids=[s.player_id for s in specs if s.player_id != 0],
+    )
+    validate_arena_config(cfg)
+    return cfg
 
 async def _run(args):
     from pathlib import Path

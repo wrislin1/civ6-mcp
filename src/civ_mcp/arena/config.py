@@ -174,6 +174,37 @@ class ArenaConfig:
     max_agent_steps: int = 6
     idle_poll_limit: int = 600
     cost_path: str = "arena_cost.jsonl"
-    puppet_ids: list[int] = field(default_factory=list)
+    puppet_ids: list[int] | None = None
     run_id: str = ""
     transcript_dir: str = "arena_runs"
+
+
+def resolved_puppet_ids(config: ArenaConfig) -> list[int]:
+    """Puppet seats for this config. `None` derives every configured nonzero
+    seat; an explicit list (including `[]`) is authoritative once validated."""
+    configured = {spec.player_id for spec in config.players}
+    ids = (
+        [spec.player_id for spec in config.players if spec.player_id != 0]
+        if config.puppet_ids is None
+        else list(config.puppet_ids)
+    )
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"duplicate puppet ids {ids}")
+    if 0 in ids:
+        raise ValueError("seat 0 cannot appear in puppet_ids")
+    unknown = sorted(set(ids) - configured)
+    if unknown:
+        raise ValueError(f"puppet ids are not configured players: {unknown}")
+    return ids
+
+
+def validate_arena_config(config: ArenaConfig) -> None:
+    """Raise ValueError on an invalid config: bad puppet_ids (see
+    resolved_puppet_ids) or a seat-0 PlayerSpec with attention enabled
+    (seat 0 is piloted directly; attention/sleep semantics don't apply)."""
+    resolved_puppet_ids(config)
+    seat0 = next((spec for spec in config.players if spec.player_id == 0), None)
+    if seat0 is not None and seat0.options.attention.mode != "off":
+        raise ValueError(
+            "seat 0 requires attention.mode 'off' for autonomous piloting"
+        )

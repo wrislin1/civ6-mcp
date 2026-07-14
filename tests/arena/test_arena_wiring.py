@@ -381,3 +381,9 @@ def test_negative_max_game_turns_rejected_on_cli():
     args = build_args(["--player", "1:local:m", "--max-game-turns", "-3"])
     with pytest.raises(SystemExit):
         resolve_config(args)
+
+
+def test_resolve_config_cli_player_shorthand_excludes_seat_zero_from_puppets():
+    args = build_args(["--player", "0:local:m", "--player", "2:local:m"])
+    cfg = resolve_config(args)
+    assert cfg.puppet_ids == [2]

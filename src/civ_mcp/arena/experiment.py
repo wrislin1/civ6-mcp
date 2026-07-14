@@ -18,6 +18,7 @@ from civ_mcp.arena.config import (
     PlayerSpec,
     TaskTrackerOptions,
     _VALID_PROVIDERS,
+    validate_arena_config,
 )
 from civ_mcp.arena.registry import resolve_tools
 from civ_mcp.run_id import is_safe_run_id
@@ -361,7 +362,7 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
     ids = [player.player_id for player in players]
     if len(ids) != len(set(ids)):
         raise ValueError(f"experiment config {config_path}: duplicate player ids {ids}")
-    return replace(
+    cfg = replace(
         arena_defaults,
         players=players,
         max_puppet_turns=_top_int(
@@ -382,10 +383,12 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
             "idle_poll_limit",
             data.get("idle_poll_limit", arena_defaults.idle_poll_limit),
         ),
-        puppet_ids=ids,
+        puppet_ids=[pid for pid in ids if pid != 0],
         run_id=(
             arena_defaults.run_id
             if "run_id" not in data
             else _run_id_string(str(config_path), data["run_id"])
         ),
     )
+    validate_arena_config(cfg)
+    return cfg

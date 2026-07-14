@@ -920,3 +920,51 @@ civs:
     assert cfg.players[0].provider == "cli-claude"
     assert cfg.players[0].options.attention.mode == "hybrid"
     assert cfg.players[0].options.attention.threat_radius == 6
+
+
+def test_puppet_ids_exclude_seat_zero(tmp_path):
+    cfg = _load(tmp_path, """
+run_id: t1
+civs:
+  - {player: 0, provider: local, model: m}
+  - {player: 2, provider: local, model: m}
+  - {player: 4, provider: local, model: m}
+""")
+    assert cfg.puppet_ids == [2, 4]
+
+
+def test_seat_zero_options_fingerprint_preserved_like_nonzero_seat(tmp_path):
+    cfg = _load(tmp_path, """
+run_id: t1
+civs:
+  - player: 0
+    provider: local
+    model: m
+    tools: standard
+    result_char_cap: 6000
+    max_steps: 10
+    playbook: condensed
+  - {player: 2, provider: local, model: m}
+""")
+    seat0 = next(p for p in cfg.players if p.player_id == 0)
+    seat2 = next(p for p in cfg.players if p.player_id == 2)
+    assert seat0.options.fingerprint() == CivOptions(
+        tools="standard",
+        result_char_cap=6000,
+        max_steps=10,
+        playbook="condensed",
+    ).fingerprint()
+    assert seat2.options.fingerprint() == CivOptions().fingerprint()
+
+
+def test_seat_zero_non_off_attention_rejected(tmp_path):
+    with pytest.raises(ValueError, match="seat 0"):
+        _load(tmp_path, """
+run_id: t1
+civs:
+  - player: 0
+    provider: local
+    model: m
+    attention:
+      mode: hybrid
+""")
