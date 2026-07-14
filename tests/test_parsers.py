@@ -14,7 +14,11 @@ from civ_mcp.lua.units import (
 )
 from civ_mcp.lua.cities import parse_cities_response, parse_loyalty_response
 from civ_mcp.lua.map import parse_map_response
-from civ_mcp.lua.notifications import parse_end_turn_blocking
+from civ_mcp.lua.notifications import (
+    build_clear_stale_end_turn_blocker,
+    build_mark_end_turn_prompt_seen,
+    parse_end_turn_blocking,
+)
 from civ_mcp.lua.diplomacy import parse_gossip_response
 from civ_mcp.lua.climate import parse_climate_response
 from civ_mcp.lua.great_works import (
@@ -378,6 +382,60 @@ class TestParseEndTurnBlocking:
 
     def test_empty_lines(self):
         assert parse_end_turn_blocking([]) == []
+
+
+# ---------------------------------------------------------------------------
+# build_clear_stale_end_turn_blocker / build_mark_end_turn_prompt_seen
+# ---------------------------------------------------------------------------
+
+
+class TestClosedListCleanupBuilders:
+    @pytest.mark.parametrize(
+        "blocking_type",
+        [
+            "ENDTURN_BLOCKING_RESEARCH",
+            "ENDTURN_BLOCKING_CIVIC",
+            "ENDTURN_BLOCKING_PRODUCTION",
+        ],
+    )
+    def test_stale_blocker_builder_checks_underlying_state(self, blocking_type):
+        lua = build_clear_stale_end_turn_blocker(blocking_type)
+        assert blocking_type in lua
+        assert "NotificationManager.Dismiss" in lua
+        assert "STALE_CLEARED" in lua
+
+    def test_cleanup_builders_reject_untrusted_blocker_names(self):
+        with pytest.raises(ValueError):
+            build_clear_stale_end_turn_blocker(
+                'ENDTURN_BLOCKING_RESEARCH; os.execute("x")'
+            )
+
+    def test_stale_blocker_builder_rejects_unknown_type(self):
+        with pytest.raises(ValueError):
+            build_clear_stale_end_turn_blocker("ENDTURN_BLOCKING_UNITS")
+
+    def test_prompt_seen_builder_handles_government_change(self):
+        lua = build_mark_end_turn_prompt_seen(
+            "ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE"
+        )
+        assert "SetGovernmentChangeConsidered(true)" in lua
+
+    def test_prompt_seen_builder_handles_world_congress_look(self):
+        lua = build_mark_end_turn_prompt_seen("ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK")
+        assert "WORLD_CONGRESS_LOOKED_AT_AVAILABLE" in lua
+        assert "ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK" in lua
+        assert "NotificationManager.Dismiss" in lua
+
+    @pytest.mark.parametrize(
+        "blocking_type",
+        [
+            "ENDTURN_BLOCKING_RESEARCH",
+            'ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE; os.execute("x")',
+        ],
+    )
+    def test_prompt_seen_builder_rejects_untrusted_blocker_names(self, blocking_type):
+        with pytest.raises(ValueError):
+            build_mark_end_turn_prompt_seen(blocking_type)
 
 
 # ---------------------------------------------------------------------------
