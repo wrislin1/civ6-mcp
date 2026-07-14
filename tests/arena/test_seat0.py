@@ -571,3 +571,42 @@ def test_build_blocker_block_normal_exception_empty_blockers_verbatim():
     assert "inspect" in lowered and "finish the turn" in lowered
     # end_turn is explicitly withheld from the repair pass.
     assert "end_turn" in block and "not available" in lowered
+
+
+# ---------------------------------------------------------------------------
+# Task 7: grace / re-fire bound interplay the coordinator drives
+# ---------------------------------------------------------------------------
+
+
+def test_grace_then_recheck_then_bounded_refires():
+    """Simulate the coordinator drain loop: after each end request five
+    same-turn/active polls are WAIT, the sixth is RECHECK (drive a re-fire).
+    After the third request the state refuses a fourth (may_fire_end_turn
+    False) even though observe keeps returning RECHECK -- the coordinator must
+    escalate to human_pending instead of firing a fourth ACTION_ENDTURN."""
+    state = Seat0TurnState()
+    state.admit(7)
+    state.mark_policy_played()
+
+    fired = 0
+    rechecks = 0
+    for _cycle in range(5):
+        if not state.may_fire_end_turn:
+            break
+        state.mark_end_fired()
+        fired += 1
+        # Five quiet grace polls: no recheck yet.
+        for _ in range(seat0._GRACE_POLL_LIMIT):
+            assert state.observe(turn=7, seat0_active=True) is Seat0Poll.WAIT
+        # The sixth same-turn/active poll asks the coordinator to recheck.
+        assert state.observe(turn=7, seat0_active=True) is Seat0Poll.RECHECK
+        rechecks += 1
+
+    assert fired == 3
+    assert rechecks == 3
+    assert state.end_turn_requests == 3
+    assert state.may_fire_end_turn is False
+    # An inactive observation while END_FIRED is AI processing, never RECHECK.
+    state.grace_polls = 0
+    assert state.observe(turn=7, seat0_active=False) is Seat0Poll.WAIT
+    assert state.phase is Seat0Phase.AI_PROCESSING

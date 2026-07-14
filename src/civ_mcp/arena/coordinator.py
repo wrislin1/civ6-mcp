@@ -200,6 +200,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
     _tx_on = transcript is not None and getattr(transcript, "enabled", True)
     try:
         await hook.inject(conn, sorted(puppet_ids))
+        hook_enabled = True  # flips to False once disable_hook_for_drain() fires
         remaining = config.max_puppet_turns
         deadline_polls = config.idle_poll_limit  # consecutive-idle poll budget; refilled on every captured turn
         idle_streak = 0  # consecutive idle polls since the last puppet capture
@@ -210,6 +211,17 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 remaining > 0
                 and (max_game_turns <= 0 or game_turns < max_game_turns)
             )
+
+        async def disable_hook_for_drain() -> None:
+            """Idempotently disable the puppet hook once, so a budget-exhausted
+            seat-0 turn (or a puppet that spent the final slot while seat 0
+            drains) cannot release into AI with the hook still capturing. The
+            `finally` block disables again unconditionally -- safety cleanup
+            must not depend on this flag."""
+            nonlocal hook_enabled
+            if hook_enabled:
+                await hook.disable(conn)
+                hook_enabled = False
 
         def _terminalize_seat0_advanced() -> None:
             """Write the pending seat-0 record exactly once with terminal
@@ -266,6 +278,117 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             if turn_kind == "failed":
                 seat0_failed += 1
 
+        # Resume context for a RECHECK after an unsuccessful end request: the
+        # in-flight turn's locals are gone once the played branch `continue`s,
+        # so the policy / caps / exclusive flag it needs to re-fire or repair
+        # are carried here. Set by the played branch, read by the RECHECK path.
+        seat0_ctx: dict | None = None
+
+        async def _mech_pass(prefix):
+            """Finish already-ordered moves, then query -> mechanical-only
+            cleanup -> requery. A second query is issued only when the first
+            found blockers (an empty snapshot cannot change under cleanup).
+            Returns (post_blockers, cleanup_records, snapshots, groups)."""
+            await hook.finish_units(conn, 0)
+            first = await seat0.query_blockers(conn)
+            snaps = [{"stage": prefix, "blockers": first}]
+            records: list = []
+            if first:
+                records = await seat0.apply_mechanical_cleanup(conn, first)
+                after = await seat0.query_blockers(conn)
+                snaps.append({"stage": prefix + "_cleanup", "blockers": after})
+            else:
+                after = first
+            return after, records, snaps, seat0.classify_blockers(after)
+
+        async def _recheck_cleanup_repair_or_refire() -> None:
+            """RECHECK: the previous end request did not take (seat 0 still
+            active after the grace window). Re-run the mechanical pass on the
+            still-open turn; if a decision blocker newly surfaced and the one
+            repair is still unused, attempt it; then re-save the recovery
+            anchor (same 0_MCP_NNNN name) and re-fire, or escalate to
+            human_pending when a blocker persists or the three-request budget
+            is spent. Seat 0 is local+active throughout (observe only returns
+            RECHECK while active), so the InGame work here is legal."""
+            record = seat0_state.record
+            turn = record["turn"]
+            s0 = record["seat0"]
+            ctx = seat0_ctx or {}
+            pol = ctx.get("pol") or policy_for(0)
+            caps_kwarg = ctx.get("caps")
+            exclusive = bool(ctx.get("exclusive"))
+
+            after_blockers, cleanup_records, snaps, groups = await _mech_pass(
+                "after_refire"
+            )
+            s0["blocker_snapshots"] = s0["blocker_snapshots"] + snaps
+            s0["mechanical_cleanup"] = s0["mechanical_cleanup"] + cleanup_records
+
+            repair_error = ""
+            if (
+                not seat0_state.repair_used
+                and not groups.hard
+                and groups.decision
+            ):
+                # A supported decision blocker surfaced after the end request;
+                # spend the one-shot repair on it. No prior-error line -- the
+                # end request did not raise, the engine simply did not advance.
+                blocker_block = seat0.build_blocker_block(after_blockers)
+                repair_kwargs = {"blocker_block": blocker_block}
+                if caps_kwarg is not None:
+                    repair_kwargs["caps"] = caps_kwarg
+                seat0_state.repair_used = True
+                s0["repair"]["attempted"] = True
+                if exclusive and conn.is_connected:
+                    await conn.disconnect()   # repair owns the tuner
+                try:
+                    repair_result = await pol(gs, 0, turn, **repair_kwargs)
+                    s0["repair"]["completed"] = True
+                    s0["repair"]["summary"] = (repair_result or {}).get("summary", "")
+                except Exception as e:
+                    repair_error = repr(e)
+                    s0["repair"]["error"] = repair_error
+                    print(f"[arena] seat-0 turn {turn} recheck repair failed: {e!r}",
+                          file=sys.stderr)
+                    log.append({"turn": turn, "player_id": 0,
+                                "skipped": True, "repair_error": repair_error})
+                # Reclaim regardless of outcome (post-repair query / drain need it).
+                if exclusive and not conn.is_connected:
+                    await _reconnect_with_retry(conn)
+                if repair_error == "":
+                    after_blockers, rep_cleanup, rep_snaps, groups = await _mech_pass(
+                        "after_repair"
+                    )
+                    s0["blocker_snapshots"] = s0["blocker_snapshots"] + rep_snaps
+                    s0["mechanical_cleanup"] = s0["mechanical_cleanup"] + rep_cleanup
+
+            remaining_blockers = list(groups.hard) + list(groups.decision)
+            if not remaining_blockers and seat0_state.may_fire_end_turn:
+                # Cleared and the retry budget survives: re-save the anchor under
+                # the SAME name so it reflects the repaired state, then re-fire.
+                anchor = await seat0.save_recovery_anchor(conn, turn)
+                s0["autosave"]["attempts"].append(anchor)
+                if not s0["autosave"].get("name"):
+                    s0["autosave"]["name"] = anchor.get("name", "")
+                if not admission_open():
+                    await disable_hook_for_drain()
+                seat0_state.mark_end_fired()
+                await hook.end_turn(conn)
+            else:
+                # A blocker persists, or the three end requests are spent with
+                # seat 0 still active -> hand the turn to the human. turn_kind is
+                # preserved (a call returned to reach the played path at all).
+                if not admission_open():
+                    await disable_hook_for_drain()
+                _seat0_enter_human_pending(
+                    turn=turn,
+                    blockers=remaining_blockers,
+                    record=record,
+                    turn_kind=record.get("turn_kind", "played"),
+                    normal_error=s0["normal"]["error"],
+                    repair_error=s0["repair"]["error"],
+                )
+
         # Admission is bounded by the shared budgets; an in-flight seat-0
         # drain (end fired / AI processing) is never aborted by them.
         while deadline_polls > 0 and (admission_open() or seat0_state.needs_drain):
@@ -279,9 +402,17 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 )
                 if poll_action is Seat0Poll.ADVANCED:
                     _terminalize_seat0_advanced()
-                # WAIT — and, until Tasks 6-7 wire the blocker recheck/refire,
-                # RECHECK — fall through: a captured puppet is serviced below;
-                # otherwise the drain-wait branch at the bottom polls quietly.
+                    # Fall through: this same poll may re-admit the next turn.
+                elif poll_action is Seat0Poll.RECHECK:
+                    # The end request did not take (seat 0 still active after
+                    # the grace window). observe only returns RECHECK while
+                    # seat0_active is true, so the InGame recheck work is legal.
+                    await _recheck_cleanup_repair_or_refire()
+                    deadline_polls -= 1
+                    continue
+                # WAIT falls through to the quiet drain-wait branch below
+                # (sleep only, no InGame call); a captured puppet is serviced
+                # first if one holds the capture on this poll.
             captured_puppet = st.active and st.local in puppet_ids and admission_open()
             local_seat0 = (
                 seat0_spec is not None
@@ -624,23 +755,8 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     # this body); the coordinator owns finish_units / mechanical
                     # cleanup / recovery save / end_turn. The policy keeps full
                     # strategic authority — the coordinator chooses nothing.
-                    async def _mech_pass(prefix):
-                        """Finish already-ordered moves, then query -> mechanical
-                        -only cleanup -> requery. A second query is issued only
-                        when the first found blockers (an empty snapshot cannot
-                        change under cleanup). Returns
-                        (post_blockers, cleanup_records, snapshots, groups)."""
-                        await hook.finish_units(conn, 0)
-                        first = await seat0.query_blockers(conn)
-                        snaps = [{"stage": prefix, "blockers": first}]
-                        records: list = []
-                        if first:
-                            records = await seat0.apply_mechanical_cleanup(conn, first)
-                            after = await seat0.query_blockers(conn)
-                            snaps.append({"stage": prefix + "_cleanup", "blockers": after})
-                        else:
-                            after = first
-                        return after, records, snaps, seat0.classify_blockers(after)
+                    # (`_mech_pass` is defined once before the loop so the
+                    # RECHECK re-fire path can reuse it.)
 
                     # --- Normal attempt (tuner already released if exclusive). --
                     normal_result = None
@@ -831,6 +947,14 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         seat0_state.record = _base_seat0_record(
                             {"name": anchor.get("name", ""), "attempts": autosave_attempts}
                         )
+                        # Carry the resume context for a possible RECHECK re-fire.
+                        seat0_ctx = {
+                            "pol": pol, "caps": caps_kwarg, "exclusive": exclusive,
+                        }
+                        if not admission_open():
+                            # Final admission: disable the hook while seat 0 is
+                            # still active, before the turn releases into AI.
+                            await disable_hook_for_drain()
                         if seat0_state.may_fire_end_turn:
                             seat0_state.mark_end_fired()
                             await hook.end_turn(conn)
@@ -839,6 +963,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         # blocker still open after the one repair, or a fully
                         # failed attempt. No recovery save, no end request.
                         record = _base_seat0_record({"name": "", "attempts": []})
+                        if not admission_open():
+                            # Final admission handed to the human: disable first;
+                            # the human may advance into AI immediately.
+                            await disable_hook_for_drain()
                         _seat0_enter_human_pending(
                             turn=st.turn, blockers=remaining_blockers, record=record,
                             turn_kind=turn_kind, normal_error=normal_error,
@@ -1061,10 +1189,16 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 # InGame `UI.RequestAction(ActionTypes.ACTION_ENDTURN)` HERE — while local == K,
                 # before restore_local. NEVER add it in the finally block (local is already 0 there).
                 await hook.finish_units(conn, st.local)
-                await hook.restore_local(conn, 0)
-                played += 1
                 remaining -= 1
                 game_turns += 1
+                if seat0_state.needs_drain and not admission_open():
+                    # This puppet spent the final slot while a seat-0 turn is
+                    # still draining; disable the hook after servicing the
+                    # puppet and before releasing it, so nothing is captured
+                    # once the budget is gone.
+                    await disable_hook_for_drain()
+                await hook.restore_local(conn, 0)
+                played += 1
             else:
                 if seat0_state.needs_drain:
                     # An in-flight seat-0 turn is draining (end request fired /
@@ -1120,6 +1254,26 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         # that in-flight CancelledError and swallow the cancellation. Swallowing best-effort
         # Exceptions lets the body's CancelledError keep propagating; re-raising a cleanup-origin
         # interrupt still surfaces it. Either way cancellation is propagated, never swallowed.
+        #
+        # Append-only seat-0 interruption record: a turn in flight with an
+        # unwritten record (cancellation or error mid-turn) is terminalized
+        # `interrupted` best-effort. A record already written (advanced /
+        # human_pending) is never rewritten or duplicated. This runs BEFORE the
+        # tuner handback and swallows its own failures, so a transcript error
+        # can neither mask an in-flight CancelledError nor skip the human-safety
+        # cleanup below.
+        if seat0_state.record is not None and not seat0_state.record_written:
+            try:
+                seat0_state.mark_interrupted()
+                _s0 = seat0_state.record["seat0"]
+                _s0["terminal_state"] = "interrupted"
+                _s0["end_turn_requests"] = seat0_state.end_turn_requests
+                if _tx_on:
+                    transcript.write(seat0_state.record)
+                seat0_state.record_written = True
+            except Exception as e:
+                print(f"[arena] WARNING: seat-0 interrupted-record write failed: "
+                      f"{e!r}", file=sys.stderr)
         first_exc = None
         steps = []
         if not conn.is_connected:
