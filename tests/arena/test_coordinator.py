@@ -2,7 +2,10 @@ import pytest
 import asyncio
 from civ_mcp import lua as lq
 from civ_mcp.arena import autoresolve
+from civ_mcp.arena import hook as hook_mod
+from civ_mcp.arena import seat0 as seat0_mod
 from civ_mcp.arena.coordinator import run_arena, ScriptedPolicy, _reconnect_with_retry
+from civ_mcp.arena.hook import PuppetState
 from civ_mcp.arena.config import (
     ArenaConfig,
     BriefingOptions,
@@ -2113,3 +2116,388 @@ async def test_slept_turns_refill_idle_budget(tmp_path):
     # idle_poll_limit=3 < 5 slept turns: pre-fix the run died after 3 polls.
     assert result["turns_slept"] == 5     # stopped by max_game_turns, not the idle budget
     assert pol.calls == 0
+
+
+# ---------------------------------------------------------------------------
+# Task 5 (seat-0 piloting) — coordinator happy path & duplicate-play prevention
+# ---------------------------------------------------------------------------
+
+
+def seat0_poll(turn: int, *, active: bool = True) -> PuppetState:
+    return PuppetState(
+        local=0,
+        turn=turn,
+        active=False,
+        last=None,
+        seat0_active=active,
+    )
+
+
+def puppet_poll(player_id: int, turn: int) -> PuppetState:
+    return PuppetState(
+        local=player_id,
+        turn=turn,
+        active=True,
+        last=0,
+        seat0_active=False,
+    )
+
+
+class Seat0Harness:
+    """Monkeypatches every hook/seat0 side effect at the coordinator import
+    sites (the hook and seat0 module attributes the coordinator resolves at
+    call time) and records one ordered event stream, so seat-0 orchestration
+    tests assert sequencing rather than Lua string matching."""
+
+    def __init__(self, monkeypatch, polls):
+        self.events: list[tuple] = []
+        self._polls = iter(polls)
+        self._last_poll = None
+        self.blockers: list[dict] = []      # served by the patched query_blockers
+        self.anchor: dict | None = None     # canned save_recovery_anchor result
+
+        async def fake_poll(conn):
+            try:
+                self._last_poll = next(self._polls)
+            except StopIteration:
+                pass  # repeat the final poll; deadline_polls bounds the loop
+            st = self._last_poll
+            self.events.append(("poll", st.local, st.turn, st.seat0_active))
+            return st
+
+        async def fake_inject(conn, ids):
+            self.events.append(("inject", tuple(ids)))
+            return ["HOOK_OK|true"]
+
+        async def fake_finish_units(conn, pid):
+            self.events.append(("finish_units", pid))
+            return ["FINISHED|0"]
+
+        async def fake_end_turn(conn):
+            self.events.append(("end_turn",))
+            return ["OK:TURN_ENDED"]
+
+        async def fake_restore_local(conn, pid=0):
+            self.events.append(("restore_local", pid))
+            return [f"LOCAL|{pid}"]
+
+        async def fake_disable(conn):
+            self.events.append(("disable",))
+            return ["DISABLED|true"]
+
+        async def fake_query_blockers(conn):
+            self.events.append(("query_blockers", conn.is_connected))
+            return [dict(b) for b in self.blockers]
+
+        async def fake_save_anchor(conn, turn):
+            self.events.append(("save_anchor", turn))
+            if self.anchor is not None:
+                return dict(self.anchor)
+            return {"name": f"0_MCP_{turn:04d}", "ok": True, "result": "Saved"}
+
+        async def fake_sleep(_delay):
+            self.events.append(("sleep",))
+
+        monkeypatch.setattr(hook_mod, "poll", fake_poll)
+        monkeypatch.setattr(hook_mod, "inject", fake_inject)
+        monkeypatch.setattr(hook_mod, "finish_units", fake_finish_units)
+        monkeypatch.setattr(hook_mod, "end_turn", fake_end_turn)
+        monkeypatch.setattr(hook_mod, "restore_local", fake_restore_local)
+        monkeypatch.setattr(hook_mod, "disable", fake_disable)
+        monkeypatch.setattr(seat0_mod, "query_blockers", fake_query_blockers)
+        monkeypatch.setattr(seat0_mod, "save_recovery_anchor", fake_save_anchor)
+        monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    def names(self) -> list[str]:
+        return [e[0] for e in self.events]
+
+
+class Seat0RecordingPolicy:
+    """Records (player_id, turn, kwargs) per call into its own list AND the
+    shared harness event stream (for cross-policy ordering assertions)."""
+
+    provider = "local"
+    model = "seat0-m"
+
+    def __init__(self, harness, result=None, options=None, needs_exclusive_tuner=False):
+        self._harness = harness
+        self.result = result or {"summary": "seat0 turn complete", "actions": []}
+        self.options = options or CivOptions()
+        self.needs_exclusive_tuner = needs_exclusive_tuner
+        self.calls = []
+
+    async def __call__(self, gs, player_id, turn, **kwargs):
+        self._harness.events.append(("policy", player_id, turn))
+        self.calls.append((player_id, turn, kwargs))
+        return self.result
+
+
+class Seat0CapsConn(FakeConnWithOverview):
+    """Overview-serving conn that also answers the capability snapshot; hook
+    and seat0 traffic never reaches it (patched by Seat0Harness), so GameCore
+    reads here are caps-only."""
+
+    async def execute_read(self, lua, timeout=5.0):
+        if "CAPS|" in lua:
+            self.read_calls.append(lua)
+            self._maybe_die()
+            return [
+                "CAPS|spies=0|government=1|religious_unit=0|gp_unit=0|corps=0"
+                "|army=0|air=0|archaeology=0|great_works=1"
+            ]
+        return await super().execute_read(lua, timeout)
+
+
+class EventSink(FakeSink):
+    """FakeSink that also stamps writes into the harness event stream."""
+
+    def __init__(self, harness):
+        super().__init__()
+        self._harness = harness
+
+    def write(self, record):
+        self._harness.events.append(
+            ("record", record.get("player_id"), record.get("turn"))
+        )
+        super().write(record)
+
+
+def _seat0_cfg(tmp_path, *, players=None, run_id="seat0-run", **kwargs):
+    kwargs.setdefault("max_puppet_turns", 1)
+    kwargs.setdefault("idle_poll_limit", 8)
+    kwargs.setdefault("puppet_ids", [])
+    return ArenaConfig(
+        players=players or [PlayerSpec(0, "local", "m")],
+        run_id=run_id,
+        transcript_dir=str(tmp_path),
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_seat0_happy_path_single_play_then_terminal_advanced(monkeypatch, tmp_path):
+    """Brief Step 2: active seat 0 on turn 7 → inactive on 7 → active on 8.
+    One policy call, one end request, no restore in the seat-0 body, record
+    written only after the observed turn change with terminal `advanced`."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),    # admission
+        seat0_poll(7, active=False),   # AI processing after the end request
+        seat0_poll(8, active=True),    # turn advanced -> terminalize
+    ])
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-happy")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    # Policy 0 called exactly once, for turn 7 — no replay on either
+    # post-request poll.
+    assert [c[:2] for c in pol.calls] == [(0, 7)]
+    # Normal memory/task/capability kwargs pass the existing signature gate.
+    kwargs = pol.calls[0][2]
+    assert "memory_block" in kwargs and "task_block" in kwargs
+    assert kwargs["caps"]["government"] is True
+    assert kwargs["caps"]["spies"] is False
+
+    events, names = harness.events, harness.names()
+    # Ordered seat-0 sequence: policy → finish_units(0) → blocker query →
+    # post-play snapshot (on conn, not evented) → recovery anchor → end_turn.
+    i_policy = events.index(("policy", 0, 7))
+    i_finish = events.index(("finish_units", 0))
+    i_blockers = names.index("query_blockers")
+    i_anchor = events.index(("save_anchor", 7))
+    i_end = names.index("end_turn")
+    assert i_policy < i_finish < i_blockers < i_anchor < i_end
+    assert names.count("end_turn") == 1
+    # No restore_local(0) in the seat-0 body: the only restore is the
+    # human-safety handback in finally, after the final poll.
+    restores = [i for i, e in enumerate(events) if e[0] == "restore_local"]
+    poll_positions = [i for i, e in enumerate(events) if e[0] == "poll"]
+    assert len(restores) == 1 and restores[0] > poll_positions[-1]
+
+    # Pending record written exactly once, only AFTER the turn change (the
+    # third poll), with terminal `advanced`.
+    i_record = events.index(("record", 0, 7))
+    assert i_record > poll_positions[2]
+    assert len(sink.records) == 1
+    rec = sink.records[0]
+    assert rec["player_id"] == 0 and rec["turn"] == 7
+    assert rec["turn_kind"] == "played"
+    s0 = rec["seat0"]
+    assert s0["terminal_state"] == "advanced"
+    assert s0["normal"] == {
+        "completed": True, "summary": "seat0 turn complete", "error": "",
+    }
+    assert s0["repair"] == {
+        "attempted": False, "completed": False, "summary": "", "error": "",
+    }
+    assert s0["blocker_snapshots"] == [{"stage": "after_normal", "blockers": []}]
+    assert s0["mechanical_cleanup"] == []
+    assert s0["autosave"] == {"name": "0_MCP_0007", "attempts": []}
+    assert s0["end_turn_requests"] == 1
+    # Generic transcript payload synthesized even though the policy returned
+    # no "transcript" key.
+    assert rec["steps"] == [] and rec["step_count"] == 0
+    assert rec["prompt_tokens"] == 0
+    # state_after captured while seat 0 was still active (before end request).
+    assert rec["state_before"]["gold"] == pytest.approx(100.0)
+    assert rec["state_after"]["gold"] == pytest.approx(110.0)
+    assert rec["state_delta"]["gold"] == pytest.approx(10.0)
+
+    assert result["seat0_turns_played"] == 1
+    assert result["puppet_turns_played"] == 0
+    assert result["seat0_turns_failed"] == 0
+    assert result["seat0_human_pending"] == 0
+
+
+@pytest.mark.asyncio
+async def test_seat0_no_replay_while_same_turn_still_active(monkeypatch, tmp_path):
+    """Duplicate-play prevention: post-request polls that still show seat 0
+    ACTIVE on the same turn (engine lag) must not re-admit or replay the
+    policy, and must not re-fire the end request (retry bounds are Task 7)."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=True),   # engine lag: still active after the request
+        seat0_poll(7, active=True),
+        seat0_poll(8, active=True),
+    ])
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-lag")
+
+    result = await run_arena(FakeConn(), FakeGS(), cfg, policy=pol)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7)]
+    assert harness.names().count("end_turn") == 1
+    assert result["seat0_turns_played"] == 1
+
+
+@pytest.mark.asyncio
+async def test_seat0_receives_memory_and_task_blocks_for_player_zero(monkeypatch, tmp_path):
+    """Regression 1: seat 0 rides the existing standing-memory and task
+    pipeline, keyed by player 0 — including pre-model task follow-through."""
+    run_id = "seat0-mem"
+    save_memory(str(tmp_path), run_id, 0, turn=6,
+                text="finish the granary next.", max_chars=1200)
+    task = UnitTask(
+        task_id="settle:42", kind="settle", unit_id=42, target_x=5, target_y=5,
+        created_turn=6, updated_turn=6,
+    )
+    save_task_state(str(tmp_path), run_id, 0, [task])
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7), seat0_poll(8)])
+    gs = FakeGSWithUnit(unit_id=42, unit_index=7, x=5, y=5)
+    opts = CivOptions(
+        memory=MemoryOptions(enabled=True, max_chars=1200),
+        task_tracker=TaskTrackerOptions(enabled=True, max_tasks=8),
+    )
+    pol = Seat0RecordingPolicy(harness, options=opts)
+    cfg = _seat0_cfg(tmp_path, run_id=run_id)
+
+    result = await run_arena(FakeConn(), gs, cfg, policy=pol)
+
+    kwargs = pol.calls[0][2]
+    assert kwargs["memory_block"].startswith("== STANDING PLAN (captured turn 6")
+    assert "finish the granary next." in kwargs["memory_block"]
+    assert kwargs["task_block"].startswith("== DETERMINISTIC TASK TRACKER ==")
+    assert gs.found_city_calls == [7]   # pre-model follow-through ran for seat 0
+    assert result["seat0_turns_played"] == 1
+
+
+@pytest.mark.asyncio
+async def test_seat0_exclusive_policy_reconnects_before_blocker_query(monkeypatch, tmp_path):
+    """Regression 2: a needs_exclusive_tuner seat-0 policy gets the tuner
+    released before the call and reclaimed before the blocker query."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7), seat0_poll(8)])
+    conn = FakeConn()
+
+    class ExclusiveSeat0Policy(Seat0RecordingPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            assert conn.is_connected is False   # tuner released for the CLI
+            return await super().__call__(gs, player_id, turn, **kwargs)
+
+    pol = ExclusiveSeat0Policy(harness, needs_exclusive_tuner=True)
+    cfg = _seat0_cfg(
+        tmp_path, players=[PlayerSpec(0, "cli-claude", "")], run_id="seat0-excl",
+    )
+
+    result = await run_arena(conn, FakeGS(), cfg, policy=pol)
+
+    assert result["seat0_turns_played"] == 1
+    assert [c[:2] for c in pol.calls] == [(0, 7)]
+    # Blocker query ran only after the tuner was reclaimed.
+    assert [e for e in harness.events if e[0] == "query_blockers"] == [
+        ("query_blockers", True)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_seat0_skips_promotion_sweep(monkeypatch, tmp_path):
+    """Regression 3: promotion choices belong to the seat-0 policy; the
+    coordinator's autoresolve sweep must never run for seat 0."""
+    sweep_calls = []
+
+    async def recording_sweep(_gs):
+        sweep_calls.append(1)
+        return []
+
+    monkeypatch.setattr(autoresolve, "sweep_promotions", recording_sweep)
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7), seat0_poll(8)])
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-sweep")
+
+    result = await run_arena(FakeConn(), FakeGS(), cfg, policy=pol)
+
+    assert result["seat0_turns_played"] == 1
+    assert sweep_calls == []
+
+
+@pytest.mark.asyncio
+async def test_active_puppet_serviced_before_seat0_admission(monkeypatch, tmp_path):
+    """Regression 4: a poll where a puppet actually holds the capture is
+    serviced first, even when seat 0 also reads active on that same poll."""
+    puppet_first = PuppetState(local=1, turn=7, active=True, last=1, seat0_active=True)
+    harness = Seat0Harness(monkeypatch, [puppet_first, seat0_poll(7), seat0_poll(8)])
+    seat0_pol = Seat0RecordingPolicy(harness)
+    puppet_pol = Seat0RecordingPolicy(harness)
+    policies = {0: seat0_pol, 1: puppet_pol}
+    cfg = _seat0_cfg(
+        tmp_path,
+        players=[PlayerSpec(0, "local", "m"), PlayerSpec(1, "local", "m")],
+        run_id="seat0-priority", max_puppet_turns=2, puppet_ids=[1],
+    )
+
+    result = await run_arena(
+        FakeConn(), FakeGS(), cfg, policy_for=lambda pid: policies[pid]
+    )
+
+    assert [c[:2] for c in puppet_pol.calls] == [(1, 7)]
+    assert [c[:2] for c in seat0_pol.calls] == [(0, 7)]
+    policy_events = [e for e in harness.events if e[0] == "policy"]
+    assert policy_events == [("policy", 1, 7), ("policy", 0, 7)]
+    assert result["puppet_turns_played"] == 1
+    assert result["seat0_turns_played"] == 1
+
+
+@pytest.mark.asyncio
+async def test_no_seat0_spec_keeps_puppet_only_behavior(monkeypatch, tmp_path):
+    """Regression 5: without a seat-0 PlayerSpec, an active seat 0 is never
+    admitted — no end request fires and puppet servicing is unchanged."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),   # active seat 0, nobody configured to pilot it
+        puppet_poll(1, 7),
+        seat0_poll(7, active=True),
+    ])
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(
+        tmp_path,
+        players=[PlayerSpec(1, "local", "m")],
+        run_id="seat0-none", puppet_ids=[1], idle_poll_limit=3,
+    )
+
+    result = await run_arena(FakeConn(), FakeGS(), cfg, policy=pol)
+
+    assert [c[:2] for c in pol.calls] == [(1, 7)]
+    assert result["puppet_turns_played"] == 1
+    assert result.get("seat0_turns_played", 0) == 0
+    assert "end_turn" not in harness.names()

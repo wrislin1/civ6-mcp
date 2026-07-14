@@ -5,7 +5,7 @@ import sys
 from dataclasses import replace as _dc_replace
 from datetime import datetime, timezone
 from civ_mcp import lua as lq
-from civ_mcp.arena import autoresolve, hook
+from civ_mcp.arena import autoresolve, hook, seat0
 from civ_mcp.arena.agent import load_playbook
 from civ_mcp.arena.attention import (
     AttentionState,
@@ -26,7 +26,7 @@ from civ_mcp.arena.attention import (
 )
 from civ_mcp.arena.budget import explicit_n_ctx
 from civ_mcp.arena.capabilities import build_caps_query, parse_caps
-from civ_mcp.arena.config import CivOptions
+from civ_mcp.arena.config import CivOptions, resolved_puppet_ids, validate_arena_config
 from civ_mcp.arena.memory import (
     extract_standing_plan,
     format_memory_block,
@@ -34,6 +34,7 @@ from civ_mcp.arena.memory import (
     save_memory,
 )
 from civ_mcp.arena.prompt_context import maybe_build_briefing
+from civ_mcp.arena.seat0 import Seat0Poll, Seat0TurnState
 from civ_mcp.arena.task_tracker import (
     format_task_block,
     load_task_state,
@@ -58,6 +59,24 @@ async def _reconnect_with_retry(conn, attempts=5, delay=0.5):
                 await asyncio.sleep(delay)
     print(f"[arena] WARNING: reclaim connect failed after {attempts} attempts: {last!r}", file=sys.stderr)
     return False
+
+
+_STATE_DELTA_NUM_FIELDS = ("score", "gold", "science", "culture", "faith", "cities", "units")
+
+
+def _state_delta(state_before, state_after):
+    """Numeric before→after delta plus the after-side research/civic strings;
+    None when either snapshot is missing or malformed (unknown delta, degrade
+    not abort — same contract as the inline puppet/slept delta sites)."""
+    if state_before is None or state_after is None:
+        return None
+    try:
+        delta = {k: state_after[k] - state_before[k] for k in _STATE_DELTA_NUM_FIELDS}
+        delta["research"] = state_after["research"]
+        delta["civic"] = state_after["civic"]
+    except (KeyError, TypeError):
+        return None
+    return delta
 
 
 async def _overview_snapshot(gs):
@@ -151,11 +170,18 @@ def _policy_accepts_kwarg(policy, name: str) -> bool:
 
 
 async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=None) -> dict:
+    # Validate at entry so programmatic callers cannot bypass the YAML/CLI
+    # boundary checks (seat 0 in puppet_ids, unknown/duplicate seats, seat-0
+    # attention). resolved_puppet_ids keeps an explicit empty list EMPTY —
+    # the old truthy `or` fallback silently re-derived every player from [].
+    validate_arena_config(config)
     if policy_for is None:
         if policy is None:
             raise ValueError("run_arena needs policy or policy_for")
         policy_for = lambda _pid: policy
-    puppet_ids = set(config.puppet_ids or [p.player_id for p in config.players])
+    puppet_ids = set(resolved_puppet_ids(config))
+    seat0_spec = next((spec for spec in config.players if spec.player_id == 0), None)
+    seat0_state = Seat0TurnState()
     run_id = getattr(config, "run_id", "")
     if not run_id:
         # Memory/task state is keyed by run_id; an empty one collapses the
@@ -170,6 +196,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         # mutating config.
         run_id = generate_run_id()
     played, slept, game_turns, log = 0, 0, 0, []
+    seat0_played, seat0_failed, seat0_pending = 0, 0, 0
     _tx_on = transcript is not None and getattr(transcript, "enabled", True)
     try:
         await hook.inject(conn, sorted(puppet_ids))
@@ -177,14 +204,61 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         deadline_polls = config.idle_poll_limit  # consecutive-idle poll budget; refilled on every captured turn
         idle_streak = 0  # consecutive idle polls since the last puppet capture
         max_game_turns = getattr(config, "max_game_turns", 0)  # tolerate old test-stub configs
-        while (
-            remaining > 0 and deadline_polls > 0
-            and (max_game_turns <= 0 or game_turns < max_game_turns)
-        ):
+
+        def admission_open() -> bool:
+            return (
+                remaining > 0
+                and (max_game_turns <= 0 or game_turns < max_game_turns)
+            )
+
+        def _terminalize_seat0_advanced() -> None:
+            """Write the pending seat-0 record exactly once with terminal
+            `advanced`, count the played turn, and reset for the next
+            admission. Only ever reached on an observed turn-number change —
+            never at ai_processing (append-once contract)."""
+            nonlocal seat0_played
+            if seat0_state.record is not None and not seat0_state.record_written:
+                seat0_state.record["seat0"]["terminal_state"] = "advanced"
+                seat0_state.record["seat0"]["end_turn_requests"] = (
+                    seat0_state.end_turn_requests
+                )
+                if _tx_on:
+                    transcript.write(seat0_state.record)
+                seat0_state.record_written = True
+                seat0_played += 1
+            seat0_state.reset()
+
+        # Admission is bounded by the shared budgets; an in-flight seat-0
+        # drain (end fired / AI processing) is never aborted by them.
+        while deadline_polls > 0 and (admission_open() or seat0_state.needs_drain):
             st = await hook.poll(conn)
-            if st.active and st.local in puppet_ids:
+            # First observe/finalize an in-flight seat-0 turn (the turn number
+            # is the one authoritative advance signal), then give an actually
+            # captured puppet priority, then consider a new seat-0 admission.
+            if seat0_state.needs_drain:
+                poll_action = seat0_state.observe(
+                    turn=st.turn, seat0_active=st.seat0_active
+                )
+                if poll_action is Seat0Poll.ADVANCED:
+                    _terminalize_seat0_advanced()
+                # WAIT — and, until Tasks 6-7 wire the blocker recheck/refire,
+                # RECHECK — fall through: a captured puppet is serviced below;
+                # otherwise the drain-wait branch at the bottom polls quietly.
+            captured_puppet = st.active and st.local in puppet_ids and admission_open()
+            local_seat0 = (
+                seat0_spec is not None
+                and st.local == 0
+                and st.seat0_active
+                and seat0_state.can_admit(turn=st.turn, seat0_active=True)
+                and admission_open()
+            )
+            if captured_puppet or local_seat0:
+                is_seat0 = local_seat0
+                if is_seat0:
+                    seat0_state.admit(st.turn)
                 idle_streak = 0
-                # A captured puppet turn is ACTIVITY: refill the idle budget.
+                # A captured turn (puppet or seat-0 admission) is ACTIVITY:
+                # refill the idle budget.
                 # deadline_polls means "consecutive polls with nothing to do",
                 # not a whole-run cap that slept turns burn through without
                 # consuming max_puppet_turns (review-2 f8).
@@ -194,7 +268,13 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 opts = getattr(pol, "options", CivOptions())
                 transcript_dir = config.transcript_dir
                 attention_mode = opts.attention.mode
-                attention_on = attention_mode in ("auto", "model", "hybrid")
+                # Seat 0 is piloted directly: attention/sleep semantics never
+                # apply. validate_arena_config already rejects a seat-0 spec
+                # with mode != "off"; forcing here also covers policy objects
+                # whose own options were built programmatically.
+                attention_on = (
+                    not is_seat0
+                ) and attention_mode in ("auto", "model", "hybrid")
                 state_before = (
                     await _overview_snapshot(gs) if (_tx_on or attention_on) else None
                 )
@@ -500,6 +580,26 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 try:
                     result = await pol(gs, st.local, st.turn, **policy_kwargs)
                 except Exception as e:
+                    if is_seat0:
+                        # Seat-0 normal-attempt failure. Task 6 wires the
+                        # one-shot focused repair here; until then account the
+                        # logical turn (a normal call plus its future repair is
+                        # ONE budget charge), reclaim a released tuner, and
+                        # return to polling. The seat stays local — never
+                        # restore_local(0) in the seat-0 body — and no
+                        # finish_units/end request fires on the policy's
+                        # behalf: a raised attempt never declared itself done.
+                        print(f"[arena] seat-0 turn {st.turn} policy failed: {e!r}",
+                              file=sys.stderr)
+                        log.append({"turn": st.turn, "player_id": 0,
+                                    "skipped": True, "error": repr(e)})
+                        if not conn.is_connected:
+                            await _reconnect_with_retry(conn)
+                        seat0_state.mark_policy_played()
+                        remaining -= 1
+                        game_turns += 1
+                        deadline_polls -= 1
+                        continue
                     # A single failed LLM turn -- e.g. the gateway 500s on a malformed/
                     # truncated tool call (openai.InternalServerError) -- must degrade THIS
                     # puppet turn, never abort the whole multi-turn run. Mirrors the
@@ -535,11 +635,16 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     continue
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)   # reclaim before we end the turn
-                try:
-                    swept = await autoresolve.sweep_promotions(gs)
-                except Exception as e:
+                if is_seat0:
+                    # Promotion choices belong to the seat-0 policy — the
+                    # coordinator sweep is a puppet-only convenience.
                     swept = []
-                    print(f"[arena] promotion sweep failed: {e!r}", file=sys.stderr)
+                else:
+                    try:
+                        swept = await autoresolve.sweep_promotions(gs)
+                    except Exception as e:
+                        swept = []
+                        print(f"[arena] promotion sweep failed: {e!r}", file=sys.stderr)
 
                 # --- Capture this turn's standing plan / tasks from the final summary.
                 # Runs whenever standing-plan capture is enabled, since memory and
@@ -589,9 +694,15 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 # baseline even with transcripts off (review-2 finding 2) --
                 # note_wake's state_before fallback would otherwise bake the
                 # puppet's own turn into the next quiet-turn delta.
-                state_after = (
-                    await _overview_snapshot(gs) if (_tx_on or attention_on) else None
-                )
+                if is_seat0:
+                    # Captured inside the seat-0 sequence below — after the
+                    # blocker cleanup and before the recovery save / end
+                    # request, while seat 0 is still local and active.
+                    state_after = None
+                else:
+                    state_after = (
+                        await _overview_snapshot(gs) if (_tx_on or attention_on) else None
+                    )
                 directive = None
                 directive_ack = ""
                 wake_attention_fields = None
@@ -668,52 +779,150 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     "standing_memory": _standing_memory_fields,
                     "task_tracker": _task_tracker_fields,
                 })
-                if _tx_on and result.get("transcript"):
-                    payload = result["transcript"]
-                    steps = payload.get("steps", [])
-                    if state_before is not None and state_after is not None:
-                        _num = ("score", "gold", "science", "culture", "faith", "cities", "units")
-                        state_delta = {k: state_after[k] - state_before[k] for k in _num}
-                        state_delta["research"] = state_after["research"]
-                        state_delta["civic"]    = state_after["civic"]
-                    else:
-                        state_delta = None
+                if is_seat0:
+                    # === Seat-0 post-policy sequence ===========================
+                    # Discrete steps on purpose: Task 6 slots the one-shot
+                    # repair / human-pending decision after (2); Task 7 slots
+                    # retry bounds and drain-disable around (6). The normal
+                    # attempt (plus its future repair) is ONE logical turn and
+                    # ONE shared budget charge; repair never touches counters.
+                    # The seat stays local throughout: no restore_local(0)
+                    # anywhere in this body.
+                    seat0_state.mark_policy_played()
+                    remaining -= 1
+                    game_turns += 1
+                    # (1) Mechanical only: finish already-ordered unit moves
+                    #     (GameCore). Never a strategic choice.
+                    await hook.finish_units(conn, 0)
+                    # (2) Blocker query + mechanical-only cleanup (InGame —
+                    #     seat 0 is still local and seat0_active here).
+                    after_normal = await seat0.query_blockers(conn)
+                    cleanup_records = await seat0.apply_mechanical_cleanup(
+                        conn, after_normal
+                    )
+                    # (3) Post-play snapshot before the end request, while
+                    #     seat 0 is still active.
+                    state_after = await _overview_snapshot(gs) if _tx_on else None
+                    # (4) Best-effort recovery anchor (never raises). Only
+                    #     unsuccessful attempts are recorded under autosave.
+                    anchor = await seat0.save_recovery_anchor(conn, st.turn)
+                    autosave_attempts = []
+                    if not anchor.get("ok", False) or (
+                        "Save may have failed" in str(anchor.get("result", ""))
+                    ):
+                        autosave_attempts.append(anchor)
+                    # (5) Pending record: a generic transcript payload is
+                    #     synthesized even when the policy returned none
+                    #     (merge_policy_attempts normalizes it). Written
+                    #     exactly once at a terminal phase (advanced /
+                    #     human_pending / interrupted) — never at
+                    #     ai_processing.
+                    merged = seat0.merge_policy_attempts(result, None)
+                    payload = merged["transcript"]
                     _pol_backend = getattr(pol, "backend", None)
-                    record = {
+                    seat0_state.record = {
                         **payload,
                         "schema_version": 1,
                         "run_id":   run_id,
                         "ts":       datetime.now(timezone.utc).isoformat(),
-                        "player_id": st.local,
+                        "player_id": 0,
                         "turn":     st.turn,
                         "provider": getattr(pol, "provider", "local"),
                         "model":    getattr(_pol_backend, "model", getattr(pol, "model", "")),
                         "driver":   "cli" if str(getattr(pol, "provider", "local")).startswith("cli") else "in_process",
-                        "step_count": len(steps),
-                        "usd":      float(result.get("usage", {}).get("usd", 0.0)),
+                        "step_count": len(payload.get("steps", [])),
+                        "usd":      float(merged.get("usage", {}).get("usd", 0.0)),
                         "state_before": state_before,
                         "state_after":  state_after,
-                        "state_delta":  state_delta,
-                        "promotion_sweep": swept,
+                        "state_delta":  _state_delta(state_before, state_after),
                         "standing_memory": _standing_memory_fields,
                         "task_tracker": _task_tracker_fields,
                         "turn_kind": "played",
+                        "seat0": {
+                            "normal": {
+                                "completed": True,
+                                "summary": result.get("summary", ""),
+                                "error": "",
+                            },
+                            "repair": {
+                                "attempted": False,
+                                "completed": False,
+                                "summary": "",
+                                "error": "",
+                            },
+                            "blocker_snapshots": [
+                                {"stage": "after_normal", "blockers": after_normal},
+                            ],
+                            "mechanical_cleanup": cleanup_records,
+                            "autosave": {
+                                "name": anchor.get("name", ""),
+                                "attempts": autosave_attempts,
+                            },
+                            "end_turn_requests": 0,  # refreshed at terminalization
+                            "terminal_state": "",    # set exactly once, terminally
+                        },
                     }
-                    if wake_attention_fields is not None:
-                        record["attention"] = wake_attention_fields
-                    transcript.write(record)
-                # End this puppet's turn and hand control back toward the human.
-                # DESIGN NOTE — the turn-end method is validated by the live dry-run gate (Task 9).
-                # Primary (verified in the feasibility spike): finish_units(K) + restore_local(0).
-                # If the live gate shows the engine does NOT advance / hand back cleanly, add an
-                # InGame `UI.RequestAction(ActionTypes.ACTION_ENDTURN)` HERE — while local == K,
-                # before restore_local. NEVER add it in the finally block (local is already 0 there).
-                await hook.finish_units(conn, st.local)
-                await hook.restore_local(conn, 0)
-                played += 1
-                remaining -= 1
-                game_turns += 1
+                    # (6) Fire the end request and return to polling: never a
+                    #     synchronous wait — the drain observes the turn flip
+                    #     on later GameCore polls.
+                    seat0_state.mark_end_fired()
+                    await hook.end_turn(conn)
+                else:
+                    if _tx_on and result.get("transcript"):
+                        payload = result["transcript"]
+                        steps = payload.get("steps", [])
+                        if state_before is not None and state_after is not None:
+                            _num = ("score", "gold", "science", "culture", "faith", "cities", "units")
+                            state_delta = {k: state_after[k] - state_before[k] for k in _num}
+                            state_delta["research"] = state_after["research"]
+                            state_delta["civic"]    = state_after["civic"]
+                        else:
+                            state_delta = None
+                        _pol_backend = getattr(pol, "backend", None)
+                        record = {
+                            **payload,
+                            "schema_version": 1,
+                            "run_id":   run_id,
+                            "ts":       datetime.now(timezone.utc).isoformat(),
+                            "player_id": st.local,
+                            "turn":     st.turn,
+                            "provider": getattr(pol, "provider", "local"),
+                            "model":    getattr(_pol_backend, "model", getattr(pol, "model", "")),
+                            "driver":   "cli" if str(getattr(pol, "provider", "local")).startswith("cli") else "in_process",
+                            "step_count": len(steps),
+                            "usd":      float(result.get("usage", {}).get("usd", 0.0)),
+                            "state_before": state_before,
+                            "state_after":  state_after,
+                            "state_delta":  state_delta,
+                            "promotion_sweep": swept,
+                            "standing_memory": _standing_memory_fields,
+                            "task_tracker": _task_tracker_fields,
+                            "turn_kind": "played",
+                        }
+                        if wake_attention_fields is not None:
+                            record["attention"] = wake_attention_fields
+                        transcript.write(record)
+                    # End this puppet's turn and hand control back toward the human.
+                    # DESIGN NOTE — the turn-end method is validated by the live dry-run gate (Task 9).
+                    # Primary (verified in the feasibility spike): finish_units(K) + restore_local(0).
+                    # If the live gate shows the engine does NOT advance / hand back cleanly, add an
+                    # InGame `UI.RequestAction(ActionTypes.ACTION_ENDTURN)` HERE — while local == K,
+                    # before restore_local. NEVER add it in the finally block (local is already 0 there).
+                    await hook.finish_units(conn, st.local)
+                    await hook.restore_local(conn, 0)
+                    played += 1
+                    remaining -= 1
+                    game_turns += 1
             else:
+                if seat0_state.needs_drain:
+                    # An in-flight seat-0 turn is draining (end request fired /
+                    # AI processing): quiet GameCore-only polling until the
+                    # turn number flips. No InGame call is issued from here,
+                    # and the idle/orphan bookkeeping below stays puppet-era
+                    # human-idle semantics only.
+                    await asyncio.sleep(1.0)
+                    deadline_polls -= 1
+                    continue
                 # Human seat is idle. Do NOT auto-clear VIEW-level diplomacy here:
                 # _clear_blocking_diplomacy cannot distinguish an orphaned first-meet
                 # greeting from a leader scene the human is actively using (declaring
@@ -735,7 +944,14 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         log.append({"turn": st.turn, "orphan_sweep": swept_sessions})
                 await asyncio.sleep(1.0)
             deadline_polls -= 1
-        return {"puppet_turns_played": played, "turns_slept": slept, "log": log}
+        return {
+            "puppet_turns_played": played,
+            "turns_slept": slept,
+            "seat0_turns_played": seat0_played,
+            "seat0_turns_failed": seat0_failed,
+            "seat0_human_pending": seat0_pending,
+            "log": log,
+        }
     finally:
         # Human safety invariant: ALWAYS hand control back. Reclaim a released connection first,
         # then restore the human, then disable — run all three best-effort so a failure in one
