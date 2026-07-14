@@ -210,6 +210,7 @@ def behavior_metrics(transcript_records: list[dict]) -> dict:
     fields plus driver/tool-call counts. This is Slice 3 behavior testing over
     N puppets — deliberately NOT framed as an A/B treatment/control comparison.
     """
+    failed_turns = 0
     standing_memory_turns = 0
     standing_memory_captured_turns = 0
     task_tracker_turns = 0
@@ -226,12 +227,22 @@ def behavior_metrics(transcript_records: list[dict]) -> dict:
         if pid is not None:
             puppeted_players.add(pid)
 
+        kind = _turn_kind(rec)
+        if kind == "failed":
+            # Neither the normal nor repair policy call returned this turn:
+            # no real model output, and no credible pre-model follow-through
+            # to attribute to success/quality metrics either (Task 8). Its
+            # token/state fields stay visible in analyze()'s `series` for
+            # diagnostics -- just not counted here.
+            failed_turns += 1
+            continue
+
         # Driver and standing-memory tallies are per MODEL turn; slept
         # records (no model invocation) would inflate them (review-2 f7).
-        # Task results below still count on every record:
-        # run_pre_model_tasks executes on slept turns too, so their
-        # follow-through is real behavior.
-        if _turn_kind(rec) == "played":
+        # Task results below still count on slept records too:
+        # run_pre_model_tasks executes on slept turns, so their
+        # follow-through is real behavior -- only a failed turn is excluded.
+        if kind == "played":
             if _is_local_driver(rec):
                 drivers["in_process"] += 1
             else:
@@ -252,6 +263,7 @@ def behavior_metrics(transcript_records: list[dict]) -> dict:
         task_blocked_visible_hostile += task_counts["blocked_visible_hostile"]
 
     return {
+        "failed_turns": failed_turns,
         "standing_memory_turns": standing_memory_turns,
         "standing_memory_captured_turns": standing_memory_captured_turns,
         "task_tracker_turns": task_tracker_turns,
@@ -389,14 +401,23 @@ _FALSE_QUIET_EXPECTED_CAUSES: frozenset[str] = frozenset({
 
 
 def _turn_kind(rec: dict) -> str:
-    """Classify a transcript record as "slept" or "played".
+    """Classify a transcript record as "failed", "slept", or "played".
 
-    Only ``slept is True`` counts as slept — defensive against any other
-    truthy-but-not-True value. Records with no ``slept`` key (pre-feature
-    transcripts, or a "skipped" turn that never reaches the transcript) read
-    as played.
+    An explicit ``turn_kind: "failed"`` (neither a pilot's normal nor repair
+    policy call returned) is its own category: it must read as neither
+    played (no real model output to credit toward success/quality metrics)
+    nor slept (no attention decision was made this turn). Only
+    ``slept is True`` (or an explicit ``turn_kind: "slept"``) counts as
+    slept — defensive against any other truthy-but-not-True value. Records
+    with no ``turn_kind``/``slept`` key (pre-feature transcripts, or a
+    "skipped" turn that never reaches the transcript) read as played.
     """
-    return "slept" if rec.get("slept") is True else "played"
+    explicit = rec.get("turn_kind")
+    if explicit == "failed":
+        return "failed"
+    if explicit == "slept" or rec.get("slept") is True:
+        return "slept"
+    return "played"
 
 
 def _attention_group_key(rec: dict) -> object:
@@ -533,7 +554,10 @@ def attention_metrics(records: list[dict]) -> dict:
     for key, recs in by_player.items():
         captured = len(recs)
         slept_turns = sum(1 for r in recs if _turn_kind(r) == "slept")
-        model_turns = captured - slept_turns
+        # A failed turn (Task 8) is neither slept nor a real model-success
+        # turn -- `captured - slept_turns` would wrongly count it as a model
+        # turn, so count "played" turns explicitly instead.
+        model_turns = sum(1 for r in recs if _turn_kind(r) == "played")
         skip_rate = slept_turns / captured if captured else 0.0
 
         streaks = _attention_streaks(recs)
@@ -798,7 +822,8 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
               "player_id": <int | None>,
               "model": <str>,
               "provider": <str | None>,
-              "series": [...],
+              "series": [...],   # every record, each tagged with its "turn_kind"
+              "failed_turns": <int>,   # count of turn_kind == "failed" records
               "rates": {"invalid_call_rate": float, "truncation_incident_rate": float},
               "rubric": {...}
             }
@@ -847,6 +872,7 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
 
     for key, records in by_player.items():
         series: list[dict] = []
+        failed_turns = 0
         total_invalid = 0
         total_steps = 0
         truncated_count = 0
@@ -866,6 +892,7 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
 
         for rec in records:
             turn: int = rec.get("turn", 0)
+            kind = _turn_kind(rec)
             state_after: dict = rec.get("state_after") or {}
             state_delta: dict = rec.get("state_delta") or {}
             steps = _steps_of(rec)
@@ -876,39 +903,56 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
             prompt_tokens: int = rec.get("prompt_tokens") or 0
             completion_tokens: int = rec.get("completion_tokens") or 0
 
-            # Accumulate for rates
-            total_invalid += len(invalid_calls)
-            total_steps += step_count
+            if kind == "failed":
+                # Neither the normal nor repair policy call returned this
+                # turn (Task 8): no real model output, so its steps/invalid
+                # calls must not pollute the rate/rubric/behavior
+                # accumulators below. It still gets a `series` row (with
+                # turn_kind) so the token/state fields stay visible for
+                # diagnostics.
+                failed_turns += 1
+            else:
+                # Accumulate for rates -- played only (Task 8): a slept
+                # record naturally contributes 0/0 here (step_count=0, no
+                # invalid_tool_calls), so gating on "played" changes nothing
+                # for slept turns while excluding a failed turn's real steps.
+                if kind == "played":
+                    total_invalid += len(invalid_calls)
+                    total_steps += step_count
 
-            # Truncation: only meaningful for local (in_process) driver
-            if _is_local_driver(rec):
-                for step in steps:
-                    total_local_steps += 1
-                    if step.get("truncated", False):
-                        truncated_count += 1
+                    # Truncation: only meaningful for local (in_process) driver
+                    if _is_local_driver(rec):
+                        for step in steps:
+                            total_local_steps += 1
+                            if step.get("truncated", False):
+                                truncated_count += 1
 
-            # Slice 3 — standing memory / task tracker / behavior-critical tool calls
-            # Standing-memory tallies are per MODEL turn (behavior_metrics
-            # precedent, review-2 f7 / review-3 f7). Task classification and
-            # tool-call counts below stay over ALL records: pre-model task
-            # follow-through runs on slept turns too.
-            if _turn_kind(rec) == "played":
-                if _standing_memory_injected(rec):
-                    mem_injected_turns += 1
-                if _standing_memory_captured(rec):
-                    mem_captured_turns += 1
-            task_counts = _classify_task_results(rec)
-            task_attempts += task_counts["attempts"]
-            task_completions += task_counts["complete"]
-            task_lost_count += task_counts["lost"]
-            task_failed_count += task_counts["failed"]
-            task_blocked += task_counts["blocked_visible_hostile"]
-            gp_calls += _count_tool_calls(steps, _GREAT_PEOPLE_TOOLS)
-            trade_calls += _count_tool_calls(steps, _TRADE_ROUTE_TOOLS)
-            religion_wc_calls += _count_tool_calls(steps, _RELIGION_WC_TOOLS)
+                    # Slice 3 — standing memory / behavior-critical tool calls.
+                    # Standing-memory tallies are per MODEL turn
+                    # (behavior_metrics precedent, review-2 f7 / review-3 f7).
+                    if _standing_memory_injected(rec):
+                        mem_injected_turns += 1
+                    if _standing_memory_captured(rec):
+                        mem_captured_turns += 1
+                    gp_calls += _count_tool_calls(steps, _GREAT_PEOPLE_TOOLS)
+                    trade_calls += _count_tool_calls(steps, _TRADE_ROUTE_TOOLS)
+                    religion_wc_calls += _count_tool_calls(steps, _RELIGION_WC_TOOLS)
+
+                # Task classification counts stay over played + slept
+                # records: pre-model task follow-through runs on slept
+                # turns too, so their follow-through is real behavior --
+                # only a failed turn (handled in the branch above) is
+                # excluded.
+                task_counts = _classify_task_results(rec)
+                task_attempts += task_counts["attempts"]
+                task_completions += task_counts["complete"]
+                task_lost_count += task_counts["lost"]
+                task_failed_count += task_counts["failed"]
+                task_blocked += task_counts["blocked_visible_hostile"]
 
             series.append({
                 "turn": turn,
+                "turn_kind": kind,
                 "score": state_after.get("score"),
                 "cities": state_after.get("cities"),
                 "units": state_after.get("units"),
@@ -933,6 +977,7 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
             "model": labels["model"],
             "provider": labels["provider"],
             "series": series,
+            "failed_turns": failed_turns,
             "rates": {
                 "invalid_call_rate": inv_rate,
                 "truncation_incident_rate": trunc_rate,
@@ -1014,6 +1059,7 @@ def render_markdown(report: dict) -> str:
         lines.append("## Behavior Metrics\n")
         drivers = behavior.get("drivers", {})
         puppeted = behavior.get("puppeted_players", [])
+        lines.append(f"- **Failed turns**: {behavior.get('failed_turns', 0)}")
         lines.append(
             f"- **Standing memory injected turns**: {behavior.get('standing_memory_turns', 0)}"
         )
@@ -1036,11 +1082,11 @@ def render_markdown(report: dict) -> str:
         )
 
         lines.append(
-            "| player_id | driver | provider | model | mem injected | mem captured | "
+            "| player_id | driver | provider | model | turns failed | mem injected | mem captured | "
             "task attempts | task complete | task blocked | task lost | task failed | GP calls | trade calls | religion/WC calls |"
         )
         lines.append(
-            "|-----------|--------|----------|-------|---------------|--------------|"
+            "|-----------|--------|----------|-------|--------------|---------------|--------------|"
             "---------------|----------------|--------------|-----------|-------------|----------|-------------|-------------------|"
         )
         for _seat, data in sorted(by_player.items(), key=lambda item: _config_summary_sort_key(item[0])):
@@ -1049,7 +1095,8 @@ def render_markdown(report: dict) -> str:
             pid_str = str(pid) if pid is not None else str(_seat)
             lines.append(
                 f"| {pid_str} | {pb.get('driver', '')} | {pb.get('provider', '') or ''} | "
-                f"{pb.get('model', '') or ''} | {pb.get('standing_memory_injected_turns', 0)} | "
+                f"{pb.get('model', '') or ''} | {data.get('failed_turns', 0)} | "
+                f"{pb.get('standing_memory_injected_turns', 0)} | "
                 f"{pb.get('standing_memory_captured_turns', 0)} | {pb.get('task_follow_through_attempts', 0)} | "
                 f"{pb.get('task_completions', 0)} | {pb.get('task_blocked', 0)} | {pb.get('task_lost', 0)} | "
                 f"{pb.get('task_failed', 0)} | "
