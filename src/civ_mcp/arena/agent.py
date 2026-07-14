@@ -94,47 +94,61 @@ class LLMPolicy:
         memory_block: str = "",
         task_block: str = "",
         digest_block: str = "",
+        blocker_block: str = "",
         briefing: Briefing | None = None,
         caps: dict | None = None,
     ) -> dict:
+        # Shared flags first (Task 4): a focused end-turn repair pass reuses
+        # this same policy object, registry/tier, and capability snapshot --
+        # it is focused by prompt content (blocker_block), not a weaker
+        # toolset. Repair mode never emits a fresh STANDING PLAN / attention
+        # ask and never pays for a fresh briefing build.
+        repair_mode = bool(blocker_block)
+        include_standing_plan_instruction = (
+            self.options.standing_plan_enabled and not repair_mode
+        )
+        include_attention_instruction = (
+            self.options.attention_directives_enabled and not repair_mode
+        )
+        if repair_mode:
+            briefing = Briefing()
         # One visible list feeds schema, invalid-call classification, AND the
         # dispatch allowlist (spec §1): filtering only the schema would leave
         # gated tools silently callable. caps=None fails open to the full tier.
         visible_names = filter_tools(self._tool_names, caps)
         tools_schema = openai_tools(visible_names)
         briefing_was_supplied = briefing is not None
-        if (
-            self.options.briefing.enabled
-            and not briefing_was_supplied
-            and _should_resolve_n_ctx(
-                self._n_ctx,
-                self._n_ctx_source,
-                self.options.context_budget,
-                self._n_ctx_resolves,
+        if not repair_mode:
+            if (
+                self.options.briefing.enabled
+                and not briefing_was_supplied
+                and _should_resolve_n_ctx(
+                    self._n_ctx,
+                    self._n_ctx_source,
+                    self.options.context_budget,
+                    self._n_ctx_resolves,
+                )
+            ):
+                self._n_ctx, self._n_ctx_source = await resolve_n_ctx(
+                    getattr(self.backend, "base_url", ""),
+                    getattr(self.backend, "model", ""),
+                    self.options.context_budget,
+                )
+                self._n_ctx_resolves += 1
+            playbook_chars = 0
+            tool_schema_chars = 0
+            if self.options.briefing.enabled and not briefing_was_supplied:
+                playbook_chars = len(self._system) - len(SYSTEM)
+                tool_schema_chars = len(json.dumps(tools_schema))
+            n_ctx = self._n_ctx if self._n_ctx is not None else DEFAULT_N_CTX
+            briefing = await maybe_build_briefing(
+                gs,
+                self.options,
+                n_ctx=n_ctx,
+                playbook_chars=playbook_chars,
+                tool_schema_chars=tool_schema_chars,
+                supplied=briefing,
             )
-        ):
-            self._n_ctx, self._n_ctx_source = await resolve_n_ctx(
-                getattr(self.backend, "base_url", ""),
-                getattr(self.backend, "model", ""),
-                self.options.context_budget,
-            )
-            self._n_ctx_resolves += 1
-        playbook_chars = 0
-        tool_schema_chars = 0
-        if self.options.briefing.enabled and not briefing_was_supplied:
-            playbook_chars = len(self._system) - len(SYSTEM)
-            tool_schema_chars = len(json.dumps(tools_schema))
-        n_ctx = self._n_ctx if self._n_ctx is not None else DEFAULT_N_CTX
-        briefing = await maybe_build_briefing(
-            gs,
-            self.options,
-            n_ctx=n_ctx,
-            playbook_chars=playbook_chars,
-            tool_schema_chars=tool_schema_chars,
-            supplied=briefing,
-        )
-        include_standing_plan_instruction = self.options.standing_plan_enabled
-        include_attention_instruction = self.options.attention_directives_enabled
         opening = build_opening_prompt(
             player_id=player_id,
             turn=turn,
@@ -142,6 +156,7 @@ class LLMPolicy:
             memory_block=memory_block,
             task_block=task_block,
             digest_block=digest_block,
+            blocker_block=blocker_block,
             include_standing_plan_instruction=include_standing_plan_instruction,
             include_attention_instruction=include_attention_instruction,
             attention_max_skip=self.options.attention.max_skip,
@@ -152,6 +167,7 @@ class LLMPolicy:
             "standing_plan_instruction": include_standing_plan_instruction,
             "digest": bool(digest_block),
             "attention_instruction": include_attention_instruction,
+            "blocker_repair": repair_mode,
         }
         messages = [{"role": "system", "content": self._system},
                     {"role": "user", "content": opening}]
