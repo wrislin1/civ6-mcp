@@ -1445,6 +1445,28 @@ def test_policy_accepts_kwarg_handles_bare_function_signature():
     assert _policy_accepts_kwarg(Explicit(), "task_block") is False
 
 
+def test_repair_kwargs_rejects_positional_only_parameters():
+    from civ_mcp.arena.coordinator import _policy_accepts_kwarg, _repair_kwargs
+
+    class PositionalOnlyBlocker:
+        async def __call__(self, gs, player_id, turn, blocker_block="", /):
+            return {"summary": ""}
+
+    class PositionalOnlyCaps:
+        async def __call__(
+            self, gs, player_id, turn, caps=None, /, *, blocker_block=""
+        ):
+            return {"summary": ""}
+
+    assert _policy_accepts_kwarg(PositionalOnlyBlocker(), "blocker_block") is False
+    assert _repair_kwargs(PositionalOnlyBlocker(), "repair", None) is None
+    assert _policy_accepts_kwarg(PositionalOnlyCaps(), "blocker_block") is True
+    assert _policy_accepts_kwarg(PositionalOnlyCaps(), "caps") is False
+    assert _repair_kwargs(
+        PositionalOnlyCaps(), "repair", {"government": True}
+    ) == {"blocker_block": "repair"}
+
+
 @pytest.mark.asyncio
 async def test_tracker_only_capture_not_reported_as_memory_captured(tmp_path):
     """With memory disabled the extracted plan is never saved or injectable;
@@ -2686,6 +2708,46 @@ async def test_seat0_policy_without_blocker_kwarg_is_not_called_unfocused(
 
     assert pol.calls == 1
     assert result["seat0_human_pending"] == 1
+    assert sink.records[0]["seat0"]["repair"]["attempted"] is False
+    assert "required blocker_block keyword" in sink.records[0]["seat0"]["repair"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_incompatible_recheck_repair_is_not_called_unfocused(
+    monkeypatch, tmp_path
+):
+    harness = Seat0Harness(
+        monkeypatch,
+        [seat0_poll(7, active=True)] * 7,
+    )
+    harness.blocker_queue = [[], [_RESEARCH], [_RESEARCH]]
+    sink = EventSink(harness)
+
+    class PositionalOnlyPolicy:
+        provider = "local"
+        model = "positional-only"
+        options = CivOptions()
+
+        def __init__(self):
+            self.calls = 0
+
+        async def __call__(self, gs, player_id, turn, blocker_block="", /):
+            self.calls += 1
+            return {"summary": "normal returned", "actions": []}
+
+    pol = PositionalOnlyPolicy()
+    result = await run_arena(
+        FakeConn(),
+        FakeGS(),
+        _seat0_cfg(tmp_path, run_id="seat0-recheck-incompatible", idle_poll_limit=8),
+        policy=pol,
+        transcript=sink,
+    )
+
+    assert pol.calls == 1
+    assert result["seat0_human_pending"] == 1
+    assert harness.names().count("end_turn") == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "human_pending"
     assert sink.records[0]["seat0"]["repair"]["attempted"] is False
     assert "required blocker_block keyword" in sink.records[0]["seat0"]["repair"]["error"]
 

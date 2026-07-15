@@ -343,7 +343,14 @@ def _policy_accepts_kwarg(policy, name: str) -> bool:
     except (TypeError, ValueError):
         return False
     return any(
-        param.kind == inspect.Parameter.VAR_KEYWORD or param.name == name
+        param.kind == inspect.Parameter.VAR_KEYWORD
+        or (
+            param.name == name
+            and param.kind in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }
+        )
         for param in signature.parameters.values()
     )
 
