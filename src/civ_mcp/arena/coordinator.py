@@ -34,7 +34,7 @@ from civ_mcp.arena.memory import (
     save_memory,
 )
 from civ_mcp.arena.prompt_context import maybe_build_briefing
-from civ_mcp.arena.seat0 import Seat0Poll, Seat0TurnState
+from civ_mcp.arena.seat0 import Seat0Phase, Seat0Poll, Seat0TurnState
 from civ_mcp.arena.task_tracker import (
     format_task_block,
     load_task_state,
@@ -426,8 +426,9 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             exactly once, emit exactly one structured CRITICAL event, and hand
             local seat 0 to the human untouched. Chooses NO strategic default —
             the unresolved blockers are left for the human to decide."""
-            nonlocal seat0_pending, seat0_failed
+            nonlocal seat0_pending, seat0_failed, deadline_polls
             seat0_state.mark_human_pending()
+            deadline_polls = config.idle_poll_limit
             record["turn_kind"] = turn_kind
             record["seat0"]["terminal_state"] = "human_pending"
             record["seat0"]["end_turn_requests"] = seat0_state.end_turn_requests
@@ -1391,7 +1392,11 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     # and the idle/orphan bookkeeping below stays puppet-era
                     # human-idle semantics only.
                     await asyncio.sleep(1.0)
-                    deadline_polls -= 1
+                    if (
+                        seat0_state.phase is Seat0Phase.HUMAN_PENDING
+                        or poll_action is Seat0Poll.DEGRADED
+                    ):
+                        deadline_polls -= 1
                     continue
                 # Human seat is idle. Do NOT auto-clear VIEW-level diplomacy here:
                 # _clear_blocking_diplomacy cannot distinguish an orphaned first-meet

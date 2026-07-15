@@ -2912,6 +2912,30 @@ async def test_seat0_human_pending_record_once_then_resets_after_advance(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_seat0_ai_processing_outlives_idle_poll_limit(monkeypatch, tmp_path):
+    harness = Seat0Harness(
+        monkeypatch,
+        [seat0_poll(7, active=True)]
+        + [seat0_poll(7, active=False)] * 7
+        + [seat0_poll(8, active=True)],
+    )
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+    cfg = _seat0_cfg(
+        tmp_path, run_id="seat0-long-ai", idle_poll_limit=3
+    )
+
+    result = await run_arena(
+        conn, FakeGSWithConn(conn), cfg, policy=pol, transcript=sink
+    )
+
+    assert result["seat0_turns_played"] == 1
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+
+
+@pytest.mark.asyncio
 async def test_seat0_human_pending_exits_after_idle_poll_limit(monkeypatch, tmp_path):
     """If the human never advances, the drain exits cleanly once the idle poll
     budget is spent -- sleeping (GameCore poll) once per idle poll."""
@@ -2928,7 +2952,7 @@ async def test_seat0_human_pending_exits_after_idle_poll_limit(monkeypatch, tmp_
     assert result["seat0_human_pending"] == 1
     assert harness.names().count("policy") == 1
     assert harness.names().count("end_turn") == 0
-    assert harness.names().count("sleep") >= 1
+    assert harness.names().count("sleep") == cfg.idle_poll_limit
     # Human never advanced -> the pending turn is still counted exactly once.
     assert result["seat0_turns_played"] == 0
 
