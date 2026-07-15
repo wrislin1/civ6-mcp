@@ -1515,6 +1515,21 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     # puppet-era idle budget.
                     await asyncio.sleep(1.0)
                     if seat0_state.phase is Seat0Phase.HUMAN_PENDING:
+                        # A human-idle window: keep the orphan-session sweep
+                        # cadence alive. Sessions involving the local player
+                        # are skipped by the sweep by construction, so this
+                        # never touches a leader scene the human is using.
+                        idle_streak += 1
+                        if idle_streak % ORPHAN_SWEEP_IDLE_POLLS == 0:
+                            swept_sessions = await _sweep_orphan_sessions(conn)
+                            if swept_sessions not in ("ORPHANS|none", "?", "err"):
+                                print(f"[arena] orphan diplomacy sessions closed "
+                                      f"after {idle_streak} idle polls: "
+                                      f"{swept_sessions}", file=sys.stderr)
+                                log.append({
+                                    "turn": st.turn,
+                                    "orphan_sweep": swept_sessions,
+                                })
                         human_polls += 1
                         if human_polls >= config.seat0_human_pending_poll_limit:
                             log.append({

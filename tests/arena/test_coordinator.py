@@ -2,6 +2,7 @@ import pytest
 import asyncio
 from civ_mcp import lua as lq
 from civ_mcp.arena import autoresolve
+from civ_mcp.arena import coordinator as coordinator_mod
 from civ_mcp.arena import hook as hook_mod
 from civ_mcp.arena import seat0 as seat0_mod
 from civ_mcp.arena.coordinator import run_arena, ScriptedPolicy, _reconnect_with_retry
@@ -4360,3 +4361,36 @@ async def test_seat0_end_request_exception_keeps_polling_to_advance(
     assert result["seat0_turns_played"] == 1
     assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
     assert "response lost after dispatch" in sink.records[0]["seat0"]["end_turn_errors"][0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_human_pending_drain_runs_orphan_sweep(
+    monkeypatch, tmp_path
+):
+    """HUMAN_PENDING is a human-idle window: the orphan diplomacy sweep must
+    keep firing on its usual idle cadence while the arena waits (an orphan
+    puppet-to-puppet session can never be clicked by the human)."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    hard = _blocker("UNKNOWN", "??")
+    harness.blocker_queue = [[hard], [hard]]
+    sweeps = []
+
+    async def fake_sweep(_conn):
+        sweeps.append(True)
+        return "ORPHANS|none"
+
+    monkeypatch.setattr(coordinator_mod, "_sweep_orphan_sessions", fake_sweep)
+    monkeypatch.setattr(coordinator_mod, "ORPHAN_SWEEP_IDLE_POLLS", 2)
+    conn = FakeConn()
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+    cfg = _seat0_cfg(
+        tmp_path, run_id="seat0-hp-sweep", idle_poll_limit=5,
+        seat0_human_pending_poll_limit=6,
+    )
+
+    result = await asyncio.wait_for(
+        run_arena(conn, FakeGS(), cfg, policy=pol), timeout=5.0
+    )
+
+    assert result["seat0_human_pending"] == 1
+    assert len(sweeps) == 3   # human-pending polls 2, 4, and 6
