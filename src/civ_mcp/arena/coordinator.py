@@ -817,10 +817,47 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             # query proves nothing -- the request may be accepted but latent.
             bounced = bool(snaps and snaps[0]["blockers"])
             if not remaining_blockers and not bounced:
+                # A deal/session with the human seat absorbs turn processing
+                # without ever appearing as a blocker (observed live, T301):
+                # probe for one and hand it to the pilot BEFORE spending the
+                # quiet-recheck budget on it.
+                if await _seat0_diplomacy_pass_if_wedged(turn):
+                    seat0_state.grace_polls = 0
+                    return
                 if seat0_state.note_idle_recheck():
                     return
-                # Quiet-recheck budget exhausted with seat 0 still active and
-                # no observable cause: hand the turn to the human below.
+                if (
+                    not seat0_state.guarded_refire_used
+                    and seat0_state.may_fire_end_turn
+                ):
+                    # Full-LLM-control: quiet budget exhausted, seat 0 still
+                    # active on the same turn, no blocker, no session -- the
+                    # strongest available evidence that the original request
+                    # was dropped rather than accepted-but-latent. Spend ONE
+                    # guarded refire before any human escalation; the
+                    # multi-turn-skip hazard stays bounded by this flag and
+                    # the request cap.
+                    seat0_state.guarded_refire_used = True
+                    log.append({
+                        "event": "seat0_guarded_refire",
+                        "turn": turn,
+                        "player_id": 0,
+                        "requests_before": seat0_state.end_turn_requests,
+                    })
+                    print(f"[arena] seat-0 guarded refire on turn {turn}: "
+                          f"quiet radar clear after idle-recheck budget",
+                          file=sys.stderr)
+                    anchor = await seat0.save_recovery_anchor(conn, turn)
+                    s0["autosave"]["attempts"].append(anchor)
+                    if anchor.get("ok", False) and not s0["autosave"].get("name"):
+                        s0["autosave"]["name"] = anchor.get("name", "")
+                    if not admission_open():
+                        await disable_hook_for_drain()
+                    await _fire_seat0_end(record)
+                    return
+                # Quiet-recheck budget exhausted with seat 0 still active,
+                # no observable cause, and the guarded refire already spent:
+                # hand the turn to the human below.
             if not remaining_blockers and bounced and seat0_state.may_fire_end_turn:
                 # Cleared and the retry budget survives: re-save the anchor under
                 # the SAME name so it reflects the repaired state, then re-fire.
@@ -1739,6 +1776,15 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                                     "orphan_sweep": swept_sessions,
                                 })
                         human_polls += 1
+                        if human_polls % SEAT0_DIPLO_IDLE_POLLS == 0:
+                            # Safety net: a deal/session can be what is
+                            # actually holding a human_pending turn (or can
+                            # arrive while one is held). Seat 0 is local in
+                            # this phase, so the InGame probe is legal; the
+                            # pass shares the per-turn attempt bound.
+                            await _seat0_diplomacy_pass_if_wedged(
+                                seat0_state.turn
+                            )
                         if human_polls >= config.seat0_human_pending_poll_limit:
                             log.append({
                                 "level": "CRITICAL",

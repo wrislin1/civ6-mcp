@@ -3333,14 +3333,18 @@ def _cancel_after_sleeps(harness, n):
 
 
 @pytest.mark.asyncio
-async def test_seat0_quiet_rechecks_never_refire_then_human_pending(monkeypatch, tmp_path):
-    """Review fix: after the first end request, five same-turn/active polls
-    are quiet (no InGame blocker query); the sixth drives a re-query. A
-    recheck whose query finds NO blocker cannot prove the request bounced --
-    re-firing would risk the documented duplicate-ACTION_ENDTURN multi-turn
-    skip (end_turn.py, '412 -> 415') -- so each quiet recheck waits out
-    another grace window, bounded, then escalates to human_pending with only
-    the ONE original end request ever fired."""
+async def test_seat0_quiet_rechecks_one_guarded_refire_then_human_pending(
+    monkeypatch, tmp_path
+):
+    """Full-LLM-control update to the review-fix contract: after the first
+    end request, quiet rechecks (no blocker, no bounce proof, no open
+    session) wait out the bounded budget as before -- but exhausting it with
+    seat 0 STILL active on the same turn is now the strongest available
+    evidence the request was dropped, so the coordinator spends ONE guarded
+    refire (with a fresh recovery anchor) before any human escalation. A
+    second exhaustion escalates to human_pending with exactly two requests
+    ever fired -- the multi-turn-skip hazard stays bounded by the flag and
+    the request cap."""
     harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
     harness.blocker_queue = []  # every query returns [] (clear)
     conn = Seat0CapsConn()
@@ -3352,14 +3356,15 @@ async def test_seat0_quiet_rechecks_never_refire_then_human_pending(monkeypatch,
     result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
 
     names = harness.names()
-    # Exactly one end request -- a quiet recheck never re-fires.
-    assert names.count("end_turn") == 1
-    # No re-save without a re-fire.
-    assert names.count("save_anchor") == 1
-    # One query for the played mech pass + one per recheck (3 quiet waits
-    # granted by the idle budget + the escalating 4th) = 5 total.
-    assert names.count("query_blockers") == 5
-    # The policy is never re-invoked (clear blockers -> no repair).
+    # The original request plus exactly one guarded refire.
+    assert names.count("end_turn") == 2
+    # The guarded refire re-saves the anchor first, like the bounce refire.
+    assert names.count("save_anchor") == 2
+    # One query for the played mech pass + one per recheck: 4 before the
+    # guarded refire (3 quiet + the exhausting 4th) and 4 after it.
+    assert names.count("query_blockers") == 9
+    # The policy is never re-invoked (clear blockers -> no repair; no
+    # session -> no diplomacy pass).
     assert names.count("policy") == 1
     # No InGame query during the five grace waits after the first end request.
     ev = harness.events
@@ -3371,13 +3376,15 @@ async def test_seat0_quiet_rechecks_never_refire_then_human_pending(monkeypatch,
     assert between.count("query_blockers") == 0
     assert between.count("sleep") == 5  # exactly five quiet grace waits
 
+    refires = [e for e in result["log"] if e.get("event") == "seat0_guarded_refire"]
+    assert len(refires) == 1
     assert result["seat0_human_pending"] == 1
     assert result["seat0_turns_played"] == 0
     assert result["seat0_turns_failed"] == 0
     assert len(sink.records) == 1
     rec = sink.records[0]
     assert rec["seat0"]["terminal_state"] == "human_pending"
-    assert rec["seat0"]["end_turn_requests"] == 1
+    assert rec["seat0"]["end_turn_requests"] == 2
     assert rec["turn_kind"] == "played"
 
 
@@ -4792,3 +4799,85 @@ async def test_seat0_drain_deal_wedge_runs_diplomacy_pass(monkeypatch, tmp_path)
     assert result["seat0_turns_played"] == 1
     passes = [e for e in result["log"] if e.get("event") == "seat0_diplomacy_pass"]
     assert len(passes) == 1 and passes[0]["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_seat0_quiet_recheck_probes_sessions_before_burning_budget(
+    monkeypatch, tmp_path
+):
+    """A deal absorbing turn processing never shows as a blocker: the quiet
+    recheck must probe for an open human-seat session and hand it to the
+    pilot BEFORE spending the idle-recheck budget, then keep draining. No
+    refire, no human_pending -- the turn advances once the deal is answered."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),                        # admission
+        *[seat0_poll(7, active=True) for _ in range(6)],   # grace + recheck
+        seat0_poll(8, active=True),                        # answered -> advance
+    ])
+    sessions = _AnsweringSessions("1#1")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+
+    class AnsweringPolicy(Seat0RecordingPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            if "PENDING DIPLOMACY" in kwargs.get("blocker_block", ""):
+                sessions.value = ""
+            return await super().__call__(gs, player_id, turn, **kwargs)
+
+    pol = AnsweringPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=40, run_id="seat0-recheck-deal")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    names = harness.names()
+    assert names.count("end_turn") == 1          # never refired
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]
+    assert "PENDING DIPLOMACY" in pol.calls[1][2]["blocker_block"]
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert result["seat0_turns_played"] == 1
+    assert result["seat0_human_pending"] == 0
+    passes = [e for e in result["log"] if e.get("event") == "seat0_diplomacy_pass"]
+    assert len(passes) == 1 and passes[0]["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_seat0_human_pending_arm_probes_sessions(monkeypatch, tmp_path):
+    """Safety net: a turn already terminalized human_pending still probes for
+    an open human-seat session on the human-poll cadence and hands it to the
+    pilot, bounded by the shared attempt limit, then goes CRITICAL."""
+    monkeypatch.setattr(coordinator_mod, "SEAT0_DIPLO_IDLE_POLLS", 2)
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    hard = _blocker("ENDTURN_BLOCKING_SOME_FUTURE_TYPE", "hard block")
+    harness.blockers = [hard]
+    sessions = _AnsweringSessions("3#4")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(
+        tmp_path,
+        idle_poll_limit=40,
+        run_id="seat0-pending-deal",
+        seat0_human_pending_poll_limit=20,
+    )
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    # One normal policy call, then the bounded diplomacy passes from the
+    # human-pending arm.
+    diplo_calls = [
+        c for c in pol.calls
+        if "PENDING DIPLOMACY" in c[2].get("blocker_block", "")
+    ]
+    assert len(diplo_calls) == coordinator_mod.SEAT0_DIPLO_ATTEMPT_LIMIT
+    crit = [e for e in result["log"]
+            if e.get("event") == "seat0_diplomacy_unresolved"]
+    assert len(crit) == 1
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "human_pending"

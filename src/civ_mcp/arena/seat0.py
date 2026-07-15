@@ -106,6 +106,10 @@ class Seat0TurnState:
     regression_polls: int = 0
     reactivation_polls: int = 0
     idle_rechecks: int = 0
+    # One guarded refire per admitted turn (quiet-recheck exhaustion with no
+    # blocker and no open session). Survives mark_end_fired so the refire
+    # cannot re-arm itself; cleared only by reset().
+    guarded_refire_used: bool = False
 
     def can_admit(self, *, turn: int, seat0_active: bool) -> bool:
         return self.phase is Seat0Phase.READY and seat0_active
@@ -242,6 +246,7 @@ class Seat0TurnState:
         self.regression_polls = 0
         self.reactivation_polls = 0
         self.idle_rechecks = 0
+        self.guarded_refire_used = False
 
 
 # ---------------------------------------------------------------------------

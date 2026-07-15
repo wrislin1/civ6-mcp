@@ -917,3 +917,16 @@ def test_negative_turn_never_counts_toward_regression():
     for _ in range(5):
         assert state.observe(turn=-1, seat0_active=False) == Seat0Poll.DEGRADED
     assert state.phase is Seat0Phase.POLICY_PLAYED
+
+
+def test_state_guarded_refire_flag_defaults_false_and_resets():
+    """One guarded refire per admitted turn: the flag survives mark_end_fired
+    (so the refire cannot re-arm itself) and clears only on reset()."""
+    st = seat0.Seat0TurnState()
+    assert st.guarded_refire_used is False
+    st.guarded_refire_used = True
+    st.mark_end_fired()
+    assert st.guarded_refire_used is True
+    st.phase = seat0.Seat0Phase.ADVANCED
+    st.reset()
+    assert st.guarded_refire_used is False
