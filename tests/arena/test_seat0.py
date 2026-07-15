@@ -930,3 +930,38 @@ def test_state_guarded_refire_flag_defaults_false_and_resets():
     st.phase = seat0.Seat0Phase.ADVANCED
     st.reset()
     assert st.guarded_refire_used is False
+
+
+@pytest.mark.asyncio
+async def test_wc_handler_registered_reads_lua_global():
+    conn = ScriptedConn()
+    conn.queue_write(["HANDLER_SET", lq.SENTINEL])
+    assert await seat0.wc_handler_registered(conn) is True
+
+    conn2 = ScriptedConn()
+    conn2.queue_write(["NO_HANDLER", lq.SENTINEL])
+    assert await seat0.wc_handler_registered(conn2) is False
+
+
+@pytest.mark.asyncio
+async def test_wc_handler_registered_swallows_connection_errors():
+    class DeadConn:
+        async def execute_write(self, lua):
+            raise ConnectionError("socket dead")
+
+    assert await seat0.wc_handler_registered(DeadConn()) is False
+
+
+@pytest.mark.asyncio
+async def test_register_default_wc_voter_uses_default_strategy():
+    conn = ScriptedConn()
+    conn.queue_write(["OK:WC_VOTER_REGISTERED", lq.SENTINEL])
+    assert await seat0.register_default_wc_voter(conn) is True
+    assert conn.writes == [lq.build_register_wc_voter(None)]
+
+
+@pytest.mark.asyncio
+async def test_register_default_wc_voter_false_on_failure():
+    conn = ScriptedConn()
+    conn.queue_write(["ERR:SOMETHING", lq.SENTINEL])
+    assert await seat0.register_default_wc_voter(conn) is False

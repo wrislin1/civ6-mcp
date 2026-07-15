@@ -4881,3 +4881,171 @@ async def test_seat0_human_pending_arm_probes_sessions(monkeypatch, tmp_path):
     assert len(crit) == 1
     assert len(sink.records) == 1
     assert sink.records[0]["seat0"]["terminal_state"] == "human_pending"
+
+
+# --- Full-LLM-control: World Congress gate -----------------------------------
+# The WC opens and closes synchronously INSIDE ACTION_ENDTURN (observed live,
+# T303): votes must be registered before the coordinator fires, exactly as
+# the solo end_turn path enforces with its pre-end WC gate.
+
+
+class _WCStatus:
+    def __init__(self, *, fires=True, resolutions=2, in_session=False, favor=100):
+        self.turns_until_next = 0 if fires else 15
+        self.is_in_session = in_session
+        self.resolutions = list(range(resolutions))
+        self.favor = favor
+
+
+def _wc_env(monkeypatch, harness, *, handler_results, status):
+    """Wire the WC seams: canned handler-registered results (popped per call)
+    and a recorded default-voter registration."""
+    calls = {"handler": 0, "default": 0}
+    results = list(handler_results)
+
+    async def fake_handler_registered(conn):
+        calls["handler"] += 1
+        return results.pop(0) if results else False
+
+    async def fake_register_default(conn):
+        calls["default"] += 1
+        return True
+
+    monkeypatch.setattr(seat0_mod, "wc_handler_registered", fake_handler_registered)
+    monkeypatch.setattr(seat0_mod, "register_default_wc_voter", fake_register_default)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_seat0_wc_gate_pilot_votes_then_fire(monkeypatch, tmp_path):
+    """WC fires this turn with resolutions and no handler: one focused voting
+    pass; the pilot registers votes; no default; the end request fires."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    calls = _wc_env(monkeypatch, harness, handler_results=[False, True],
+                    status=None)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+
+    async def fake_wc():
+        return _WCStatus(fires=True, resolutions=2)
+
+    gs.get_world_congress = fake_wc
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=30, run_id="seat0-wc-vote")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]
+    assert "World Congress" in pol.calls[1][2]["blocker_block"]
+    assert calls["default"] == 0
+    assert harness.names().count("end_turn") == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    passes = [e for e in result["log"] if e.get("event") == "seat0_wc_vote_pass"]
+    assert len(passes) == 1
+    assert passes[0]["completed"] is True and passes[0]["defaulted"] is False
+
+
+@pytest.mark.asyncio
+async def test_seat0_wc_gate_defaults_when_pilot_fails(monkeypatch, tmp_path):
+    """The pilot never registers votes: the coordinator registers the default
+    voter (stuck-free beats optimal) and still fires the end request."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    calls = _wc_env(monkeypatch, harness, handler_results=[False, False],
+                    status=None)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+
+    async def fake_wc():
+        return _WCStatus(fires=True, resolutions=1)
+
+    gs.get_world_congress = fake_wc
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=30, run_id="seat0-wc-default")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert calls["default"] == 1
+    assert harness.names().count("end_turn") == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    passes = [e for e in result["log"] if e.get("event") == "seat0_wc_vote_pass"]
+    assert len(passes) == 1 and passes[0]["defaulted"] is True
+
+
+@pytest.mark.asyncio
+async def test_seat0_wc_gate_zero_resolutions_skips(monkeypatch, tmp_path):
+    """A 0-resolution congress (even stale in_session=true, observed live at
+    T303 post-bounce) has nothing to vote on: no pass, no handler check,
+    normal fire."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    calls = _wc_env(monkeypatch, harness, handler_results=[], status=None)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+
+    async def fake_wc():
+        return _WCStatus(fires=True, resolutions=0, in_session=True)
+
+    gs.get_world_congress = fake_wc
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=30, run_id="seat0-wc-zero")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert len(pol.calls) == 1
+    assert calls["handler"] == 0 and calls["default"] == 0
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert not [e for e in result["log"] if e.get("event") == "seat0_wc_vote_pass"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_recheck_wc_only_blocker_defaults_and_refires(monkeypatch, tmp_path):
+    """Post-fire WC bounce (the T303 shape): the WC_SESSION blocker persists
+    after the repair pass. All-WC remaining blockers are clears-at-end: ensure
+    a voter (default if the pilot didn't register one) and refire instead of
+    human_pending."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),                        # admission
+        *[seat0_poll(7, active=True) for _ in range(6)],   # grace + recheck
+        seat0_poll(8, active=True),                        # WC done -> advance
+    ])
+    wc = _blocker("ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION", "WC in session")
+    harness.blocker_queue = [
+        [],            # after_normal: clear -> fire
+        [wc], [wc],    # recheck: after_refire, after_refire_cleanup
+        [wc], [wc],    # after_repair, after_repair_cleanup
+    ]
+    calls = _wc_env(monkeypatch, harness, handler_results=[False], status=None)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=40, run_id="seat0-wc-refire")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    names = harness.names()
+    assert names.count("end_turn") == 2          # original + WC refire
+    assert calls["default"] == 1
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert result["seat0_human_pending"] == 0
+    events = [e for e in result["log"] if e.get("event") == "seat0_wc_default_vote"]
+    assert len(events) == 1

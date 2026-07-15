@@ -86,8 +86,9 @@ _CODEX_MCP_ENV_CONFIG = (
 _PROMPT = (
     "You are playing player {pid} (an AI civ) in the running Civilization VI game; it is "
     "turn {turn} and YOU are currently the active player. Use the civ6 tools to observe your "
-    "situation and take a few sensible early-game actions (scout, move/settle a settler, set "
-    "city production and research). Do NOT end the turn — the host ends it for you."
+    "situation and take a few sensible actions appropriate to the era and situation (move "
+    "units, set city production and research, expand, respond to threats and opportunities). "
+    "Do NOT end the turn — the host ends it for you."
 )
 _PROMPT_SUMMARY_TAIL = " When done, give a one-line summary."
 # Attention civs are told they may END the summary with SKIP:/WAKE IF: lines

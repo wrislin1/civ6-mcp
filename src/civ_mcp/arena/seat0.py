@@ -377,6 +377,38 @@ def build_blocker_block(blockers: list[dict], *, prior_error: str = "") -> str:
 # ---------------------------------------------------------------------------
 
 
+async def wc_handler_registered(conn) -> bool:
+    """True when queue_wc_votes' Lua voter handler is registered (InGame).
+
+    The World Congress opens and closes synchronously INSIDE ACTION_ENDTURN,
+    so votes must be registered (as the `__civmcp_wc_handler` event handler)
+    before the coordinator fires the end request -- the same contract the
+    solo end_turn path enforces. Never raises.
+    """
+    try:
+        lines = await conn.execute_write(
+            f'print(__civmcp_wc_handler and "HANDLER_SET" or "NO_HANDLER") '
+            f'print("{lq.SENTINEL}")'
+        )
+    except Exception:
+        return False
+    return any("HANDLER_SET" in ln for ln in lines)
+
+
+async def register_default_wc_voter(conn) -> bool:
+    """Register the default WC voting strategy (spread favor, option A).
+
+    Full-LLM-control fallback: when the policy fails to queue votes during
+    its focused pass, a default vote keeps the game moving -- stuck-free
+    beats optimal. Never raises.
+    """
+    try:
+        lines = await conn.execute_write(lq.build_register_wc_voter(None))
+    except Exception:
+        return False
+    return any("OK:WC_VOTER_REGISTERED" in ln for ln in lines)
+
+
 async def query_local_player_sessions(conn) -> str:
     """Report open diplomacy sessions involving the local (human) player.
 

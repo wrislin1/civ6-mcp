@@ -748,6 +748,75 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             log.append(entry)
             return True
 
+        async def _seat0_wc_gate(pol, turn: int) -> None:
+            """Solo-path parity (observed live, T303): the World Congress
+            opens and closes synchronously INSIDE ACTION_ENDTURN, so votes
+            must be registered BEFORE the coordinator fires. When the WC
+            fires this turn with resolutions and no voter handler is
+            registered, give the policy one focused voting pass; if it still
+            has not registered votes, register the default voter -- a default
+            vote keeps the game moving, stuck-free beats optimal.
+
+            A 0-resolution congress (including the stale in_session=true
+            shape seen post-bounce) has nothing to vote on and never gates.
+            Never raises into the turn flow."""
+            try:
+                status = await gs.get_world_congress()
+            except Exception:
+                return
+            fires = status.turns_until_next <= 0 or status.is_in_session
+            n_res = len(status.resolutions or [])
+            if not fires or n_res == 0:
+                return
+            if await seat0.wc_handler_registered(conn):
+                return
+            entry = {
+                "event": "seat0_wc_vote_pass",
+                "turn": turn,
+                "player_id": 0,
+                "resolutions": n_res,
+                "completed": False,
+                "defaulted": False,
+                "error": "",
+            }
+            block = seat0.build_blocker_block([{
+                "type": "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION",
+                "message": (
+                    f"World Congress fires this turn ({n_res} resolution(s), "
+                    f"{status.favor} favor available). Review with "
+                    f"get_world_congress() and register votes with "
+                    f"queue_wc_votes() NOW -- they deploy automatically when "
+                    f"the coordinator ends the turn."
+                ),
+            }])
+            kwargs = _repair_kwargs(pol, block, None)
+            if kwargs is None:
+                entry["error"] = (
+                    "policy does not accept required blocker_block keyword"
+                )
+            else:
+                exclusive = bool(getattr(pol, "needs_exclusive_tuner", False))
+                if exclusive and conn.is_connected:
+                    await conn.disconnect()   # the voting pass owns the tuner
+                try:
+                    result = await pol(gs, 0, turn, **kwargs)
+                    timeout_error = seat0.attempt_timeout_error(result)
+                    if timeout_error:
+                        entry["error"] = timeout_error
+                    else:
+                        entry["completed"] = True
+                        entry["summary"] = (result or {}).get("summary", "")
+                except Exception as e:
+                    entry["error"] = repr(e)
+                if exclusive and not conn.is_connected:
+                    await _reconnect_with_retry(conn)
+            if not await seat0.wc_handler_registered(conn):
+                entry["defaulted"] = await seat0.register_default_wc_voter(conn)
+            log.append(entry)
+            print(f"[arena] seat-0 WC vote pass on turn {turn}: "
+                  f"completed={entry['completed']} "
+                  f"defaulted={entry['defaulted']}", file=sys.stderr)
+
         async def _recheck_cleanup_repair_or_refire() -> None:
             """RECHECK: the previous end request may not have taken (seat 0
             still active after the grace window). Re-run the mechanical pass
@@ -858,6 +927,33 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 # Quiet-recheck budget exhausted with seat 0 still active,
                 # no observable cause, and the guarded refire already spent:
                 # hand the turn to the human below.
+            # Post-fire WC bounce (the T303 shape): the WC blocker cannot
+            # clear BEFORE an end request -- the congress only processes
+            # inside ACTION_ENDTURN. When every remaining blocker is a WC
+            # session type, ensure a voter handler exists (the repair pass
+            # above was the pilot's chance to register one; default
+            # otherwise) and treat the state as clear-to-refire.
+            wc_only = bool(remaining_blockers) and all(
+                b["type"] in (
+                    "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION",
+                    "ENDTURN_BLOCKING_WORLD_CONGRESS_SPECIAL_SESSION",
+                )
+                for b in remaining_blockers
+            )
+            if wc_only and seat0_state.may_fire_end_turn:
+                if not await seat0.wc_handler_registered(conn):
+                    defaulted = await seat0.register_default_wc_voter(conn)
+                    log.append({
+                        "event": "seat0_wc_default_vote",
+                        "turn": turn,
+                        "player_id": 0,
+                        "registered": defaulted,
+                    })
+                    print(f"[arena] seat-0 WC default voter registered on "
+                          f"turn {turn} (post-bounce): {defaulted}",
+                          file=sys.stderr)
+                remaining_blockers = []
+                bounced = True
             if not remaining_blockers and bounced and seat0_state.may_fire_end_turn:
                 # Cleared and the retry budget survives: re-save the anchor under
                 # the SAME name so it reflects the repaired state, then re-fire.
@@ -1480,8 +1576,11 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         }
 
                     if any_returned and not remaining_blockers:
-                        # PLAYED: best-effort recovery anchor, then one end
+                        # PLAYED: WC gate first (votes must exist BEFORE the
+                        # fire -- the congress runs inside ACTION_ENDTURN),
+                        # then best-effort recovery anchor, then one end
                         # request. The record is written when the turn advances.
+                        await _seat0_wc_gate(pol, st.turn)
                         anchor = await seat0.save_recovery_anchor(conn, st.turn)
                         autosave_attempts = []
                         if not anchor.get("ok", False):

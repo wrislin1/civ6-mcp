@@ -46,9 +46,10 @@ def load_playbook() -> str:
     return (Path(__file__).parent / "playbook.md").read_text()
 
 SYSTEM = ("You are playing one civ in Civilization VI on its turn. Use tools to observe, then "
-          "take a few sensible early-game actions (scout, move/settle, set production and "
-          "research). When you are finished for this turn, reply with a short summary and NO "
-          "tool calls. Keep it brief.")
+          "take a few sensible actions appropriate to the era and situation (move units, set "
+          "production and research, expand, respond to threats and opportunities). When you "
+          "are finished for this turn, reply with a short summary and NO tool calls. Keep it "
+          "brief.")
 
 
 # Cap how many times we re-probe /props when it keeps returning the default.
