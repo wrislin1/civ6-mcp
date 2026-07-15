@@ -37,7 +37,11 @@ _SHARED_KNOBS = (
     "attention",
 )
 _CIV_KEYS = {"player", "provider", "model", "gateway", *_LOCAL_KNOBS, *_SHARED_KNOBS}
-_TOP_KEYS = {"run_id", "max_puppet_turns", "idle_poll_limit", "gateway_url", "max_game_turns", "civs"}
+_TOP_KEYS = {
+    "run_id", "max_puppet_turns", "idle_poll_limit", "gateway_url",
+    "max_game_turns", "seat0_drain_poll_limit",
+    "seat0_human_pending_poll_limit", "civs",
+}
 _BRIEFING_DEFAULTS = BriefingOptions()
 _MEMORY_DEFAULTS = MemoryOptions()
 _TASK_TRACKER_DEFAULTS = TaskTrackerOptions()
@@ -382,6 +386,19 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
             config_path,
             "idle_poll_limit",
             data.get("idle_poll_limit", arena_defaults.idle_poll_limit),
+        ),
+        seat0_drain_poll_limit=_top_int(
+            config_path,
+            "seat0_drain_poll_limit",
+            data.get("seat0_drain_poll_limit", arena_defaults.seat0_drain_poll_limit),
+        ),
+        seat0_human_pending_poll_limit=_top_int(
+            config_path,
+            "seat0_human_pending_poll_limit",
+            data.get(
+                "seat0_human_pending_poll_limit",
+                arena_defaults.seat0_human_pending_poll_limit,
+            ),
         ),
         puppet_ids=[pid for pid in ids if pid != 0],
         run_id=(

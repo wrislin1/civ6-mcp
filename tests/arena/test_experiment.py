@@ -1087,3 +1087,32 @@ def test_loads_seat0_llm_smoke_artifact():
         assert p.gateway == "http://192.168.20.196:11440/v1"
         assert p.options.max_steps == 8
     assert cfg.puppet_ids == [1, 2]
+
+
+def test_seat0_poll_limit_knobs_default_and_parse(tmp_path):
+    cfg = load_experiment(_write(tmp_path, GOOD))
+    assert cfg.seat0_drain_poll_limit == 1800
+    assert cfg.seat0_human_pending_poll_limit == 1800
+
+    text = GOOD.replace(
+        "idle_poll_limit: 3600",
+        "idle_poll_limit: 3600\n"
+        "seat0_drain_poll_limit: 900\n"
+        "seat0_human_pending_poll_limit: 1200",
+    )
+    cfg = load_experiment(_write(tmp_path, text))
+    assert cfg.seat0_drain_poll_limit == 900
+    assert cfg.seat0_human_pending_poll_limit == 1200
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "true", '"x"'])
+@pytest.mark.parametrize(
+    "field", ["seat0_drain_poll_limit", "seat0_human_pending_poll_limit"]
+)
+def test_seat0_poll_limit_knobs_reject_non_positive(tmp_path, field, bad):
+    text = GOOD.replace(
+        "idle_poll_limit: 3600",
+        f"idle_poll_limit: 3600\n{field}: {bad}",
+    )
+    with pytest.raises(ValueError):
+        load_experiment(_write(tmp_path, text))
