@@ -274,8 +274,11 @@ async def dismiss_popup(conn: GameConnection) -> str:
 # ------------------------------------------------------------------
 
 
-async def save_game(conn: GameConnection, name: str) -> str:
-    """Create a named save. Used for MCP per-turn autosaves."""
+async def save_game(conn: GameConnection, name: str) -> tuple[bool, str]:
+    """Create a named save. Used for MCP per-turn autosaves.
+
+    Returns (ok, message): ok is authoritative, parsed from the Lua OK|
+    sentinel -- never infer success from 'no exception was raised'."""
     lines = await conn.execute_write(
         f"local gf = {{}}; "
         f'gf.Name = "{name}"; '
@@ -288,8 +291,8 @@ async def save_game(conn: GameConnection, name: str) -> str:
         f'print("{lq.SENTINEL}")'
     )
     if any("OK|" in l for l in lines):
-        return f"Saved: {name}"
-    return f"Save may have failed: {' '.join(lines)}"
+        return True, f"Saved: {name}"
+    return False, f"Save may have failed: {' '.join(lines)}"
 
 
 def cleanup_old_autosaves(keep: int = 5) -> None:

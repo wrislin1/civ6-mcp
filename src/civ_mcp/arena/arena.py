@@ -26,7 +26,7 @@ def build_policies(specs, cost, cfg):
             # Test-only provider (Task 9): the deterministic no-LLM policy for
             # this seat only. No backend, cost preflight, CLI check, or exclusive
             # tuner handoff — the nonzero seats below stay real local/CLI policies.
-            policies[spec.player_id] = ScriptedPolicy()
+            policies[spec.player_id] = ScriptedPolicy(options=spec.options)
             continue
         if spec.driver_kind() == "cli":
             policies[spec.player_id] = CLIAgentPolicy(

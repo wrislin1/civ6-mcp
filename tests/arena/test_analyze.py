@@ -547,6 +547,17 @@ def test_behavior_metrics_drivers_played_only_tasks_still_counted():
     assert m["puppeted_players"] == [1]
 
 
+def test_behavior_metrics_scripted_driver_not_bucketed_as_cli():
+    """Review fix: a scripted seat-0 turn (driver 'scripted') invokes no
+    model and no CLI -- it must tally under its own key instead of
+    inflating the cli bucket (or the in_process truncation denominators)."""
+    from civ_mcp.arena.analyze import behavior_metrics
+
+    scripted = {"player_id": 0, "driver": "scripted", "turn_kind": "played"}
+    m = behavior_metrics([scripted])
+    assert m["drivers"] == {"in_process": 0, "cli": 0, "scripted": 1}
+
+
 def test_analyze_report_carries_config_summary() -> None:
     from civ_mcp.arena.analyze import analyze
 

@@ -153,6 +153,17 @@ _SCRIPTED_PREFERRED_PRODUCTION = (
 )
 
 
+def _transcript_driver(pol) -> str:
+    """Transcript `driver` label for a policy, aligned with
+    PlayerSpec.driver_kind(): 'cli', 'scripted', or 'in_process'."""
+    provider = str(getattr(pol, "provider", "local"))
+    if provider.startswith("cli"):
+        return "cli"
+    if provider == "scripted":
+        return "scripted"
+    return "in_process"
+
+
 class ScriptedPolicy:
     """Deterministic no-LLM policy with two roles (Task 9).
 
@@ -174,6 +185,12 @@ class ScriptedPolicy:
 
     provider = "scripted"
     model = "seat0-smoke"
+
+    def __init__(self, options=None):
+        # The coordinator reads shared knobs (memory, task tracker, briefing,
+        # ...) via getattr(pol, "options", CivOptions()) -- a policy without
+        # the attribute silently drops every validated YAML knob.
+        self.options = options if options is not None else CivOptions()
 
     async def __call__(
         self, gs, player_id: int, turn: int, *, blocker_block: str = "", **kwargs
@@ -609,8 +626,18 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             repair_result = None
             try:
                 repair_result = await pol(gs, 0, turn, **repair_kwargs)
-                repair["completed"] = True
-                repair["summary"] = (repair_result or {}).get("summary", "")
+                timeout_error = seat0.attempt_timeout_error(repair_result)
+                if timeout_error:
+                    # Timed-out repair: zero usable work -- account like a
+                    # raised repair, never as a completed one.
+                    repair["error"] = timeout_error
+                    print(f"[arena] seat-0 turn {turn} repair timed out: "
+                          f"{timeout_error}", file=sys.stderr)
+                    log.append({"turn": turn, "player_id": 0,
+                                "skipped": True, "repair_error": timeout_error})
+                else:
+                    repair["completed"] = True
+                    repair["summary"] = (repair_result or {}).get("summary", "")
             except Exception as e:
                 repair["error"] = repr(e)
                 print(f"[arena] seat-0 turn {turn} repair failed: {e!r}",
@@ -626,14 +653,22 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             return repair_result, None
 
         async def _recheck_cleanup_repair_or_refire() -> None:
-            """RECHECK: the previous end request did not take (seat 0 still
-            active after the grace window). Re-run the mechanical pass on the
-            still-open turn; if a decision blocker newly surfaced and the one
-            repair is still unused, attempt it; then re-save the recovery
-            anchor (same 0_MCP_NNNN name) and re-fire, or escalate to
-            human_pending when a blocker persists or the three-request budget
-            is spent. Seat 0 is local+active throughout (observe only returns
-            RECHECK while active), so the InGame work here is legal."""
+            """RECHECK: the previous end request may not have taken (seat 0
+            still active after the grace window). Re-run the mechanical pass
+            on the still-open turn; if a decision blocker newly surfaced and
+            the one repair is still unused, attempt it. A re-fire needs PROOF
+            the previous request bounced -- an open blocker in the recheck's
+            first query (the engine refuses to end the turn while one is
+            open). With proof and a clear post-cleanup/repair state, re-save
+            the recovery anchor (same 0_MCP_NNNN name) and re-fire; without
+            proof, the request is most likely accepted-but-latent, and a
+            duplicate ACTION_ENDTURN would risk the multi-turn skip
+            documented in end_turn.py -- wait out another grace window
+            instead, bounded by the quiet-recheck budget. Escalate to
+            human_pending when a blocker persists, the three-request budget
+            is spent, or the quiet-recheck budget is exhausted. Seat 0 is
+            local+active throughout (observe only returns RECHECK while
+            active), so the InGame work here is legal."""
             ctx = seat0_state.resume_context
             if ctx is None:
                 raise RuntimeError("seat-0 recheck missing resume context")
@@ -681,12 +716,23 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     s0["mechanical_cleanup"] = s0["mechanical_cleanup"] + rep_cleanup
 
             remaining_blockers = list(groups.hard) + list(groups.decision)
-            if not remaining_blockers and seat0_state.may_fire_end_turn:
+            # Proof of a bounce: the recheck's FIRST query (before cleanup or
+            # repair mutated anything) found an open blocker. An empty first
+            # query proves nothing -- the request may be accepted but latent.
+            bounced = bool(snaps and snaps[0]["blockers"])
+            if not remaining_blockers and not bounced:
+                if seat0_state.note_idle_recheck():
+                    return
+                # Quiet-recheck budget exhausted with seat 0 still active and
+                # no observable cause: hand the turn to the human below.
+            if not remaining_blockers and bounced and seat0_state.may_fire_end_turn:
                 # Cleared and the retry budget survives: re-save the anchor under
                 # the SAME name so it reflects the repaired state, then re-fire.
                 anchor = await seat0.save_recovery_anchor(conn, turn)
                 s0["autosave"]["attempts"].append(anchor)
-                if not s0["autosave"].get("name"):
+                # Adopt the re-save as the recovery point only when it
+                # actually succeeded -- ok is authoritative.
+                if anchor.get("ok", False) and not s0["autosave"].get("name"):
                     s0["autosave"]["name"] = anchor.get("name", "")
                 if not admission_open():
                     await disable_hook_for_drain()
@@ -948,7 +994,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                             "turn": st.turn,
                             "provider": getattr(pol, "provider", "local"),
                             "model": getattr(_pol_backend, "model", getattr(pol, "model", "")),
-                            "driver": "cli" if str(getattr(pol, "provider", "local")).startswith("cli") else "in_process",
+                            "driver": _transcript_driver(pol),
                             "turn_kind": "slept",
                             "slept": True,
                             "step_count": 0,
@@ -972,9 +1018,15 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                             "attention": attention_fields,
                         })
                     await hook.finish_units(conn, st.local)
-                    await hook.restore_local(conn, 0)
                     slept += 1
                     game_turns += 1
+                    if seat0_state.needs_drain and not admission_open():
+                        # This slept turn spent the final slot while a seat-0
+                        # turn is still draining; disable the hook after
+                        # servicing the puppet and before releasing it, so
+                        # nothing is captured once the budget is gone.
+                        await disable_hook_for_drain()
+                    await hook.restore_local(conn, 0)
                     deadline_polls -= 1
                     continue
                 if decision is not None and att_state.slept:
@@ -1086,7 +1138,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         "turn":     st.turn,
                         "provider": getattr(pol, "provider", "local"),
                         "model":    getattr(pol, "model", ""),
-                        "driver":   "cli" if str(getattr(pol, "provider", "local")).startswith("cli") else "in_process",
+                        "driver":   _transcript_driver(pol),
                         "steps": [],
                         "step_count": 0,
                         "usd": 0.0,
@@ -1114,6 +1166,18 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     normal_error_msg = ""   # str for the pilot-facing repair block
                     try:
                         normal_result = await pol(gs, 0, st.turn, **policy_kwargs)
+                        timeout_error = seat0.attempt_timeout_error(normal_result)
+                        if timeout_error:
+                            # A timed-out CLI attempt returns the timeout shape
+                            # instead of raising: zero usable work happened, so
+                            # account it exactly like a raised attempt (the
+                            # repair still gets its one shot).
+                            normal_error = timeout_error
+                            normal_error_msg = timeout_error
+                            print(f"[arena] seat-0 turn {st.turn} normal policy "
+                                  f"timed out: {timeout_error}", file=sys.stderr)
+                            log.append({"turn": st.turn, "player_id": 0,
+                                        "skipped": True, "error": normal_error})
                     except Exception as e:
                         normal_error = repr(e)
                         normal_error_msg = str(e)
@@ -1251,7 +1315,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                             "turn":     st.turn,
                             "provider": getattr(pol, "provider", "local"),
                             "model":    getattr(_pol_backend, "model", getattr(pol, "model", "")),
-                            "driver":   "cli" if str(getattr(pol, "provider", "local")).startswith("cli") else "in_process",
+                            "driver":   _transcript_driver(pol),
                             "step_count": len(payload.get("steps", [])),
                             "usd":      float(merged.get("usage", {}).get("usd", 0.0)),
                             "state_before": state_before,
@@ -1287,12 +1351,16 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         # request. The record is written when the turn advances.
                         anchor = await seat0.save_recovery_anchor(conn, st.turn)
                         autosave_attempts = []
-                        if not anchor.get("ok", False) or (
-                            "Save may have failed" in str(anchor.get("result", ""))
-                        ):
+                        if not anchor.get("ok", False):
                             autosave_attempts.append(anchor)
                         seat0_state.record = _base_seat0_record(
-                            {"name": anchor.get("name", ""), "attempts": autosave_attempts}
+                            {
+                                # A failed save is never adopted as the
+                                # recovery point -- ok is authoritative.
+                                "name": anchor.get("name", "")
+                                if anchor.get("ok", False) else "",
+                                "attempts": autosave_attempts,
+                            }
                         )
                         # Carry the resume context for a possible RECHECK re-fire.
                         seat0_state.resume_context = seat0.Seat0ResumeContext(
@@ -1510,7 +1578,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         "turn":     st.turn,
                         "provider": getattr(pol, "provider", "local"),
                         "model":    getattr(_pol_backend, "model", getattr(pol, "model", "")),
-                        "driver":   "cli" if str(getattr(pol, "provider", "local")).startswith("cli") else "in_process",
+                        "driver":   _transcript_driver(pol),
                         "step_count": len(steps),
                         "usd":      float(result.get("usage", {}).get("usd", 0.0)),
                         "state_before": state_before,
@@ -1667,6 +1735,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         if seat0_state.record is not None and not seat0_state.record_written:
             try:
                 seat0_state.mark_interrupted()
+                # The turn's outcome never materialized (mirrors `regressed`):
+                # an interrupted turn must not be counted as a played turn by
+                # analyze(), nor double-count with the replay after recovery.
+                seat0_state.record["turn_kind"] = "failed"
                 _s0 = seat0_state.record["seat0"]
                 _s0["terminal_state"] = "interrupted"
                 _s0["end_turn_requests"] = seat0_state.end_turn_requests

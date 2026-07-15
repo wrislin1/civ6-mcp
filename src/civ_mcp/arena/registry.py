@@ -1355,6 +1355,11 @@ TIERS: dict[str, tuple[str, ...]] = {
         "set_research",
         "fortify_unit",
         "skip_unit",
+        # Promotion resolvers live in EVERY tier: unit level-ups block the
+        # turn (a seat-0 DECISION blocker), so a pilot without promote_unit
+        # deterministically stalls to human_pending on each one.
+        "get_unit_promotions",
+        "promote_unit",
     ),
     "standard": (
         "get_overview",
@@ -1366,6 +1371,8 @@ TIERS: dict[str, tuple[str, ...]] = {
         "set_research",
         "fortify_unit",
         "skip_unit",
+        "get_unit_promotions",
+        "promote_unit",
         "get_map_area",
         "get_tech_civics",
         "attack_unit",

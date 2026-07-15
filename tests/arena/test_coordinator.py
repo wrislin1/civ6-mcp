@@ -2426,6 +2426,34 @@ async def test_seat0_happy_path_single_play_then_terminal_advanced(monkeypatch, 
 
 
 @pytest.mark.asyncio
+async def test_seat0_scripted_provider_records_scripted_driver(monkeypatch, tmp_path):
+    """Review fix: the record builders classified driver via
+    provider.startswith('cli'), so a scripted seat was transcribed as
+    'in_process' -- desyncing from PlayerSpec.driver_kind()'s 'scripted' and
+    polluting analyze()'s local-driver metrics."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("scripted ok")])
+    pol.provider = "scripted"
+    cfg = _seat0_cfg(
+        tmp_path,
+        players=[PlayerSpec(0, "scripted", "seat0-smoke")],
+        run_id="seat0-scripted-driver",
+    )
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert result["seat0_turns_played"] == 1
+    assert sink.records[0]["driver"] == "scripted"
+
+
+@pytest.mark.asyncio
 async def test_seat0_no_replay_while_same_turn_still_active(monkeypatch, tmp_path):
     """Duplicate-play prevention: post-request polls that still show seat 0
     ACTIVE on the same turn (engine lag) must not re-admit or replay the
@@ -2990,6 +3018,41 @@ async def test_seat0_matrix_raise_then_repair_raises_failed(monkeypatch, tmp_pat
     assert "still down" in crit[0]["policy_errors"]["repair"]
 
 
+@pytest.mark.asyncio
+async def test_seat0_timeout_shaped_attempts_count_failed_not_played(monkeypatch, tmp_path):
+    """Review fix: a timed-out CLI attempt RETURNS a normal-shaped result
+    (transcript.reason == 'timeout', zero steps) instead of raising. Both
+    attempts timing out means zero usable work happened -- the turn must be
+    accounted `failed` (like raised attempts), never transcribed as a played
+    zero-step turn with an automatic end request."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    timeout_result = {
+        "summary": "cli timeout after 900s", "actions": [], "usage": {},
+        "transcript": {
+            "steps": [], "reason": "timeout",
+            "final_summary": "cli timeout after 900s",
+        },
+    }
+    pol = Seat0ScriptPolicy(harness, [dict(timeout_result), dict(timeout_result)])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-timeout", idle_poll_limit=6)
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert harness.names().count("end_turn") == 0  # zero-work turn never ends itself
+    assert result["seat0_human_pending"] == 1
+    assert result["seat0_turns_failed"] == 1
+    assert result["seat0_turns_played"] == 0
+    rec = sink.records[0]
+    assert rec["turn_kind"] == "failed"
+    assert rec["seat0"]["normal"]["completed"] is False
+    assert rec["seat0"]["repair"]["completed"] is False
+    assert "timeout" in rec["seat0"]["normal"]["error"]
+    assert "timeout" in rec["seat0"]["repair"]["error"]
+
+
 # --- Step 3: hard blocks and unresolved-after-repair ------------------------
 
 
@@ -3208,6 +3271,7 @@ async def test_seat0_hung_ai_drain_exits_after_drain_poll_limit(
     assert result["seat0_turns_played"] == 0
     assert len(sink.records) == 1
     assert sink.records[0]["seat0"]["terminal_state"] == "interrupted"
+    assert sink.records[0]["turn_kind"] == "failed"
     events = [e for e in result["log"] if e.get("event") == "seat0_drain_deadline"]
     assert len(events) == 1
     assert events[0]["turn"] == 7
@@ -3269,26 +3333,32 @@ def _cancel_after_sleeps(harness, n):
 
 
 @pytest.mark.asyncio
-async def test_seat0_grace_bounded_refires_then_human_pending(monkeypatch, tmp_path):
-    """Brief Step 1: after the first end request, five same-turn/active polls
-    are quiet (no InGame blocker query); the sixth drives a re-query + re-fire.
-    Bounded at three requests -- the fourth recheck escalates to human_pending
-    instead of a fourth ACTION_ENDTURN."""
+async def test_seat0_quiet_rechecks_never_refire_then_human_pending(monkeypatch, tmp_path):
+    """Review fix: after the first end request, five same-turn/active polls
+    are quiet (no InGame blocker query); the sixth drives a re-query. A
+    recheck whose query finds NO blocker cannot prove the request bounced --
+    re-firing would risk the documented duplicate-ACTION_ENDTURN multi-turn
+    skip (end_turn.py, '412 -> 415') -- so each quiet recheck waits out
+    another grace window, bounded, then escalates to human_pending with only
+    the ONE original end request ever fired."""
     harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
     harness.blocker_queue = []  # every query returns [] (clear)
     conn = Seat0CapsConn()
     gs = FakeGSWithConn(conn)
     sink = EventSink(harness)
     pol = Seat0ScriptPolicy(harness, [_returned("normal done")])
-    cfg = _seat0_cfg(tmp_path, run_id="seat0-grace", idle_poll_limit=40)
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-grace", idle_poll_limit=60)
 
     result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
 
     names = harness.names()
-    # Exactly three end requests, then no fourth.
-    assert names.count("end_turn") == 3
-    # One query for the played mech pass + one per recheck (3) = 4 total.
-    assert names.count("query_blockers") == 4
+    # Exactly one end request -- a quiet recheck never re-fires.
+    assert names.count("end_turn") == 1
+    # No re-save without a re-fire.
+    assert names.count("save_anchor") == 1
+    # One query for the played mech pass + one per recheck (3 quiet waits
+    # granted by the idle budget + the escalating 4th) = 5 total.
+    assert names.count("query_blockers") == 5
     # The policy is never re-invoked (clear blockers -> no repair).
     assert names.count("policy") == 1
     # No InGame query during the five grace waits after the first end request.
@@ -3307,7 +3377,7 @@ async def test_seat0_grace_bounded_refires_then_human_pending(monkeypatch, tmp_p
     assert len(sink.records) == 1
     rec = sink.records[0]
     assert rec["seat0"]["terminal_state"] == "human_pending"
-    assert rec["seat0"]["end_turn_requests"] == 3
+    assert rec["seat0"]["end_turn_requests"] == 1
     assert rec["turn_kind"] == "played"
 
 
@@ -3404,20 +3474,22 @@ async def test_seat0_autosave_exception_recorded_but_end_fires(monkeypatch, tmp_
     assert s0["autosave"]["attempts"] == [
         {"name": "0_MCP_0007", "ok": False, "error": "OSError('disk full')"}
     ]
-    assert s0["autosave"]["name"] == "0_MCP_0007"
+    # Review fix: a failed save is never adopted as the recovery point.
+    assert s0["autosave"]["name"] == ""
 
 
 @pytest.mark.asyncio
 async def test_seat0_autosave_save_may_have_failed_message_recorded(monkeypatch, tmp_path):
-    """A returned 'Save may have failed:' message is recorded in attempts and
-    does not prevent the end request."""
+    """A reported save failure (ok=False, per the review fix save_game's OK|
+    sentinel is authoritative) is recorded in attempts, is NOT adopted as the
+    recovery-point name, and does not prevent the end request."""
     harness = Seat0Harness(monkeypatch, [
         seat0_poll(7, active=True),
         seat0_poll(7, active=False),
         seat0_poll(8, active=True),
     ])
     harness.anchor = {
-        "name": "0_MCP_0007", "ok": True, "result": "Save may have failed: timeout",
+        "name": "0_MCP_0007", "ok": False, "result": "Save may have failed: timeout",
     }
     conn = Seat0CapsConn()
     gs = FakeGSWithConn(conn)
@@ -3432,18 +3504,22 @@ async def test_seat0_autosave_save_may_have_failed_message_recorded(monkeypatch,
     s0 = sink.records[0]["seat0"]
     assert len(s0["autosave"]["attempts"]) == 1
     assert "Save may have failed" in s0["autosave"]["attempts"][0]["result"]
+    assert s0["autosave"]["name"] == ""  # a failed save is not a recovery point
 
 
 @pytest.mark.asyncio
 async def test_seat0_resave_before_refire_uses_same_name(monkeypatch, tmp_path):
     """Brief Step 3: a RECHECK re-fire re-saves the recovery anchor under the
     SAME 0_MCP_NNNN name before re-firing, and the re-save is recorded in
-    autosave.attempts even on success."""
+    autosave.attempts even on success. The recheck must find an open blocker
+    (proof the previous request bounced) for a re-fire to happen at all."""
     harness = Seat0Harness(
         monkeypatch,
         [seat0_poll(7, active=True)] * 10 + [seat0_poll(8, active=True)],
     )
-    harness.blocker_queue = []  # always clear
+    units = _blocker("ENDTURN_BLOCKING_UNITS", "unit needs orders")
+    # Played pass clear; the recheck finds proof of the bounce; cleanup clears.
+    harness.blocker_queue = [[], [units], []]
     conn = Seat0CapsConn()
     gs = FakeGSWithConn(conn)
     sink = EventSink(harness)
@@ -3459,6 +3535,36 @@ async def test_seat0_resave_before_refire_uses_same_name(monkeypatch, tmp_path):
     assert len(s0["autosave"]["attempts"]) >= 1  # the re-save(s), recorded on success
     assert all(a["name"] == "0_MCP_0007" for a in s0["autosave"]["attempts"])
     assert s0["autosave"]["name"] == "0_MCP_0007"
+
+
+@pytest.mark.asyncio
+async def test_seat0_recheck_refires_only_after_proven_bounce(monkeypatch, tmp_path):
+    """Review fix: a RECHECK that finds an open blocker HAS proof the end
+    request bounced (the engine refuses to end the turn while a blocker is
+    open), so after mechanical cleanup clears it, re-save + re-fire proceed;
+    the re-fired request then advances the turn normally."""
+    harness = Seat0Harness(
+        monkeypatch,
+        [seat0_poll(7, active=True)] * 8 + [seat0_poll(8, active=True)],
+    )
+    units = _blocker("ENDTURN_BLOCKING_UNITS", "unit needs orders")
+    harness.blocker_queue = [[], [units], []]
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("normal done")])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-bounce-refire", idle_poll_limit=30)
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    names = harness.names()
+    assert names.count("end_turn") == 2  # original + one proven-bounce re-fire
+    assert names.count("save_anchor") == 2  # initial + re-save before the re-fire
+    assert result["seat0_turns_played"] == 1
+    assert result["seat0_human_pending"] == 0
+    rec = sink.records[0]
+    assert rec["seat0"]["terminal_state"] == "advanced"
+    assert rec["seat0"]["end_turn_requests"] == 2
 
 
 # --- Step 4: final-budget hook disable --------------------------------------
@@ -3574,6 +3680,70 @@ async def test_puppet_final_slot_disables_hook_while_seat0_draining(monkeypatch,
     assert i_pfinish < i_disable < i_prestore
 
 
+class _CapsAttnConn(Seat0CapsConn):
+    """Caps-serving conn that also answers the InGame attention scan, so a
+    seat-0 turn and an attention-slept puppet can share one fake conn."""
+
+    async def execute_write(self, lua, timeout=5.0):
+        if "ATTN" in lua:
+            self.write_calls.append(lua)
+            return list(QUIET_SCAN_LINES)
+        return await super().execute_write(lua, timeout)
+
+
+@pytest.mark.asyncio
+async def test_slept_final_slot_disables_hook_while_seat0_draining(monkeypatch, tmp_path):
+    """Review fix: a SLEPT puppet turn also increments game_turns, so it can
+    be the turn that closes admission while an earlier seat-0 turn is still
+    draining -- it must disable the hook before releasing the puppet, exactly
+    like a played final-slot turn, or the next captured puppet is never
+    serviced and the game freezes until the drain deadline."""
+    from civ_mcp.arena.attention import AttentionState, save_attention_state
+    from civ_mcp.arena.config import AttentionOptions
+
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),  # admit seat 0, play, end#1 (game_turns 1)
+        PuppetState(local=1, turn=7, active=True, last=0, seat0_active=False),
+        seat0_poll(8, active=True),  # seat 0 advances
+    ])
+    conn = _CapsAttnConn()
+    gs = FakeGSWithConn(conn)
+    opts = CivOptions(attention=AttentionOptions(mode="auto"))
+    seat0_pol = Seat0ScriptPolicy(harness, [_returned("seat0 ok")])
+    puppet_pol = CountingPolicy(opts)
+    policies = {0: seat0_pol, 1: puppet_pol}
+    cfg = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m"),
+            PlayerSpec(1, "local", "m", options=opts),
+        ],
+        run_id="seat0-slept-final", max_puppet_turns=5, max_game_turns=2,
+        puppet_ids=[1], idle_poll_limit=8,
+    )
+    save_attention_state(str(tmp_path), "seat0-slept-final", 1, AttentionState(
+        run_id="seat0-slept-final", player_id=1,
+        last_snapshot=dict(_ATTN_BASELINE_SNAPSHOT),
+        last_scan={"at_war_with": [], "era_index": 1, "total_population": 12}))
+
+    result = await run_arena(
+        conn, gs, cfg, policy_for=lambda pid: policies[pid]
+    )
+
+    assert result["turns_slept"] == 1
+    assert puppet_pol.calls == 0
+    assert result["seat0_turns_played"] == 1
+    ev = harness.events
+    i_pfinish = ev.index(("finish_units", 1))
+    i_disable = next(
+        i for i, e in enumerate(ev) if e[0] == "disable" and i > i_pfinish
+    )
+    i_prestore = next(
+        i for i, e in enumerate(ev) if e == ("restore_local", 0) and i > i_pfinish
+    )
+    assert i_pfinish < i_disable < i_prestore
+
+
 # --- Step 5: interruption / cancellation transcript ------------------------
 
 
@@ -3651,6 +3821,9 @@ async def test_seat0_cancel_during_grace_writes_interrupted_once(monkeypatch, tm
     assert len(sink.records) == 1
     rec = sink.records[0]
     assert rec["seat0"]["terminal_state"] == "interrupted"
+    # Review fix: the in-flight played record must not land as a counted
+    # "played" turn -- the turn's outcome never materialized.
+    assert rec["turn_kind"] == "failed"
     assert rec["player_id"] == 0 and rec["turn"] == 7
     names = harness.names()
     assert "restore_local" in names and "disable" in names
@@ -3675,6 +3848,7 @@ async def test_seat0_cancel_during_ai_processing_writes_interrupted_once(monkeyp
 
     assert len(sink.records) == 1
     assert sink.records[0]["seat0"]["terminal_state"] == "interrupted"
+    assert sink.records[0]["turn_kind"] == "failed"
 
 
 @pytest.mark.asyncio

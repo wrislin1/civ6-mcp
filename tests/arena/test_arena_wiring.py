@@ -90,6 +90,24 @@ def test_build_policies_scripted_seat0_needs_no_exclusive_tuner():
     assert local_backends == []
 
 
+def test_build_policies_scripted_seat_preserves_spec_options():
+    """Review fix: shared knobs validated for a scripted seat (memory,
+    task_tracker, ...) must reach the policy -- the coordinator reads them
+    via getattr(pol, 'options', CivOptions()), so a bare ScriptedPolicy()
+    silently dropped every validated YAML knob."""
+    from civ_mcp.arena.config import MemoryOptions
+    from civ_mcp.arena.coordinator import ScriptedPolicy
+
+    opts = CivOptions(memory=MemoryOptions(enabled=True))
+    specs = [PlayerSpec(0, "scripted", "seat0-smoke", options=opts)]
+    cfg = ArenaConfig(players=specs)
+    policies, _ = build_policies(specs, FakeCost(), cfg)
+
+    assert isinstance(policies[0], ScriptedPolicy)
+    assert policies[0].options is opts
+    assert policies[0].options.memory.enabled is True
+
+
 def test_build_policies_per_civ_gateway_pins_backend():
     """Each local civ's backend targets its own gateway when the spec pins one;
     civs without a pin fall back to the global cfg.gateway_url."""

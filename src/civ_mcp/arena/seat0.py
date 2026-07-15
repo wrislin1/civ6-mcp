@@ -64,6 +64,17 @@ _MAX_END_TURN_REQUESTS = 3
 # declared. One sample may be a transient misread; a run of them means a
 # human loaded an earlier save. Malformed polls (turn < 0) never count.
 _REGRESSION_POLL_LIMIT = 3
+# Consecutive same-turn ACTIVE polls while AI_PROCESSING before concluding the
+# end request did not take after all (the phase was latched by a flickered
+# inactive sample, or the request bounced on a late blocker) and returning to
+# END_FIRED so the grace/recheck machinery can recover the turn.
+_REACTIVATION_POLL_LIMIT = 3
+# Bounded budget of "quiet" rechecks -- rechecks whose blocker query found
+# nothing and therefore no proof the end request bounced. Each quiet recheck
+# waits out one more grace window instead of re-firing (a duplicate
+# ACTION_ENDTURN while the first is latent skips multiple turns); once spent,
+# the coordinator escalates to human_pending.
+_IDLE_RECHECK_LIMIT = 3
 
 
 @dataclass(frozen=True)
@@ -93,6 +104,8 @@ class Seat0TurnState:
     record_written: bool = False
     resume_context: Seat0ResumeContext | None = None
     regression_polls: int = 0
+    reactivation_polls: int = 0
+    idle_rechecks: int = 0
 
     def can_admit(self, *, turn: int, seat0_active: bool) -> bool:
         return self.phase is Seat0Phase.READY and seat0_active
@@ -126,7 +139,20 @@ class Seat0TurnState:
         # the request itself cannot create an unbounded retry loop.
         self.end_turn_requests += 1
         self.grace_polls = 0
+        self.reactivation_polls = 0
+        self.idle_rechecks = 0
         self.phase = Seat0Phase.END_FIRED
+
+    def note_idle_recheck(self) -> bool:
+        """A RECHECK found no open blocker: there is no proof the previous
+        end request bounced, so re-firing risks the engine's documented
+        duplicate-ACTION_ENDTURN multi-turn skip. Restart the grace window
+        instead and report whether the bounded quiet-recheck budget still
+        allows waiting (False -> the coordinator escalates to
+        human_pending)."""
+        self.idle_rechecks += 1
+        self.grace_polls = 0
+        return self.idle_rechecks <= _IDLE_RECHECK_LIMIT
 
     def mark_human_pending(self) -> None:
         self.phase = Seat0Phase.HUMAN_PENDING
@@ -166,14 +192,32 @@ class Seat0TurnState:
         if self.phase is Seat0Phase.END_FIRED:
             if not seat0_active:
                 self.phase = Seat0Phase.AI_PROCESSING
+                self.reactivation_polls = 0
                 return Seat0Poll.WAIT
             self.grace_polls += 1
             if self.grace_polls > _GRACE_POLL_LIMIT:
                 return Seat0Poll.RECHECK
             return Seat0Poll.WAIT
 
-        # AI_PROCESSING / HUMAN_PENDING / any other same-turn phase: keep
-        # polling GameCore quietly until the turn number itself changes.
+        if self.phase is Seat0Phase.AI_PROCESSING:
+            # AI_PROCESSING must not be absorbing: persistent same-turn
+            # ACTIVE polls mean the end request did not take after all (the
+            # inactive sample that latched this phase was a flicker, or the
+            # request bounced on a late blocker). Return to END_FIRED with a
+            # fresh grace window so the recheck machinery can recover the
+            # turn. A single active sample is flicker-tolerant.
+            if seat0_active:
+                self.reactivation_polls += 1
+                if self.reactivation_polls >= _REACTIVATION_POLL_LIMIT:
+                    self.phase = Seat0Phase.END_FIRED
+                    self.grace_polls = 0
+                    self.reactivation_polls = 0
+            else:
+                self.reactivation_polls = 0
+            return Seat0Poll.WAIT
+
+        # HUMAN_PENDING / any other same-turn phase: keep polling GameCore
+        # quietly until the turn number itself changes.
         return Seat0Poll.WAIT
 
     def reset(self) -> None:
@@ -196,6 +240,8 @@ class Seat0TurnState:
         self.record_written = False
         self.resume_context = None
         self.regression_polls = 0
+        self.reactivation_polls = 0
+        self.idle_rechecks = 0
 
 
 # ---------------------------------------------------------------------------
@@ -231,12 +277,30 @@ _STALE_CLEARABLE = frozenset({
     "ENDTURN_BLOCKING_PRODUCTION",
 })
 
-# Explicit hard types: no pilot-accessible resolver exists in the arena
-# registry regardless of `lq.BLOCKING_TOOL_MAP` (a hint string alone is not
-# a resolver). Any type absent from that map is hard for the same reason.
-_HARD_BLOCKER_TYPES = frozenset({
-    "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE",
-    "UNKNOWN",
+# The seat0-owned authority table: blocker types the pilot can resolve with
+# arena tools, and therefore the only types worth spending the one-shot
+# focused repair on. Deliberately NOT derived from `lq.BLOCKING_TOOL_MAP` --
+# that map is a prompt-hint table maintained for end_turn error messages,
+# and a hint string alone is not a resolver (adding a hint for an
+# unresolvable blocker must never silently promote it to decision; the spy
+# escape route already demonstrated that drift). Any type absent from this
+# table AND from `MECHANICAL_BLOCKERS` is a hard block: it goes straight to
+# human_pending. Unknown/future types default hard by construction.
+DECISION_BLOCKERS = frozenset({
+    "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT",
+    "ENDTURN_BLOCKING_UNIT_PROMOTION",
+    "ENDTURN_BLOCKING_FILL_CIVIC_SLOT",
+    "ENDTURN_BLOCKING_PRODUCTION",
+    "ENDTURN_BLOCKING_RESEARCH",
+    "ENDTURN_BLOCKING_CIVIC",
+    "ENDTURN_BLOCKING_PANTHEON",
+    "ENDTURN_BLOCKING_STACKED_UNITS",
+    "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE",
+    "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION",
+    "ENDTURN_BLOCKING_WORLD_CONGRESS_SPECIAL_SESSION",
+    "ENDTURN_BLOCKING_CONSIDER_RAZE_CITY",
+    "ENDTURN_BLOCKING_CONSIDER_DISLOYAL_CITY",
+    "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN",
 })
 
 
@@ -251,21 +315,21 @@ def classify_blockers(blockers: list[dict]) -> BlockerGroups:
     """Sort an ordered blocker snapshot into mechanical / decision / hard
     groups, preserving each group's relative order.
 
-    Only `MECHANICAL_BLOCKERS` members are mechanical. A type with no
-    registered resolution hint (or an explicit hard type such as the spy
-    escape route) is a hard block -- there is no pilot-accessible way to
-    resolve it, so it must go straight to human_pending. Everything else is
-    a decision blocker the policy must resolve itself.
+    Only `MECHANICAL_BLOCKERS` members are mechanical, only
+    `DECISION_BLOCKERS` members are decisions the policy must resolve
+    itself, and everything else -- including unknown/future types and any
+    blocker without a pilot-accessible resolver (spy escape route) -- is a
+    hard block that goes straight to human_pending.
     """
     groups = BlockerGroups()
     for blocker in blockers:
         blocking_type = blocker["type"]
         if blocking_type in MECHANICAL_BLOCKERS:
             groups.mechanical.append(blocker)
-        elif blocking_type in _HARD_BLOCKER_TYPES or blocking_type not in lq.BLOCKING_TOOL_MAP:
-            groups.hard.append(blocker)
-        else:
+        elif blocking_type in DECISION_BLOCKERS:
             groups.decision.append(blocker)
+        else:
+            groups.hard.append(blocker)
     return groups
 
 
@@ -376,8 +440,8 @@ async def save_recovery_anchor(conn, turn: int) -> dict:
     """
     name = f"0_MCP_{turn:04d}"
     try:
-        result = await save_game(conn, name)
-        return {"name": name, "ok": True, "result": result}
+        ok, result = await save_game(conn, name)
+        return {"name": name, "ok": ok, "result": result}
     except Exception as exc:  # best-effort: failure is data, not a raise
         return {"name": name, "ok": False, "error": repr(exc)}
 
@@ -439,3 +503,18 @@ def merge_policy_attempts(normal: dict | None, repair: dict | None) -> dict:
         merged["usage"] = usage
 
     return merged
+
+
+def attempt_timeout_error(result) -> str:
+    """Non-empty error string when a policy attempt returned the CLI
+    timeout shape (``transcript.reason == "timeout"``) instead of raising.
+    A timed-out attempt did zero usable work, so the coordinator must
+    account it exactly like a raised attempt -- never as a completed one
+    (a zero-step turn transcribed as `played` corrupts every played-turn
+    metric and can fire an end request nobody earned)."""
+    if not isinstance(result, dict):
+        return ""
+    transcript = result.get("transcript")
+    if isinstance(transcript, dict) and transcript.get("reason") == "timeout":
+        return str(result.get("summary") or "policy attempt timed out")
+    return ""

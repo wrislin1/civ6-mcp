@@ -10,7 +10,7 @@ from civ_mcp.arena.registry import (
 )
 
 
-MINIMAL_9 = {
+MINIMAL_11 = {
     "get_overview",
     "get_units",
     "get_cities",
@@ -20,11 +20,23 @@ MINIMAL_9 = {
     "set_research",
     "fortify_unit",
     "skip_unit",
+    "get_unit_promotions",
+    "promote_unit",
 }
 
 
-def test_minimal_tier_is_todays_nine():
-    assert set(TIERS["minimal"]) == MINIMAL_9
+def test_minimal_tier_is_todays_eleven():
+    assert set(TIERS["minimal"]) == MINIMAL_11
+
+
+def test_promotion_resolvers_present_in_every_tier():
+    """Review fix: ENDTURN_BLOCKING_UNIT_PROMOTION is a seat-0 DECISION
+    blocker, whose premise is a pilot-accessible resolver. Promotions recur
+    constantly (every unit level-up blocks the turn), so the resolving tools
+    must exist in every tier -- a tier without them deterministically stalls
+    an autonomous seat-0 run to human_pending on each level-up."""
+    for tier in ("minimal", "standard", "full"):
+        assert {"promote_unit", "get_unit_promotions"} <= set(resolve_tools(tier))
 
 
 def test_tiers_nest():
@@ -561,7 +573,7 @@ def test_agent_module_still_exposes_tools():
     from civ_mcp.arena.agent import TOOLS
 
     names = {t["function"]["name"] for t in TOOLS}
-    assert names == MINIMAL_9
+    assert names == MINIMAL_11
 
 
 def test_get_map_area_radius_schema_is_bounded():

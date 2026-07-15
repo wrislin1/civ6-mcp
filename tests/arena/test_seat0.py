@@ -219,7 +219,9 @@ def test_critical_emitted_marker_fires_exactly_once():
 # Step 2: blocker-authority tests
 # ---------------------------------------------------------------------------
 
-_ALL_BLOCKING_TYPES_BUT_MECHANICAL = sorted(set(lq.BLOCKING_TOOL_MAP) - MECHANICAL_BLOCKERS)
+# Deliberately derived from the seat0-owned authority table, NOT from
+# lq.BLOCKING_TOOL_MAP (review fix: hint-table membership is not authority).
+_ALL_DECISION_TYPES = sorted(seat0.DECISION_BLOCKERS)
 
 
 def test_mechanical_blockers_is_exactly_the_closed_list():
@@ -230,10 +232,49 @@ def test_mechanical_blockers_is_exactly_the_closed_list():
     }
 
 
+def test_decision_blockers_is_an_explicit_closed_list():
+    """Review fix: hard-vs-decision authority must be an explicit seat0-owned
+    table, not membership in lq.BLOCKING_TOOL_MAP (a prompt-hint table
+    maintained for end_turn error messages). This literal list is deliberately
+    NOT derived from the map so hint-table drift cannot silently change
+    arena authority."""
+    assert seat0.DECISION_BLOCKERS == {
+        "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT",
+        "ENDTURN_BLOCKING_UNIT_PROMOTION",
+        "ENDTURN_BLOCKING_FILL_CIVIC_SLOT",
+        "ENDTURN_BLOCKING_PRODUCTION",
+        "ENDTURN_BLOCKING_RESEARCH",
+        "ENDTURN_BLOCKING_CIVIC",
+        "ENDTURN_BLOCKING_PANTHEON",
+        "ENDTURN_BLOCKING_STACKED_UNITS",
+        "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE",
+        "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION",
+        "ENDTURN_BLOCKING_WORLD_CONGRESS_SPECIAL_SESSION",
+        "ENDTURN_BLOCKING_CONSIDER_RAZE_CITY",
+        "ENDTURN_BLOCKING_CONSIDER_DISLOYAL_CITY",
+        "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN",
+    }
+
+
+def test_new_tool_map_hint_does_not_promote_blocker_to_decision(monkeypatch):
+    """Adding a documentation hint to BLOCKING_TOOL_MAP for an unresolvable
+    blocker must NOT promote it from hard to decision -- the drift that
+    already happened once with the spy escape route."""
+    patched = dict(lq.BLOCKING_TOOL_MAP)
+    patched["ENDTURN_BLOCKING_NEWLY_HINTED"] = "Some new hint text"
+    monkeypatch.setattr(lq, "BLOCKING_TOOL_MAP", patched)
+
+    groups = classify_blockers(
+        [{"type": "ENDTURN_BLOCKING_NEWLY_HINTED", "message": "??"}]
+    )
+    assert [b["type"] for b in groups.hard] == ["ENDTURN_BLOCKING_NEWLY_HINTED"]
+    assert groups.decision == []
+
+
 def test_classify_blockers_separates_mechanical_decision_and_hard():
     blockers = (
         [{"type": t, "message": f"msg-{t}"} for t in sorted(MECHANICAL_BLOCKERS)]
-        + [{"type": t, "message": f"msg-{t}"} for t in _ALL_BLOCKING_TYPES_BUT_MECHANICAL]
+        + [{"type": t, "message": f"msg-{t}"} for t in _ALL_DECISION_TYPES]
         + [
             {"type": "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE", "message": "Spy escape"},
             {"type": "UNKNOWN", "message": "??"},
@@ -254,10 +295,8 @@ def test_classify_blockers_separates_mechanical_decision_and_hard():
         "UNKNOWN",
         "ENDTURN_BLOCKING_SOME_FUTURE_TYPE",
     }
-    # decision blockers with a registered resolver stay out of hard
-    assert set(_ALL_BLOCKING_TYPES_BUT_MECHANICAL) - {"ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE"} == {
-        b["type"] for b in groups.decision
-    }
+    # exactly the explicit authority table's types are decision blockers
+    assert set(_ALL_DECISION_TYPES) == {b["type"] for b in groups.decision}
 
 
 def test_classify_blockers_preserves_order_within_each_group():
@@ -457,7 +496,7 @@ async def test_save_recovery_anchor_calls_save_game_with_padded_turn_name(monkey
 
     async def fake_save_game(conn, name):
         calls.append((conn, name))
-        return f"Saved: {name}"
+        return True, f"Saved: {name}"
 
     monkeypatch.setattr(seat0, "save_game", fake_save_game)
     conn = ScriptedConn()
@@ -474,6 +513,20 @@ async def test_save_recovery_anchor_pads_turn_number():
     result = await save_recovery_anchor(conn, 123)
     assert result["name"] == "0_MCP_0123"
     assert result["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_save_recovery_anchor_ok_is_authoritative_for_reported_failure():
+    """Review fix: ok must reflect the Lua OK| sentinel, not merely
+    'save_game did not raise' -- a reported-but-not-raised failure
+    previously returned ok=True and could be adopted as a recovery point
+    that does not exist on disk."""
+    conn = ScriptedConn()
+    conn.queue_write(["ERR: storage", lq.SENTINEL])  # no OK| sentinel
+    result = await save_recovery_anchor(conn, 9)
+    assert result["ok"] is False
+    assert result["name"] == "0_MCP_0009"
+    assert "Save may have failed" in result["result"]
 
 
 @pytest.mark.asyncio
@@ -656,6 +709,78 @@ def test_grace_then_recheck_then_bounded_refires():
     state.grace_polls = 0
     assert state.observe(turn=7, seat0_active=False) is Seat0Poll.WAIT
     assert state.phase is Seat0Phase.AI_PROCESSING
+
+
+def test_ai_processing_reactivation_returns_to_end_fired_after_persistent_active():
+    """Review fix: AI_PROCESSING must not be absorbing. A seat 0 that polls
+    ACTIVE on the same turn persistently after the phase latched (the end
+    request bounced on a late blocker, or the active sample that latched the
+    phase was a flicker) must recover the recheck path."""
+    state = state_after_one_end_request(turn=7)
+    assert state.observe(turn=7, seat0_active=False) is Seat0Poll.WAIT
+    assert state.phase is Seat0Phase.AI_PROCESSING
+    # Below the persistence threshold: flicker-tolerant, still AI processing.
+    for _ in range(seat0._REACTIVATION_POLL_LIMIT - 1):
+        assert state.observe(turn=7, seat0_active=True) is Seat0Poll.WAIT
+        assert state.phase is Seat0Phase.AI_PROCESSING
+    # Persistent evidence: back to END_FIRED with a fresh grace window.
+    assert state.observe(turn=7, seat0_active=True) is Seat0Poll.WAIT
+    assert state.phase is Seat0Phase.END_FIRED
+    assert state.grace_polls == 0
+    for _ in range(seat0._GRACE_POLL_LIMIT):
+        assert state.observe(turn=7, seat0_active=True) is Seat0Poll.WAIT
+    assert state.observe(turn=7, seat0_active=True) is Seat0Poll.RECHECK
+
+
+def test_ai_processing_reactivation_flicker_resets_evidence():
+    """A single inactive sample between active ones resets the reactivation
+    evidence -- one flickered-true poll can never drive a spurious RECHECK."""
+    state = state_after_one_end_request(turn=7)
+    assert state.observe(turn=7, seat0_active=False) is Seat0Poll.WAIT
+    for _ in range(seat0._REACTIVATION_POLL_LIMIT - 1):
+        assert state.observe(turn=7, seat0_active=True) is Seat0Poll.WAIT
+    # Inactive again: evidence resets.
+    assert state.observe(turn=7, seat0_active=False) is Seat0Poll.WAIT
+    for _ in range(seat0._REACTIVATION_POLL_LIMIT - 1):
+        assert state.observe(turn=7, seat0_active=True) is Seat0Poll.WAIT
+    assert state.phase is Seat0Phase.AI_PROCESSING
+
+
+def test_note_idle_recheck_bounds_quiet_rechecks_and_restarts_grace():
+    """Review fix: a RECHECK whose blocker query finds nothing cannot prove
+    the end request bounced, so the coordinator waits out another grace
+    window instead of re-firing. note_idle_recheck() restarts the grace
+    window and grants a bounded number of such quiet waits."""
+    state = state_after_one_end_request(turn=7)
+    for _ in range(seat0._GRACE_POLL_LIMIT + 1):
+        state.observe(turn=7, seat0_active=True)
+    for _ in range(seat0._IDLE_RECHECK_LIMIT):
+        assert state.note_idle_recheck() is True
+        assert state.grace_polls == 0
+        assert state.phase is Seat0Phase.END_FIRED
+    assert state.note_idle_recheck() is False
+
+
+def test_mark_end_fired_resets_idle_recheck_budget():
+    """A real re-fire (proven bounce) is fresh evidence: the quiet-recheck
+    budget starts over for the new request."""
+    state = state_after_one_end_request(turn=7)
+    for _ in range(seat0._IDLE_RECHECK_LIMIT):
+        assert state.note_idle_recheck()
+    assert not state.note_idle_recheck()
+    state.mark_end_fired()
+    assert state.note_idle_recheck() is True
+
+
+def test_reset_clears_reactivation_and_idle_recheck_state():
+    state = state_after_one_end_request(turn=7)
+    state.observe(turn=7, seat0_active=False)
+    state.observe(turn=7, seat0_active=True)
+    state.note_idle_recheck()
+    state.phase = Seat0Phase.ADVANCED
+    state.reset()
+    assert state.reactivation_polls == 0
+    assert state.idle_rechecks == 0
 
 
 def test_backward_polls_below_limit_stay_degraded():

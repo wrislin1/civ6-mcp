@@ -243,10 +243,8 @@ def behavior_metrics(transcript_records: list[dict]) -> dict:
         # run_pre_model_tasks executes on slept turns, so their
         # follow-through is real behavior -- only a failed turn is excluded.
         if kind == "played":
-            if _is_local_driver(rec):
-                drivers["in_process"] += 1
-            else:
-                drivers["cli"] += 1
+            driver = rec.get("driver", "in_process")
+            drivers[driver] = drivers.get(driver, 0) + 1
             if _standing_memory_injected(rec):
                 standing_memory_turns += 1
             if _standing_memory_captured(rec):
