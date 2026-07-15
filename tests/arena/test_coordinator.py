@@ -2387,12 +2387,14 @@ async def test_seat0_degraded_and_backward_polls_do_not_terminalize_or_replay(
         PuppetState(local=-1, turn=-1, active=False, last=None, seat0_active=False),
         seat0_poll(6, active=True),
         seat0_poll(7, active=False),
-        seat0_poll(8, active=True),
+        seat0_poll(8, active=False),
     ])
     conn = Seat0CapsConn()
     sink = EventSink(harness)
     pol = Seat0RecordingPolicy(harness)
-    cfg = _seat0_cfg(tmp_path, run_id="seat0-degraded-poll")
+    cfg = _seat0_cfg(
+        tmp_path, run_id="seat0-degraded-poll", max_puppet_turns=2
+    )
 
     result = await run_arena(
         conn, FakeGSWithConn(conn), cfg, policy=pol, transcript=sink
