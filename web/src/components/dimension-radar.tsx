@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import {
   RadarChart,
   PolarGrid,
@@ -100,7 +101,7 @@ export function DimensionRadar({
         <PolarGrid stroke="var(--color-marble-200, #d4cfc3)" />
         <PolarAngleAxis
           dataKey="dimension"
-          tick={IconTick as any}
+          tick={IconTick as unknown as ComponentProps<typeof PolarAngleAxis>["tick"]}
         />
         <PolarRadiusAxis
           domain={[0, 100]}

@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

@@ -14,6 +14,10 @@ import type { EloFilter } from "./use-elo";
 
 export function useEloConvex(filter?: EloFilter): EloData {
   const raw = useQuery(api.diary.getEloData);
+  // Destructured so the memo's inferred deps match its declared deps
+  // exactly (React Compiler refuses to preserve the memo otherwise).
+  const scenarioId = filter?.scenarioId;
+  const evalTrack = filter?.evalTrack;
 
   return useMemo(() => {
     if (raw === undefined) return { ratings: [], gameCount: 0, loading: true, error: null };
@@ -22,11 +26,11 @@ export function useEloConvex(filter?: EloFilter): EloData {
 
     // Apply optional filters before ELO computation
     let games = raw;
-    if (filter?.scenarioId) {
-      games = games.filter((g) => g.scenarioId === filter.scenarioId);
+    if (scenarioId) {
+      games = games.filter((g) => g.scenarioId === scenarioId);
     }
-    if (filter?.evalTrack) {
-      games = games.filter((g) => g.evalTrack === filter.evalTrack);
+    if (evalTrack) {
+      games = games.filter((g) => g.evalTrack === evalTrack);
     }
 
     const results: GameResult[] = games.map((g) => {
@@ -85,5 +89,5 @@ export function useEloConvex(filter?: EloFilter): EloData {
       error: null,
       modelScores: Object.keys(modelScores).length > 0 ? modelScores : undefined,
     };
-  }, [raw, filter?.scenarioId, filter?.evalTrack]);
+  }, [raw, scenarioId, evalTrack]);
 }

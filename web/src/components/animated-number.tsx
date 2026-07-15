@@ -26,8 +26,8 @@ export function AnimatedNumber({
 
     if (Math.abs(from - to) < 0.001 || prefersReducedMotion()) {
       displayedRef.current = to;
-      setDisplayed(to);
-      return;
+      frameRef.current = requestAnimationFrame(() => setDisplayed(to));
+      return () => cancelAnimationFrame(frameRef.current);
     }
 
     const start = performance.now();

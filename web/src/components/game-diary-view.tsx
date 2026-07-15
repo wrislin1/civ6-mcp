@@ -70,13 +70,15 @@ export function GameDiaryView({ filename }: GameDiaryViewProps) {
   const isStale = deferredIndex !== index;
 
   // Keep showing the last valid turn data while new data loads,
-  // preventing blank flashes during navigation.
-  const lastCurrentRef = useRef(currentTurnRaw);
-  const lastPrevRef = useRef(prevTurnRaw);
-  if (currentTurnRaw) lastCurrentRef.current = currentTurnRaw;
-  if (prevTurnRaw) lastPrevRef.current = prevTurnRaw;
-  const currentTurn = currentTurnRaw ?? lastCurrentRef.current;
-  const prevTurn = prevTurnRaw ?? lastPrevRef.current;
+  // preventing blank flashes during navigation. State (not refs) so the
+  // fallback participates in rendering; guarded setState-during-render is
+  // the sanctioned "adjust state from previous renders" pattern.
+  const [lastCurrent, setLastCurrent] = useState(currentTurnRaw);
+  const [lastPrev, setLastPrev] = useState(prevTurnRaw);
+  if (currentTurnRaw && currentTurnRaw !== lastCurrent) setLastCurrent(currentTurnRaw);
+  if (prevTurnRaw && prevTurnRaw !== lastPrev) setLastPrev(prevTurnRaw);
+  const currentTurn = currentTurnRaw ?? lastCurrent;
+  const prevTurn = prevTurnRaw ?? lastPrev;
 
   const hasTurns = navTurns.length > 1;
   const isLastTurn = index === maxIdx;

@@ -24,12 +24,10 @@ export function RecentGames() {
   );
 
   useEffect(() => {
-    if (games.length > 0) {
-      setReady(true);
-    } else {
-      const t = setTimeout(() => setReady(true), 500);
-      return () => clearTimeout(t);
-    }
+    // 0ms once games exist (ready is only render-relevant while empty),
+    // 500ms skeleton grace period while the list is still loading.
+    const t = setTimeout(() => setReady(true), games.length > 0 ? 0 : 500);
+    return () => clearTimeout(t);
   }, [games.length]);
 
   if (games.length === 0 && !ready) {

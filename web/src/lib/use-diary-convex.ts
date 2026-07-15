@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -21,8 +21,6 @@ import { slugFromFilename, groupTurnData } from "./diary-types";
  *  like `lastUpdated` change from live game heartbeats. */
 export function useDiaryListConvex(): DiaryFile[] {
   const games = useQuery(api.diary.listGames, {}) ?? [];
-  const prevRef = useRef<DiaryFile[]>([]);
-  const prevFingerprintRef = useRef("");
 
   const mapped = useMemo(
     () =>
@@ -58,12 +56,17 @@ export function useDiaryListConvex(): DiaryFile[] {
       .join("|");
   }, [mapped]);
 
-  if (fingerprint !== prevFingerprintRef.current) {
-    prevFingerprintRef.current = fingerprint;
-    prevRef.current = mapped;
+  // State (not refs) with guarded setState-during-render: the sanctioned
+  // "adjust state from previous renders" pattern, and the stable identity
+  // participates in rendering.
+  const [stable, setStable] = useState<{ fingerprint: string; games: DiaryFile[] }>(
+    { fingerprint: "", games: [] },
+  );
+  if (fingerprint !== stable.fingerprint) {
+    setStable({ fingerprint, games: mapped });
   }
 
-  return prevRef.current;
+  return stable.games;
 }
 
 /** Strip Convex system fields from a document */
