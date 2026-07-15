@@ -2379,6 +2379,33 @@ async def test_seat0_no_replay_while_same_turn_still_active(monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_seat0_degraded_and_backward_polls_do_not_terminalize_or_replay(
+    monkeypatch, tmp_path
+):
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        PuppetState(local=-1, turn=-1, active=False, last=None, seat0_active=False),
+        seat0_poll(6, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-degraded-poll")
+
+    result = await run_arena(
+        conn, FakeGSWithConn(conn), cfg, policy=pol, transcript=sink
+    )
+
+    assert [call[:2] for call in pol.calls] == [(0, 7)]
+    assert result["seat0_turns_played"] == 1
+    assert len(sink.records) == 1
+    assert sink.records[0]["turn"] == 7
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+
+
+@pytest.mark.asyncio
 async def test_seat0_receives_memory_and_task_blocks_for_player_zero(monkeypatch, tmp_path):
     """Regression 1: seat 0 rides the existing standing-memory and task
     pipeline, keyed by player 0 — including pre-model task follow-through."""

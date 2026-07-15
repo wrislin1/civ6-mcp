@@ -47,6 +47,7 @@ class Seat0Poll(StrEnum):
     WAIT = "wait"
     RECHECK = "recheck"
     ADVANCED = "advanced"
+    DEGRADED = "degraded"
 
 
 # Grace polls allowed after an end-turn request before the coordinator is
@@ -125,9 +126,11 @@ class Seat0TurnState:
 
     def observe(self, *, turn: int, seat0_active: bool) -> Seat0Poll:
         """Advance the phase machine for one poll and report what the
-        coordinator should do. Turn-number change always wins first: it is
-        the one authoritative advance signal, independent of local phase."""
-        if turn != self.turn:
+        coordinator should do. A strictly newer turn is the authoritative
+        advance signal, independent of local phase."""
+        if self.turn is None or turn < 0 or turn < self.turn:
+            return Seat0Poll.DEGRADED
+        if turn > self.turn:
             self.phase = Seat0Phase.ADVANCED
             return Seat0Poll.ADVANCED
 

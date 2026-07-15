@@ -35,12 +35,14 @@ print("---END---")
 DISABLE_LUA = '__pt_enabled = false __pt_active = false print("DISABLED|true") print("---END---")'
 
 POLL_LUA = """
-local seat0Active = Players[0] ~= nil and Players[0]:IsTurnActive()
+local seat0OK, seat0Active = pcall(function()
+  return Players[0] ~= nil and Players[0]:IsTurnActive()
+end)
 print("LOCAL|" .. tostring(Game.GetLocalPlayer()))
 print("TURN|" .. tostring(Game.GetCurrentGameTurn()))
 print("ACTIVE|" .. tostring(__pt_active))
 print("LAST|" .. tostring(__pt_last))
-print("SEAT0_ACTIVE|" .. tostring(seat0Active))
+print("SEAT0_ACTIVE|" .. tostring((seat0OK and seat0Active) or false))
 print("---END---")
 """
 

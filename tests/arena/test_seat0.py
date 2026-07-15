@@ -85,6 +85,26 @@ def test_state_distinguishes_ai_processing_from_advance():
     assert state.phase is Seat0Phase.ADVANCED
 
 
+@pytest.mark.parametrize("observed_turn", [-1, 6])
+def test_state_ignores_malformed_or_backward_turn(observed_turn):
+    state = state_after_one_end_request(turn=7)
+
+    assert state.observe(
+        turn=observed_turn, seat0_active=False
+    ) == Seat0Poll.DEGRADED
+    assert state.phase is Seat0Phase.END_FIRED
+    assert state.grace_polls == 0
+    assert state.end_turn_requests == 1
+
+
+def test_state_advances_only_on_strictly_newer_turn_after_degraded_sample():
+    state = state_after_one_end_request(turn=7)
+    assert state.observe(turn=-1, seat0_active=False) == Seat0Poll.DEGRADED
+    assert state.observe(turn=7, seat0_active=False) == Seat0Poll.WAIT
+    assert state.phase is Seat0Phase.AI_PROCESSING
+    assert state.observe(turn=8, seat0_active=True) == Seat0Poll.ADVANCED
+
+
 def test_end_turn_requests_are_bounded_at_three():
     state = Seat0TurnState()
     state.admit(7)

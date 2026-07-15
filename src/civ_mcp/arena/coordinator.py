@@ -571,8 +571,9 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         while deadline_polls > 0 and (admission_open() or seat0_state.needs_drain):
             st = await hook.poll(conn)
             # First observe/finalize an in-flight seat-0 turn (the turn number
-            # is the one authoritative advance signal), then give an actually
-            # captured puppet priority, then consider a new seat-0 admission.
+            # must move strictly forward to signal advance), then give an
+            # actually captured puppet priority, then consider a new seat-0
+            # admission.
             if seat0_state.needs_drain:
                 poll_action = seat0_state.observe(
                     turn=st.turn, seat0_active=st.seat0_active
@@ -590,9 +591,15 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 # WAIT falls through to the quiet drain-wait branch below
                 # (sleep only, no InGame call); a captured puppet is serviced
                 # first if one holds the capture on this poll.
-            captured_puppet = st.active and st.local in puppet_ids and admission_open()
+            captured_puppet = (
+                st.turn >= 0
+                and st.active
+                and st.local in puppet_ids
+                and admission_open()
+            )
             local_seat0 = (
-                seat0_spec is not None
+                st.turn >= 0
+                and seat0_spec is not None
                 and st.local == 0
                 and st.seat0_active
                 and seat0_state.can_admit(turn=st.turn, seat0_active=True)

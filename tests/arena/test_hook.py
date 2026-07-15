@@ -25,6 +25,13 @@ class RecordingConn:
         return ["OK:TURN_ENDED"]
 
 
+def test_poll_lua_guards_seat0_activity_probe():
+    assert "local seat0OK, seat0Active = pcall(function()" in POLL_LUA
+    assert "Players[0] ~= nil and Players[0]:IsTurnActive()" in POLL_LUA
+    assert "tostring((seat0OK and seat0Active) or false)" in POLL_LUA
+    assert POLL_LUA.index("pcall(function()") < POLL_LUA.index('print("LOCAL|"')
+
+
 def test_inject_lua_contains_ids_and_switch():
     lua = build_inject_lua([1, 2])
     assert "SetLocalPlayerAndObserver" in lua
