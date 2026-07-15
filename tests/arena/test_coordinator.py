@@ -4455,3 +4455,33 @@ async def test_seat0_cancel_during_mech_pass_writes_interrupted_record(
     assert len(sink.records) == 1
     assert sink.records[0]["turn"] == 7
     assert sink.records[0]["seat0"]["terminal_state"] == "interrupted"
+
+
+@pytest.mark.asyncio
+async def test_seat0_cancel_during_repair_marks_attempted_in_interrupted_record(
+    monkeypatch, tmp_path
+):
+    """The one-shot repair mutates the record's repair sub-dict in place, so
+    a cancellation mid-repair still shows attempted=true in the interrupted
+    record -- the single repair charge was genuinely spent."""
+    research = _blocker("ENDTURN_BLOCKING_RESEARCH", "Choose research")
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    # Decision blocker survives the mechanical pass -> need_repair fires.
+    harness.blocker_queue = [[research], [research]]
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(
+        harness, [_returned("normal ok"), asyncio.CancelledError()]
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_arena(
+            conn, FakeGSWithConn(conn),
+            _seat0_cfg(tmp_path, run_id="seat0-cancel-repair"),
+            policy=pol, transcript=sink,
+        )
+
+    assert len(sink.records) == 1
+    rec = sink.records[0]
+    assert rec["seat0"]["terminal_state"] == "interrupted"
+    assert rec["seat0"]["repair"]["attempted"] is True
