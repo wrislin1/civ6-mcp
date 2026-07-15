@@ -1986,6 +1986,41 @@ async def test_tampered_snapshot_value_degrades_slept_delta(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_puppet_partial_post_snapshot_state_delta_none(
+    monkeypatch, tmp_path
+):
+    from civ_mcp.arena import coordinator as coord
+
+    before = dict(_ATTN_BASELINE_SNAPSHOT)
+    after = dict(_ATTN_BASELINE_SNAPSHOT)
+    del after["units"]
+    snapshots = iter([before, after])
+
+    async def fake_snapshot(_gs):
+        return next(snapshots)
+
+    monkeypatch.setattr(coord, "_overview_snapshot", fake_snapshot)
+    conn = AttnConn()
+    sink = FakeSink()
+    opts = CivOptions()
+    cfg = ArenaConfig(
+        players=[PlayerSpec(1, "local", "m", options=opts)],
+        max_puppet_turns=1,
+        idle_poll_limit=5,
+        transcript_dir=str(tmp_path),
+        run_id="puppet-partial-after",
+        puppet_ids=[1],
+    )
+
+    result = await run_arena(
+        conn, FakeGSWithConn(conn), cfg, policy=CountingPolicy(opts), transcript=sink
+    )
+
+    assert result["puppet_turns_played"] == 1
+    assert sink.records[-1]["state_delta"] is None
+
+
+@pytest.mark.asyncio
 async def test_corrupt_snapshot_resets_and_wakes_not_aborts(tmp_path):
     """Review-2 finding 1: a dict-shaped but wrong-typed persisted snapshot
     passes load's shape validation and used to explode inside evaluate()'s

@@ -65,9 +65,11 @@ _STATE_DELTA_NUM_FIELDS = ("score", "gold", "science", "culture", "faith", "citi
 
 
 def _state_delta(state_before, state_after):
-    """Numeric before→after delta plus the after-side research/civic strings;
-    None when either snapshot is missing or malformed (unknown delta, degrade
-    not abort — same contract as the inline puppet/slept delta sites)."""
+    """The only transcript delta contract for slept, puppet, and seat-0 records.
+
+    Return numeric before→after deltas plus the after-side research/civic
+    strings, or None when either snapshot is missing or malformed.
+    """
     if state_before is None or state_after is None:
         return None
     try:
@@ -792,24 +794,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         "slept": True, "attention": attention_fields,
                     })
                     if _tx_on:
-                        _num = ("score", "gold", "science", "culture", "faith", "cities", "units")
-                        if prev_snapshot is not None and state_before is not None:
-                            # A partial snapshot in the arena-owned state file
-                            # (dict-shaped but missing a numeric key, or a
-                            # wrong-typed value) means the delta is unknowable
-                            # -- record None, degrade not abort (review catch:
-                            # load validates dict shape, not key presence or
-                            # value types).
-                            try:
-                                state_delta = {
-                                    k: state_before[k] - prev_snapshot[k] for k in _num
-                                }
-                                state_delta["research"] = state_before["research"]
-                                state_delta["civic"] = state_before["civic"]
-                            except (KeyError, TypeError):
-                                state_delta = None
-                        else:
-                            state_delta = None
+                        state_delta = _state_delta(prev_snapshot, state_before)
                         _pol_backend = getattr(pol, "backend", None)
                         transcript.write({
                             "schema_version": 1,
@@ -1335,13 +1320,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 if _tx_on and result.get("transcript"):
                     payload = result["transcript"]
                     steps = payload.get("steps", [])
-                    if state_before is not None and state_after is not None:
-                        _num = ("score", "gold", "science", "culture", "faith", "cities", "units")
-                        state_delta = {k: state_after[k] - state_before[k] for k in _num}
-                        state_delta["research"] = state_after["research"]
-                        state_delta["civic"]    = state_after["civic"]
-                    else:
-                        state_delta = None
+                    state_delta = _state_delta(state_before, state_after)
                     _pol_backend = getattr(pol, "backend", None)
                     record = {
                         **payload,
