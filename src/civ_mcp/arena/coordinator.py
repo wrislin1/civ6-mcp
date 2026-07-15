@@ -474,7 +474,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             if turn_kind == "failed":
                 seat0_failed += 1
 
-        async def _mech_pass(prefix):
+        async def _mech_pass_once(prefix):
             """Query -> mechanical-only cleanup -> requery. A second query is
             issued only when the first found blockers (an empty snapshot cannot
             change under cleanup). Returns (post_blockers, cleanup_records,
@@ -489,6 +489,52 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             else:
                 after = first
             return after, records, snaps, seat0.classify_blockers(after)
+
+        async def _mech_pass(prefix):
+            errors: list[dict] = []
+            for attempt in (1, 2):
+                try:
+                    result = await _mech_pass_once(prefix)
+                    return (*result, errors)
+                except Exception as exc:
+                    errors.append({
+                        "stage": prefix,
+                        "attempt": attempt,
+                        "error": repr(exc),
+                    })
+                    if attempt == 1 and await _reconnect_with_retry(conn):
+                        continue
+
+            blocker = seat0.automation_failure_blocker(
+                prefix, errors[-1]["error"]
+            )
+            blockers = [blocker]
+            snapshots = [{"stage": prefix + "_error", "blockers": blockers}]
+            return (
+                blockers,
+                [],
+                snapshots,
+                seat0.classify_blockers(blockers),
+                errors,
+            )
+
+        async def _fire_seat0_end(record: dict) -> None:
+            seat0_state.mark_end_fired()
+            try:
+                await hook.end_turn(conn)
+            except Exception as exc:
+                error = {
+                    "request": seat0_state.end_turn_requests,
+                    "error": repr(exc),
+                }
+                record["seat0"]["end_turn_errors"].append(error)
+                log.append({
+                    "level": "WARNING",
+                    "event": "seat0_end_turn_uncertain",
+                    "turn": record["turn"],
+                    **error,
+                })
+                await _reconnect_with_retry(conn)
 
         async def _recheck_cleanup_repair_or_refire() -> None:
             """RECHECK: the previous end request did not take (seat 0 still
@@ -509,9 +555,14 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             turn = record["turn"]
             s0 = record["seat0"]
 
-            after_blockers, cleanup_records, snaps, groups = await _mech_pass(
-                "after_refire"
-            )
+            (
+                after_blockers,
+                cleanup_records,
+                snaps,
+                groups,
+                pass_errors,
+            ) = await _mech_pass("after_refire")
+            s0["automation_errors"] = s0["automation_errors"] + pass_errors
             s0["blocker_snapshots"] = s0["blocker_snapshots"] + snaps
             s0["mechanical_cleanup"] = s0["mechanical_cleanup"] + cleanup_records
 
@@ -549,8 +600,15 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)
                 if repair_kwargs is not None and repair_error == "":
-                    after_blockers, rep_cleanup, rep_snaps, groups = await _mech_pass(
-                        "after_repair"
+                    (
+                        after_blockers,
+                        rep_cleanup,
+                        rep_snaps,
+                        groups,
+                        pass_errors,
+                    ) = await _mech_pass("after_repair")
+                    s0["automation_errors"] = (
+                        s0["automation_errors"] + pass_errors
                     )
                     s0["blocker_snapshots"] = s0["blocker_snapshots"] + rep_snaps
                     s0["mechanical_cleanup"] = s0["mechanical_cleanup"] + rep_cleanup
@@ -565,8 +623,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     s0["autosave"]["name"] = anchor.get("name", "")
                 if not admission_open():
                     await disable_hook_for_drain()
-                seat0_state.mark_end_fired()
-                await hook.end_turn(conn)
+                await _fire_seat0_end(record)
             else:
                 # A blocker persists, or the three end requests are spent with
                 # seat 0 still active -> hand the turn to the human. turn_kind is
@@ -962,6 +1019,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
 
                     blocker_snapshots: list = []
                     cleanup_records: list = []
+                    automation_errors: list[dict] = []
                     after_blockers: list = []
                     groups = seat0.classify_blockers([])
                     repair_attempted = False
@@ -974,9 +1032,14 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     if normal_error == "":
                         if exclusive and not conn.is_connected:
                             await _reconnect_with_retry(conn)
-                        after_blockers, cleanup_records, blocker_snapshots, groups = (
-                            await _mech_pass("after_normal")
-                        )
+                        (
+                            after_blockers,
+                            cleanup_records,
+                            blocker_snapshots,
+                            groups,
+                            pass_errors,
+                        ) = await _mech_pass("after_normal")
+                        automation_errors.extend(pass_errors)
 
                     need_repair = (
                         not seat0_state.repair_used
@@ -1018,9 +1081,14 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         if exclusive and not conn.is_connected:
                             await _reconnect_with_retry(conn)
                         if repair_kwargs is not None and repair_error == "":
-                            after_blockers, repair_cleanup, repair_snaps, groups = (
-                                await _mech_pass("after_repair")
-                            )
+                            (
+                                after_blockers,
+                                repair_cleanup,
+                                repair_snaps,
+                                groups,
+                                pass_errors,
+                            ) = await _mech_pass("after_repair")
+                            automation_errors.extend(pass_errors)
                             cleanup_records = cleanup_records + repair_cleanup
                             blocker_snapshots = blocker_snapshots + repair_snaps
 
@@ -1120,6 +1188,8 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                                 },
                                 "blocker_snapshots": blocker_snapshots,
                                 "mechanical_cleanup": cleanup_records,
+                                "automation_errors": list(automation_errors),
+                                "end_turn_errors": [],
                                 "autosave": autosave,
                                 "end_turn_requests": 0,  # refreshed terminally
                                 "terminal_state": "",    # set exactly once
@@ -1149,8 +1219,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                             # still active, before the turn releases into AI.
                             await disable_hook_for_drain()
                         if seat0_state.may_fire_end_turn:
-                            seat0_state.mark_end_fired()
-                            await hook.end_turn(conn)
+                            await _fire_seat0_end(seat0_state.record)
                     else:
                         # HUMAN_PENDING: a hard/inaccessible blocker, a decision
                         # blocker still open after the one repair, or a fully

@@ -179,6 +179,16 @@ class Seat0TurnState:
 # Blocker authority boundary
 # ---------------------------------------------------------------------------
 
+AUTOMATION_FAILURE_TYPE = "ARENA_SEAT0_AUTOMATION_FAILURE"
+
+
+def automation_failure_blocker(stage: str, error: str) -> dict:
+    return {
+        "type": AUTOMATION_FAILURE_TYPE,
+        "message": f"Seat-0 automation failed during {stage}: {error}",
+    }
+
+
 # Closed list: the only blocker types this module ever resolves itself, and
 # only mechanically (finish already-ordered moves; acknowledge a purely
 # informational prompt). Every other type is a strategic choice.

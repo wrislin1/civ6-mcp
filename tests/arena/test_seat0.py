@@ -21,6 +21,7 @@ from civ_mcp.arena.seat0 import (
     Seat0ResumeContext,
     Seat0TurnState,
     apply_mechanical_cleanup,
+    automation_failure_blocker,
     build_blocker_block,
     classify_blockers,
     merge_policy_attempts,
@@ -51,6 +52,18 @@ class ScriptedConn:
         if self._write_queue:
             return self._write_queue.pop(0)
         return []
+
+
+def test_automation_failure_blocker_is_hard():
+    blocker = automation_failure_blocker(
+        "after_normal", "ConnectionError('blocker query unavailable')"
+    )
+
+    groups = classify_blockers([blocker])
+
+    assert groups.mechanical == []
+    assert groups.decision == []
+    assert groups.hard == [blocker]
 
 
 # ---------------------------------------------------------------------------

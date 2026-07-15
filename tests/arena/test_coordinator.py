@@ -4071,3 +4071,96 @@ def test_scripted_policy_identity_is_scripted_seat0_smoke():
     pol = ScriptedPolicy()
     assert pol.provider == "scripted"
     assert pol.model == "seat0-smoke"
+
+
+@pytest.mark.asyncio
+async def test_seat0_transient_mechanical_failure_reconnects_and_continues(
+    monkeypatch, tmp_path
+):
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    calls = 0
+
+    async def flaky_query(_conn):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionError("transient blocker query")
+        return []
+
+    monkeypatch.setattr(seat0_mod, "query_blockers", flaky_query)
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+
+    result = await run_arena(
+        conn,
+        FakeGSWithConn(conn),
+        _seat0_cfg(tmp_path, run_id="seat0-mech-retry"),
+        policy=pol,
+        transcript=sink,
+    )
+
+    assert calls == 2
+    assert result["seat0_turns_played"] == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert "transient blocker query" in sink.records[0]["seat0"]["automation_errors"][0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_permanent_mechanical_failure_records_human_pending(
+    monkeypatch, tmp_path
+):
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+
+    async def broken_query(_conn):
+        raise ConnectionError("blocker query unavailable")
+
+    monkeypatch.setattr(seat0_mod, "query_blockers", broken_query)
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    result = await run_arena(
+        conn,
+        FakeGSWithConn(conn),
+        _seat0_cfg(tmp_path, run_id="seat0-mech-hard", idle_poll_limit=3),
+        policy=Seat0ScriptPolicy(harness, [_returned("normal ok")]),
+        transcript=sink,
+    )
+
+    assert result["seat0_human_pending"] == 1
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "human_pending"
+    assert len(sink.records[0]["seat0"]["automation_errors"]) == 2
+    assert "end_turn" not in harness.names()
+
+
+@pytest.mark.asyncio
+async def test_seat0_end_request_exception_keeps_polling_to_advance(
+    monkeypatch, tmp_path
+):
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(8, active=True),
+    ])
+
+    async def uncertain_end(_conn):
+        harness.events.append(("end_turn",))
+        raise ConnectionError("response lost after dispatch")
+
+    monkeypatch.setattr(hook_mod, "end_turn", uncertain_end)
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    result = await run_arena(
+        conn,
+        FakeGSWithConn(conn),
+        _seat0_cfg(tmp_path, run_id="seat0-end-uncertain"),
+        policy=Seat0ScriptPolicy(harness, [_returned("normal ok")]),
+        transcript=sink,
+    )
+
+    assert result["seat0_turns_played"] == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert "response lost after dispatch" in sink.records[0]["seat0"]["end_turn_errors"][0]["error"]
