@@ -2656,6 +2656,41 @@ async def test_seat0_units_blocker_finishes_once_per_mechanical_pass(
 
 
 @pytest.mark.asyncio
+async def test_seat0_policy_without_blocker_kwarg_is_not_called_unfocused(
+    monkeypatch, tmp_path
+):
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    harness.blocker_queue = [[_RESEARCH], [_RESEARCH]]
+    sink = EventSink(harness)
+
+    class LegacyPolicy:
+        provider = "local"
+        model = "legacy"
+        options = CivOptions()
+
+        def __init__(self):
+            self.calls = 0
+
+        async def __call__(self, gs, player_id, turn):
+            self.calls += 1
+            return {"summary": "normal returned", "actions": []}
+
+    pol = LegacyPolicy()
+    result = await run_arena(
+        FakeConn(),
+        FakeGS(),
+        _seat0_cfg(tmp_path, run_id="seat0-legacy-repair", idle_poll_limit=3),
+        policy=pol,
+        transcript=sink,
+    )
+
+    assert pol.calls == 1
+    assert result["seat0_human_pending"] == 1
+    assert sink.records[0]["seat0"]["repair"]["attempted"] is False
+    assert "required blocker_block keyword" in sink.records[0]["seat0"]["repair"]["error"]
+
+
+@pytest.mark.asyncio
 async def test_seat0_decision_blocker_triggers_one_repair(monkeypatch, tmp_path):
     """RESEARCH -> RESEARCH -> []: normal returns, mechanical cleanup does not
     choose a tech, and the second query drives a single focused repair that

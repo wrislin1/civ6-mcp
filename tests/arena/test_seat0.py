@@ -18,6 +18,7 @@ from civ_mcp.arena.seat0 import (
     BlockerGroups,
     Seat0Phase,
     Seat0Poll,
+    Seat0ResumeContext,
     Seat0TurnState,
     apply_mechanical_cleanup,
     build_blocker_block,
@@ -179,6 +180,18 @@ def test_reset_returns_to_ready_for_next_admission():
     assert state.repair_used is False
     assert state.critical_emitted is False
     assert state.can_admit(turn=8, seat0_active=True)
+
+
+def test_reset_clears_typed_resume_context():
+    state = state_after_one_end_request(turn=7)
+    state.resume_context = Seat0ResumeContext(
+        policy=object(), caps={"government": True}, exclusive=True
+    )
+    state.observe(turn=8, seat0_active=True)
+
+    state.reset()
+
+    assert state.resume_context is None
 
 
 def test_critical_emitted_marker_fires_exactly_once():

@@ -59,6 +59,13 @@ _GRACE_POLL_LIMIT = 5
 _MAX_END_TURN_REQUESTS = 3
 
 
+@dataclass(frozen=True)
+class Seat0ResumeContext:
+    policy: object
+    caps: dict | None
+    exclusive: bool
+
+
 @dataclass
 class Seat0TurnState:
     """Per-turn phase machine for one admitted seat-0 turn.
@@ -77,6 +84,7 @@ class Seat0TurnState:
     critical_emitted: bool = False
     record: dict | None = None
     record_written: bool = False
+    resume_context: Seat0ResumeContext | None = None
 
     def can_admit(self, *, turn: int, seat0_active: bool) -> bool:
         return self.phase is Seat0Phase.READY and seat0_active
@@ -164,6 +172,7 @@ class Seat0TurnState:
         self.critical_emitted = False
         self.record = None
         self.record_written = False
+        self.resume_context = None
 
 
 # ---------------------------------------------------------------------------

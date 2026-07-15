@@ -348,6 +348,15 @@ def _policy_accepts_kwarg(policy, name: str) -> bool:
     )
 
 
+def _repair_kwargs(policy, blocker_block: str, caps: dict | None) -> dict | None:
+    if not _policy_accepts_kwarg(policy, "blocker_block"):
+        return None
+    kwargs = {"blocker_block": blocker_block}
+    if caps is not None and _policy_accepts_kwarg(policy, "caps"):
+        kwargs["caps"] = caps
+    return kwargs
+
+
 async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=None) -> dict:
     # Validate at entry so programmatic callers cannot bypass the YAML/CLI
     # boundary checks (seat 0 in puppet_ids, unknown/duplicate seats, seat-0
@@ -458,12 +467,6 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             if turn_kind == "failed":
                 seat0_failed += 1
 
-        # Resume context for a RECHECK after an unsuccessful end request: the
-        # in-flight turn's locals are gone once the played branch `continue`s,
-        # so the policy / caps / exclusive flag it needs to re-fire or repair
-        # are carried here. Set by the played branch, read by the RECHECK path.
-        seat0_ctx: dict | None = None
-
         async def _mech_pass(prefix):
             """Query -> mechanical-only cleanup -> requery. A second query is
             issued only when the first found blockers (an empty snapshot cannot
@@ -489,13 +492,15 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             human_pending when a blocker persists or the three-request budget
             is spent. Seat 0 is local+active throughout (observe only returns
             RECHECK while active), so the InGame work here is legal."""
+            ctx = seat0_state.resume_context
+            if ctx is None:
+                raise RuntimeError("seat-0 recheck missing resume context")
+            pol = ctx.policy
+            caps_kwarg = ctx.caps
+            exclusive = ctx.exclusive
             record = seat0_state.record
             turn = record["turn"]
             s0 = record["seat0"]
-            ctx = seat0_ctx or {}
-            pol = ctx.get("pol") or policy_for(0)
-            caps_kwarg = ctx.get("caps")
-            exclusive = bool(ctx.get("exclusive"))
 
             after_blockers, cleanup_records, snaps, groups = await _mech_pass(
                 "after_refire"
@@ -513,28 +518,30 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 # spend the one-shot repair on it. No prior-error line -- the
                 # end request did not raise, the engine simply did not advance.
                 blocker_block = seat0.build_blocker_block(after_blockers)
-                repair_kwargs = {"blocker_block": blocker_block}
-                if caps_kwarg is not None:
-                    repair_kwargs["caps"] = caps_kwarg
                 seat0_state.repair_used = True
-                s0["repair"]["attempted"] = True
-                if exclusive and conn.is_connected:
-                    await conn.disconnect()   # repair owns the tuner
-                try:
-                    repair_result = await pol(gs, 0, turn, **repair_kwargs)
-                    s0["repair"]["completed"] = True
-                    s0["repair"]["summary"] = (repair_result or {}).get("summary", "")
-                except Exception as e:
-                    repair_error = repr(e)
+                repair_kwargs = _repair_kwargs(pol, blocker_block, caps_kwarg)
+                if repair_kwargs is None:
+                    repair_error = "policy does not accept required blocker_block keyword"
                     s0["repair"]["error"] = repair_error
-                    print(f"[arena] seat-0 turn {turn} recheck repair failed: {e!r}",
-                          file=sys.stderr)
-                    log.append({"turn": turn, "player_id": 0,
-                                "skipped": True, "repair_error": repair_error})
+                else:
+                    s0["repair"]["attempted"] = True
+                    if exclusive and conn.is_connected:
+                        await conn.disconnect()   # repair owns the tuner
+                    try:
+                        repair_result = await pol(gs, 0, turn, **repair_kwargs)
+                        s0["repair"]["completed"] = True
+                        s0["repair"]["summary"] = (repair_result or {}).get("summary", "")
+                    except Exception as e:
+                        repair_error = repr(e)
+                        s0["repair"]["error"] = repair_error
+                        print(f"[arena] seat-0 turn {turn} recheck repair failed: {e!r}",
+                              file=sys.stderr)
+                        log.append({"turn": turn, "player_id": 0,
+                                    "skipped": True, "repair_error": repair_error})
                 # Reclaim regardless of outcome (post-repair query / drain need it).
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)
-                if repair_error == "":
+                if repair_kwargs is not None and repair_error == "":
                     after_blockers, rep_cleanup, rep_snaps, groups = await _mech_pass(
                         "after_repair"
                     )
@@ -973,29 +980,37 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         blocker_block = seat0.build_blocker_block(
                             after_blockers, prior_error=normal_error_msg
                         )
-                        repair_kwargs = {"blocker_block": blocker_block}
-                        if caps_kwarg is not None:
-                            repair_kwargs["caps"] = caps_kwarg
                         # Set BEFORE awaiting so a cancellation/exception can
                         # never permit a second repair.
                         seat0_state.repair_used = True
-                        repair_attempted = True
-                        if exclusive and conn.is_connected:
-                            await conn.disconnect()   # repair owns the tuner
-                        try:
-                            repair_result = await pol(gs, 0, st.turn, **repair_kwargs)
-                        except Exception as e:
-                            repair_error = repr(e)
-                            print(f"[arena] seat-0 turn {st.turn} repair failed: {e!r}",
-                                  file=sys.stderr)
-                            log.append({"turn": st.turn, "player_id": 0,
-                                        "skipped": True, "repair_error": repair_error})
+                        repair_kwargs = _repair_kwargs(pol, blocker_block, caps_kwarg)
+                        if repair_kwargs is None:
+                            repair_error = (
+                                "policy does not accept required blocker_block keyword"
+                            )
+                        else:
+                            repair_attempted = True
+                            if exclusive and conn.is_connected:
+                                await conn.disconnect()   # repair owns the tuner
+                            try:
+                                repair_result = await pol(
+                                    gs, 0, st.turn, **repair_kwargs
+                                )
+                            except Exception as e:
+                                repair_error = repr(e)
+                                print(
+                                    f"[arena] seat-0 turn {st.turn} repair failed: {e!r}",
+                                    file=sys.stderr,
+                                )
+                                log.append({"turn": st.turn, "player_id": 0,
+                                            "skipped": True,
+                                            "repair_error": repair_error})
                         # Reclaim the tuner regardless of outcome: the post-repair
                         # mechanical pass (on success) and the human-pending drain
                         # (on failure) both need a live GameCore/InGame connection.
                         if exclusive and not conn.is_connected:
                             await _reconnect_with_retry(conn)
-                        if repair_error == "":
+                        if repair_kwargs is not None and repair_error == "":
                             after_blockers, repair_cleanup, repair_snaps, groups = (
                                 await _mech_pass("after_repair")
                             )
@@ -1117,9 +1132,11 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                             {"name": anchor.get("name", ""), "attempts": autosave_attempts}
                         )
                         # Carry the resume context for a possible RECHECK re-fire.
-                        seat0_ctx = {
-                            "pol": pol, "caps": caps_kwarg, "exclusive": exclusive,
-                        }
+                        seat0_state.resume_context = seat0.Seat0ResumeContext(
+                            policy=pol,
+                            caps=caps_kwarg,
+                            exclusive=exclusive,
+                        )
                         if not admission_open():
                             # Final admission: disable the hook while seat 0 is
                             # still active, before the turn releases into AI.
