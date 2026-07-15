@@ -28,7 +28,11 @@ STANDING_PLAN_CHARS_PER_EXTRA_TASK = 120
 
 CLI_PROVIDER_COMMANDS = {"cli-claude": "claude", "cli-codex": "codex"}
 _CLI_PROVIDERS = set(CLI_PROVIDER_COMMANDS)
-_VALID_PROVIDERS = {"local"} | _CLI_PROVIDERS
+# `scripted` is a test-only provider (Task 9): it selects the deterministic
+# no-LLM ScriptedPolicy for that seat, needs no backend/CLI/tuner handoff, and
+# makes the mixed stage-1 live gate reproducible.
+_SCRIPTED_PROVIDER = "scripted"
+_VALID_PROVIDERS = {"local", _SCRIPTED_PROVIDER} | _CLI_PROVIDERS
 
 @dataclass(frozen=True)
 class BriefingOptions:
@@ -137,12 +141,14 @@ class CivOptions:
 @dataclass(frozen=True)
 class PlayerSpec:
     player_id: int
-    provider: str  # "local" | "cli-claude" | "cli-codex"
+    provider: str  # "local" | "cli-claude" | "cli-codex" | "scripted" (test-only)
     model: str
     gateway: str = ""  # optional per-civ gateway override (in-process local civs only)
     options: CivOptions = field(default_factory=CivOptions)
 
     def driver_kind(self) -> str:
+        if self.provider == _SCRIPTED_PROVIDER:
+            return "scripted"
         return "cli" if self.provider in _CLI_PROVIDERS else "in_process"
 
 def parse_player_spec(s: str) -> PlayerSpec:

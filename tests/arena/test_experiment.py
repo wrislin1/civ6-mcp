@@ -10,6 +10,8 @@ from civ_mcp.arena.registry import resolve_tools
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SLICE1_GEMMA_STRATEGY_AB = REPO_ROOT / "experiments" / "gemma-strategy-ab-slice1.yaml"
 SLICE3_BEHAVIOR_3LLM = REPO_ROOT / "experiments" / "arena-behavior-3llm-slice3.yaml"
+SEAT0_SCRIPTED_SMOKE = REPO_ROOT / "experiments" / "arena-seat0-scripted-smoke.yaml"
+SEAT0_LLM_SMOKE = REPO_ROOT / "experiments" / "arena-seat0-llm-smoke.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -968,3 +970,120 @@ civs:
     attention:
       mode: hybrid
 """)
+
+
+# ---------------------------------------------------------------------------
+# Task 9 — scripted provider parsing, local-knob rejection, live artifacts
+# ---------------------------------------------------------------------------
+
+
+def test_scripted_provider_parses(tmp_path):
+    """`provider: scripted` is a valid seat-0 spec; it carries only the shared
+    behaviour knobs (no local-only knobs) and reports its own driver kind."""
+    cfg = _load(tmp_path, """
+run_id: t1
+civs:
+  - player: 0
+    provider: scripted
+    model: seat0-smoke
+    attention: {mode: "off"}
+  - {player: 1, provider: local, model: m}
+""")
+    seat0 = next(p for p in cfg.players if p.player_id == 0)
+    assert seat0.provider == "scripted"
+    assert seat0.model == "seat0-smoke"
+    assert seat0.driver_kind() == "scripted"
+    assert seat0.options == CivOptions()  # shared knobs defaulted, no local knobs
+
+
+@pytest.mark.parametrize(
+    "knob",
+    [
+        "tools: full",
+        "max_steps: 8",
+        "result_char_cap: 6000",
+        "gateway: http://gw:11440/v1",
+    ],
+)
+def test_scripted_rejects_local_only_knobs(tmp_path, knob):
+    """A scripted civ never uses gateway/tools/max_steps/result_char_cap;
+    experiment.py restricts those to local civs."""
+    with pytest.raises(ValueError, match="scripted"):
+        _load(tmp_path, f"""
+run_id: t1
+civs:
+  - player: 0
+    provider: scripted
+    model: seat0-smoke
+    {knob}
+  - {{player: 1, provider: local, model: m}}
+""")
+
+
+def test_scripted_bare_off_attention_rejected(tmp_path):
+    """YAML trap: bare `off` is PyYAML boolean False; _parse_attention rejects
+    a non-string mode, so the quote is load-bearing."""
+    with pytest.raises(ValueError, match="attention.mode"):
+        _load(tmp_path, """
+run_id: t1
+civs:
+  - player: 0
+    provider: scripted
+    model: seat0-smoke
+    attention: {mode: off}
+  - {player: 1, provider: local, model: m}
+""")
+
+
+def test_loads_seat0_scripted_smoke_artifact():
+    """The checked-in stage-1 live config parses exactly as specified, with no
+    baked run_id."""
+    cfg = load_experiment(SEAT0_SCRIPTED_SMOKE)
+    assert cfg.max_puppet_turns == 24
+    assert cfg.max_game_turns == 24
+    assert cfg.idle_poll_limit == 600
+    assert cfg.gateway_url == "http://192.168.20.196:11444/v1"
+    assert cfg.run_id == ""  # supplied per live command, never baked in
+
+    seat0 = next(p for p in cfg.players if p.player_id == 0)
+    assert seat0.provider == "scripted"
+    assert seat0.model == "seat0-smoke"
+    assert seat0.driver_kind() == "scripted"
+    assert seat0.options.attention.mode == "off"
+
+    puppets = [p for p in cfg.players if p.player_id != 0]
+    assert {p.player_id for p in puppets} == {1, 2}
+    for p in puppets:
+        assert p.provider == "local"
+        assert p.model == "gemma4-26b"
+        assert p.gateway == "http://192.168.20.196:11440/v1"
+        assert p.options.tools == "full"
+        assert p.options.max_steps == 8
+        assert p.options.attention.mode == "off"
+    assert cfg.puppet_ids == [1, 2]
+
+
+def test_loads_seat0_llm_smoke_artifact():
+    """The checked-in stage-2 live config swaps seat 0 to cli-claude and widens
+    the shared budgets to 36; the two local puppets are unchanged."""
+    cfg = load_experiment(SEAT0_LLM_SMOKE)
+    assert cfg.max_puppet_turns == 36
+    assert cfg.max_game_turns == 36
+    assert cfg.idle_poll_limit == 600
+    assert cfg.gateway_url == "http://192.168.20.196:11444/v1"
+    assert cfg.run_id == ""
+
+    seat0 = next(p for p in cfg.players if p.player_id == 0)
+    assert seat0.provider == "cli-claude"
+    assert seat0.model == ""
+    assert seat0.driver_kind() == "cli"
+    assert seat0.options.attention.mode == "off"
+
+    puppets = [p for p in cfg.players if p.player_id != 0]
+    assert {p.player_id for p in puppets} == {1, 2}
+    for p in puppets:
+        assert p.provider == "local"
+        assert p.model == "gemma4-26b"
+        assert p.gateway == "http://192.168.20.196:11440/v1"
+        assert p.options.max_steps == 8
+    assert cfg.puppet_ids == [1, 2]

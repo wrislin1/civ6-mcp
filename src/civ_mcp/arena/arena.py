@@ -22,6 +22,12 @@ def build_policies(specs, cost, cfg):
     from civ_mcp.arena.agent import LLMPolicy
     policies, local_backends = {}, []
     for spec in specs:
+        if spec.driver_kind() == "scripted":
+            # Test-only provider (Task 9): the deterministic no-LLM policy for
+            # this seat only. No backend, cost preflight, CLI check, or exclusive
+            # tuner handoff — the nonzero seats below stay real local/CLI policies.
+            policies[spec.player_id] = ScriptedPolicy()
+            continue
         if spec.driver_kind() == "cli":
             policies[spec.player_id] = CLIAgentPolicy(
                 spec.provider, cost, project_dir=os.getcwd(), model=spec.model, options=spec.options)

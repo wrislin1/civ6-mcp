@@ -3487,3 +3487,370 @@ async def test_seat0_exclusive_repair_brackets_disconnect_reconnect(monkeypatch,
     ]
     assert result["seat0_turns_played"] == 1
     assert harness.names().count("end_turn") == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 9 — ScriptedPolicy normal/repair determinism (test-only provider)
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedGS:
+    """Records every GameState call ScriptedPolicy makes and serves canned
+    tech/civic/city/production data. Any read/action can be made to raise by
+    adding its key to `raise_on`, so the exception-into-summary contract is
+    exercised without a live game."""
+
+    def __init__(self, *, techs=None, civics=None, cities=None, production=None):
+        self.overview_calls = 0
+        self.units_calls = 0
+        self.skipped: list[int] = []
+        self.research_set: list[str] = []
+        self.civic_set: list[str] = []
+        self.production_set: list[tuple] = []
+        self.listed: list[int] = []
+        self._techs = list(techs or [])
+        self._civics = list(civics or [])
+        self._cities = list(cities or [])
+        self._production = dict(production or {})   # city_id -> [ProductionOption]
+        self.raise_on: set[str] = set()
+
+    async def get_game_overview(self):
+        self.overview_calls += 1
+        if "overview" in self.raise_on:
+            raise RuntimeError("overview boom")
+        return "OV"
+
+    async def get_units(self):
+        self.units_calls += 1
+        return []
+
+    async def skip_unit(self, i):
+        self.skipped.append(i)
+        return "SKIP"
+
+    async def get_tech_civics(self):
+        if "tech_civics" in self.raise_on:
+            raise RuntimeError("tech_civics boom")
+        return lq.TechCivicStatus(
+            current_research="", current_research_turns=0,
+            current_civic="", current_civic_turns=0,
+            available_techs=list(self._techs),
+            available_civics=list(self._civics),
+        )
+
+    async def get_cities(self):
+        if "cities" in self.raise_on:
+            raise RuntimeError("cities boom")
+        return list(self._cities), []
+
+    async def list_city_production(self, city_id):
+        self.listed.append(city_id)
+        if "list" in self.raise_on:
+            raise RuntimeError("list boom")
+        return list(self._production.get(city_id, []))
+
+    async def set_research(self, tech):
+        if "set_research" in self.raise_on:
+            raise RuntimeError("set_research boom")
+        self.research_set.append(tech)
+        return f"RESEARCHING|{tech}"
+
+    async def set_civic(self, civic):
+        if "set_civic" in self.raise_on:
+            raise RuntimeError("set_civic boom")
+        self.civic_set.append(civic)
+        return f"PROGRESSING|{civic}"
+
+    async def set_city_production(self, city_id, item_type, item_name,
+                                  target_x=None, target_y=None):
+        if "set_prod" in self.raise_on:
+            raise RuntimeError("set_prod boom")
+        self.production_set.append((city_id, item_type, item_name, target_x, target_y))
+        return f"PRODUCING|{item_name}"
+
+
+def _tech(tech_type, turns):
+    return lq.TechOption(name=tech_type, tech_type=tech_type, cost=0, progress_pct=0,
+                         turns=turns, boosted=False, boost_desc="", unlocks="")
+
+
+def _civic_opt(civic_type, turns):
+    return lq.CivicOption(name=civic_type, civic_type=civic_type, cost=0, progress_pct=0,
+                          turns=turns, boosted=False, boost_desc="")
+
+
+def _prod(category, item_name, turns=5, *, is_repair=False, repair_x=None, repair_y=None):
+    return lq.ProductionOption(category=category, item_name=item_name, cost=0, turns=turns,
+                               gold_cost=-1, is_repair=is_repair,
+                               repair_x=repair_x, repair_y=repair_y)
+
+
+def _prod_city(city_id, building="NONE"):
+    return lq.CityInfo(
+        city_id=city_id, name=f"C{city_id}", x=0, y=0, population=1,
+        food=0.0, production=0.0, gold=0.0, science=0.0, culture=0.0, faith=0.0,
+        housing=0.0, amenities=0, turns_to_grow=0, currently_building=building,
+    )
+
+
+def _prod_block(*types):
+    return seat0_mod.build_blocker_block([_blocker(t, f"choose {t}") for t in types])
+
+
+_ALLOWED_TOOLS = {"skip_unit", "set_research", "set_civic", "set_city_production"}
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_observes_and_skips_without_strategic_choice():
+    """NORMAL call (no blocker_block): observe overview + units, skip unit 0,
+    and choose NO research/production so the probe blocker survives."""
+    gs = _ScriptedGS(
+        techs=[_tech("TECHNOLOGY_MINING", 3)],
+        cities=[_prod_city(1)],
+        production={1: [_prod("BUILDING", "BUILDING_MONUMENT")]},
+    )
+    result = await ScriptedPolicy()(gs, 0, 7)
+    assert gs.overview_calls == 1 and gs.units_calls == 1
+    assert gs.skipped == [0]
+    assert gs.research_set == [] and gs.civic_set == [] and gs.production_set == []
+    assert result["actions"] == [{"tool": "skip_unit"}]
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_ignores_injected_kwargs():
+    """The seat-0 NORMAL path passes memory/task/caps kwargs; ScriptedPolicy
+    absorbs them (signature-gated at the coordinator) and still chooses
+    nothing strategic."""
+    gs = _ScriptedGS()
+    result = await ScriptedPolicy()(
+        gs, 0, 7, memory_block="m", task_block="t", digest_block="d",
+        caps={"government": True},
+    )
+    assert result["actions"] == [{"tool": "skip_unit"}]
+    assert gs.research_set == [] and gs.production_set == []
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_skip_failure_reported_not_raised():
+    class _NoUnitGS(_ScriptedGS):
+        async def skip_unit(self, i):
+            raise RuntimeError("no unit 0")
+
+    gs = _NoUnitGS()
+    result = await ScriptedPolicy()(gs, 0, 7)
+    assert "skip failed" in result["summary"]
+    assert result["actions"] == []
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_research_min_turns_then_type_name():
+    """RESEARCH blocker: pick the available tech with key (turns, tech_type)."""
+    gs = _ScriptedGS(techs=[
+        _tech("TECHNOLOGY_POTTERY", 4),
+        _tech("TECHNOLOGY_MINING", 3),
+        _tech("TECHNOLOGY_ANIMAL_HUSBANDRY", 3),  # tie on turns → min type name wins
+    ])
+    result = await ScriptedPolicy()(gs, 0, 7,
+                                    blocker_block=_prod_block("ENDTURN_BLOCKING_RESEARCH"))
+    assert gs.research_set == ["TECHNOLOGY_ANIMAL_HUSBANDRY"]
+    assert gs.civic_set == [] and gs.production_set == []
+    tools = {a["tool"] for a in result["actions"]}
+    assert tools == {"set_research"} and tools <= _ALLOWED_TOOLS
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_civic_only_when_named():
+    """CIVIC blocker resolves a civic via set_civic; research untouched."""
+    gs = _ScriptedGS(civics=[
+        _civic_opt("CIVIC_CODE_OF_LAWS", 5),
+        _civic_opt("CIVIC_CRAFTSMANSHIP", 4),
+    ])
+    await ScriptedPolicy()(gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_CIVIC"))
+    assert gs.civic_set == ["CIVIC_CRAFTSMANSHIP"]  # min turns
+    assert gs.research_set == []
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_research_and_civic_share_one_fetch():
+    gs = _ScriptedGS(
+        techs=[_tech("TECHNOLOGY_MINING", 3)],
+        civics=[_civic_opt("CIVIC_CRAFTSMANSHIP", 2)],
+    )
+    await ScriptedPolicy()(
+        gs, 0, 7,
+        blocker_block=_prod_block("ENDTURN_BLOCKING_RESEARCH", "ENDTURN_BLOCKING_CIVIC"),
+    )
+    assert gs.research_set == ["TECHNOLOGY_MINING"]
+    assert gs.civic_set == ["CIVIC_CRAFTSMANSHIP"]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_production_prefers_named_over_cheaper_fallback():
+    gs = _ScriptedGS(
+        cities=[_prod_city(1, "NONE")],
+        production={1: [
+            _prod("BUILDING", "BUILDING_LIBRARY", turns=2),   # cheaper by turns
+            _prod("BUILDING", "BUILDING_MONUMENT", turns=6),  # named-preferred wins
+            _prod("UNIT", "UNIT_WARRIOR", turns=3),
+        ]},
+    )
+    await ScriptedPolicy()(gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"))
+    assert gs.listed == [1]
+    assert gs.production_set == [(1, "BUILDING", "BUILDING_MONUMENT", None, None)]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_production_named_priority_order():
+    """Monument > Granary > Scout > Warrior when several are available."""
+    gs = _ScriptedGS(
+        cities=[_prod_city(1, "NONE")],
+        production={1: [
+            _prod("UNIT", "UNIT_WARRIOR"),
+            _prod("BUILDING", "BUILDING_GRANARY"),
+            _prod("UNIT", "UNIT_SCOUT"),
+        ]},
+    )
+    await ScriptedPolicy()(gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"))
+    assert gs.production_set == [(1, "BUILDING", "BUILDING_GRANARY", None, None)]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_production_prefers_repair_over_named():
+    """A pillaged-district repair carries its own coords and outranks Monument."""
+    gs = _ScriptedGS(
+        cities=[_prod_city(1, "NONE")],
+        production={1: [
+            _prod("BUILDING", "BUILDING_MONUMENT", turns=6),
+            _prod("DISTRICT", "DISTRICT_CAMPUS", turns=4,
+                  is_repair=True, repair_x=5, repair_y=6),
+        ]},
+    )
+    await ScriptedPolicy()(gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"))
+    assert gs.production_set == [(1, "DISTRICT", "DISTRICT_CAMPUS", 5, 6)]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_production_never_selects_tile_district_or_project():
+    """A new district needs a policy-chosen tile and a project is not a build;
+    both are skipped. Only the tile-free option is chosen, with NO target."""
+    gs = _ScriptedGS(
+        cities=[_prod_city(1, "NONE")],
+        production={1: [
+            _prod("DISTRICT", "DISTRICT_CAMPUS", turns=1),    # needs a tile target
+            _prod("PROJECT", "PROJECT_MANHATTAN", turns=1),   # not a tile-free build
+            _prod("UNIT", "UNIT_SCOUT", turns=9),             # tile-free
+        ]},
+    )
+    await ScriptedPolicy()(gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"))
+    assert gs.production_set == [(1, "UNIT", "UNIT_SCOUT", None, None)]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_production_fallback_by_turns_then_name():
+    """With no named item present, fall back to (turns, item_name) among
+    UNIT/BUILDING options only."""
+    gs = _ScriptedGS(
+        cities=[_prod_city(1, "NONE")],
+        production={1: [
+            _prod("BUILDING", "BUILDING_WATER_MILL", turns=5),
+            _prod("BUILDING", "BUILDING_LIBRARY", turns=5),   # tie → LIBRARY < WATER_MILL
+            _prod("UNIT", "UNIT_SLINGER", turns=8),
+            _prod("DISTRICT", "DISTRICT_CAMPUS", turns=1),    # excluded (needs tile)
+        ]},
+    )
+    await ScriptedPolicy()(gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"))
+    assert gs.production_set == [(1, "BUILDING", "BUILDING_LIBRARY", None, None)]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_production_only_empty_queue_cities():
+    gs = _ScriptedGS(
+        cities=[_prod_city(1, "BUILDING_MONUMENT"), _prod_city(2, "NONE")],
+        production={2: [_prod("BUILDING", "BUILDING_GRANARY", turns=4)]},
+    )
+    await ScriptedPolicy()(gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"))
+    assert gs.listed == [2]  # the busy city is never queried
+    assert gs.production_set == [(2, "BUILDING", "BUILDING_GRANARY", None, None)]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_resolves_only_named_blockers():
+    """Only production is named → tech/civic are left untouched even though
+    available data exists (so an unnamed blocker is never silently resolved)."""
+    gs = _ScriptedGS(
+        techs=[_tech("TECHNOLOGY_MINING", 1)],
+        civics=[_civic_opt("CIVIC_CODE_OF_LAWS", 1)],
+        cities=[_prod_city(1, "NONE")],
+        production={1: [_prod("BUILDING", "BUILDING_MONUMENT", turns=6)]},
+    )
+    await ScriptedPolicy()(gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"))
+    assert gs.production_set == [(1, "BUILDING", "BUILDING_MONUMENT", None, None)]
+    assert gs.research_set == [] and gs.civic_set == []
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_unimplemented_blocker_returns_without_clearing():
+    """A strategic blocker with no scripted resolver leaves game state
+    untouched, so the coordinator correctly reaches human_pending after the
+    single repair."""
+    gs = _ScriptedGS(
+        techs=[_tech("TECHNOLOGY_MINING", 1)],
+        cities=[_prod_city(1, "NONE")],
+        production={1: [_prod("BUILDING", "BUILDING_MONUMENT")]},
+    )
+    result = await ScriptedPolicy()(
+        gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT"),
+    )
+    assert gs.research_set == [] and gs.civic_set == [] and gs.production_set == []
+    assert gs.listed == []
+    assert result["actions"] == []
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_catches_read_exception_into_summary():
+    gs = _ScriptedGS()
+    gs.raise_on.add("tech_civics")
+    result = await ScriptedPolicy()(gs, 0, 7,
+                                    blocker_block=_prod_block("ENDTURN_BLOCKING_RESEARCH"))
+    assert "error" in result["summary"].lower()
+    assert gs.research_set == []  # no partial write, no raise into the coordinator
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_catches_action_exception_into_summary():
+    gs = _ScriptedGS(cities=[_prod_city(1, "NONE")],
+                     production={1: [_prod("BUILDING", "BUILDING_MONUMENT")]})
+    gs.raise_on.add("set_prod")
+    result = await ScriptedPolicy()(gs, 0, 7,
+                                    blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"))
+    assert "error" in result["summary"].lower()
+    assert result["actions"] == []
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_actions_stay_within_allowed_tools():
+    """The repair never emits an end-turn (or any other) tool — only the
+    deterministic research/civic/production choices."""
+    gs = _ScriptedGS(
+        techs=[_tech("TECHNOLOGY_MINING", 1)],
+        civics=[_civic_opt("CIVIC_CRAFTSMANSHIP", 1)],
+        cities=[_prod_city(1, "NONE")],
+        production={1: [_prod("BUILDING", "BUILDING_MONUMENT")]},
+    )
+    result = await ScriptedPolicy()(
+        gs, 0, 7,
+        blocker_block=_prod_block(
+            "ENDTURN_BLOCKING_RESEARCH",
+            "ENDTURN_BLOCKING_CIVIC",
+            "ENDTURN_BLOCKING_PRODUCTION",
+        ),
+    )
+    tools = {a["tool"] for a in result["actions"]}
+    assert tools == {"set_research", "set_civic", "set_city_production"}
+    assert tools <= _ALLOWED_TOOLS
+
+
+def test_scripted_policy_identity_is_scripted_seat0_smoke():
+    pol = ScriptedPolicy()
+    assert pol.provider == "scripted"
+    assert pol.model == "seat0-smoke"

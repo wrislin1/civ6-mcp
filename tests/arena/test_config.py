@@ -51,6 +51,20 @@ def test_cli_codex_model_optional():
     assert s == PlayerSpec(2, "cli-codex", "gpt-5.5")
     assert s.driver_kind() == "cli"
 
+
+def test_parse_player_spec_scripted():
+    """Task 9: the test-only `scripted` provider parses and reports its own
+    driver kind (neither cli nor in_process)."""
+    s = parse_player_spec("0:scripted:seat0-smoke")
+    assert s == PlayerSpec(0, "scripted", "seat0-smoke")
+    assert s.driver_kind() == "scripted"
+
+
+def test_parse_player_spec_scripted_empty_model():
+    s = parse_player_spec("0:scripted:")
+    assert s == PlayerSpec(0, "scripted", "")
+    assert s.driver_kind() == "scripted"
+
 def test_rejects_unknown_provider():
     with pytest.raises(ValueError):
         parse_player_spec("1:typo:model")
