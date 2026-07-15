@@ -3570,8 +3570,10 @@ async def test_puppet_final_slot_disables_hook_while_seat0_draining(monkeypatch,
 @pytest.mark.asyncio
 async def test_seat0_cancel_during_normal_policy_propagates_and_cleans_up(monkeypatch, tmp_path):
     """Brief Step 5: CancelledError in the normal policy propagates; tuner
-    reclaim/restore/disable still run; no record exists yet so none is written
-    interrupted."""
+    reclaim/restore/disable still run. Task 7's interruption-safe skeleton
+    means a record now exists before this cancel and is written
+    `interrupted` (see test_seat0_cancel_during_policy_call_writes_interrupted_record
+    for the record-shape assertions)."""
     harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
     conn = Seat0CapsConn()
     gs = FakeGSWithConn(conn)
@@ -3584,14 +3586,17 @@ async def test_seat0_cancel_during_normal_policy_propagates_and_cleans_up(monkey
 
     names = harness.names()
     assert "restore_local" in names and "disable" in names
-    assert sink.records == []  # no record built before the cancel
+    assert len(sink.records) == 1  # Task 7: skeleton record written interrupted
+    assert sink.records[0]["seat0"]["terminal_state"] == "interrupted"
 
 
 @pytest.mark.asyncio
 async def test_seat0_cancel_during_exclusive_repair_reclaims_and_cleans_up(monkeypatch, tmp_path):
     """Step 5: CancelledError during the one repair (exclusive tuner released
     for it) propagates; the finally reclaims the released tuner and still
-    restores/disables. No record exists yet (built after the repair)."""
+    restores/disables. Task 7's interruption-safe skeleton means a record
+    now exists (assigned before the normal attempt, well before the repair)
+    and is written `interrupted`."""
     harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
     harness.blocker_queue = [[_RESEARCH], [_RESEARCH]]
     conn = FakeConn()
@@ -3610,7 +3615,8 @@ async def test_seat0_cancel_during_exclusive_repair_reclaims_and_cleans_up(monke
     names = harness.names()
     assert "restore_local" in names and "disable" in names
     assert conn.is_connected is True  # finally reclaimed the released tuner
-    assert sink.records == []
+    assert len(sink.records) == 1  # Task 7: skeleton record written interrupted
+    assert sink.records[0]["seat0"]["terminal_state"] == "interrupted"
 
 
 @pytest.mark.asyncio
@@ -4394,3 +4400,58 @@ async def test_seat0_human_pending_drain_runs_orphan_sweep(
 
     assert result["seat0_human_pending"] == 1
     assert len(sweeps) == 3   # human-pending polls 2, 4, and 6
+
+
+@pytest.mark.asyncio
+async def test_seat0_cancel_during_policy_call_writes_interrupted_record(
+    monkeypatch, tmp_path
+):
+    """A cancellation during the (potentially very long) seat-0 policy call
+    must still leave an `interrupted` transcript record -- the record
+    skeleton exists before the first await of the logical turn."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [asyncio.CancelledError()])
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_arena(
+            conn, FakeGSWithConn(conn),
+            _seat0_cfg(tmp_path, run_id="seat0-cancel-policy"),
+            policy=pol, transcript=sink,
+        )
+
+    assert len(sink.records) == 1
+    rec = sink.records[0]
+    assert rec["player_id"] == 0
+    assert rec["turn"] == 7
+    assert rec["turn_kind"] == "failed"
+    assert rec["seat0"]["terminal_state"] == "interrupted"
+
+
+@pytest.mark.asyncio
+async def test_seat0_cancel_during_mech_pass_writes_interrupted_record(
+    monkeypatch, tmp_path
+):
+    """Same guarantee one await later: a cancellation inside the mechanical
+    pass (blocker query) may not skip the interrupted record."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+
+    async def cancelled_query(_conn):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(seat0_mod, "query_blockers", cancelled_query)
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_arena(
+            conn, FakeGSWithConn(conn),
+            _seat0_cfg(tmp_path, run_id="seat0-cancel-mech"),
+            policy=pol, transcript=sink,
+        )
+
+    assert len(sink.records) == 1
+    assert sink.records[0]["turn"] == 7
+    assert sink.records[0]["seat0"]["terminal_state"] == "interrupted"

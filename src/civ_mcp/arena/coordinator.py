@@ -1049,6 +1049,43 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     # (`_mech_pass` is defined once before the loop so the
                     # RECHECK re-fire path can reuse it.)
 
+                    # Interruption-safe record skeleton: assigned BEFORE the
+                    # first await of the logical turn so a BaseException at
+                    # ANY point (the long CLI policy call, the mechanical
+                    # pass, the recovery save) leaves a record the finally
+                    # block can terminalize as `interrupted`. The played and
+                    # human_pending paths overwrite this with the fully-built
+                    # record; the skeleton is only ever written on interrupt.
+                    seat0_state.record = {
+                        "schema_version": 1,
+                        "run_id":   run_id,
+                        "ts":       datetime.now(timezone.utc).isoformat(),
+                        "player_id": 0,
+                        "turn":     st.turn,
+                        "provider": getattr(pol, "provider", "local"),
+                        "model":    getattr(pol, "model", ""),
+                        "driver":   "cli" if str(getattr(pol, "provider", "local")).startswith("cli") else "in_process",
+                        "steps": [],
+                        "step_count": 0,
+                        "usd": 0.0,
+                        "state_before": state_before,
+                        "state_after": None,
+                        "state_delta": None,
+                        "turn_kind": "failed",
+                        "seat0": {
+                            "normal": {"completed": False, "summary": "", "error": ""},
+                            "repair": {"attempted": False, "completed": False,
+                                       "summary": "", "error": ""},
+                            "blocker_snapshots": [],
+                            "mechanical_cleanup": [],
+                            "automation_errors": [],
+                            "end_turn_errors": [],
+                            "autosave": {"name": "", "attempts": []},
+                            "end_turn_requests": 0,
+                            "terminal_state": "",
+                        },
+                    }
+
                     # --- Normal attempt (tuner already released if exclusive). --
                     normal_result = None
                     normal_error = ""       # repr for the record
