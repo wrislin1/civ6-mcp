@@ -18,6 +18,7 @@ from civ_mcp.arena.config import (
     PlayerSpec,
     TaskTrackerOptions,
     _VALID_PROVIDERS,
+    validate_arena_config,
 )
 from civ_mcp.arena.registry import resolve_tools
 from civ_mcp.run_id import is_safe_run_id
@@ -36,7 +37,11 @@ _SHARED_KNOBS = (
     "attention",
 )
 _CIV_KEYS = {"player", "provider", "model", "gateway", *_LOCAL_KNOBS, *_SHARED_KNOBS}
-_TOP_KEYS = {"run_id", "max_puppet_turns", "idle_poll_limit", "gateway_url", "max_game_turns", "civs"}
+_TOP_KEYS = {
+    "run_id", "max_puppet_turns", "idle_poll_limit", "gateway_url",
+    "max_game_turns", "seat0_drain_poll_limit",
+    "seat0_human_pending_poll_limit", "civs",
+}
 _BRIEFING_DEFAULTS = BriefingOptions()
 _MEMORY_DEFAULTS = MemoryOptions()
 _TASK_TRACKER_DEFAULTS = TaskTrackerOptions()
@@ -361,7 +366,7 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
     ids = [player.player_id for player in players]
     if len(ids) != len(set(ids)):
         raise ValueError(f"experiment config {config_path}: duplicate player ids {ids}")
-    return replace(
+    cfg = replace(
         arena_defaults,
         players=players,
         max_puppet_turns=_top_int(
@@ -382,10 +387,25 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
             "idle_poll_limit",
             data.get("idle_poll_limit", arena_defaults.idle_poll_limit),
         ),
-        puppet_ids=ids,
+        seat0_drain_poll_limit=_top_int(
+            config_path,
+            "seat0_drain_poll_limit",
+            data.get("seat0_drain_poll_limit", arena_defaults.seat0_drain_poll_limit),
+        ),
+        seat0_human_pending_poll_limit=_top_int(
+            config_path,
+            "seat0_human_pending_poll_limit",
+            data.get(
+                "seat0_human_pending_poll_limit",
+                arena_defaults.seat0_human_pending_poll_limit,
+            ),
+        ),
+        puppet_ids=[pid for pid in ids if pid != 0],
         run_id=(
             arena_defaults.run_id
             if "run_id" not in data
             else _run_id_string(str(config_path), data["run_id"])
         ),
     )
+    validate_arena_config(cfg)
+    return cfg

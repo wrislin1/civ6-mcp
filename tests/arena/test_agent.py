@@ -676,6 +676,49 @@ async def test_no_caps_means_full_tier_unchanged():
 # Task 5: informative UNAVAILABLE result for gated tool calls (not raw KeyError)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Task 4: LLMPolicy focused blocker-repair mode
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_repair_mode_skips_n_ctx_resolution(monkeypatch):
+    """Repair mode must not pay the n_ctx HTTP round-trip on the focused
+    repair pass -- resolve_n_ctx belongs entirely to the not-repair_mode
+    branch, alongside maybe_build_briefing."""
+    from civ_mcp.arena import agent as agent_mod
+
+    async def forbidden_resolve(*args, **kwargs):
+        raise AssertionError("repair mode must not resolve n_ctx")
+
+    monkeypatch.setattr(agent_mod, "resolve_n_ctx", forbidden_resolve)
+
+    be = SpyBackend([_no_tool_reply()])
+    be.base_url = "http://h:1/v1"
+    opts = CivOptions(briefing=BriefingOptions(enabled=True))
+    pol = LLMPolicy(be, FakeCost(), options=opts)
+
+    out = await pol(None, player_id=1, turn=1, blocker_block="== END-TURN REPAIR ==")
+    assert out["transcript"]["prompt_injections"]["blocker_repair"] is True
+    assert out["transcript"]["briefing_tokens"] == 0
+
+
+@pytest.mark.asyncio
+async def test_repair_mode_max_steps_transcript_carries_blocker_repair_flag():
+    """Both transcript return sites (early no-tool-call return and max-steps
+    exhaustion) must carry the blocker_repair flag."""
+    class AlwaysToolBackend:
+        async def chat(self, messages, tools):
+            return Reply(text=None, tool_calls=[
+                {"id": "x", "name": "fortify_unit", "arguments": '{"unit_index": 0}'}
+            ], prompt_tokens=5, completion_tokens=1)
+
+    gs, cost = FakeGS(), FakeCost()
+    pol = LLMPolicy(AlwaysToolBackend(), cost, max_steps=2)
+    out = await pol(gs, player_id=1, turn=1, blocker_block="== END-TURN REPAIR ==")
+    assert out["transcript"]["max_steps_reached"] is True
+    assert out["transcript"]["prompt_injections"]["blocker_repair"] is True
+
+
 @pytest.mark.asyncio
 async def test_gated_call_returns_informative_result_not_keyerror():
     gs, be, cost = FakeGSSpies(), FakeBackendCapturesTools(), FakeCost()

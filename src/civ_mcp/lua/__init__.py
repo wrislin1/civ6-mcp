@@ -254,8 +254,10 @@ from civ_mcp.lua.models import (  # noqa: F401
 from civ_mcp.lua.notifications import (  # noqa: F401
     BLOCKING_TOOL_MAP,
     NOTIFICATION_TOOL_MAP,
+    build_clear_stale_end_turn_blocker,
     build_end_turn,
     build_end_turn_blocking_query,
+    build_mark_end_turn_prompt_seen,
     build_notifications_query,
     parse_end_turn_blocking,
     parse_notifications_response,

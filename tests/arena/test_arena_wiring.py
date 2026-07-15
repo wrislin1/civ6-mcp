@@ -54,6 +54,42 @@ def test_build_policies_cli_only_empty_local_backends():
     assert local_backends == []
 
 
+def test_build_policies_scripted_seat0_with_real_local_puppets():
+    """Task 9: `provider: scripted` yields a ScriptedPolicy for that seat only,
+    builds NO backend for it, and leaves the nonzero seats as real local
+    policies each with their own backend."""
+    from civ_mcp.arena.coordinator import ScriptedPolicy
+
+    specs = [
+        PlayerSpec(0, "scripted", "seat0-smoke"),
+        PlayerSpec(1, "local", "gemma4-26b", "http://gw:11440/v1"),
+        PlayerSpec(2, "local", "gemma4-26b", "http://gw:11440/v1"),
+    ]
+    cfg = ArenaConfig(players=specs, gateway_url="http://gw:11444/v1")
+    policies, local_backends = build_policies(specs, FakeCost(), cfg)
+
+    assert isinstance(policies[0], ScriptedPolicy)
+    assert policies[0].provider == "scripted"
+    assert policies[0].model == "seat0-smoke"
+    assert isinstance(policies[1], LLMPolicy)
+    assert isinstance(policies[2], LLMPolicy)
+    # The scripted seat contributes no backend; each local puppet contributes one.
+    assert len(local_backends) == 2
+    assert all(b.base_url == "http://gw:11440/v1" for b in local_backends)
+
+
+def test_build_policies_scripted_seat0_needs_no_exclusive_tuner():
+    """A ScriptedPolicy must not request the exclusive tuner handoff."""
+    from civ_mcp.arena.coordinator import ScriptedPolicy
+
+    specs = [PlayerSpec(0, "scripted", "seat0-smoke")]
+    cfg = ArenaConfig(players=specs)
+    policies, local_backends = build_policies(specs, FakeCost(), cfg)
+    assert isinstance(policies[0], ScriptedPolicy)
+    assert getattr(policies[0], "needs_exclusive_tuner", False) is False
+    assert local_backends == []
+
+
 def test_build_policies_per_civ_gateway_pins_backend():
     """Each local civ's backend targets its own gateway when the spec pins one;
     civs without a pin fall back to the global cfg.gateway_url."""
@@ -381,3 +417,9 @@ def test_negative_max_game_turns_rejected_on_cli():
     args = build_args(["--player", "1:local:m", "--max-game-turns", "-3"])
     with pytest.raises(SystemExit):
         resolve_config(args)
+
+
+def test_resolve_config_cli_player_shorthand_excludes_seat_zero_from_puppets():
+    args = build_args(["--player", "0:local:m", "--player", "2:local:m"])
+    cfg = resolve_config(args)
+    assert cfg.puppet_ids == [2]

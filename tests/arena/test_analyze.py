@@ -1631,6 +1631,7 @@ def test_behavior_empty_run_all_zero() -> None:
     behavior = report["behavior"]
 
     assert behavior == {
+        "failed_turns": 0,
         "standing_memory_turns": 0,
         "standing_memory_captured_turns": 0,
         "task_tracker_turns": 0,
@@ -1880,3 +1881,268 @@ def test_per_player_memory_tallies_exclude_slept_records():
     behavior = report["by_player"][1]["behavior"]
     assert behavior["standing_memory_injected_turns"] == 1
     assert behavior["standing_memory_captured_turns"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 8 — failed-turn analysis without polluting success metrics
+#
+# The coordinator writes seat-0 (and any other pilot) records with
+# turn_kind == "failed" when NEITHER the normal nor the repair policy call
+# returned. These turns must stay visible in `series` (for diagnostics) but
+# must not be credited toward any success/quality metric -- otherwise a run
+# with pilot failures would look artificially healthy.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "record, expected",
+    [
+        ({"turn_kind": "failed"}, "failed"),
+        ({"turn_kind": "played"}, "played"),
+        ({"turn_kind": "slept", "slept": True}, "slept"),
+        ({"slept": True}, "slept"),
+        ({}, "played"),
+    ],
+)
+def test_turn_kind_preserves_legacy_and_explicit_failure(record, expected):
+    from civ_mcp.arena.analyze import _turn_kind
+
+    assert _turn_kind(record) == expected
+
+
+def _seat0_played_rec() -> dict:
+    """Seat-0 turn where the pilot's normal policy call returned cleanly."""
+    return {
+        "schema_version": 1,
+        "run_id": "seat0-task8",
+        "ts": "2026-07-14T00:00:00Z",
+        "player_id": 0,
+        "turn": 1,
+        "provider": "local",
+        "model": "model-seat0",
+        "driver": "in_process",
+        "turn_kind": "played",
+        "civ_options": {"tools": "standard", "max_steps": 10},
+        "briefing_tokens": 400,
+        "n_ctx": 131072,
+        "steps": [
+            _make_step(0, tool_name="get_units", tool_result_full="[]"),
+            _make_step(1, tool_name="end_turn", tool_result_full="OK"),
+        ],
+        "invalid_tool_calls": [],
+        "standing_memory": {"injected": True, "injected_chars": 50, "captured_chars": 20},
+        "task_tracker": {
+            "active_before": 1,
+            "pre_model_results": [
+                {"task_id": "tA", "status": "complete", "action": "improve", "result": "ok"},
+            ],
+            "active_after": 0,
+        },
+        "wall_clock_s": 4.0,
+        "prompt_tokens": 100,
+        "completion_tokens": 40,
+        "step_count": 2,
+        "usd": 0.01,
+        "state_before": {"score": 10, "cities": 1, "units": 3},
+        "state_after": {"score": 20, "cities": 1, "units": 3},
+        "state_delta": {"score": 10, "cities": 0, "units": 0},
+        "seat0": {
+            "normal": {"completed": True, "summary": "played fine", "error": ""},
+            "repair": {"attempted": False, "completed": False, "summary": "", "error": ""},
+            "blocker_snapshots": [],
+            "mechanical_cleanup": [],
+            "autosave": {"name": "0_MCP_0001", "attempts": []},
+            "end_turn_requests": 1,
+            "terminal_state": "advanced",
+        },
+    }
+
+
+def _seat0_failed_rec() -> dict:
+    """Seat-0 turn where NEITHER the normal nor the repair policy call returned.
+
+    Deliberately carries rich (but bogus) data on every axis a filtering bug
+    could wrongly credit: rubric-triggering steps, an unknown-tool invalid
+    call, a truncated step, a GP tool call, standing-memory injection, and a
+    task-tracker "failed" result -- all of which must be excluded from
+    success/quality metrics once this turn is correctly classified as
+    "failed" rather than "played".
+    """
+    return {
+        "schema_version": 1,
+        "run_id": "seat0-task8",
+        "ts": "2026-07-14T00:01:00Z",
+        "player_id": 0,
+        "turn": 2,
+        "provider": "local",
+        "model": "model-seat0-broken",
+        "driver": "in_process",
+        "turn_kind": "failed",
+        "civ_options": {"tools": "minimal", "max_steps": 4},
+        "briefing_tokens": 999,
+        "n_ctx": 131072,
+        "steps": [
+            _make_step(0, tool_name="move_unit",
+                       tool_args={"unit_index": 1, "x": 9, "y": 9},
+                       tool_result_full="MOVING_TO|9,9|BLOCKED", truncated=True),
+            _make_step(1, tool_name="skip_unit", tool_args={"unit_index": 1},
+                       tool_result_full="OK"),
+            _make_step(2, tool_name="found_city", tool_args={"unit_index": 2},
+                       tool_result_full="City founded."),
+            _make_step(3, tool_name="recruit_great_person",
+                       tool_args={"individual_id": 1}, tool_result_full="OK"),
+        ],
+        "invalid_tool_calls": [
+            {"step": 0, "tool_name": "fake_tool", "reason": "unknown_tool", "raw_args": {}}
+        ],
+        "standing_memory": {"injected": True, "injected_chars": 999, "captured_chars": 999},
+        "task_tracker": {
+            "active_before": 1,
+            "pre_model_results": [
+                {"task_id": "tB", "status": "failed", "action": "found_city",
+                 "result": "found_city_failed_retry_limit"},
+            ],
+            "active_after": 1,
+        },
+        "wall_clock_s": 3.0,
+        "prompt_tokens": 77,
+        "completion_tokens": 13,
+        "step_count": 4,
+        "usd": 0.0,
+        "state_before": {"score": 20, "cities": 1, "units": 3},
+        "state_after": {"score": 20, "cities": 1, "units": 3},
+        "state_delta": {"score": 0, "cities": 0, "units": 0},
+        "seat0": {
+            "normal": {"completed": False, "summary": "", "error": "boom"},
+            "repair": {"attempted": True, "completed": False, "summary": "", "error": "boom2"},
+            "blocker_snapshots": [],
+            "mechanical_cleanup": [],
+            "autosave": {"name": "", "attempts": []},
+            "end_turn_requests": 0,
+            "terminal_state": "human_pending",
+        },
+    }
+
+
+def test_seat0_group_key_zero_preserved_not_model_fallback():
+    from civ_mcp.arena.analyze import analyze
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+
+    assert 0 in report["by_player"]
+    assert report["by_player"][0]["player_id"] == 0
+
+
+def test_seat0_series_keeps_both_records_chronologically_with_turn_kind():
+    from civ_mcp.arena.analyze import analyze
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+    series = report["by_player"][0]["series"]
+
+    assert [row["turn"] for row in series] == [1, 2]
+    assert series[0]["turn_kind"] == "played"
+    assert series[1]["turn_kind"] == "failed"
+    # Token/state diagnostics stay visible on the failed series point.
+    assert series[1]["prompt_tokens"] == 77
+    assert series[1]["completion_tokens"] == 13
+    assert series[1]["state_delta"] == {"score": 0, "cities": 0, "units": 0}
+
+
+def test_seat0_failed_turns_counted_per_player_and_aggregate():
+    from civ_mcp.arena.analyze import analyze
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+
+    assert report["by_player"][0]["failed_turns"] == 1
+    assert report["behavior"]["failed_turns"] == 1
+
+
+def test_seat0_config_summary_uses_only_played_data():
+    from civ_mcp.arena.analyze import analyze
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+    config = report["config_summary"]
+
+    assert set(config) == {"0"}
+    assert config["0"]["turns"] == 1
+    assert config["0"]["model"] == "model-seat0"
+
+
+def test_seat0_failed_record_does_not_pollute_rubric():
+    from civ_mcp.arena.analyze import analyze
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+    rubric = report["by_player"][0]["rubric"]
+
+    # The failed record's steps would set every one of these if wrongly
+    # read as played.
+    assert rubric["founded_extra_city"] is None
+    assert rubric["explored_vs_idle"] is None
+    assert rubric["wasted_move"] is None
+    assert rubric["hallucinated_tools"] is None
+    assert rubric["truncation_bad_move"] is None
+
+
+def test_seat0_failed_record_does_not_pollute_standing_memory_or_driver():
+    from civ_mcp.arena.analyze import analyze
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+    pb = report["by_player"][0]["behavior"]
+    behavior = report["behavior"]
+
+    assert pb["standing_memory_injected_turns"] == 1
+    assert pb["standing_memory_captured_turns"] == 1
+    assert behavior["standing_memory_turns"] == 1
+    assert behavior["standing_memory_captured_turns"] == 1
+    # Both records share driver "in_process" -- a bug that double-counts the
+    # failed record would show 2 here, not 1.
+    assert behavior["drivers"] == {"in_process": 1, "cli": 0}
+
+
+def test_seat0_failed_record_does_not_pollute_rates():
+    from civ_mcp.arena.analyze import analyze
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+    rates = report["by_player"][0]["rates"]
+
+    assert rates["invalid_call_rate"] == 0.0
+    assert rates["truncation_incident_rate"] == 0.0
+
+
+def test_seat0_failed_record_does_not_pollute_task_success_or_tool_counts():
+    from civ_mcp.arena.analyze import analyze
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+    pb = report["by_player"][0]["behavior"]
+    behavior = report["behavior"]
+
+    assert pb["task_follow_through_attempts"] == 1
+    assert pb["task_completions"] == 1
+    assert pb["task_failed"] == 0
+    assert pb["great_people_tool_calls"] == 0
+    assert behavior["task_completed"] == 1
+    assert behavior["task_failed"] == 0
+
+
+def test_attention_metrics_failed_turn_excluded_from_baselines_and_skip_rate():
+    recs = [
+        _played(1, usd=0.02),
+        {"player_id": 1, "turn": 2, "turn_kind": "failed", "usd": 999.0},
+        _slept(3),
+        _played(4, "STREAK_CAP", usd=0.02),
+    ]
+    m = attention_metrics(recs)[1]
+
+    assert m["captured"] == 4
+    assert m["slept_turns"] == 1
+    assert m["model_turns"] == 2
+    assert m["skip_rate"] == pytest.approx(1 / 3)
+    assert m["savings"]["est_usd"] == pytest.approx(0.02)
+
+
+def test_render_markdown_shows_failed_turns_count():
+    from civ_mcp.arena.analyze import analyze, render_markdown
+
+    report = analyze([_seat0_played_rec(), _seat0_failed_rec()], [])
+    md = render_markdown(report)
+
+    assert "Failed turns" in md

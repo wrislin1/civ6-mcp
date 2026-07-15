@@ -51,6 +51,106 @@ print("{SENTINEL}")
 """.replace("{SENTINEL}", SENTINEL)
 
 
+_STALE_BLOCKER_STATE_CHECK: dict[str, str] = {
+    "ENDTURN_BLOCKING_RESEARCH": "Players[me]:GetTechs():GetResearchingTech() >= 0",
+    "ENDTURN_BLOCKING_CIVIC": "Players[me]:GetCulture():GetProgressingCivic() >= 0",
+    # Every owned city that can trigger the blocker must have a live,
+    # nonzero current production hash; an empty or zero-hash queue in any
+    # city means the choice is not actually set, so nothing is dismissed.
+    "ENDTURN_BLOCKING_PRODUCTION": """(function()
+        for _, c in Players[me]:GetCities():Members() do
+            local bq = c:GetBuildQueue()
+            if bq:GetSize() == 0 or bq:GetCurrentProductionTypeHash() == 0 then
+                return false
+            end
+        end
+        return true
+    end)()""",
+}
+
+
+def build_clear_stale_end_turn_blocker(blocking_type: str) -> str:
+    """Closed-list Lua builder: dismiss a stale EndTurnBlocking notification
+    only after proving its underlying choice is already set (InGame context).
+
+    Accepts only ENDTURN_BLOCKING_RESEARCH, ENDTURN_BLOCKING_CIVIC, and
+    ENDTURN_BLOCKING_PRODUCTION. Any other value raises ValueError, keeping
+    untrusted strings out of the generated Lua entirely.
+    """
+    state_check = _STALE_BLOCKER_STATE_CHECK.get(blocking_type)
+    if state_check is None:
+        raise ValueError(f"Unsupported stale blocker type: {blocking_type!r}")
+
+    return f"""
+local me = Game.GetLocalPlayer()
+local isSet = {state_check}
+if isSet then
+    local list = NotificationManager.GetList(me)
+    if list then
+        for _, nid in ipairs(list) do
+            local entry = NotificationManager.Find(me, nid)
+            if entry and not entry:IsDismissed() then
+                local bt = entry:GetEndTurnBlocking()
+                if bt and bt == EndTurnBlockingTypes.{blocking_type} then
+                    pcall(function() NotificationManager.SendActivated(me, nid) end)
+                    pcall(function() NotificationManager.Dismiss(me, nid) end)
+                end
+            end
+        end
+    end
+    print("STALE_CLEARED")
+else
+    print("NOT_SET")
+end
+print("{SENTINEL}")
+"""
+
+
+def build_mark_end_turn_prompt_seen(blocking_type: str) -> str:
+    """Closed-list Lua builder: mark a purely informational EndTurnBlocking
+    prompt as reviewed (InGame context), without touching any strategic
+    choice.
+
+    Accepts only ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE (marks the
+    government-change consideration seen) and ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK
+    (marks World Congress results looked-at and dismisses only the matching
+    notification). Any other value raises ValueError.
+    """
+    if blocking_type == "ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE":
+        return f"""
+local me = Game.GetLocalPlayer()
+Players[me]:GetCulture():SetGovernmentChangeConsidered(true)
+print("PROMPT_SEEN")
+print("{SENTINEL}")
+"""
+
+    if blocking_type == "ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK":
+        return f"""
+local me = Game.GetLocalPlayer()
+UI.RequestPlayerOperation(me, PlayerOperations.WORLD_CONGRESS_LOOKED_AT_AVAILABLE, {{}})
+local list = NotificationManager.GetList(me)
+if list then
+    for _, nid in ipairs(list) do
+        local entry = NotificationManager.Find(me, nid)
+        if entry and not entry:IsDismissed() then
+            local bt = entry:GetEndTurnBlocking()
+            if bt and bt == EndTurnBlockingTypes.ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK then
+                pcall(function() NotificationManager.Dismiss(me, nid) end)
+            end
+        end
+    end
+end
+local i = ContextPtr:LookUpControl("/InGame/WorldCongressIntro")
+if i then i:SetHide(true) end
+local p = ContextPtr:LookUpControl("/InGame/WorldCongressPopup")
+if p then p:SetHide(true) end
+print("PROMPT_SEEN")
+print("{SENTINEL}")
+"""
+
+    raise ValueError(f"Unsupported prompt-seen blocker type: {blocking_type!r}")
+
+
 def build_notifications_query() -> str:
     """Query NotificationManager for active notifications (InGame context)."""
     return """

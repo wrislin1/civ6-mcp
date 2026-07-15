@@ -8,6 +8,8 @@ from civ_mcp.arena.config import (
     PlayerSpec,
     TaskTrackerOptions,
     parse_player_spec,
+    resolved_puppet_ids,
+    validate_arena_config,
 )
 
 def test_parse_player_spec_local():
@@ -48,6 +50,20 @@ def test_cli_codex_model_optional():
     s = parse_player_spec("2:cli-codex:gpt-5.5")
     assert s == PlayerSpec(2, "cli-codex", "gpt-5.5")
     assert s.driver_kind() == "cli"
+
+
+def test_parse_player_spec_scripted():
+    """Task 9: the test-only `scripted` provider parses and reports its own
+    driver kind (neither cli nor in_process)."""
+    s = parse_player_spec("0:scripted:seat0-smoke")
+    assert s == PlayerSpec(0, "scripted", "seat0-smoke")
+    assert s.driver_kind() == "scripted"
+
+
+def test_parse_player_spec_scripted_empty_model():
+    s = parse_player_spec("0:scripted:")
+    assert s == PlayerSpec(0, "scripted", "")
+    assert s.driver_kind() == "scripted"
 
 def test_rejects_unknown_provider():
     with pytest.raises(ValueError):
@@ -187,3 +203,42 @@ def test_summary_chars_widened_for_attention_directives():
     assert (
         CivOptions(memory=MemoryOptions(enabled=True)).standing_plan_summary_chars == 1200
     )
+
+
+def _seat(pid: int, *, attention: str = "off") -> PlayerSpec:
+    return PlayerSpec(
+        pid,
+        "local",
+        "m",
+        options=CivOptions(attention=AttentionOptions(mode=attention)),
+    )
+
+
+def test_puppet_ids_none_derives_only_nonzero_configured_players():
+    cfg = ArenaConfig(players=[_seat(0), _seat(2), _seat(4)], puppet_ids=None)
+    assert resolved_puppet_ids(cfg) == [2, 4]
+
+
+def test_explicit_empty_puppet_ids_stays_empty():
+    cfg = ArenaConfig(players=[_seat(0), _seat(2)], puppet_ids=[])
+    assert resolved_puppet_ids(cfg) == []
+
+
+@pytest.mark.parametrize("ids", [[0], [2, 0]])
+def test_explicit_puppet_ids_reject_seat_zero(ids):
+    cfg = ArenaConfig(players=[_seat(0), _seat(2)], puppet_ids=ids)
+    with pytest.raises(ValueError, match="seat 0"):
+        validate_arena_config(cfg)
+
+
+def test_explicit_puppet_ids_reject_unknown_and_duplicate_seats():
+    with pytest.raises(ValueError, match="not configured"):
+        validate_arena_config(ArenaConfig(players=[_seat(2)], puppet_ids=[3]))
+    with pytest.raises(ValueError, match="duplicate"):
+        validate_arena_config(ArenaConfig(players=[_seat(2)], puppet_ids=[2, 2]))
+
+
+def test_seat0_requires_attention_off():
+    cfg = ArenaConfig(players=[_seat(0, attention="auto")], puppet_ids=[])
+    with pytest.raises(ValueError, match="seat 0.*attention.mode.*off"):
+        validate_arena_config(cfg)

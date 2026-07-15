@@ -1,12 +1,15 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
+import civ_mcp.lua as lq
+
 @dataclass(frozen=True)
 class PuppetState:
     local: int
     turn: int
     active: bool
     last: int | None
+    seat0_active: bool = False
 
 def build_inject_lua(puppet_ids: list[int]) -> str:
     entries = ", ".join(f"[{i}]=true" for i in puppet_ids)
@@ -32,10 +35,14 @@ print("---END---")
 DISABLE_LUA = '__pt_enabled = false __pt_active = false print("DISABLED|true") print("---END---")'
 
 POLL_LUA = """
+local seat0OK, seat0Active = pcall(function()
+  return Players[0] ~= nil and Players[0]:IsTurnActive()
+end)
 print("LOCAL|" .. tostring(Game.GetLocalPlayer()))
 print("TURN|" .. tostring(Game.GetCurrentGameTurn()))
 print("ACTIVE|" .. tostring(__pt_active))
 print("LAST|" .. tostring(__pt_last))
+print("SEAT0_ACTIVE|" .. tostring((seat0OK and seat0Active) or false))
 print("---END---")
 """
 
@@ -65,6 +72,7 @@ def parse_poll(lines: list[str]) -> PuppetState:
         turn=_to_int(d.get("TURN")),
         active=(d.get("ACTIVE") == "true"),
         last=(_to_int(last, None) if (last not in (None, "nil")) else None),
+        seat0_active=(d.get("SEAT0_ACTIVE") == "true"),
     )
 
 # All switch/unit ops are GameCore (execute_read); see Global Constraints.
@@ -73,3 +81,7 @@ async def disable(conn):           return await conn.execute_read(DISABLE_LUA)
 async def poll(conn):              return parse_poll(await conn.execute_read(POLL_LUA))
 async def finish_units(conn, pid): return await conn.execute_read(build_finish_units_lua(pid))
 async def restore_local(conn, pid=0): return await conn.execute_read(build_restore_local_lua(pid))
+
+async def end_turn(conn):
+    """Fire local seat 0's turn end in InGame context; never wait for a flip here."""
+    return await conn.execute_write(lq.build_end_turn())

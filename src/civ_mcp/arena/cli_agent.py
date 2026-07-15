@@ -491,19 +491,33 @@ class CLIAgentPolicy:
         memory_block: str = "",
         task_block: str = "",
         digest_block: str = "",
+        blocker_block: str = "",
         briefing: Briefing | None = None,
     ) -> dict:
-        include_standing_plan_instruction = self.options.standing_plan_enabled
-        include_attention_instruction = self.options.attention_directives_enabled
-        playbook_chars = len(self._system_prefix)
-        briefing = await maybe_build_briefing(
-            gs,
-            self.options,
-            n_ctx=explicit_n_ctx(self.options.context_budget),
-            playbook_chars=playbook_chars,
-            tool_schema_chars=0,
-            supplied=briefing,
+        # Shared flags first (Task 4): a focused end-turn repair pass reuses
+        # this same policy object, model, timeout, and CLI environment -- it
+        # is focused by prompt content (blocker_block), not a weaker toolset.
+        # Repair mode never emits a fresh STANDING PLAN / attention ask and
+        # never pays for a fresh briefing build.
+        repair_mode = bool(blocker_block)
+        include_standing_plan_instruction = (
+            self.options.standing_plan_enabled and not repair_mode
         )
+        include_attention_instruction = (
+            self.options.attention_directives_enabled and not repair_mode
+        )
+        if repair_mode:
+            briefing = Briefing()
+        playbook_chars = len(self._system_prefix)
+        if not repair_mode:
+            briefing = await maybe_build_briefing(
+                gs,
+                self.options,
+                n_ctx=explicit_n_ctx(self.options.context_budget),
+                playbook_chars=playbook_chars,
+                tool_schema_chars=0,
+                supplied=briefing,
+            )
         opening = build_opening_prompt(
             player_id=player_id,
             turn=turn,
@@ -511,6 +525,7 @@ class CLIAgentPolicy:
             memory_block=memory_block,
             task_block=task_block,
             digest_block=digest_block,
+            blocker_block=blocker_block,
             include_standing_plan_instruction=include_standing_plan_instruction,
             include_attention_instruction=include_attention_instruction,
             attention_max_skip=self.options.attention.max_skip,
@@ -531,6 +546,7 @@ class CLIAgentPolicy:
             "standing_plan_instruction": include_standing_plan_instruction,
             "digest": bool(digest_block),
             "attention_instruction": include_attention_instruction,
+            "blocker_repair": repair_mode,
         }
         # STANDING PLAN blocks (1-3 bullets + optional TASK lines) can exceed the plain
         # one-line-summary clamp; widen it whenever memory/task tracking are in play so the

@@ -1412,6 +1412,99 @@ def test_call_attention_tail_replaces_one_line_summary(monkeypatch):
     assert "give a short summary" in joined
 
 
+# ---------------------------------------------------------------------------
+# Task 4 — CLIAgentPolicy focused blocker-repair mode
+# ---------------------------------------------------------------------------
+
+def test_cli_repair_mode_reaches_prompt_and_suppresses_standing_plan_and_attention(monkeypatch):
+    captured = {}
+
+    class FakeProc:
+        pid = 1
+        returncode = 0
+        async def communicate(self):
+            return (b'{"type":"result","result":"ok","usage":{},"total_cost_usd":0}', b"")
+        async def wait(self):
+            pass
+
+    async def fake_create(*args, **kwargs):
+        captured["argv"] = args
+        captured["env"] = kwargs.get("env")
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+    pol = CLIAgentPolicy(
+        "cli-claude", FakeCost(), project_dir="/x", timeout_s=5,
+        options=CivOptions(
+            memory=MemoryOptions(enabled=True),
+            attention=AttentionOptions(mode="model"),
+        ),
+    )
+    result = asyncio.run(
+        pol(
+            None, player_id=3, turn=9,
+            blocker_block="== END-TURN REPAIR ==\nfinish the research choice",
+        )
+    )
+
+    joined = " ".join(captured["argv"])
+    assert "== END-TURN REPAIR ==" in joined
+    assert "finish the research choice" in joined
+    assert "STANDING PLAN:" not in joined
+    assert "SKIP:" not in joined and "WAKE IF:" not in joined
+    assert result["transcript"]["prompt_injections"] == {
+        "memory": False,
+        "task_tracker": False,
+        "standing_plan_instruction": False,
+        "digest": False,
+        "attention_instruction": False,
+        "blocker_repair": True,
+    }
+    # Reassert both lockdown layers hold for the repair-mode call too.
+    assert "mcp__civ6__end_turn" in joined
+    assert captured["env"]["CIV_MCP_ARENA_PUPPET"] == "1"
+
+
+def test_cli_repair_mode_skips_fresh_briefing_build(monkeypatch):
+    from civ_mcp.arena.config import BriefingOptions
+
+    async def forbidden_build(gs, opts, budget):
+        raise AssertionError("CLI repair mode must not build a fresh briefing")
+
+    class FakeProc:
+        pid = 1
+        returncode = 0
+        async def communicate(self):
+            return (b'{"type":"result","result":"ok","usage":{},"total_cost_usd":0}', b"")
+        async def wait(self):
+            pass
+
+    async def fake_create(*args, **kwargs):
+        return FakeProc()
+
+    monkeypatch.setattr("civ_mcp.arena.prompt_context.build_briefing", forbidden_build)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+    pol = CLIAgentPolicy(
+        "cli-claude", FakeCost(), project_dir="/x", timeout_s=5,
+        options=CivOptions(briefing=BriefingOptions(enabled=True)),
+    )
+    result = asyncio.run(
+        pol(None, player_id=1, turn=1, blocker_block="== END-TURN REPAIR ==")
+    )
+    assert result["transcript"]["briefing_tokens"] == 0
+    assert result["transcript"]["briefing_sections"] == []
+
+
+def test_cli_repair_mode_reassert_denied_civ6_tools_and_server_env():
+    """Direct reassert of both lockdown layers referenced by Task 4's brief:
+    the CLI denylist still names end_turn, and the server-side arena puppet
+    gate env var is unchanged (regression guard while touching cli_agent.py)."""
+    from civ_mcp.arena.cli_agent import _DENIED_CIV6_TOOLS, _SERVER_ENV
+
+    assert "mcp__civ6__end_turn" in _DENIED_CIV6_TOOLS
+    assert _SERVER_ENV.get("CIV_MCP_ARENA_PUPPET") == "1"
+
+
 def test_final_summary_stays_raw_so_trailing_directives_survive(monkeypatch):
     """Regression pin for the load-bearing guarantee behind final-review
     Important 1: the transcript's final_summary is the RAW CLI text (never the

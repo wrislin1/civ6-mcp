@@ -76,6 +76,58 @@ def test_digest_block_ordered_after_task_block():
     assert out.index("T") < out.index("WHILE YOU SLEPT") < out.index("It is turn 5")
 
 
+# ---------------------------------------------------------------------------
+# Task 4 — blocker_block (end-turn repair) ordering + zero-diff regression
+# ---------------------------------------------------------------------------
+
+def test_block_order_with_blocker_block():
+    """Full order when every block is present: briefing -> standing memory ->
+    task tracker -> wake digest -> end-turn repair -> turn announcement."""
+    prompt = build_opening_prompt(
+        player_id=2,
+        turn=5,
+        briefing_text="BRIEFING",
+        memory_block="MEMORY",
+        task_block="TASKS",
+        digest_block="== WHILE YOU SLEPT ==",
+        blocker_block="== END-TURN REPAIR ==",
+        include_standing_plan_instruction=True,
+    )
+    turn_line = "It is turn 5. You control player 2. Begin."
+    assert prompt.index("BRIEFING") < prompt.index("MEMORY")
+    assert prompt.index("MEMORY") < prompt.index("TASKS")
+    assert prompt.index("TASKS") < prompt.index("WHILE YOU SLEPT")
+    assert prompt.index("WHILE YOU SLEPT") < prompt.index("== END-TURN REPAIR ==")
+    assert prompt.index("== END-TURN REPAIR ==") < prompt.index(turn_line)
+    assert prompt.index(turn_line) < prompt.index("STANDING PLAN:")
+
+
+def test_blocker_block_only_no_stray_blank_lines():
+    prompt = build_opening_prompt(player_id=3, turn=7, blocker_block="REPAIR TEXT")
+    assert prompt == "REPAIR TEXT\n\nIt is turn 7. You control player 3. Begin."
+    assert "\n\n\n" not in prompt
+
+
+def test_blocker_block_default_leaves_prompt_unchanged():
+    """blocker_block defaults to "" -- every existing call site's rendering must be
+    byte-for-byte identical whether or not blocker_block is passed explicitly."""
+    assert build_opening_prompt(player_id=1, turn=1) == build_opening_prompt(
+        player_id=1, turn=1, blocker_block=""
+    )
+    assert build_opening_prompt(
+        player_id=3, turn=7, briefing_text="BRIEFING BODY"
+    ) == build_opening_prompt(
+        player_id=3, turn=7, briefing_text="BRIEFING BODY", blocker_block=""
+    )
+    assert build_opening_prompt(
+        player_id=1, turn=5, briefing_text="B", memory_block="M",
+        task_block="T", digest_block="== WHILE YOU SLEPT ==",
+    ) == build_opening_prompt(
+        player_id=1, turn=5, briefing_text="B", memory_block="M",
+        task_block="T", digest_block="== WHILE YOU SLEPT ==", blocker_block="",
+    )
+
+
 def test_attention_instruction_appended_when_requested():
     out = build_opening_prompt(player_id=1, turn=5, include_attention_instruction=True)
     assert out.endswith(ATTENTION_INSTRUCTION)
@@ -190,7 +242,99 @@ async def test_local_policy_transcript_carries_prompt_injections(monkeypatch):
         "standing_plan_instruction": False,
         "digest": False,
         "attention_instruction": False,
+        "blocker_repair": False,
     }
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — LLMPolicy focused blocker-repair mode
+# ---------------------------------------------------------------------------
+
+class _ToolSpyBackend:
+    model = "fake"
+
+    def __init__(self):
+        self.seen_tools = None
+
+    async def chat(self, messages, tools):
+        self.seen_tools = tools
+        from civ_mcp.arena.backends import Reply
+        return Reply(text="done", tool_calls=[], prompt_tokens=1, completion_tokens=1)
+
+
+@pytest.mark.asyncio
+async def test_local_policy_repair_mode_reaches_first_message_and_suppresses_tails():
+    from civ_mcp.arena import agent as agent_mod
+    from civ_mcp.arena.config import AttentionOptions, CivOptions, MemoryOptions
+
+    be = _SpyBackend()
+    opts = CivOptions(
+        memory=MemoryOptions(enabled=True),
+        attention=AttentionOptions(mode="model"),
+    )
+    pol = agent_mod.LLMPolicy(be, _FakeCost(), options=opts)
+    out = await pol(
+        None, player_id=6, turn=11,
+        blocker_block="== END-TURN REPAIR ==\nfix the research blocker",
+    )
+
+    user_msg = [m for m in be.calls[0] if m["role"] == "user"][0]
+    assert "== END-TURN REPAIR ==" in user_msg["content"]
+    assert "fix the research blocker" in user_msg["content"]
+    assert "STANDING PLAN" not in user_msg["content"]
+    assert "SKIP:" not in user_msg["content"] and "WAKE IF:" not in user_msg["content"]
+    assert out["transcript"]["prompt_injections"] == {
+        "memory": False,
+        "task_tracker": False,
+        "standing_plan_instruction": False,
+        "digest": False,
+        "attention_instruction": False,
+        "blocker_repair": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_local_policy_repair_mode_skips_fresh_briefing_build(monkeypatch):
+    from civ_mcp.arena import agent as agent_mod
+    from civ_mcp.arena.config import BriefingOptions, CivOptions
+
+    async def forbidden_build(gs, opts, budget):
+        raise AssertionError("repair mode must not build a fresh briefing")
+
+    monkeypatch.setattr("civ_mcp.arena.prompt_context.build_briefing", forbidden_build)
+
+    be = _SpyBackend()
+    opts = CivOptions(briefing=BriefingOptions(enabled=True))
+    pol = agent_mod.LLMPolicy(be, _FakeCost(), options=opts)
+    out = await pol(None, player_id=1, turn=1, blocker_block="== END-TURN REPAIR ==")
+
+    user_msg = [m for m in be.calls[0] if m["role"] == "user"][0]
+    assert not user_msg["content"].startswith("BRIEFING")
+    assert out["transcript"]["briefing_tokens"] == 0
+    assert out["transcript"]["briefing_sections"] == []
+
+
+@pytest.mark.asyncio
+async def test_local_policy_repair_mode_does_not_alter_tool_schema_or_expose_end_turn():
+    from civ_mcp.arena import agent as agent_mod
+    from civ_mcp.arena.config import CivOptions
+    from civ_mcp.arena.registry import TOOL_REGISTRY
+
+    assert "end_turn" not in TOOL_REGISTRY
+
+    opts = CivOptions(tools="standard")
+    be_normal = _ToolSpyBackend()
+    pol_normal = agent_mod.LLMPolicy(be_normal, _FakeCost(), options=opts)
+    await pol_normal(None, player_id=1, turn=1)
+
+    be_repair = _ToolSpyBackend()
+    pol_repair = agent_mod.LLMPolicy(be_repair, _FakeCost(), options=opts)
+    await pol_repair(None, player_id=1, turn=1, blocker_block="== END-TURN REPAIR ==")
+
+    normal_names = {t["function"]["name"] for t in be_normal.seen_tools}
+    repair_names = {t["function"]["name"] for t in be_repair.seen_tools}
+    assert normal_names == repair_names
+    assert "end_turn" not in repair_names
 
 
 # ---------------------------------------------------------------------------
