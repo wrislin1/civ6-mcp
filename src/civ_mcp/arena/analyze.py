@@ -1073,9 +1073,8 @@ def render_markdown(report: dict) -> str:
         )
         lines.append(f"- **Task lost**: {behavior.get('task_lost', 0)}")
         lines.append(f"- **Task failed**: {behavior.get('task_failed', 0)}")
-        lines.append(
-            f"- **Driver mix**: in_process={drivers.get('in_process', 0)}, cli={drivers.get('cli', 0)}"
-        )
+        driver_mix = ", ".join(f"{name}={count}" for name, count in sorted(drivers.items()))
+        lines.append(f"- **Driver mix**: {driver_mix}")
         lines.append(
             f"- **Puppeted players**: {', '.join(str(p) for p in puppeted) if puppeted else 'none'}\n"
         )
