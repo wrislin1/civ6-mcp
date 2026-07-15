@@ -558,7 +558,8 @@ def attention_metrics(records: list[dict]) -> dict:
         # turn -- `captured - slept_turns` would wrongly count it as a model
         # turn, so count "played" turns explicitly instead.
         model_turns = sum(1 for r in recs if _turn_kind(r) == "played")
-        skip_rate = slept_turns / captured if captured else 0.0
+        attention_turns = slept_turns + model_turns
+        skip_rate = slept_turns / attention_turns if attention_turns else 0.0
 
         streaks = _attention_streaks(recs)
         streak_lengths = [len(streak) for streak, _cause in streaks]

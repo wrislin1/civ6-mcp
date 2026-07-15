@@ -2123,9 +2123,7 @@ def test_seat0_failed_record_does_not_pollute_task_success_or_tool_counts():
     assert behavior["task_failed"] == 0
 
 
-def test_attention_metrics_failed_turn_excluded_from_baselines():
-    """Failed records are neither slept nor model-success turns and must not
-    affect attention savings baselines (Task 8)."""
+def test_attention_metrics_failed_turn_excluded_from_baselines_and_skip_rate():
     recs = [
         _played(1, usd=0.02),
         {"player_id": 1, "turn": 2, "turn_kind": "failed", "usd": 999.0},
@@ -2137,8 +2135,8 @@ def test_attention_metrics_failed_turn_excluded_from_baselines():
     assert m["captured"] == 4
     assert m["slept_turns"] == 1
     assert m["model_turns"] == 2
-    # The failed record's absurd usd must not enter the savings baseline mean.
-    assert abs(m["savings"]["est_usd"] - 0.02) < 1e-9
+    assert m["skip_rate"] == pytest.approx(1 / 3)
+    assert m["savings"]["est_usd"] == pytest.approx(0.02)
 
 
 def test_render_markdown_shows_failed_turns_count():
