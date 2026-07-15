@@ -13,6 +13,10 @@
 > explicit direction ("merge push"); 1194 tests green. The rerun is unblocked
 > once the gaming PC checkout is fast-forwarded to ≥ `845ae09`. Gates below
 > remain NOT EXERCISED.
+>
+> **Update 2026-07-15 (attended rerun): gates 1 and 2 PASSED live** on the
+> gaming PC (main at `bf56e6f`, after the third review fix wave `d4cbaad`).
+> See Gate status below. Gate 3 (hard-block human escape) is still pending.
 
 ## Offline verification
 
@@ -64,16 +68,26 @@ files. They were inspected read-only and left untouched.
 
 ## Gate status
 
+> **Update 2026-07-15 (attended rerun on the gaming PC, main at `bf56e6f`):**
+> gates 1 and 2 ran live and PASSED. Gate 3 remains not exercised.
+
 | Gate | Run ID | Status | Save / transcript evidence |
 |---|---|---|---|
-| Scripted mixed-seat | `seat0-scripted-20260715` | BLOCKED — NOT EXERCISED | No save selected or loaded; no `arena_runs/seat0-scripted-20260715` transcript created. |
-| LLM seat zero | `seat0-llm-20260715` | BLOCKED — NOT EXERCISED | No save selected or loaded; no `arena_runs/seat0-llm-20260715` transcript created. |
-| Hard-block human escape | none | BLOCKED — NOT EXERCISED | No live save was available to inspect or load; no blocker was fabricated. |
+| Scripted mixed-seat | `seat0-scripted-20260715` | **PASS 2026-07-15** | `arena_runs/seat0-scripted-20260715/{transcript.jsonl,report.md}`. 8 seat-zero turns (T1–T8), all `played`/`advanced`, 1 end-turn request each, 0 blockers, 0 repairs; autosaves `0_MCP_0001`–`0_MCP_0008` adopted. Driver mix `scripted=8, in_process=16`. Exit 0 on budget exhaustion (24 slots). |
+| LLM seat zero | `seat0-llm-20260715` | **PASS 2026-07-15** | `arena_runs/seat0-llm-20260715/{transcript.jsonl,report.md}`. 12 cli-claude seat-zero turns (T9–T20), all `played`/`advanced`, 1 end-turn request each, 0 repairs, 0 failed turns; autosaves `0_MCP_0009`–`0_MCP_0020` adopted. T18–T20 each hit `ENDTURN_BLOCKING_UNITS`, cleared by mechanical `finish_units` cleanup (post-cleanup snapshots empty, no refire). Driver mix `cli=12, in_process=24`. Cost $9.73. |
+| Hard-block human escape | none | BLOCKED — NOT EXERCISED | No save exposing an unsupported blocker was available; no blocker was fabricated. |
 
 ### Seat-zero turn records
 
-No seat-zero turn was admitted. Consequently there are no observed seat-zero
-turn rows, terminal records, recovery-save names, or transcript paths to list.
+Gate-1 and gate-2 seat-zero turn rows, terminal states, recovery-save names,
+and blocker snapshots are recorded in the run transcripts listed above (grep
+`"player_id": 0`). Operational notes from the rerun:
+
+- The FireTuner port is single-client: the dev session's own `civ-mcp` MCP
+  server held 4318 and had to be killed before `civ-arena` could connect.
+- A double-launch of gate 2 killed the first instance after one $1.02
+  cli-claude turn (no transcript row); the second instance ran to completion.
+  Never launch a second `civ-arena` while one is backgrounded.
 
 ## Authority/state required to resume
 
@@ -85,5 +99,6 @@ turn rows, terminal records, recovery-save names, or transcript paths to list.
 3. For the human-escape gate, an attended real save/state exposing an unsupported
    blocker such as `ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE`.
 
-Because none of the live gates ran, this evidence file must not be committed as
-the brief's live-gate PASS commit.
+Gates 1 and 2 passed on 2026-07-15 (see Gate status). Only the hard-block
+human-escape gate still requires the state in item 3 above; items 1–2 are
+satisfied (main at `bf56e6f` on the gaming PC, game live with tuner).
