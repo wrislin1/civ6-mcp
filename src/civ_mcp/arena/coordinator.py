@@ -734,6 +734,9 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 else:
                     entry["completed"] = True
                     entry["summary"] = (result or {}).get("summary", "")
+                    print(f"[arena] seat-0 diplomacy pass completed on turn "
+                          f"{turn} (sessions {sessions}, attempt "
+                          f"{diplo_attempts})", file=sys.stderr)
             except Exception as e:
                 entry["error"] = repr(e)
                 print(f"[arena] seat-0 diplomacy pass failed on turn {turn}: "
