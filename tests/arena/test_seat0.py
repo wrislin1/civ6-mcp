@@ -225,10 +225,16 @@ _ALL_DECISION_TYPES = sorted(seat0.DECISION_BLOCKERS)
 
 
 def test_mechanical_blockers_is_exactly_the_closed_list():
+    # Full-LLM-control directive (riz 2026-07-15): anything the solo end_turn
+    # path auto-resolves is mechanical for seat 0 too -- spy escape routes and
+    # idle-governor prompts included. human_pending is reserved for blockers
+    # with no automation or tool path at all.
     assert MECHANICAL_BLOCKERS == {
         "ENDTURN_BLOCKING_UNITS",
         "ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE",
         "ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK",
+        "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE",
+        "ENDTURN_BLOCKING_GOVERNOR_IDLE",
     }
 
 
@@ -276,7 +282,6 @@ def test_classify_blockers_separates_mechanical_decision_and_hard():
         [{"type": t, "message": f"msg-{t}"} for t in sorted(MECHANICAL_BLOCKERS)]
         + [{"type": t, "message": f"msg-{t}"} for t in _ALL_DECISION_TYPES]
         + [
-            {"type": "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE", "message": "Spy escape"},
             {"type": "UNKNOWN", "message": "??"},
             {"type": "ENDTURN_BLOCKING_SOME_FUTURE_TYPE", "message": "future type"},
         ]
@@ -291,7 +296,6 @@ def test_classify_blockers_separates_mechanical_decision_and_hard():
     }
     assert "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE" not in {b["type"] for b in groups.decision}
     assert {b["type"] for b in groups.hard} == {
-        "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE",
         "UNKNOWN",
         "ENDTURN_BLOCKING_SOME_FUTURE_TYPE",
     }
@@ -374,6 +378,46 @@ async def test_query_blockers_none_is_empty_list():
 
 
 @pytest.mark.asyncio
+async def test_query_local_player_sessions_reports_open_sessions():
+    """Full-LLM-control: an AI deal/session wedging the human seat must be
+    detectable so the coordinator can hand it to the pilot's tools."""
+    conn = ScriptedConn()
+    conn.queue_write(["LOCAL_SESSIONS|1#1,4#9", lq.SENTINEL])
+    sessions = await seat0.query_local_player_sessions(conn)
+
+    assert sessions == "1#1,4#9"
+    assert conn.writes == [lq.build_find_local_player_sessions()]
+
+
+@pytest.mark.asyncio
+async def test_query_local_player_sessions_none_is_empty_string():
+    conn = ScriptedConn()
+    conn.queue_write(["LOCAL_SESSIONS|none", lq.SENTINEL])
+    assert await seat0.query_local_player_sessions(conn) == ""
+
+
+@pytest.mark.asyncio
+async def test_query_local_player_sessions_swallows_connection_errors():
+    class DeadConn:
+        async def execute_write(self, lua):
+            raise ConnectionError("socket dead")
+
+    assert await seat0.query_local_player_sessions(DeadConn()) == ""
+
+
+def test_build_diplomacy_block_names_tools_and_forbids_end_turn():
+    block = seat0.build_diplomacy_block("1#1")
+
+    assert "PENDING DIPLOMACY" in block
+    assert "1#1" in block
+    assert "get_pending_diplomacy" in block
+    assert "get_pending_trades" in block
+    assert "respond_to_diplomacy" in block
+    assert "respond_to_trade" in block
+    assert "end_turn is not available" in block
+
+
+@pytest.mark.asyncio
 async def test_apply_mechanical_cleanup_finishes_units(monkeypatch):
     calls = []
 
@@ -444,6 +488,53 @@ async def test_apply_mechanical_cleanup_acknowledges_government_change_prompt():
     assert cleanup[0]["action"] == "acknowledge_informational"
     assert conn.writes == [
         lq.build_mark_end_turn_prompt_seen("ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_apply_mechanical_cleanup_resolves_spy_escape_route():
+    """Full-LLM-control: the spy escape route is auto-resolved with the same
+    Lua the solo end_turn path uses (fastest district), never human_pending."""
+    conn = ScriptedConn()
+    conn.queue_write(["OK:ESCAPE_ROUTE fastest district", lq.SENTINEL])
+    blockers = [
+        {"type": "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE", "message": "Choose escape route"}
+    ]
+    cleanup = await apply_mechanical_cleanup(conn, blockers)
+
+    assert cleanup == [
+        {
+            "type": "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE",
+            "action": "spy_escape_route",
+            "result": "resolved",
+        }
+    ]
+    assert conn.writes == [lq.build_spy_escape_route()]
+
+
+@pytest.mark.asyncio
+async def test_apply_mechanical_cleanup_spy_escape_unconfirmed_on_lua_failure():
+    conn = ScriptedConn()
+    conn.queue_write(["ERR:no escape data", lq.SENTINEL])
+    blockers = [
+        {"type": "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE", "message": "Choose escape route"}
+    ]
+    cleanup = await apply_mechanical_cleanup(conn, blockers)
+
+    assert cleanup[0]["action"] == "spy_escape_route"
+    assert cleanup[0]["result"] == "UNCONFIRMED"
+
+
+@pytest.mark.asyncio
+async def test_apply_mechanical_cleanup_acknowledges_governor_idle():
+    conn = ScriptedConn()
+    conn.queue_write(["PROMPT_SEEN", lq.SENTINEL])
+    blockers = [{"type": "ENDTURN_BLOCKING_GOVERNOR_IDLE", "message": "Governor idle"}]
+    cleanup = await apply_mechanical_cleanup(conn, blockers)
+
+    assert cleanup[0]["action"] == "acknowledge_informational"
+    assert conn.writes == [
+        lq.build_mark_end_turn_prompt_seen("ENDTURN_BLOCKING_GOVERNOR_IDLE")
     ]
 
 

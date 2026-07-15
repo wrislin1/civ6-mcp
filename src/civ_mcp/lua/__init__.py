@@ -44,6 +44,7 @@ from civ_mcp.lua.diplomacy import (  # noqa: F401
     build_check_diplomacy_session_state,
     build_clear_blocking_diplomacy,
     build_close_orphan_sessions,
+    build_find_local_player_sessions,
     build_check_war_state,
     build_deal_options_query,
     build_diplomacy_choices_query,

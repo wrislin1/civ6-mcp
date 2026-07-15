@@ -10,7 +10,7 @@ from civ_mcp.arena.registry import (
 )
 
 
-MINIMAL_11 = {
+MINIMAL_15 = {
     "get_overview",
     "get_units",
     "get_cities",
@@ -22,11 +22,30 @@ MINIMAL_11 = {
     "skip_unit",
     "get_unit_promotions",
     "promote_unit",
+    "get_pending_diplomacy",
+    "respond_to_diplomacy",
+    "get_pending_trades",
+    "respond_to_trade",
 }
 
 
-def test_minimal_tier_is_todays_eleven():
-    assert set(TIERS["minimal"]) == MINIMAL_11
+def test_minimal_tier_is_todays_fifteen():
+    assert set(TIERS["minimal"]) == MINIMAL_15
+
+
+def test_diplomacy_responders_present_in_every_tier():
+    """Full-LLM-control (riz 2026-07-15): an AI-initiated deal/session with
+    the human seat halts the whole game until answered, and the coordinator's
+    diplomacy-wedge pass hands it to the pilot's tools. A tier without the
+    inspect/respond pair deterministically wedges to the CRITICAL
+    seat0_diplomacy_unresolved escape on the first incoming deal."""
+    for tier in ("minimal", "standard", "full"):
+        assert {
+            "get_pending_diplomacy",
+            "respond_to_diplomacy",
+            "get_pending_trades",
+            "respond_to_trade",
+        } <= set(resolve_tools(tier))
 
 
 def test_promotion_resolvers_present_in_every_tier():
@@ -194,11 +213,25 @@ DIPLOMACY_TOOL_NAMES = {
 }
 
 
-def test_diplomacy_tools_registered_full_only():
+_REACTIVE_DIPLOMACY = {
+    "get_pending_diplomacy",
+    "respond_to_diplomacy",
+    "get_pending_trades",
+    "respond_to_trade",
+}
+
+
+def test_diplomacy_tools_reactive_everywhere_proactive_full_only():
+    """Full-LLM-control split: REACTIVE diplomacy (inspect/answer an incoming
+    session that wedges the game) lives in every tier; PROACTIVE diplomacy
+    (proposing trades, alliances, peace) stays full-tier only."""
     assert DIPLOMACY_TOOL_NAMES <= set(TOOL_REGISTRY)
     assert DIPLOMACY_TOOL_NAMES <= set(resolve_tools("full"))
-    assert DIPLOMACY_TOOL_NAMES.isdisjoint(set(resolve_tools("minimal")))
-    assert DIPLOMACY_TOOL_NAMES.isdisjoint(set(resolve_tools("standard")))
+    proactive = DIPLOMACY_TOOL_NAMES - _REACTIVE_DIPLOMACY
+    assert _REACTIVE_DIPLOMACY <= set(resolve_tools("minimal"))
+    assert _REACTIVE_DIPLOMACY <= set(resolve_tools("standard"))
+    assert proactive.isdisjoint(set(resolve_tools("minimal")))
+    assert proactive.isdisjoint(set(resolve_tools("standard")))
 
     for internal_name in (
         "diplomacy_respond",
@@ -573,7 +606,7 @@ def test_agent_module_still_exposes_tools():
     from civ_mcp.arena.agent import TOOLS
 
     names = {t["function"]["name"] for t in TOOLS}
-    assert names == MINIMAL_11
+    assert names == MINIMAL_15
 
 
 def test_get_map_area_radius_schema_is_bounded():

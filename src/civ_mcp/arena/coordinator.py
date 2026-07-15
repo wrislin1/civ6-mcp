@@ -128,6 +128,19 @@ async def _clear_blocking_diplomacy(conn) -> str:
 # first-meeting) froze turn 27 for minutes until closed by hand.
 ORPHAN_SWEEP_IDLE_POLLS = 45
 
+# Full-LLM-control (riz 2026-07-15): an AI-initiated deal/session with the
+# HUMAN seat halts the whole turn cycle until answered, and holds seat 0
+# turn-inactive so normal admission never happens. The coordinator never
+# auto-answers (a real offer deserves a real judgement) -- instead it hands
+# the session to the seat-0 policy's own diplomacy tools
+# (get_pending_diplomacy / respond_to_diplomacy / respond_to_trade), on the
+# cadences below, bounded per wedged turn. Exhausting the bound logs one
+# CRITICAL and falls back to waiting for a human -- the escape hatch is only
+# for what the pilot genuinely cannot do itself.
+SEAT0_DIPLO_IDLE_POLLS = 10    # idle polls between probes while seat 0 is inactive
+SEAT0_DIPLO_DRAIN_POLLS = 45   # drain polls between probes during the AI phase
+SEAT0_DIPLO_ATTEMPT_LIMIT = 3  # policy passes per wedged turn before CRITICAL
+
 
 async def _sweep_orphan_sessions(conn) -> str:
     """Best-effort: close open diplomacy sessions not involving the local
@@ -422,6 +435,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         drain_polls = 0
         human_polls = 0
         idle_streak = 0  # consecutive idle polls since the last puppet capture
+        # Diplomacy-wedge pass state, keyed to the wedged game turn.
+        diplo_turn = -1
+        diplo_attempts = 0
+        diplo_unresolved_logged = False
         max_game_turns = getattr(config, "max_game_turns", 0)  # tolerate old test-stub configs
 
         def admission_open() -> bool:
@@ -651,6 +668,82 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             if repair["error"] == "":
                 return repair_result, await _mech_pass("after_repair")
             return repair_result, None
+
+        async def _seat0_diplomacy_pass_if_wedged(turn: int) -> bool:
+            """Probe for an open human-seat diplomacy session and, when one is
+            found, run one bounded policy pass so the pilot answers it with
+            its own tools. Returns True when a pass actually ran (activity).
+
+            Never auto-answers and never raises into the poll loop; after
+            SEAT0_DIPLO_ATTEMPT_LIMIT failed passes on the same turn it logs
+            one CRITICAL entry and leaves the session to a human."""
+            nonlocal diplo_turn, diplo_attempts, diplo_unresolved_logged
+            if seat0_spec is None:
+                return False
+            if turn != diplo_turn:
+                diplo_turn = turn
+                diplo_attempts = 0
+                diplo_unresolved_logged = False
+            sessions = await seat0.query_local_player_sessions(conn)
+            if not sessions:
+                return False
+            if diplo_attempts >= SEAT0_DIPLO_ATTEMPT_LIMIT:
+                if not diplo_unresolved_logged:
+                    diplo_unresolved_logged = True
+                    log.append({
+                        "level": "CRITICAL",
+                        "event": "seat0_diplomacy_unresolved",
+                        "turn": turn,
+                        "sessions": sessions,
+                        "attempts": diplo_attempts,
+                    })
+                    print(f"[arena] CRITICAL seat0_diplomacy_unresolved: "
+                          f"sessions {sessions} still open after "
+                          f"{diplo_attempts} policy passes on turn {turn}; "
+                          f"waiting for a human", file=sys.stderr)
+                return False
+            diplo_attempts += 1
+            pol = policy_for(0)
+            entry = {
+                "event": "seat0_diplomacy_pass",
+                "turn": turn,
+                "player_id": 0,
+                "sessions": sessions,
+                "attempt": diplo_attempts,
+                "completed": False,
+                "error": "",
+            }
+            kwargs = _repair_kwargs(pol, seat0.build_diplomacy_block(sessions), None)
+            if kwargs is None:
+                # An incompatible policy can never answer; don't burn the
+                # remaining attempts discovering that three times.
+                diplo_attempts = SEAT0_DIPLO_ATTEMPT_LIMIT
+                entry["error"] = (
+                    "policy does not accept required blocker_block keyword"
+                )
+                log.append(entry)
+                return False
+            exclusive = bool(getattr(pol, "needs_exclusive_tuner", False))
+            if exclusive and conn.is_connected:
+                await conn.disconnect()   # the pass owns the tuner
+            try:
+                result = await pol(gs, 0, turn, **kwargs)
+                timeout_error = seat0.attempt_timeout_error(result)
+                if timeout_error:
+                    entry["error"] = timeout_error
+                else:
+                    entry["completed"] = True
+                    entry["summary"] = (result or {}).get("summary", "")
+            except Exception as e:
+                entry["error"] = repr(e)
+                print(f"[arena] seat-0 diplomacy pass failed on turn {turn}: "
+                      f"{e!r}", file=sys.stderr)
+            # Reclaim the tuner regardless of outcome: the poll loop needs a
+            # live connection either way.
+            if exclusive and not conn.is_connected:
+                await _reconnect_with_retry(conn)
+            log.append(entry)
+            return True
 
         async def _recheck_cleanup_repair_or_refire() -> None:
             """RECHECK: the previous end request may not have taken (seat 0
@@ -1661,6 +1754,18 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         deadline_polls -= 1
                     else:
                         drain_polls += 1
+                        if drain_polls % SEAT0_DIPLO_DRAIN_POLLS == 0:
+                            # A deal can also arrive DURING the post-end-turn
+                            # AI phase and wedge it (observed live: player 1
+                            # opened a session with seat 0 and the whole
+                            # interturn froze). One InGame probe on this slow
+                            # cadence is the accepted trade-off against the
+                            # otherwise-guaranteed drain deadline.
+                            if await _seat0_diplomacy_pass_if_wedged(
+                                seat0_state.turn
+                            ):
+                                drain_polls = 0
+                                continue
                         if drain_polls >= config.seat0_drain_poll_limit:
                             log.append({
                                 "level": "CRITICAL",
@@ -1689,6 +1794,20 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 # so after a long idle streak sweep those closed. The sweep skips
                 # every session involving the local player by construction.
                 idle_streak += 1
+                if (
+                    seat0_spec is not None
+                    and st.turn >= 0
+                    and not st.seat0_active
+                    and admission_open()
+                    and idle_streak % SEAT0_DIPLO_IDLE_POLLS == 0
+                ):
+                    # Seat 0 held inactive this long is the deal-wedge
+                    # signature: an AI opened a session with the human seat
+                    # and the turn cycle is stopped until it is answered.
+                    if await _seat0_diplomacy_pass_if_wedged(st.turn):
+                        idle_streak = 0
+                        deadline_polls = config.idle_poll_limit
+                        continue
                 if idle_streak % ORPHAN_SWEEP_IDLE_POLLS == 0:
                     swept_sessions = await _sweep_orphan_sessions(conn)
                     if swept_sessions not in ("ORPHANS|none", "?", "err"):

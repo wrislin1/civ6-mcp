@@ -112,9 +112,10 @@ def build_mark_end_turn_prompt_seen(blocking_type: str) -> str:
     choice.
 
     Accepts only ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE (marks the
-    government-change consideration seen) and ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK
+    government-change consideration seen), ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK
     (marks World Congress results looked-at and dismisses only the matching
-    notification). Any other value raises ValueError.
+    notification), and ENDTURN_BLOCKING_GOVERNOR_IDLE (activates and dismisses
+    the idle-governor reminder). Any other value raises ValueError.
     """
     if blocking_type == "ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE":
         return f"""
@@ -144,6 +145,26 @@ local i = ContextPtr:LookUpControl("/InGame/WorldCongressIntro")
 if i then i:SetHide(true) end
 local p = ContextPtr:LookUpControl("/InGame/WorldCongressPopup")
 if p then p:SetHide(true) end
+print("PROMPT_SEEN")
+print("{SENTINEL}")
+"""
+
+    if blocking_type == "ENDTURN_BLOCKING_GOVERNOR_IDLE":
+        return f"""
+local me = Game.GetLocalPlayer()
+local list = NotificationManager.GetList(me)
+if list then
+    for _, nid in ipairs(list) do
+        local entry = NotificationManager.Find(me, nid)
+        if entry and not entry:IsDismissed() then
+            local bt = entry:GetEndTurnBlocking()
+            if bt and bt == EndTurnBlockingTypes.ENDTURN_BLOCKING_GOVERNOR_IDLE then
+                pcall(function() NotificationManager.SendActivated(me, nid) end)
+                pcall(function() NotificationManager.Dismiss(me, nid) end)
+            end
+        end
+    end
+end
 print("PROMPT_SEEN")
 print("{SENTINEL}")
 """

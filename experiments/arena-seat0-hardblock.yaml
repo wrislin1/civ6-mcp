@@ -1,0 +1,18 @@
+# Stage-3 live gate: hard-block human escape. cli-claude pilots seat 0 alone
+# in a late-stage save (turn ~298, Korea, 12 civs); all other majors stay on
+# normal game AI. The gate PASSES when a spy offensive mission completes and
+# ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE (in neither authority table ->
+# hard) drives the coordinator to seat0_human_pending, where it must wait for
+# an attended human resolution instead of auto-resolving.
+#
+# Run in legs, editing max budgets between runs: leg 1 lets in-transit spies
+# arrive; a library spy_mission call starts the offensive op between legs;
+# the final leg spans the mission-completion turn.
+max_puppet_turns: 4
+max_game_turns: 4
+idle_poll_limit: 600
+civs:
+  - player: 0
+    provider: cli-claude
+    model: ""
+    attention: {mode: "off"}

@@ -109,11 +109,23 @@ def test_slice1_treatment_full_tier_has_diplomacy_tools_and_control_does_not():
         "form_alliance",
     }
 
+    # Full-LLM-control split (riz 2026-07-15): the reactive inspect/answer
+    # pair now lives in every tier (an unanswered incoming deal wedges the
+    # whole game), so the A/B contrast is on PROACTIVE diplomacy only.
+    proactive_diplomacy = diplomacy_tools - {
+        "get_pending_diplomacy",
+        "respond_to_diplomacy",
+        "get_pending_trades",
+        "respond_to_trade",
+    }
+
     for player_id in (1, 3, 5, 7):
         assert diplomacy_tools <= set(resolve_tools(by_player[player_id].options.tools))
 
     for player_id in (2, 4, 6):
-        assert diplomacy_tools.isdisjoint(set(resolve_tools(by_player[player_id].options.tools)))
+        assert proactive_diplomacy.isdisjoint(
+            set(resolve_tools(by_player[player_id].options.tools))
+        )
 
 
 def test_loads_arena_behavior_3llm_slice3_artifact():

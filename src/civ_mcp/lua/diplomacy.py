@@ -342,6 +342,38 @@ print("{SENTINEL}")
 """
 
 
+def build_find_local_player_sessions() -> str:
+    """Report open diplomacy sessions involving the LOCAL player (InGame).
+
+    The wedge this detects: an AI opens a deal/greeting session with the human
+    seat and the whole turn cycle stops until the human answers. Sessions with
+    the local player are exactly what `build_close_orphan_sessions` skips, so
+    the arena coordinator uses this probe to hand them to the seat-0 pilot's
+    diplomacy tools instead of auto-closing them. Reports
+    'LOCAL_SESSIONS|<other>#<sid>,...' or 'LOCAL_SESSIONS|none'.
+    """
+    return """
+local me = Game.GetLocalPlayer()
+local found = {}
+if me ~= nil and me >= 0 then
+    for other = 0, 63 do
+        if other ~= me and Players[other] ~= nil and Players[other]:IsAlive() then
+            local s = DiplomacyManager.FindOpenSessionID(me, other)
+            if s and s >= 0 then
+                found[#found+1] = other .. "#" .. s
+            end
+        end
+    end
+end
+if #found > 0 then
+    print("LOCAL_SESSIONS|" .. table.concat(found, ","))
+else
+    print("LOCAL_SESSIONS|none")
+end
+print("{SENTINEL}")
+""".replace("{SENTINEL}", SENTINEL)
+
+
 def build_close_orphan_sessions() -> str:
     """Close open diplomacy sessions that do NOT involve the local player.
 

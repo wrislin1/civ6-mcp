@@ -3059,7 +3059,7 @@ async def test_seat0_timeout_shaped_attempts_count_failed_not_played(monkeypatch
 @pytest.mark.asyncio
 @pytest.mark.parametrize("hard_type", [
     "UNKNOWN",
-    "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE",
+    "ENDTURN_BLOCKING_SOME_FUTURE_TYPE",
 ])
 async def test_seat0_hard_block_goes_straight_to_human_pending(monkeypatch, tmp_path, hard_type):
     """A hard/inaccessible blocker enters human_pending WITHOUT a repair call."""
@@ -4669,3 +4669,126 @@ async def test_seat0_cancel_during_repair_marks_attempted_in_interrupted_record(
     rec = sink.records[0]
     assert rec["seat0"]["terminal_state"] == "interrupted"
     assert rec["seat0"]["repair"]["attempted"] is True
+
+
+# --- Full-LLM-control: diplomacy-wedged seat 0 -------------------------------
+# An AI-initiated deal/session with the human seat halts the whole turn cycle
+# until answered. The coordinator must hand it to the pilot's own diplomacy
+# tools (get_pending_diplomacy/respond_to_trade/...), bounded, never
+# auto-answering and never stalling to the idle deadline.
+
+
+class _AnsweringSessions:
+    """Mutable session source: reports `value` until cleared."""
+
+    def __init__(self, value="1#1"):
+        self.value = value
+        self.probes = 0
+
+    async def __call__(self, conn):
+        self.probes += 1
+        return self.value
+
+
+@pytest.mark.asyncio
+async def test_seat0_idle_deal_wedge_invokes_diplomacy_pass(monkeypatch, tmp_path):
+    """Seat 0 inactive with an open human-seat session: after the idle probe
+    cadence the policy is invoked once with the focused diplomacy prompt; no
+    turn is admitted, no end request fires, no turn record is written."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(298, active=False)])
+    sessions = _AnsweringSessions("1#1")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+
+    class AnsweringPolicy(Seat0RecordingPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            sessions.value = ""   # the pilot answers the deal
+            return await super().__call__(gs, player_id, turn, **kwargs)
+
+    pol = AnsweringPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=30, run_id="seat0-diplo-wedge")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert [c[:2] for c in pol.calls] == [(0, 298)]
+    block = pol.calls[0][2]["blocker_block"]
+    assert "PENDING DIPLOMACY" in block
+    assert "1#1" in block
+    assert "respond_to_trade" in block
+    # No turn machinery ran: no end request, no blocker query, no record.
+    assert "end_turn" not in harness.names()
+    assert sink.records == []
+    assert result["seat0_turns_played"] == 0
+    passes = [e for e in result["log"] if e.get("event") == "seat0_diplomacy_pass"]
+    assert len(passes) == 1
+    assert passes[0]["completed"] is True
+    assert passes[0]["sessions"] == "1#1"
+
+
+@pytest.mark.asyncio
+async def test_seat0_deal_wedge_attempts_bounded_then_critical(monkeypatch, tmp_path):
+    """A session the policy never manages to close: exactly
+    SEAT0_DIPLO_ATTEMPT_LIMIT passes, then one CRITICAL log entry and no
+    further policy calls -- a human is expected, matching the escape-hatch
+    contract."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(298, active=False)])
+    sessions = _AnsweringSessions("1#1")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=90, run_id="seat0-diplo-bound")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert len(pol.calls) == coordinator_mod.SEAT0_DIPLO_ATTEMPT_LIMIT
+    crit = [e for e in result["log"]
+            if e.get("event") == "seat0_diplomacy_unresolved"]
+    assert len(crit) == 1
+    assert crit[0]["level"] == "CRITICAL"
+    assert sink.records == []
+
+
+@pytest.mark.asyncio
+async def test_seat0_drain_deal_wedge_runs_diplomacy_pass(monkeypatch, tmp_path):
+    """A deal arriving during the post-end-turn AI phase (drain) also reaches
+    the pilot: probe on the drain cadence, one diplomacy pass, then the turn
+    advances and terminalizes `advanced` as normal."""
+    monkeypatch.setattr(coordinator_mod, "SEAT0_DIPLO_DRAIN_POLLS", 4)
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),                       # admission
+        *[seat0_poll(7, active=False) for _ in range(6)],  # drain (wedged)
+        seat0_poll(8, active=True),                       # answered -> advance
+    ])
+    sessions = _AnsweringSessions("2#5")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+
+    class AnsweringPolicy(Seat0RecordingPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            if "blocker_block" in kwargs and "PENDING DIPLOMACY" in kwargs["blocker_block"]:
+                sessions.value = ""
+            return await super().__call__(gs, player_id, turn, **kwargs)
+
+    pol = AnsweringPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=30, run_id="seat0-diplo-drain")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    # Two policy invocations: the normal turn, then the mid-drain diplomacy pass.
+    assert [c[:2] for c in pol.calls] == [(0, 7), (0, 7)]
+    assert "PENDING DIPLOMACY" in pol.calls[1][2]["blocker_block"]
+    # The seat-0 turn still terminalizes normally.
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert result["seat0_turns_played"] == 1
+    passes = [e for e in result["log"] if e.get("event") == "seat0_diplomacy_pass"]
+    assert len(passes) == 1 and passes[0]["completed"] is True

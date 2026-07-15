@@ -260,11 +260,17 @@ def automation_failure_blocker(stage: str, error: str) -> dict:
 
 # Closed list: the only blocker types this module ever resolves itself, and
 # only mechanically (finish already-ordered moves; acknowledge a purely
-# informational prompt). Every other type is a strategic choice.
+# informational prompt; apply a resolution the solo end_turn path already
+# auto-applies, like the fastest spy escape route). Every other type is a
+# strategic choice. Full-LLM-control directive (riz 2026-07-15): anything the
+# solo path auto-resolves belongs here; human_pending is only for blockers
+# with no automation or tool path at all.
 MECHANICAL_BLOCKERS = frozenset({
     "ENDTURN_BLOCKING_UNITS",
     "ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE",
     "ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK",
+    "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE",
+    "ENDTURN_BLOCKING_GOVERNOR_IDLE",
 })
 
 # Decision-blocker types whose lingering *notification* may still be
@@ -366,6 +372,46 @@ def build_blocker_block(blockers: list[dict], *, prior_error: str = "") -> str:
 # ---------------------------------------------------------------------------
 
 
+async def query_local_player_sessions(conn) -> str:
+    """Report open diplomacy sessions involving the local (human) player.
+
+    InGame/`execute_write` only. Returns the raw session list
+    (`"<other>#<sid>,..."`) or `""` when none are open. Never raises: this is
+    called from the coordinator's poll loop, where a transient connection
+    error must read as "nothing detected", not kill the run.
+    """
+    try:
+        lines = await conn.execute_write(lq.build_find_local_player_sessions())
+    except Exception:
+        return ""
+    for line in lines:
+        if line.startswith("LOCAL_SESSIONS|"):
+            payload = line.split("|", 1)[1].strip().rstrip(",")
+            return "" if payload == "none" else payload
+    return ""
+
+
+def build_diplomacy_block(sessions: str) -> str:
+    """Build the focused prompt for a diplomacy-wedged seat 0.
+
+    An AI civ has opened a deal/session with the human seat and the whole
+    turn cycle is stopped until it is answered. Full-LLM-control: the pilot
+    answers it with its own tools; the coordinator never auto-responds.
+    """
+    return "\n".join([
+        "== PENDING DIPLOMACY ==",
+        f"Another civilization is waiting on your diplomatic response "
+        f"(open sessions: {sessions}). The game cannot proceed until you "
+        f"answer.",
+        "Use get_pending_diplomacy() and get_pending_trades() to inspect "
+        "what is being proposed, then answer with respond_to_diplomacy(...) "
+        "or respond_to_trade(...). Judge offers on their merits.",
+        "This pass is only for answering the pending diplomacy; end_turn is "
+        "not available to you and no other actions are needed -- the "
+        "coordinator resumes normal play once the session closes.",
+    ])
+
+
 async def query_blockers(conn) -> list[dict]:
     """Query every active EndTurnBlocking notification.
 
@@ -385,8 +431,11 @@ async def apply_mechanical_cleanup(conn, blockers: list[dict]) -> list[dict]:
 
     - `ENDTURN_BLOCKING_UNITS` -> `hook.finish_units(conn, 0)` (GameCore).
     - `ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE` /
-      `ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK` -> acknowledge the purely
+      `ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK` /
+      `ENDTURN_BLOCKING_GOVERNOR_IDLE` -> acknowledge the purely
       informational prompt (InGame).
+    - `ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE` -> apply the solo path's
+      auto-resolution (fastest escape route, InGame).
     - `ENDTURN_BLOCKING_RESEARCH` / `_CIVIC` / `_PRODUCTION` -> dismiss the
       stale notification only if Lua proves the underlying choice is
       already set; recorded as `NOT_SET` otherwise, never claimed cleared.
@@ -409,12 +458,27 @@ async def apply_mechanical_cleanup(conn, blockers: list[dict]) -> list[dict]:
         elif blocking_type in (
             "ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE",
             "ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK",
+            "ENDTURN_BLOCKING_GOVERNOR_IDLE",
         ):
             lines = await conn.execute_write(lq.build_mark_end_turn_prompt_seen(blocking_type))
             result = "PROMPT_SEEN" if any("PROMPT_SEEN" in ln for ln in lines) else "UNCONFIRMED"
             cleanup.append({
                 "type": blocking_type,
                 "action": "acknowledge_informational",
+                "result": result,
+            })
+        elif blocking_type == "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE":
+            # Same resolution the solo end_turn path applies (end_turn.py):
+            # the spy takes the fastest escape route.
+            lines = await conn.execute_write(lq.build_spy_escape_route())
+            result = (
+                "resolved"
+                if any("OK:ESCAPE_ROUTE" in ln for ln in lines)
+                else "UNCONFIRMED"
+            )
+            cleanup.append({
+                "type": blocking_type,
+                "action": "spy_escape_route",
                 "result": result,
             })
         elif blocking_type in _STALE_CLEARABLE:

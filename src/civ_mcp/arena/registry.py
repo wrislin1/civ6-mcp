@@ -1360,6 +1360,14 @@ TIERS: dict[str, tuple[str, ...]] = {
         # deterministically stalls to human_pending on each one.
         "get_unit_promotions",
         "promote_unit",
+        # Diplomacy responders live in EVERY tier: an AI-initiated deal with
+        # the human seat halts the whole game until answered, and the
+        # coordinator's diplomacy-wedge pass hands it to these tools. Without
+        # them a pilot wedges to CRITICAL on the first incoming deal.
+        "get_pending_diplomacy",
+        "respond_to_diplomacy",
+        "get_pending_trades",
+        "respond_to_trade",
     ),
     "standard": (
         "get_overview",
@@ -1382,6 +1390,10 @@ TIERS: dict[str, tuple[str, ...]] = {
         "heal_unit",
         "alert_unit",
         "set_civic",
+        "get_pending_diplomacy",
+        "respond_to_diplomacy",
+        "get_pending_trades",
+        "respond_to_trade",
     ),
     "full": tuple(TOOL_REGISTRY),
 }
