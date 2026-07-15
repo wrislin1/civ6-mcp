@@ -1,7 +1,7 @@
 # Arena Autonomous Seat-0 Piloting — v1, Attended (Design)
 
 **Date:** 2026-07-14
-**Status:** Revised design approved section-by-section in riz's separate-session spec review (2026-07-14); written revision pending riz's final file review before `superpowers:writing-plans`.
+**Status:** Implemented + hardened — plan Tasks 1–9 executed on branch `arena-seat0-piloting`, review-1 hardening wave (`be30516..ac32ce1`) and review-2 fix wave (`c93fc68..0272cc9`) applied; merged to main at `845ae09` (2026-07-15), 1194 tests green. Attended live gates (plan Task 10) remain open — evidence: `docs/superpowers/plans/2026-07-14-arena-seat0-live-gates.md`. (Earlier: revised design approved section-by-section in riz's separate-session spec review 2026-07-14; riz's written revisions landed as `79123ca` + `f21791c`.)
 **Predecessor:** Attention & turn-skipping slice merged and **live-probed** — P1–P4 all passed on a live game (turns 155→225), fixes merged at `480fc8d`, 1001 tests green. This design was re-verified against `480fc8d` after the probe fixes landed.
 **Sequencing:** riz inserted this slice **before roadmap item A** (LLM↔LLM unofficial channels, spec `2026-07-09-arena-unofficial-channels-design.md`). That spec's Appendix A carried forward the autonomous-seat-0 findings and named this as its own future brainstorm — this document is that brainstorm's output. The **game-master idea is parked** (its purpose question unanswered); it comes after this slice and presumes all pilots are local LLMs.
 **Slice split (riz):** "A then B as its own slice works. As usual we start small, test, then increase complexity."

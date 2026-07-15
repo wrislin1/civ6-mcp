@@ -1,5 +1,13 @@
 # Arena Autonomous Seat-0 Piloting Implementation Plan
 
+> **Status:** Tasks 1–9 ✓ DONE — executed 2026-07-14/15 on branch
+> `arena-seat0-piloting` (tip `be30516`), then hardened by two review fix
+> waves (`2026-07-15-arena-seat0-review-fixes.md`,
+> `2026-07-15-arena-seat0-review2-fixes.md`); merged to main at `845ae09`,
+> 1194 tests green. REMAINING: Task 10 attended live gates on the gaming PC —
+> all gates BLOCKED/NOT EXERCISED as of 2026-07-15, see
+> `2026-07-14-arena-seat0-live-gates.md`. Do not re-execute Tasks 1–9.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let a configured arena policy play local seat 0, resolve every strategic choice itself, and advance the game without routine human input while retaining a bounded, visible hard-block escape hatch.

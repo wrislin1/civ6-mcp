@@ -7,6 +7,12 @@
 > hardened commit object. Civilization VI is not running and no FireTuner
 > listener is available. No remote checkout change, watcher start, save load,
 > direct Lua fabrication, or live PASS occurred.
+>
+> **Update 2026-07-15 (post-merge):** the hardened branch (after a second
+> review fix wave, tip `0272cc9`) was merged to main at `845ae09` with riz's
+> explicit direction ("merge push"); 1194 tests green. The rerun is unblocked
+> once the gaming PC checkout is fast-forwarded to ≥ `845ae09`. Gates below
+> remain NOT EXERCISED.
 
 ## Offline verification
 

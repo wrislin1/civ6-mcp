@@ -1,5 +1,9 @@
 # Arena Seat-0 Review-2 Fixes Implementation Plan
 
+> **Status:** ✓ DONE — executed 2026-07-15 (8/8 tasks + final-review fix wave,
+> commits `c93fc68..0272cc9`, 1194 tests green); merged to main at `845ae09`.
+> Do not re-execute.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix the seven confirmed findings from the 2026-07-15 code review of the seat-0 piloting fix wave (`be30516..ac32ce1`): unbounded AI-processing drain, permanent DEGRADED wedge on turn regression, dead retry gate in `_mech_pass`, overloaded `idle_poll_limit` knob for human-pending, orphan sweep skipped during human-pending, duplicated one-shot repair block, and the record-skeleton interruption hole.

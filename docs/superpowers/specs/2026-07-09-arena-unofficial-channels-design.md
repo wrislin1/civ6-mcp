@@ -4,7 +4,7 @@
 **Status:** Approved by riz (brainstorming session, this date) — design capture for a **deferred** slice
 **Predecessor:** Slice 4 (full toolset + era gating) merged at `b3540d8`; Attention & Turn-Skipping slice **merged to main 2026-07-09** at `7f1ac2c` (spec: `docs/superpowers/specs/2026-07-09-arena-attention-turn-skipping-design.md`; its live probes P1–P4 still pending and gate attention-enabled runs).
 **Sequencing:** This is the substance of roadmap item **A (LLM↔LLM interaction)**, which follows the attention slice in the D → A → C → B order. LLM↔LLM was explicitly *moved down*; this document captures the design and checks feasibility so it is ready when A comes up. It is **not** queued for immediate implementation.
-**Scope decision (this session):** Channels only. The **autonomous seat-0** prerequisite is a *separate* future brainstorm + live-gate plan — see Appendix A for the carried-forward findings.
+**Scope decision (this session):** Channels only. The **autonomous seat-0** prerequisite is a *separate* future brainstorm + live-gate plan — see Appendix A for the carried-forward findings. *(Update 2026-07-15: that seat-0 slice is now designed, implemented, and merged to main at `845ae09` — spec `2026-07-14-arena-seat0-piloting-design.md`; only its attended live gates remain. A is next in the roadmap once those gates pass.)*
 
 ## Context & Motivation
 

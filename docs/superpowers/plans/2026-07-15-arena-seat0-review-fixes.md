@@ -1,5 +1,10 @@
 # Arena Seat-0 Review Fixes Implementation Plan
 
+> **Status:** ✓ DONE — executed 2026-07-15 (review-1 hardening wave, 10 commits
+> `be30516..ac32ce1`, 1174 tests green); merged to main at `845ae09`. Do not
+> re-execute. Follow-up findings were fixed by
+> `2026-07-15-arena-seat0-review2-fixes.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Harden autonomous seat-0 piloting against degraded polls, long AI drains, mechanical-operation failures, malformed transcript snapshots, and failed-turn metric skew without transferring strategic authority from the policy to the coordinator.
