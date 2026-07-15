@@ -3631,6 +3631,75 @@ async def test_seat0_interrupted_write_failure_does_not_mask_cancellation(monkey
 
 
 @pytest.mark.asyncio
+async def test_seat0_interrupted_write_cancellation_runs_full_handback(
+    monkeypatch, tmp_path
+):
+    """A transcript-origin CancelledError during interrupted-record writing is
+    retained, but cannot skip restore_local or hook.disable."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True), seat0_poll(7, active=True),
+    ])
+    conn = Seat0CapsConn()
+
+    class CancelSink(EventSink):
+        def write(self, record):
+            self._harness.events.append(("record_attempt",))
+            conn._connected = False
+            raise asyncio.CancelledError("interrupted transcript write")
+
+    sink = CancelSink(harness)
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-cancel-write", idle_poll_limit=8)
+    monkeypatch.setattr(asyncio, "sleep", _cancel_after_sleeps(harness, 1))
+
+    with pytest.raises(asyncio.CancelledError, match="interrupted transcript write"):
+        await run_arena(
+            conn,
+            FakeGSWithConn(conn),
+            cfg,
+            policy=Seat0ScriptPolicy(harness, [_returned("normal ok")]),
+            transcript=sink,
+        )
+
+    names = harness.names()
+    assert "record_attempt" in names
+    assert conn.is_connected is True
+    assert "restore_local" in names and names.count("disable") == 2
+
+
+@pytest.mark.asyncio
+async def test_cleanup_later_cancellation_survives_earlier_ordinary_failure(
+    monkeypatch, tmp_path
+):
+    """An ordinary restore failure is best-effort, but a later disable
+    cancellation must still propagate after every cleanup step is attempted."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=False)])
+
+    async def broken_restore(_conn, _pid=0):
+        harness.events.append(("restore_local", 0))
+        raise ConnectionError("restore unavailable")
+
+    async def cancelled_disable(_conn):
+        harness.events.append(("disable",))
+        raise asyncio.CancelledError("disable interrupted")
+
+    monkeypatch.setattr(hook_mod, "restore_local", broken_restore)
+    monkeypatch.setattr(hook_mod, "disable", cancelled_disable)
+
+    with pytest.raises(asyncio.CancelledError, match="disable interrupted"):
+        await run_arena(
+            Seat0CapsConn(),
+            FakeGS(),
+            _seat0_cfg(
+                tmp_path, run_id="cleanup-interrupt-order", idle_poll_limit=1
+            ),
+            policy=Seat0ScriptPolicy(harness, []),
+        )
+
+    names = harness.names()
+    assert "restore_local" in names and "disable" in names
+
+
+@pytest.mark.asyncio
 async def test_seat0_cleanup_exception_does_not_mask_seat0_cancellation(monkeypatch, tmp_path):
     """Carry-forward: an ordinary cleanup exception (a failing restore) must
     not replace the in-flight CancelledError from a seat-0 drain."""

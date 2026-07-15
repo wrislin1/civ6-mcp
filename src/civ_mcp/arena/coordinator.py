@@ -1519,9 +1519,11 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         # unwritten record (cancellation or error mid-turn) is terminalized
         # `interrupted` best-effort. A record already written (advanced /
         # human_pending) is never rewritten or duplicated. This runs BEFORE the
-        # tuner handback and swallows its own failures, so a transcript error
-        # can neither mask an in-flight CancelledError nor skip the human-safety
-        # cleanup below.
+        # tuner handback and handles its own failures, so a transcript error can
+        # neither mask an in-flight CancelledError nor skip the human-safety
+        # cleanup below. Ordinary write failures are swallowed; interrupts are
+        # retained until every human-safety cleanup step has been attempted.
+        record_interrupt = None
         if seat0_state.record is not None and not seat0_state.record_written:
             try:
                 seat0_state.mark_interrupted()
@@ -1531,10 +1533,12 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 if _tx_on:
                     transcript.write(seat0_state.record)
                 seat0_state.record_written = True
-            except Exception as e:
+            except BaseException as e:
+                if not isinstance(e, Exception):
+                    record_interrupt = e
                 print(f"[arena] WARNING: seat-0 interrupted-record write failed: "
                       f"{e!r}", file=sys.stderr)
-        first_exc = None
+        cleanup_interrupt = None
         steps = []
         if not conn.is_connected:
             steps.append(("reclaim-retry", lambda: _reconnect_with_retry(conn)))
@@ -1544,8 +1548,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             try:
                 await step()
             except BaseException as e:
-                if first_exc is None:
-                    first_exc = e
+                if not isinstance(e, Exception) and cleanup_interrupt is None:
+                    cleanup_interrupt = e
                 print(f"[arena] WARNING: {label} failed in cleanup: {e!r}", file=sys.stderr)
-        if first_exc is not None and not isinstance(first_exc, Exception):
-            raise first_exc
+        if record_interrupt is not None:
+            raise record_interrupt
+        if cleanup_interrupt is not None:
+            raise cleanup_interrupt
