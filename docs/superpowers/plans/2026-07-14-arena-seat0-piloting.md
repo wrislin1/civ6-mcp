@@ -7,6 +7,10 @@
 > 1194 tests green. REMAINING: Task 10 attended live gates on the gaming PC —
 > all gates BLOCKED/NOT EXERCISED as of 2026-07-15, see
 > `2026-07-14-arena-seat0-live-gates.md`. Do not re-execute Tasks 1–9.
+> Task-8 wording note: riz affirmed (2026-07-15) the implemented task-tally
+> reading — count `turn_kind != "failed"` (slept turns carry real
+> `run_pre_model_tasks` follow-through) — over this plan's literal
+> played-only text; drivers/standing-memory stay played-only.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
