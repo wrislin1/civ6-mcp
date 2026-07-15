@@ -2465,6 +2465,42 @@ async def test_seat0_degraded_and_backward_polls_do_not_terminalize_or_replay(
 
 
 @pytest.mark.asyncio
+async def test_seat0_turn_regression_terminalizes_and_replays(monkeypatch, tmp_path):
+    """A human loading an older save mid-drain: three consecutive backward
+    polls terminalize the in-flight turn as `regressed` (turn_kind failed),
+    and the rolled-back turn is re-admitted and replayed."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),    # admit turn 7
+        seat0_poll(7, active=False),   # AI processing after the end request
+        seat0_poll(5, active=False),   # regression sample 1 -> DEGRADED
+        seat0_poll(5, active=False),   # regression sample 2 -> DEGRADED
+        seat0_poll(5, active=False),   # regression sample 3 -> REGRESSED
+        seat0_poll(5, active=True),    # re-admit the rolled-back turn 5
+        seat0_poll(5, active=False),   # AI processing
+        seat0_poll(6, active=True),    # turn 5 advanced
+    ])
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("turn 7"), _returned("turn 5")])
+    cfg = _seat0_cfg(tmp_path, run_id="seat0-regressed", max_puppet_turns=2)
+
+    result = await run_arena(
+        conn, FakeGSWithConn(conn), cfg, policy=pol, transcript=sink
+    )
+
+    assert [call[:2] for call in pol.calls] == [(0, 7), (0, 5)]
+    assert result["seat0_turns_failed"] == 1
+    assert result["seat0_turns_played"] == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "regressed"
+    assert sink.records[0]["turn_kind"] == "failed"
+    assert sink.records[1]["seat0"]["terminal_state"] == "advanced"
+    events = [e for e in result["log"] if e.get("event") == "seat0_turn_regressed"]
+    assert len(events) == 1
+    assert events[0]["turn"] == 7
+    assert events[0]["observed_turn"] == 5
+
+
+@pytest.mark.asyncio
 async def test_seat0_receives_memory_and_task_blocks_for_player_zero(monkeypatch, tmp_path):
     """Regression 1: seat 0 rides the existing standing-memory and task
     pipeline, keyed by player 0 — including pre-model task follow-through."""

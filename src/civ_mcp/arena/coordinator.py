@@ -435,6 +435,40 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 seat0_played += 1
             seat0_state.reset()
 
+        def _terminalize_seat0_regressed(*, observed_turn: int) -> None:
+            """The game state rolled back under an in-flight seat-0 turn (a
+            human loaded an earlier save): write the pending record exactly
+            once with terminal `regressed`, count it as failed (its outcome
+            no longer exists in the timeline), emit one CRITICAL event, and
+            reset for re-admission at the rolled-back turn. A record already
+            written (human_pending) is never rewritten -- only the reset and
+            the CRITICAL apply."""
+            nonlocal seat0_failed
+            regressed_from = seat0_state.turn
+            if seat0_state.record is not None and not seat0_state.record_written:
+                seat0_state.record["turn_kind"] = "failed"
+                seat0_state.record["seat0"]["terminal_state"] = "regressed"
+                seat0_state.record["seat0"]["end_turn_requests"] = (
+                    seat0_state.end_turn_requests
+                )
+                if _tx_on:
+                    transcript.write(seat0_state.record)
+                seat0_state.record_written = True
+                seat0_failed += 1
+            log.append({
+                "level": "CRITICAL",
+                "event": "seat0_turn_regressed",
+                "turn": regressed_from,
+                "observed_turn": observed_turn,
+            })
+            print(
+                f"[arena] CRITICAL seat0_turn_regressed: in-flight turn "
+                f"{regressed_from} rolled back to {observed_turn}; the turn "
+                f"will be re-piloted when seat 0 polls active",
+                file=sys.stderr,
+            )
+            seat0_state.reset()
+
         def _seat0_enter_human_pending(
             *, turn: int, blockers: list, record: dict, turn_kind: str,
             normal_error: str, repair_error: str,
@@ -654,6 +688,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 if poll_action is Seat0Poll.ADVANCED:
                     _terminalize_seat0_advanced()
                     # Fall through: this same poll may re-admit the next turn.
+                elif poll_action is Seat0Poll.REGRESSED:
+                    _terminalize_seat0_regressed(observed_turn=st.turn)
+                    # Fall through: seat 0 re-admits at the rolled-back turn
+                    # once it polls active again.
                 elif poll_action is Seat0Poll.RECHECK:
                     # The end request did not take (seat 0 still active after
                     # the grace window). observe only returns RECHECK while
