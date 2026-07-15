@@ -2258,8 +2258,18 @@ class Seat0Harness:
                 return dict(self.anchor)
             return {"name": f"0_MCP_{turn:04d}", "ok": True, "result": "Saved"}
 
+        # Capture the real sleep before the monkeypatch below replaces it.
+        # asyncio.sleep is patched GLOBALLY, so fake_sleep must not call
+        # asyncio.sleep itself (that would recurse into fake_sleep); it awaits
+        # this captured reference instead.
+        real_sleep = asyncio.sleep
+
         async def fake_sleep(_delay):
             self.events.append(("sleep",))
+            # A real, zero-delay yield keeps the event loop turning so any
+            # asyncio.wait_for(...) deadline wrapping the caller can still
+            # fire, without adding meaningful wall-clock time to the tests.
+            await real_sleep(0)
 
         monkeypatch.setattr(hook_mod, "poll", fake_poll)
         monkeypatch.setattr(hook_mod, "inject", fake_inject)

@@ -179,7 +179,7 @@ class ArenaConfig:
     dry_run: bool = False
     max_agent_steps: int = 6
     idle_poll_limit: int = 600
-    # Task 5 drain budgets, distinct from idle_poll_limit ("consecutive polls
+    # Seat-0 drain budgets, distinct from idle_poll_limit ("consecutive polls
     # with nothing to do"). drain: total quiet polls allowed for one admitted
     # seat-0 turn's end-fired/AI-processing drain before the run declares the
     # game hung and exits. human_pending: polls allowed for a human to resolve

@@ -398,7 +398,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         hook_enabled = True  # flips to False once disable_hook_for_drain() fires
         remaining = config.max_puppet_turns
         deadline_polls = config.idle_poll_limit  # consecutive-idle poll budget; refilled on every captured turn
-        # Per-turn drain budgets (Task 5 knobs), distinct from deadline_polls:
+        # Per-turn seat-0 drain budgets, distinct from deadline_polls:
         # drain_polls counts quiet end-fired/AI-processing waits for the
         # CURRENT admitted seat-0 turn; human_polls counts human-pending waits.
         # Both reset at admission.
@@ -1544,16 +1544,25 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             else:
                 if seat0_state.needs_drain:
                     # An in-flight seat-0 turn is draining (end request fired /
-                    # AI processing / human pending): quiet GameCore-only
-                    # polling until the turn number flips. Each wait charges
-                    # the budget matching WHY we are waiting -- never the
-                    # puppet-era idle budget.
+                    # AI processing / human pending): wait quietly for the turn
+                    # number to flip. The end-fired and AI-processing waits are
+                    # GameCore-only polling; the human-pending arm below may
+                    # additionally issue InGame calls (the orphan-session
+                    # sweep) because seat 0 is local while that phase holds.
+                    # Each wait charges the budget matching WHY we are
+                    # waiting -- never the puppet-era idle budget.
                     await asyncio.sleep(1.0)
                     if seat0_state.phase is Seat0Phase.HUMAN_PENDING:
                         # A human-idle window: keep the orphan-session sweep
                         # cadence alive. Sessions involving the local player
                         # are skipped by the sweep by construction, so this
                         # never touches a leader scene the human is using.
+                        # Accepted hazard (same as the outer idle-path sweep
+                        # below): once the human resolves the blocker and
+                        # ends the turn, phase stays HUMAN_PENDING until the
+                        # turn number flips, so a sweep can still land during
+                        # that AI window -- the sweep never raises, so this is
+                        # harmless if it does.
                         idle_streak += 1
                         if idle_streak % ORPHAN_SWEEP_IDLE_POLLS == 0:
                             swept_sessions = await _sweep_orphan_sessions(conn)

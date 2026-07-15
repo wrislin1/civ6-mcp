@@ -78,9 +78,9 @@ class Seat0TurnState:
     """Per-turn phase machine for one admitted seat-0 turn.
 
     A single instance tracks exactly one turn from `admit()` through a
-    terminal outcome (`advanced`, `human_pending`, or `interrupted`).
-    `reset()` returns it to `ready` for the next admission and is only
-    valid once the phase has actually advanced.
+    terminal outcome (`advanced`, `regressed`, `human_pending`, or
+    `interrupted`). `reset()` returns it to `ready` for the next admission
+    and is only valid once the phase has actually advanced or regressed.
     """
 
     phase: Seat0Phase = Seat0Phase.READY
