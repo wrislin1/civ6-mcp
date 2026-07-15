@@ -36,6 +36,7 @@ class Seat0Phase(StrEnum):
     END_FIRED = "end_fired"
     AI_PROCESSING = "ai_processing"
     ADVANCED = "advanced"
+    REGRESSED = "regressed"
     HUMAN_PENDING = "human_pending"
     INTERRUPTED = "interrupted"
 
@@ -48,6 +49,7 @@ class Seat0Poll(StrEnum):
     RECHECK = "recheck"
     ADVANCED = "advanced"
     DEGRADED = "degraded"
+    REGRESSED = "regressed"
 
 
 # Grace polls allowed after an end-turn request before the coordinator is
@@ -57,6 +59,11 @@ _GRACE_POLL_LIMIT = 5
 # End-turn requests allowed for a single admitted turn before the
 # coordinator must stop re-firing and escalate instead.
 _MAX_END_TURN_REQUESTS = 3
+
+# Consecutive VALID backward turn samples required before a rollback is
+# declared. One sample may be a transient misread; a run of them means a
+# human loaded an earlier save. Malformed polls (turn < 0) never count.
+_REGRESSION_POLL_LIMIT = 3
 
 
 @dataclass(frozen=True)
@@ -85,12 +92,17 @@ class Seat0TurnState:
     record: dict | None = None
     record_written: bool = False
     resume_context: Seat0ResumeContext | None = None
+    regression_polls: int = 0
 
     def can_admit(self, *, turn: int, seat0_active: bool) -> bool:
         return self.phase is Seat0Phase.READY and seat0_active
 
     @property
     def needs_drain(self) -> bool:
+        # REGRESSED is intentionally absent: observe() only runs while
+        # needs_drain is true, and the coordinator terminalizes a REGRESSED
+        # result synchronously on the same poll -- the phase never persists
+        # across polls.
         return self.phase in {
             Seat0Phase.POLICY_PLAYED,
             Seat0Phase.END_FIRED,
@@ -135,9 +147,18 @@ class Seat0TurnState:
     def observe(self, *, turn: int, seat0_active: bool) -> Seat0Poll:
         """Advance the phase machine for one poll and report what the
         coordinator should do. A strictly newer turn is the authoritative
-        advance signal, independent of local phase."""
-        if self.turn is None or turn < 0 or turn < self.turn:
+        advance signal; a PERSISTENTLY older valid turn is a rollback (a
+        human loaded an earlier save) and terminalizes the turn as
+        REGRESSED so the coordinator can re-admit at the older turn."""
+        if self.turn is None or turn < 0:
             return Seat0Poll.DEGRADED
+        if turn < self.turn:
+            self.regression_polls += 1
+            if self.regression_polls >= _REGRESSION_POLL_LIMIT:
+                self.phase = Seat0Phase.REGRESSED
+                return Seat0Poll.REGRESSED
+            return Seat0Poll.DEGRADED
+        self.regression_polls = 0
         if turn > self.turn:
             self.phase = Seat0Phase.ADVANCED
             return Seat0Poll.ADVANCED
@@ -157,12 +178,13 @@ class Seat0TurnState:
 
     def reset(self) -> None:
         """Return to READY for the next admission. Only valid once the
-        phase has actually advanced -- resetting a live turn would let the
-        coordinator silently drop an in-flight policy/repair/save attempt."""
-        if self.phase is not Seat0Phase.ADVANCED:
+        phase has actually advanced or regressed -- resetting a live turn
+        would let the coordinator silently drop an in-flight
+        policy/repair/save attempt."""
+        if self.phase not in (Seat0Phase.ADVANCED, Seat0Phase.REGRESSED):
             raise RuntimeError(
                 "Seat0TurnState.reset() is only valid after the phase has "
-                f"advanced; current phase is {self.phase!r}"
+                f"advanced or regressed; current phase is {self.phase!r}"
             )
         self.phase = Seat0Phase.READY
         self.turn = None
@@ -173,6 +195,7 @@ class Seat0TurnState:
         self.record = None
         self.record_written = False
         self.resume_context = None
+        self.regression_polls = 0
 
 
 # ---------------------------------------------------------------------------

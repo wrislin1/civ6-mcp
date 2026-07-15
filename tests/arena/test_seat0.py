@@ -656,3 +656,48 @@ def test_grace_then_recheck_then_bounded_refires():
     state.grace_polls = 0
     assert state.observe(turn=7, seat0_active=False) is Seat0Poll.WAIT
     assert state.phase is Seat0Phase.AI_PROCESSING
+
+
+def test_backward_polls_below_limit_stay_degraded():
+    state = Seat0TurnState()
+    state.admit(7)
+    state.mark_policy_played()
+    assert state.observe(turn=5, seat0_active=False) == Seat0Poll.DEGRADED
+    assert state.observe(turn=5, seat0_active=False) == Seat0Poll.DEGRADED
+    assert state.phase is Seat0Phase.POLICY_PLAYED
+
+
+def test_third_consecutive_backward_poll_reports_regressed():
+    state = Seat0TurnState()
+    state.admit(7)
+    state.mark_policy_played()
+    state.observe(turn=5, seat0_active=False)
+    state.observe(turn=5, seat0_active=False)
+    assert state.observe(turn=5, seat0_active=False) == Seat0Poll.REGRESSED
+    assert state.phase is Seat0Phase.REGRESSED
+    # REGRESSED is terminal: reset must be legal so the rolled-back turn
+    # can be re-admitted.
+    state.reset()
+    assert state.phase is Seat0Phase.READY
+    assert state.regression_polls == 0
+
+
+def test_same_turn_poll_resets_regression_counter():
+    state = Seat0TurnState()
+    state.admit(7)
+    state.mark_policy_played()
+    state.observe(turn=5, seat0_active=False)
+    state.observe(turn=5, seat0_active=False)
+    assert state.observe(turn=7, seat0_active=False) == Seat0Poll.WAIT
+    state.observe(turn=5, seat0_active=False)
+    state.observe(turn=5, seat0_active=False)
+    assert state.phase is not Seat0Phase.REGRESSED
+
+
+def test_negative_turn_never_counts_toward_regression():
+    state = Seat0TurnState()
+    state.admit(7)
+    state.mark_policy_played()
+    for _ in range(5):
+        assert state.observe(turn=-1, seat0_active=False) == Seat0Poll.DEGRADED
+    assert state.phase is Seat0Phase.POLICY_PLAYED
