@@ -398,6 +398,12 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         hook_enabled = True  # flips to False once disable_hook_for_drain() fires
         remaining = config.max_puppet_turns
         deadline_polls = config.idle_poll_limit  # consecutive-idle poll budget; refilled on every captured turn
+        # Per-turn drain budgets (Task 5 knobs), distinct from deadline_polls:
+        # drain_polls counts quiet end-fired/AI-processing waits for the
+        # CURRENT admitted seat-0 turn; human_polls counts human-pending waits.
+        # Both reset at admission.
+        drain_polls = 0
+        human_polls = 0
         idle_streak = 0  # consecutive idle polls since the last puppet capture
         max_game_turns = getattr(config, "max_game_turns", 0)  # tolerate old test-stub configs
 
@@ -478,9 +484,8 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             exactly once, emit exactly one structured CRITICAL event, and hand
             local seat 0 to the human untouched. Chooses NO strategic default —
             the unresolved blockers are left for the human to decide."""
-            nonlocal seat0_pending, seat0_failed, deadline_polls
+            nonlocal seat0_pending, seat0_failed
             seat0_state.mark_human_pending()
-            deadline_polls = config.idle_poll_limit
             record["turn_kind"] = turn_kind
             record["seat0"]["terminal_state"] = "human_pending"
             record["seat0"]["end_turn_requests"] = seat0_state.end_turn_requests
@@ -726,6 +731,8 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 is_seat0 = local_seat0
                 if is_seat0:
                     seat0_state.admit(st.turn)
+                    drain_polls = 0
+                    human_polls = 0
                 idle_streak = 0
                 # A captured turn (puppet or seat-0 admission) is ACTIVITY:
                 # refill the idle budget.
@@ -1502,16 +1509,46 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             else:
                 if seat0_state.needs_drain:
                     # An in-flight seat-0 turn is draining (end request fired /
-                    # AI processing): quiet GameCore-only polling until the
-                    # turn number flips. No InGame call is issued from here,
-                    # and the idle/orphan bookkeeping below stays puppet-era
-                    # human-idle semantics only.
+                    # AI processing / human pending): quiet GameCore-only
+                    # polling until the turn number flips. Each wait charges
+                    # the budget matching WHY we are waiting -- never the
+                    # puppet-era idle budget.
                     await asyncio.sleep(1.0)
-                    if (
-                        seat0_state.phase is Seat0Phase.HUMAN_PENDING
-                        or poll_action is Seat0Poll.DEGRADED
-                    ):
+                    if seat0_state.phase is Seat0Phase.HUMAN_PENDING:
+                        human_polls += 1
+                        if human_polls >= config.seat0_human_pending_poll_limit:
+                            log.append({
+                                "level": "CRITICAL",
+                                "event": "seat0_human_pending_deadline",
+                                "turn": seat0_state.turn,
+                                "polls": human_polls,
+                            })
+                            print(
+                                f"[arena] CRITICAL seat0_human_pending_deadline: "
+                                f"turn {seat0_state.turn} unresolved after "
+                                f"{human_polls} polls; ending the run",
+                                file=sys.stderr,
+                            )
+                            break
+                    elif poll_action is Seat0Poll.DEGRADED:
                         deadline_polls -= 1
+                    else:
+                        drain_polls += 1
+                        if drain_polls >= config.seat0_drain_poll_limit:
+                            log.append({
+                                "level": "CRITICAL",
+                                "event": "seat0_drain_deadline",
+                                "turn": seat0_state.turn,
+                                "phase": str(seat0_state.phase),
+                                "polls": drain_polls,
+                            })
+                            print(
+                                f"[arena] CRITICAL seat0_drain_deadline: turn "
+                                f"{seat0_state.turn} stuck in {seat0_state.phase} "
+                                f"after {drain_polls} polls; game presumed hung",
+                                file=sys.stderr,
+                            )
+                            break
                     continue
                 # Human seat is idle. Do NOT auto-clear VIEW-level diplomacy here:
                 # _clear_blocking_diplomacy cannot distinguish an orphaned first-meet

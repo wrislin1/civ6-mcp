@@ -3136,25 +3136,70 @@ async def test_seat0_ai_processing_outlives_idle_poll_limit(monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_seat0_human_pending_exits_after_idle_poll_limit(monkeypatch, tmp_path):
-    """If the human never advances, the drain exits cleanly once the idle poll
-    budget is spent -- sleeping (GameCore poll) once per idle poll."""
+async def test_seat0_human_pending_exits_after_human_pending_poll_limit(
+    monkeypatch, tmp_path
+):
+    """If the human never advances, the drain exits once the DEDICATED
+    human-pending budget is spent -- idle_poll_limit no longer bounds a
+    human's decision window -- and a CRITICAL names the deadline."""
     harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
     hard = _blocker("UNKNOWN", "??")
     harness.blocker_queue = [[hard], [hard]]
     conn = FakeConn()
     pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
-    cfg = _seat0_cfg(tmp_path, run_id="seat0-idle", idle_poll_limit=5)
+    cfg = _seat0_cfg(
+        tmp_path, run_id="seat0-idle", idle_poll_limit=5,
+        seat0_human_pending_poll_limit=3,
+    )
 
-    result = await run_arena(conn, FakeGS(), cfg, policy=pol)
+    result = await asyncio.wait_for(
+        run_arena(conn, FakeGS(), cfg, policy=pol), timeout=5.0
+    )
 
     # Entered human_pending and then quietly drained without further work.
     assert result["seat0_human_pending"] == 1
     assert harness.names().count("policy") == 1
     assert harness.names().count("end_turn") == 0
-    assert harness.names().count("sleep") == cfg.idle_poll_limit
+    assert harness.names().count("sleep") == cfg.seat0_human_pending_poll_limit
     # Human never advanced -> the pending turn is still counted exactly once.
     assert result["seat0_turns_played"] == 0
+    events = [
+        e for e in result["log"]
+        if e.get("event") == "seat0_human_pending_deadline"
+    ]
+    assert len(events) == 1
+    assert events[0]["turn"] == 7
+
+
+@pytest.mark.asyncio
+async def test_seat0_hung_ai_drain_exits_after_drain_poll_limit(
+    monkeypatch, tmp_path
+):
+    """A hung AI turn (the turn number never advances) must not spin the
+    arena forever: the drain cap breaks the loop, the finally terminalizes
+    the record as `interrupted`, and a CRITICAL names the deadline."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),   # harness repeats this forever
+    ])
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+    cfg = _seat0_cfg(
+        tmp_path, run_id="seat0-hung-ai", seat0_drain_poll_limit=4
+    )
+
+    result = await asyncio.wait_for(
+        run_arena(conn, FakeGSWithConn(conn), cfg, policy=pol, transcript=sink),
+        timeout=5.0,
+    )
+
+    assert result["seat0_turns_played"] == 0
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "interrupted"
+    events = [e for e in result["log"] if e.get("event") == "seat0_drain_deadline"]
+    assert len(events) == 1
+    assert events[0]["turn"] == 7
 
 
 # ---------------------------------------------------------------------------
