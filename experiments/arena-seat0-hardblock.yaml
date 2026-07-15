@@ -1,15 +1,17 @@
 # Stage-3 live gate: hard-block human escape. cli-claude pilots seat 0 alone
 # in a late-stage save (turn ~298, Korea, 12 civs); all other majors stay on
-# normal game AI. The gate PASSES when a spy offensive mission completes and
-# ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE (in neither authority table ->
-# hard) drives the coordinator to seat0_human_pending, where it must wait for
-# an attended human resolution instead of auto-resolving.
+# normal game AI. Redefined under the full-LLM-control directive (riz
+# 2026-07-15): the gate PASSES when the pilot sustains multi-turn autonomy in
+# a hostile-to-automation late game -- answering AI deals (diplomacy-wedge
+# pass), surviving dropped end requests (guarded refire), voting the World
+# Congress (pre-fire WC gate), and auto-resolving spy escape routes
+# (mechanical) -- with human_pending reserved for genuinely unknown blockers
+# (proven live at T301/T303 before those gaps were closed).
 #
-# Run in legs, editing max budgets between runs: leg 1 lets in-transit spies
-# arrive; a library spy_mission call starts the offensive op between legs;
-# the final leg spans the mission-completion turn.
-max_puppet_turns: 4
-max_game_turns: 4
+# Run in legs, editing max budgets between runs; library spy_travel /
+# spy_mission calls between legs set up the spy-escape mechanical evidence.
+max_puppet_turns: 8
+max_game_turns: 8
 idle_poll_limit: 600
 civs:
   - player: 0
