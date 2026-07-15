@@ -4243,6 +4243,52 @@ async def test_seat0_permanent_mechanical_failure_records_human_pending(
 
 
 @pytest.mark.asyncio
+async def test_seat0_mech_pass_does_not_retry_on_dead_reconnect(
+    monkeypatch, tmp_path
+):
+    """When the reconnect after a failed blocker query cannot restore the
+    tuner, the second query attempt must not run -- it is guaranteed to fail
+    and would bury the original error in the automation blocker."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    calls = 0
+
+    async def broken_query(_conn):
+        nonlocal calls
+        calls += 1
+        raise ConnectionError("blocker query unavailable")
+
+    monkeypatch.setattr(seat0_mod, "query_blockers", broken_query)
+
+    class DeadReconnectConn(Seat0CapsConn):
+        def __init__(self):
+            super().__init__()
+            self.connect_attempts = 0
+
+        async def connect(self):
+            self.connect_attempts += 1
+            raise ConnectionError("tuner gone")
+
+    conn = DeadReconnectConn()
+    sink = EventSink(harness)
+    result = await run_arena(
+        conn,
+        FakeGSWithConn(conn),
+        _seat0_cfg(tmp_path, run_id="seat0-mech-dead", idle_poll_limit=3),
+        policy=Seat0ScriptPolicy(harness, [_returned("normal ok")]),
+        transcript=sink,
+    )
+
+    assert calls == 1                      # no second doomed attempt
+    # >= 5: the mech-pass reconnect makes 5 attempts; the finally block's
+    # reclaim-retry step adds 5 more on the same dead conn.
+    assert conn.connect_attempts >= 5
+    assert result["seat0_human_pending"] == 1
+    errors = sink.records[0]["seat0"]["automation_errors"]
+    assert len(errors) == 1
+    assert "blocker query unavailable" in errors[0]["error"]
+
+
+@pytest.mark.asyncio
 async def test_seat0_end_request_exception_keeps_polling_to_advance(
     monkeypatch, tmp_path
 ):

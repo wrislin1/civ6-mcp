@@ -536,8 +536,14 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         "attempt": attempt,
                         "error": repr(exc),
                     })
-                    if attempt == 1 and await _reconnect_with_retry(conn):
-                        continue
+                    # Retry only when the reconnect actually restored the
+                    # tuner -- a second attempt against a connection that
+                    # just failed to reconnect is guaranteed to fail and
+                    # would bury the original error. No reconnect after the
+                    # final attempt: the human-pending path and the finally
+                    # block do their own reclaim.
+                    if attempt == 2 or not await _reconnect_with_retry(conn):
+                        break
 
             blocker = seat0.automation_failure_blocker(
                 prefix, errors[-1]["error"]
