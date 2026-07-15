@@ -2307,14 +2307,14 @@ async def test_seat0_happy_path_single_play_then_terminal_advanced(monkeypatch, 
     assert kwargs["caps"]["spies"] is False
 
     events, names = harness.events, harness.names()
-    # Ordered seat-0 sequence: policy → finish_units(0) → blocker query →
-    # post-play snapshot (on conn, not evented) → recovery anchor → end_turn.
+    # Ordered seat-0 sequence: policy → blocker query → recovery anchor →
+    # end_turn. With no units blocker, the mechanical pass does not finish units.
     i_policy = events.index(("policy", 0, 7))
-    i_finish = events.index(("finish_units", 0))
     i_blockers = names.index("query_blockers")
     i_anchor = events.index(("save_anchor", 7))
     i_end = names.index("end_turn")
-    assert i_policy < i_finish < i_blockers < i_anchor < i_end
+    assert i_policy < i_blockers < i_anchor < i_end
+    assert "finish_units" not in names[i_policy:i_end]
     assert names.count("end_turn") == 1
     # No restore_local(0) in the seat-0 body: the only restore is the
     # human-safety handback in finally, after the final poll.
@@ -2583,6 +2583,38 @@ def _returned(summary: str) -> dict:
 
 def _critical_events(result) -> list[dict]:
     return [e for e in result["log"] if e.get("event") == "seat0_human_pending"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_units_blocker_finishes_once_per_mechanical_pass(
+    monkeypatch, tmp_path
+):
+    units = _blocker("ENDTURN_BLOCKING_UNITS", "Units need orders")
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    harness.blocker_queue = [[units], []]
+    conn = Seat0CapsConn()
+    sink = EventSink(harness)
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+
+    result = await run_arena(
+        conn,
+        FakeGSWithConn(conn),
+        _seat0_cfg(tmp_path, run_id="seat0-one-finish"),
+        policy=pol,
+        transcript=sink,
+    )
+
+    assert result["seat0_turns_played"] == 1
+    assert harness.names().count("finish_units") == 1
+    assert sink.records[0]["seat0"]["mechanical_cleanup"] == [{
+        "type": "ENDTURN_BLOCKING_UNITS",
+        "action": "finish_units",
+        "result": "requested",
+    }]
 
 
 # --- Step 1: decision blocker triggers exactly one focused repair -----------
@@ -3096,8 +3128,8 @@ async def test_seat0_ai_phase_issues_no_execute_write(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_seat0_autosave_operation_order(monkeypatch, tmp_path):
-    """Brief Step 3: policy -> finish_units -> blocker query/cleanup ->
-    state_after snapshot -> save_game -> hook.end_turn."""
+    """Brief Step 3: policy -> blocker query/cleanup -> state_after snapshot
+    -> save_game -> hook.end_turn."""
     harness = Seat0Harness(monkeypatch, [
         seat0_poll(7, active=True),
         seat0_poll(7, active=False),
@@ -3113,7 +3145,6 @@ async def test_seat0_autosave_operation_order(monkeypatch, tmp_path):
 
     ev = harness.events
     i_policy = ev.index(("policy", 0, 7))
-    i_finish = ev.index(("finish_units", 0))
     i_query = next(i for i, e in enumerate(ev) if e[0] == "query_blockers")
     overviews = [i for i, e in enumerate(ev) if e[0] == "overview"]
     i_save = next(i for i, e in enumerate(ev) if e[0] == "save_anchor")
@@ -3121,7 +3152,8 @@ async def test_seat0_autosave_operation_order(monkeypatch, tmp_path):
     # state_before is the first overview (before the policy call).
     assert overviews[0] < i_policy
     # state_after is the second overview, between the blocker query and save.
-    assert i_policy < i_finish < i_query < overviews[1] < i_save < i_end
+    assert i_policy < i_query < overviews[1] < i_save < i_end
+    assert "finish_units" not in [e[0] for e in ev[i_policy:i_end]]
 
 
 @pytest.mark.asyncio

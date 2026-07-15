@@ -463,11 +463,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         seat0_ctx: dict | None = None
 
         async def _mech_pass(prefix):
-            """Finish already-ordered moves, then query -> mechanical-only
-            cleanup -> requery. A second query is issued only when the first
-            found blockers (an empty snapshot cannot change under cleanup).
-            Returns (post_blockers, cleanup_records, snapshots, groups)."""
-            await hook.finish_units(conn, 0)
+            """Query -> mechanical-only cleanup -> requery. A second query is
+            issued only when the first found blockers (an empty snapshot cannot
+            change under cleanup). Returns (post_blockers, cleanup_records,
+            snapshots, groups)."""
             first = await seat0.query_blockers(conn)
             snaps = [{"stage": prefix, "blockers": first}]
             records: list = []
