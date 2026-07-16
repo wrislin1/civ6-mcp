@@ -297,6 +297,64 @@ def _validate_initial_deal(deal: Deal) -> None:
         raise ValueError("new deal payment status must be not_due")
     if deal.terminal is not None:
         raise ValueError("new deal cannot contain terminal data")
+    _validate_deal_coherence(deal)
+
+
+def _validate_deal_coherence(deal: Deal) -> None:
+    accepted = deal.accepted_turn is not None
+    if deal.state is DealState.PROPOSED:
+        if accepted:
+            raise ValueError("proposed deal cannot be accepted")
+        if any(
+            deadline is not None
+            for deadline in (
+                deal.fund_by_turn,
+                deal.payment_response_by_turn,
+                deal.favor_due_turn,
+            )
+        ):
+            raise ValueError("proposed deal cannot have active lifecycle deadlines")
+        return
+
+    if deal.state in (DealState.ACTIVE, DealState.HONORED, DealState.BROKEN):
+        if not accepted:
+            raise ValueError(f"{deal.state.value} deal requires accepted_turn")
+        if isinstance(deal.accepted_turn, bool) or not isinstance(
+            deal.accepted_turn, int
+        ):
+            raise ValueError("accepted_turn must be an integer")
+        if deal.accepted_turn < deal.created_turn:
+            raise ValueError("accepted_turn cannot precede created_turn")
+
+    if deal.state in (DealState.DECLINED, DealState.EXPIRED) and accepted:
+        raise ValueError(f"{deal.state.value} deal cannot be accepted")
+
+    if deal.state is DealState.ACTIVE:
+        if deal.favor_status is FavorStatus.DUE and deal.favor_due_turn is None:
+            raise ValueError("due favor requires favor_due_turn")
+        if (
+            deal.payment_status in (PaymentStatus.DUE, PaymentStatus.OFFERED)
+            and deal.fund_by_turn is None
+        ):
+            raise ValueError("due or offered payment requires fund_by_turn")
+        if (
+            deal.payment_status is PaymentStatus.OFFERED
+            and deal.payment_response_by_turn is None
+        ):
+            raise ValueError("offered payment requires payment_response_by_turn")
+        if (
+            deal.favor_status is FavorStatus.SATISFIED
+            and deal.payment_status is PaymentStatus.SETTLED
+        ):
+            raise ValueError("completed active deal must be honored")
+
+    if deal.state is DealState.HONORED and not (
+        deal.favor_status is FavorStatus.SATISFIED
+        and deal.payment_status is PaymentStatus.SETTLED
+    ):
+        raise ValueError(
+            "honored deal requires satisfied favor and settled payment"
+        )
 
 
 def _validate_deal_transition(before: Deal, after: Deal) -> None:
@@ -333,6 +391,29 @@ def _validate_deal_transition(before: Deal, after: Deal) -> None:
         raise ValueError("terminal deal must contain terminal data")
     if not after.is_terminal and after.terminal is not None:
         raise ValueError("unresolved deal cannot contain terminal data")
+    _validate_deal_coherence(after)
+
+
+def _validate_grievance_link(state: ChannelState, grievance: Grievance) -> None:
+    deal = next(
+        (candidate for candidate in state.deals if candidate.id == grievance.deal_id),
+        None,
+    )
+    if deal is None:
+        raise ValueError(f"unknown grievance deal {grievance.deal_id!r}")
+    if deal.state is not DealState.BROKEN:
+        raise ValueError("grievances require a broken deal")
+    if (grievance.wronged, grievance.offender) not in (
+        (deal.proposer, deal.counterparty),
+        (deal.counterparty, deal.proposer),
+    ):
+        raise ValueError("grievance parties must be deal participants")
+    terminal = deal.terminal or {}
+    if (
+        terminal.get("wronged") != grievance.wronged
+        or terminal.get("offender") != grievance.offender
+    ):
+        raise ValueError("grievance parties do not match terminal breach")
 
 
 def reduce_event(state: ChannelState, event: ChannelEvent) -> ChannelState:
@@ -357,6 +438,17 @@ def reduce_event(state: ChannelState, event: ChannelEvent) -> ChannelState:
                 _assert_unique(state.messages, record_id, "message")
             _require_counter_id("message", record_id, state.next_message)
             message = _construct(Message, copy.deepcopy(payload), "message")
+            pair_count = sum(
+                existing.from_player == message.from_player
+                and existing.to_player == message.to_player
+                for existing in state.messages
+            )
+            limit = int(state.rules_fingerprint["max_messages_per_pair"])
+            if pair_count >= limit:
+                raise ValueError(
+                    "message limit reached for ordered pair "
+                    f"{message.from_player}->{message.to_player}"
+                )
             changes = {
                 "messages": state.messages + (message,),
                 "next_message": state.next_message + 1,
@@ -413,6 +505,7 @@ def reduce_event(state: ChannelState, event: ChannelEvent) -> ChannelState:
             grievance = _construct(
                 Grievance, copy.deepcopy(payload), "grievance"
             )
+            _validate_grievance_link(state, grievance)
             changes = {
                 "grievances": state.grievances + (grievance,),
                 "next_grievance": state.next_grievance + 1,

@@ -82,6 +82,37 @@ def _deal(*args, **kwargs) -> Deal:
     )
 
 
+def _message_payload(
+    message_id: str, sender: int = 1, recipient: int = 2, turn: int = 4
+) -> dict:
+    return {
+        "id": message_id,
+        "from_player": sender,
+        "to_player": recipient,
+        "turn": turn,
+        "text": f"message {message_id}",
+        "deal_id": None,
+    }
+
+
+def _grievance_payload(
+    *, wronged: int = 1, offender: int = 2, deal_id: str = "deal-000001"
+) -> dict:
+    return {
+        "id": "grv-000001",
+        "wronged": wronged,
+        "offender": offender,
+        "deal_id": deal_id,
+        "turn": 8,
+        "reason": "paid favor was not delivered",
+        "payment_gold": 100,
+        "base_magnitude": 1.0,
+        "half_life_turns": 30,
+        "adjudication_source": "deterministic",
+        "adjudication_metadata": None,
+    }
+
+
 def test_reducer_assigns_records_from_event_payload_and_round_trips():
     state = initial_channel_state("run-a", frozenset({1, 2, 3}), ChannelRules())
     state = reduce_event(
@@ -170,10 +201,23 @@ def test_reducer_handles_every_canonical_event_and_preserves_payloads():
         "fund_by_turn": 7,
     }
     state = reduce_event(state, _event(2, "deal_changed", changed))
+    broken = {
+        **changed,
+        "state": "broken",
+        "favor_status": "released",
+        "payment_status": "failed",
+        "terminal": {
+            "wronged": 2,
+            "offender": 1,
+            "reason": "payment not funded",
+            "adjudication_source": "deterministic",
+        },
+    }
+    state = reduce_event(state, _event(3, "deal_changed", broken))
     state = reduce_event(
         state,
         _event(
-            3,
+            4,
             "grievance_created",
             {
                 "id": "grv-000001",
@@ -193,7 +237,7 @@ def test_reducer_handles_every_canonical_event_and_preserves_payloads():
     state = reduce_event(
         state,
         _event(
-            4,
+            5,
             "acknowledged",
             {
                 "player_id": 1,
@@ -206,14 +250,14 @@ def test_reducer_handles_every_canonical_event_and_preserves_payloads():
         ),
     )
     observation = {"id": "obs-000001", "player_id": 1, "turn": 8}
-    state = reduce_event(state, _event(5, "observation_recorded", observation))
+    state = reduce_event(state, _event(6, "observation_recorded", observation))
     state = reduce_event(
-        state, _event(6, "source_applied", {"source_id": "src-1"})
+        state, _event(7, "source_applied", {"source_id": "src-1"})
     )
     state = reduce_event(
         state,
         _event(
-            7,
+            8,
             "queue_advanced",
             {
                 "cursor": 128,
@@ -222,10 +266,10 @@ def test_reducer_handles_every_canonical_event_and_preserves_payloads():
             },
         ),
     )
-    state = reduce_event(state, _event(8, "privacy_contaminated", {}))
+    state = reduce_event(state, _event(9, "privacy_contaminated", {}))
 
-    assert state.deals[0].state is DealState.ACTIVE
-    assert state.deals[0].payment_status is PaymentStatus.DUE
+    assert state.deals[0].state is DealState.BROKEN
+    assert state.deals[0].payment_status is PaymentStatus.FAILED
     assert state.grievances[0].reason == "payment not funded"
     assert state.acknowledgements[0].source_id.endswith(":abc")
     assert state.observations == (observation,)
@@ -238,7 +282,7 @@ def test_reducer_handles_every_canonical_event_and_preserves_payloads():
     assert state.applied_request_ids == frozenset({"req-1"})
     assert state.privacy_contaminated is True
     assert state.next_deal == state.next_grievance == state.next_observation == 2
-    assert state.next_event == 9
+    assert state.next_event == 10
 
 
 @pytest.mark.parametrize(
@@ -295,6 +339,195 @@ def test_reducer_rejects_duplicate_ids_and_illegal_deal_transitions():
         reduce_event(
             terminal_state,
             _event(3, "deal_changed", _deal_payload(state="active")),
+        )
+
+
+def test_proposal_rejects_acceptance_and_active_lifecycle_fields():
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    incoherent = {
+        **_deal_payload(),
+        "accepted_turn": 4,
+        "fund_by_turn": 6,
+    }
+    with pytest.raises(ValueError, match="proposed deal cannot be accepted"):
+        reduce_event(state, _event(1, "deal_proposed", incoherent))
+
+    accepted = reduce_event(
+        state, _event(1, "deal_proposed", _deal_payload())
+    )
+    assert accepted.deals[0].state is DealState.PROPOSED
+
+
+def test_active_deal_requires_acceptance_and_honored_requires_completion():
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+
+    active_without_acceptance = {
+        **_deal_payload(
+            state="active", favor_status="not_due", payment_status="due"
+        ),
+        "fund_by_turn": 7,
+    }
+    with pytest.raises(ValueError, match="active deal requires accepted_turn"):
+        reduce_event(
+            state, _event(2, "deal_changed", active_without_acceptance)
+        )
+
+    active = {
+        **active_without_acceptance,
+        "accepted_turn": 5,
+    }
+    state = reduce_event(state, _event(2, "deal_changed", active))
+    incomplete_honored = {
+        **active,
+        "state": "honored",
+        "terminal": {"reason": "complete"},
+    }
+    with pytest.raises(
+        ValueError, match="honored deal requires satisfied favor and settled payment"
+    ):
+        reduce_event(state, _event(3, "deal_changed", incomplete_honored))
+
+    offered = {
+        **active,
+        "payment_status": "offered",
+        "payment_response_by_turn": 7,
+    }
+    state = reduce_event(state, _event(3, "deal_changed", offered))
+    favor_due = {
+        **offered,
+        "favor_status": "due",
+        "payment_status": "settled",
+        "favor_due_turn": 15,
+    }
+    state = reduce_event(state, _event(4, "deal_changed", favor_due))
+    honored = {
+        **favor_due,
+        "state": "honored",
+        "terminal": {"reason": "complete"},
+        "favor_status": "satisfied",
+    }
+    state = reduce_event(state, _event(5, "deal_changed", honored))
+    assert state.deals[0].state is DealState.HONORED
+
+
+def test_grievance_requires_existing_broken_deal():
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    with pytest.raises(ValueError, match="unknown grievance deal"):
+        reduce_event(
+            state,
+            _event(1, "grievance_created", _grievance_payload()),
+        )
+
+    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    active = {
+        **_deal_payload(
+            state="active", favor_status="not_due", payment_status="due"
+        ),
+        "accepted_turn": 5,
+        "fund_by_turn": 7,
+    }
+    state = reduce_event(state, _event(2, "deal_changed", active))
+    unverifiable = {
+        **active,
+        "state": "unverifiable",
+        "terminal": {"reason": "missing evidence"},
+    }
+    state = reduce_event(state, _event(3, "deal_changed", unverifiable))
+    with pytest.raises(ValueError, match="grievances require a broken deal"):
+        reduce_event(
+            state,
+            _event(4, "grievance_created", _grievance_payload()),
+        )
+
+
+def test_grievance_parties_match_broken_deal_and_terminal_breach():
+    state = initial_channel_state("run-a", frozenset({1, 2, 3}), ChannelRules())
+    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    active = {
+        **_deal_payload(
+            state="active", favor_status="not_due", payment_status="due"
+        ),
+        "accepted_turn": 5,
+        "fund_by_turn": 7,
+    }
+    state = reduce_event(state, _event(2, "deal_changed", active))
+    offered = {
+        **active,
+        "payment_status": "offered",
+        "payment_response_by_turn": 7,
+    }
+    state = reduce_event(state, _event(3, "deal_changed", offered))
+    favor_due = {
+        **offered,
+        "favor_status": "due",
+        "payment_status": "settled",
+        "favor_due_turn": 15,
+    }
+    state = reduce_event(state, _event(4, "deal_changed", favor_due))
+    broken = {
+        **favor_due,
+        "state": "broken",
+        "favor_status": "failed",
+        "terminal": {
+            "wronged": 1,
+            "offender": 2,
+            "reason": "paid favor was not delivered",
+            "adjudication_source": "deterministic",
+        },
+    }
+    state = reduce_event(state, _event(5, "deal_changed", broken))
+
+    with pytest.raises(ValueError, match="grievance parties must be deal participants"):
+        reduce_event(
+            state,
+            _event(
+                6,
+                "grievance_created",
+                _grievance_payload(wronged=1, offender=3),
+            ),
+        )
+    with pytest.raises(ValueError, match="grievance parties do not match terminal breach"):
+        reduce_event(
+            state,
+            _event(
+                6,
+                "grievance_created",
+                _grievance_payload(wronged=2, offender=1),
+            ),
+        )
+
+    state = reduce_event(
+        state,
+        _event(6, "grievance_created", _grievance_payload()),
+    )
+    assert state.grievances[0].wronged == 1
+    assert state.grievances[0].offender == 2
+
+
+def test_message_cap_is_hard_per_ordered_pair_at_the_valid_boundary():
+    rules = replace(ChannelRules(), max_messages_per_pair=2)
+    state = initial_channel_state("run-a", frozenset({1, 2}), rules)
+    state = reduce_event(
+        state, _event(1, "message_sent", _message_payload("msg-000001"))
+    )
+    state = reduce_event(
+        state, _event(2, "message_sent", _message_payload("msg-000002"))
+    )
+    state = reduce_event(
+        state,
+        _event(
+            3,
+            "message_sent",
+            _message_payload("msg-000003", sender=2, recipient=1),
+        ),
+    )
+    assert len(state.messages) == 3
+
+    with pytest.raises(ValueError, match="message limit reached for ordered pair 1->2"):
+        reduce_event(
+            state,
+            _event(4, "message_sent", _message_payload("msg-000004")),
         )
 
 
