@@ -109,6 +109,82 @@ def proposal(
     )
 
 
+def journal_events(rt: ChannelRuntime) -> list[dict]:
+    return [json.loads(line) for line in rt.events_path.read_text().splitlines()]
+
+
+def append_complete_event(rt: ChannelRuntime, kind: str, payload: dict) -> None:
+    sequence = rt.state.next_event
+    event = {
+        "schema_version": 1,
+        "id": f"evt-{sequence:06d}",
+        "sequence": sequence,
+        "kind": kind,
+        "payload": payload,
+    }
+    with rt.events_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(event) + "\n")
+
+
+def raw_proposal_payload(
+    rt: ChannelRuntime,
+    *,
+    proposer: int = 1,
+    counterparty: int = 2,
+    created_turn: int = 4,
+    accept_by_turn: int | None = None,
+    completion_window_turns: int = 3,
+    favor: dict | None = None,
+    payment_gold: int = 100,
+    timing: str = "on_delivery",
+    text: str = "maintain the reserve",
+) -> dict:
+    deal_id = f"deal-{rt.state.next_deal:06d}"
+    return {
+        "deal": {
+            "id": deal_id,
+            "proposer": proposer,
+            "counterparty": counterparty,
+            "created_turn": created_turn,
+            "accepted_turn": None,
+            "accept_by_turn": (
+                created_turn + rt.rules.acceptance_turns
+                if accept_by_turn is None
+                else accept_by_turn
+            ),
+            "completion_window_turns": completion_window_turns,
+            "favor": {
+                **(
+                    favor
+                    or {
+                        "term_type": "maintain_gold_reserve",
+                        "params": {"min_gold": 400},
+                    }
+                ),
+                "baseline": {},
+                "monitor": {},
+            },
+            "payment_gold": payment_gold,
+            "timing": timing,
+            "state": "proposed",
+            "favor_status": "not_due",
+            "payment_status": "not_due",
+            "fund_by_turn": None,
+            "payment_response_by_turn": None,
+            "favor_due_turn": None,
+            "terminal": None,
+        },
+        "message": {
+            "id": f"msg-{rt.state.next_message:06d}",
+            "from_player": proposer,
+            "to_player": counterparty,
+            "turn": created_turn,
+            "text": text,
+            "deal_id": deal_id,
+        },
+    }
+
+
 def test_open_creates_owner_only_journal_and_snapshot(tmp_path):
     runtime(tmp_path)
     assert (tmp_path / "channels" / "events.jsonl").stat().st_mode & 0o777 == 0o600
@@ -125,7 +201,17 @@ async def test_pure_action_replay_is_a_noop(tmp_path, fake_gs):
         "send_message",
         {"to_player": 2, "text": "hello"},
     )
-    await rt.apply_staged(fake_gs, staged, turn=4, observation=None)
+    lagging_snapshot = rt.state_path.read_text()
+    before_events = len(journal_events(rt))
+    acknowledgement = await rt.apply_staged(
+        fake_gs, staged, turn=4, observation=None
+    )
+    added = journal_events(rt)[before_events:]
+    assert [event["kind"] for event in added] == ["staged_action_applied"]
+
+    rt.state_path.write_text(lagging_snapshot)
+    rt = runtime(tmp_path)
+    assert rt.state.acknowledgements[-1] == acknowledgement
     sequence = rt.state.last_event_sequence
     await rt.apply_staged(fake_gs, staged, turn=4, observation=None)
     assert len(rt.state.messages) == 1
@@ -135,6 +221,8 @@ async def test_pure_action_replay_is_a_noop(tmp_path, fake_gs):
 
 def test_resume_replays_events_newer_than_snapshot(tmp_path):
     rt = runtime(tmp_path)
+    state_path = tmp_path / "channels" / "state.json"
+    lagging_snapshot = state_path.read_text()
     rt._commit(
         "message_sent",
         {
@@ -146,15 +234,51 @@ def test_resume_replays_events_newer_than_snapshot(tmp_path):
             "deal_id": None,
         },
     )
-    state_path = tmp_path / "channels" / "state.json"
-    snapshot = json.loads(state_path.read_text())
-    snapshot["last_event_sequence"] = 0
-    snapshot["messages"] = []
-    state_path.write_text(json.dumps(snapshot))
+    state_path.write_text(lagging_snapshot)
 
     reopened = runtime(tmp_path)
 
     assert reopened.state.messages[0].text == "persist"
+
+
+def test_incomplete_staged_action_record_replays_none_of_its_atomic_state(tmp_path):
+    rt = runtime(tmp_path)
+    event = {
+        "schema_version": 1,
+        "id": "evt-000001",
+        "sequence": 1,
+        "kind": "staged_action_applied",
+        "payload": {
+            "source_id": "crashed-source",
+            "acknowledgement": {
+                "player_id": 1,
+                "turn": 1,
+                "source_id": "crashed-source",
+                "status": "applied",
+                "message": "sent private message msg-000001 to player 2",
+                "deal_id": None,
+            },
+            "effect": {
+                "kind": "message_sent",
+                "payload": {
+                    "id": "msg-000001",
+                    "from_player": 1,
+                    "to_player": 2,
+                    "turn": 1,
+                    "text": "not durable",
+                    "deal_id": None,
+                },
+            },
+        },
+    }
+    with rt.events_path.open("ab") as stream:
+        stream.write(json.dumps(event).encode())
+
+    reopened = runtime(tmp_path)
+
+    assert reopened.state.messages == ()
+    assert reopened.state.acknowledgements == ()
+    assert reopened.state.applied_source_ids == frozenset()
 
 
 def test_base_magnitude_is_fixed_and_bounded():
@@ -186,6 +310,7 @@ async def test_proposal_is_one_atomic_linked_event_and_replays_both_records(
         4,
         camps=frozenset({(12, 7)}),
     )
+    lagging_snapshot = rt.state_path.read_text()
 
     ack = await rt.apply_staged(
         fake_gs,
@@ -202,20 +327,26 @@ async def test_proposal_is_one_atomic_linked_event_and_replays_both_records(
     assert rt.state.messages[0].deal_id == rt.state.deals[0].id
     assert rt.state.messages[0].text == "clear the northern camp"
     proposal_events = [
-        json.loads(line)
-        for line in (tmp_path / "channels" / "events.jsonl").read_text().splitlines()
-        if json.loads(line)["kind"] == "deal_proposed"
+        event
+        for event in journal_events(rt)
+        if event["kind"] == "staged_action_applied"
+        and event["payload"]["effect"]["kind"] == "deal_proposed"
     ]
     assert len(proposal_events) == 1
 
-    state_path = tmp_path / "channels" / "state.json"
-    snapshot = json.loads(state_path.read_text())
-    snapshot["last_event_sequence"] = 0
-    snapshot["messages"] = []
-    snapshot["deals"] = []
-    state_path.write_text(json.dumps(snapshot))
+    rt.state_path.write_text(lagging_snapshot)
     reopened = runtime(tmp_path)
     assert reopened.state.messages[0].deal_id == reopened.state.deals[0].id
+    assert reopened.state.acknowledgements[-1] == ack
+    sequence = reopened.state.last_event_sequence
+    replayed = await reopened.apply_staged(
+        fake_gs,
+        proposal(),
+        turn=4,
+        observation=proposal_observation,
+    )
+    assert replayed == ack
+    assert reopened.state.last_event_sequence == sequence
 
 
 @pytest.mark.asyncio
@@ -352,7 +483,15 @@ async def test_message_bound_rejection_is_persisted_and_idempotent(tmp_path, fak
     )
     await rt.apply_staged(fake_gs, first, turn=1, observation=None)
 
+    lagging_snapshot = rt.state_path.read_text()
+    before_events = len(journal_events(rt))
     rejected = await rt.apply_staged(fake_gs, second, turn=2, observation=None)
+    added = journal_events(rt)[before_events:]
+    assert [event["kind"] for event in added] == ["staged_action_applied"]
+
+    rt.state_path.write_text(lagging_snapshot)
+    rt = ChannelRuntime.open(tmp_path, "run-a", frozenset({1, 2}), rules)
+    assert rt.state.acknowledgements[-1] == rejected
     sequence = rt.state.last_event_sequence
     replayed = await rt.apply_staged(fake_gs, second, turn=2, observation=None)
 
@@ -394,6 +533,92 @@ async def accepted_deal(
         observation=acceptance_observation or observation(2, 2),
     )
     return rt.deal(deal.id)
+
+
+@pytest.mark.asyncio
+async def test_deal_response_effect_source_and_ack_replay_atomically(
+    tmp_path,
+    fake_gs,
+):
+    rt = runtime(tmp_path)
+    await rt.apply_staged(
+        fake_gs,
+        proposal(
+            favor={
+                "term_type": "maintain_gold_reserve",
+                "params": {"min_gold": 400},
+            }
+        ),
+        turn=1,
+        observation=observation(1, 1, camps=frozenset({(12, 7)})),
+    )
+    deal = rt.state.deals[0]
+    accept = stage(
+        "accept-1",
+        2,
+        "respond_to_deal",
+        {"deal_id": deal.id, "accept": True},
+    )
+    accept_observation = observation(2, 2)
+    rt._ensure_observation_recorded(accept_observation)
+    lagging_snapshot = rt.state_path.read_text()
+    before_events = len(journal_events(rt))
+
+    acknowledgement = await rt.apply_staged(
+        fake_gs,
+        accept,
+        turn=2,
+        observation=accept_observation,
+    )
+
+    added = journal_events(rt)[before_events:]
+    assert [event["kind"] for event in added] == ["staged_action_applied"]
+    assert added[0]["payload"]["effect"]["kind"] == "deal_changed"
+    rt.state_path.write_text(lagging_snapshot)
+    reopened = runtime(tmp_path)
+    assert reopened.deal(deal.id).state is DealState.ACTIVE
+    assert reopened.state.acknowledgements[-1] == acknowledgement
+    sequence = reopened.state.last_event_sequence
+    assert (
+        await reopened.apply_staged(
+            fake_gs,
+            accept,
+            turn=2,
+            observation=accept_observation,
+        )
+        == acknowledgement
+    )
+    assert reopened.state.last_event_sequence == sequence
+
+
+@pytest.mark.asyncio
+async def test_broken_deal_and_grievance_replay_from_one_event(tmp_path, fake_gs):
+    rt = runtime(tmp_path)
+    deal = await accepted_deal(
+        rt,
+        fake_gs,
+        favor={
+            "term_type": "maintain_gold_reserve",
+            "params": {"min_gold": 400},
+        },
+        timing="up_front",
+    )
+    lagging_snapshot = rt.state_path.read_text()
+    before_events = len(journal_events(rt))
+
+    rt._break_deal(
+        deal,
+        turn=5,
+        breach="funding",
+        reason="promised payment was not funded by the deadline",
+    )
+
+    added = journal_events(rt)[before_events:]
+    assert [event["kind"] for event in added] == ["deal_broken"]
+    rt.state_path.write_text(lagging_snapshot)
+    reopened = runtime(tmp_path)
+    assert reopened.deal(deal.id).state is DealState.BROKEN
+    assert reopened.state.grievances[0].deal_id == deal.id
 
 
 @pytest.mark.asyncio
@@ -745,6 +970,85 @@ def test_open_rejects_snapshot_that_disagrees_with_same_sequence_journal(tmp_pat
     rt.state_path.write_text(json.dumps(snapshot))
 
     with pytest.raises(ChannelStateError, match="does not match journal"):
+        runtime(tmp_path)
+
+
+def test_open_rejects_corrupt_lagging_snapshot_prefix(tmp_path):
+    rt = runtime(tmp_path)
+    rt._commit("source_applied", {"source_id": "prefix-source"})
+    corrupt_prefix = json.loads(rt.state_path.read_text())
+    rt._commit(
+        "message_sent",
+        {
+            "id": "msg-000001",
+            "from_player": 1,
+            "to_player": 2,
+            "turn": 2,
+            "text": "later event",
+            "deal_id": None,
+        },
+    )
+    corrupt_prefix["applied_source_ids"] = []
+    rt.state_path.write_text(json.dumps(corrupt_prefix))
+
+    with pytest.raises(ChannelStateError, match="does not match journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"proposer": 3},
+        {"counterparty": 1},
+        {"favor": {"term_type": "narrative", "params": {"text": "trust me"}}},
+        {"favor": {"term_type": "unknown", "params": {}}},
+        {
+            "favor": {
+                "term_type": "maintain_gold_reserve",
+                "params": {"min_gold": -1},
+            }
+        },
+        {
+            "favor": {
+                "term_type": "maintain_gold_reserve",
+                "params": {"min_gold": 400, "extra": True},
+            }
+        },
+        {"payment_gold": 0},
+        {"payment_gold": True},
+        {"completion_window_turns": 31},
+        {"accept_by_turn": 8},
+        {"text": "   "},
+    ],
+    ids=[
+        "disabled-party",
+        "self-party",
+        "narrative-term",
+        "unknown-term",
+        "invalid-term-value",
+        "noncanonical-term-params",
+        "gold-bound",
+        "gold-type",
+        "completion-window-bound",
+        "acceptance-window",
+        "message-bound",
+    ],
+)
+def test_open_rejects_complete_malicious_proposal_wal(tmp_path, overrides):
+    rt = runtime(tmp_path)
+    append_complete_event(rt, "deal_proposed", raw_proposal_payload(rt, **overrides))
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+def test_open_rejects_complete_fourth_unresolved_proposal_wal(tmp_path):
+    rt = runtime(tmp_path)
+    for _ in range(3):
+        rt._commit("deal_proposed", raw_proposal_payload(rt))
+    append_complete_event(rt, "deal_proposed", raw_proposal_payload(rt))
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
         runtime(tmp_path)
 
 

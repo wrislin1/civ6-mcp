@@ -128,25 +128,37 @@ class ChannelRuntime:
                 )
             snapshot = initial_channel_state(run_id, enabled_players, rules)
 
-        replayed = initial_channel_state(run_id, enabled_players, rules)
         try:
             events = cls._read_journal(events_path)
-            for event in events:
-                replayed = reduce_event(replayed, event)
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
             raise ChannelStateError(f"invalid channel journal: {exc}") from exc
 
-        if snapshot.last_event_sequence > replayed.last_event_sequence:
+        journal_sequence = events[-1].sequence if events else 0
+        if snapshot.last_event_sequence > journal_sequence:
             raise ChannelStateError(
                 "channel snapshot is newer than the write-ahead journal"
             )
-        if (
-            snapshot.last_event_sequence == replayed.last_event_sequence
-            and snapshot != replayed
-        ):
+
+        prefix = initial_channel_state(run_id, enabled_players, rules)
+        try:
+            for event in events:
+                if event.sequence > snapshot.last_event_sequence:
+                    break
+                prefix = reduce_event(prefix, event)
+        except ValueError as exc:
+            raise ChannelStateError(f"invalid channel journal: {exc}") from exc
+        if snapshot != prefix:
             raise ChannelStateError(
-                "channel snapshot does not match journal at the same sequence"
+                "channel snapshot does not match journal at snapshot sequence"
             )
+
+        replayed = snapshot
+        try:
+            for event in events:
+                if event.sequence > snapshot.last_event_sequence:
+                    replayed = reduce_event(replayed, event)
+        except ValueError as exc:
+            raise ChannelStateError(f"invalid channel journal: {exc}") from exc
 
         runtime = cls(channels_dir, replayed, rules)
         runtime._write_snapshot()
@@ -326,7 +338,7 @@ class ChannelRuntime:
             else None
         )
         try:
-            message, deal_id = self._apply_pure_action(
+            effect, message, deal_id = self._apply_pure_action(
                 staged,
                 turn=turn,
                 observation=observation,
@@ -338,6 +350,7 @@ class ChannelRuntime:
                 turn=turn,
                 status="rejected",
                 message=str(exc),
+                effect=None,
             )
         return self._finish_source(
             staged,
@@ -345,6 +358,7 @@ class ChannelRuntime:
             status="applied",
             message=message,
             deal_id=deal_id,
+            effect=effect,
         )
 
     def _apply_pure_action(
@@ -354,23 +368,23 @@ class ChannelRuntime:
         turn: int,
         observation: ChannelObservation | None,
         observation_id: str | None,
-    ) -> tuple[str, str | None]:
+    ) -> tuple[dict, str, str | None]:
         action = staged.action
         if isinstance(action, SendMessage):
             self._require_message_capacity(staged.actor, action.to_player)
             message_id = f"msg-{self.state.next_message:06d}"
-            self._commit(
-                "message_sent",
-                {
-                    "id": message_id,
-                    "from_player": staged.actor,
-                    "to_player": action.to_player,
-                    "turn": turn,
-                    "text": action.text,
-                    "deal_id": None,
-                },
-            )
             return (
+                {
+                    "kind": "message_sent",
+                    "payload": {
+                        "id": message_id,
+                        "from_player": staged.actor,
+                        "to_player": action.to_player,
+                        "turn": turn,
+                        "text": action.text,
+                        "deal_id": None,
+                    },
+                },
                 f"sent private message {message_id} to player {action.to_player}",
                 None,
             )
@@ -438,21 +452,24 @@ class ChannelRuntime:
                 "favor_due_turn": None,
                 "terminal": None,
             }
-            self._commit(
-                "deal_proposed",
+            return (
                 {
-                    "deal": deal_payload,
-                    "message": {
-                        "id": message_id,
-                        "from_player": staged.actor,
-                        "to_player": action.to_player,
-                        "turn": turn,
-                        "text": action.text,
-                        "deal_id": deal_id,
+                    "kind": "deal_proposed",
+                    "payload": {
+                        "deal": deal_payload,
+                        "message": {
+                            "id": message_id,
+                            "from_player": staged.actor,
+                            "to_player": action.to_player,
+                            "turn": turn,
+                            "text": action.text,
+                            "deal_id": deal_id,
+                        },
                     },
                 },
+                f"proposed unofficial deal {deal_id}",
+                deal_id,
             )
-            return f"proposed unofficial deal {deal_id}", deal_id
 
         if isinstance(action, RespondToDeal):
             try:
@@ -477,8 +494,14 @@ class ChannelRuntime:
                         "adjudication_source": "deterministic",
                     },
                 )
-                self._commit("deal_changed", self._deal_payload(declined))
-                return f"declined unofficial deal {deal.id}", deal.id
+                return (
+                    {
+                        "kind": "deal_changed",
+                        "payload": self._deal_payload(declined),
+                    },
+                    f"declined unofficial deal {deal.id}",
+                    deal.id,
+                )
 
             accepted = replace(deal, accepted_turn=turn, state=DealState.ACTIVE)
             if deal.timing == "up_front":
@@ -496,8 +519,14 @@ class ChannelRuntime:
                     observation_id=observation_id,
                     turn=turn,
                 )
-            self._commit("deal_changed", self._deal_payload(accepted))
-            return f"accepted unofficial deal {deal.id}", deal.id
+            return (
+                {
+                    "kind": "deal_changed",
+                    "payload": self._deal_payload(accepted),
+                },
+                f"accepted unofficial deal {deal.id}",
+                deal.id,
+            )
 
         if isinstance(action, (FundDeal, RespondToPayment)):
             raise _ActionRejected("linked payment actions are not available yet")
@@ -573,9 +602,9 @@ class ChannelRuntime:
         turn: int,
         status: str,
         message: str,
+        effect: dict | None,
         deal_id: str | None = None,
     ) -> ChannelAcknowledgement:
-        self._commit("source_applied", {"source_id": staged.source_id})
         acknowledgement = ChannelAcknowledgement(
             staged.actor,
             turn,
@@ -584,7 +613,14 @@ class ChannelRuntime:
             message,
             deal_id,
         )
-        self._commit("acknowledged", asdict(acknowledgement))
+        self._commit(
+            "staged_action_applied",
+            {
+                "source_id": staged.source_id,
+                "acknowledgement": asdict(acknowledgement),
+                "effect": effect,
+            },
+        )
         return acknowledgement
 
     def _ensure_observation_recorded(
@@ -879,7 +915,6 @@ class ChannelRuntime:
                 "duplicate",
                 "channel action already applied",
             )
-        self._commit("source_applied", {"source_id": source_id})
         acknowledgement = ChannelAcknowledgement(
             actor,
             turn,
@@ -887,7 +922,14 @@ class ChannelRuntime:
             "rejected",
             message,
         )
-        self._commit("acknowledged", asdict(acknowledgement))
+        self._commit(
+            "staged_action_applied",
+            {
+                "source_id": source_id,
+                "acknowledgement": asdict(acknowledgement),
+                "effect": None,
+            },
+        )
         return acknowledgement
 
     def _evaluate_favors(
@@ -1098,21 +1140,25 @@ class ChannelRuntime:
                 "adjudication_source": "deterministic",
             },
         )
-        self._commit("deal_changed", self._deal_payload(broken))
         self._commit(
-            "grievance_created",
+            "deal_broken",
             {
-                "id": f"grv-{self.state.next_grievance:06d}",
-                "wronged": wronged,
-                "offender": offender,
-                "deal_id": deal.id,
-                "turn": turn,
-                "reason": reason,
-                "payment_gold": deal.payment_gold,
-                "base_magnitude": grievance_base_magnitude(deal.payment_gold),
-                "half_life_turns": self.rules.grievance_half_life_turns,
-                "adjudication_source": "deterministic",
-                "adjudication_metadata": None,
+                "deal": self._deal_payload(broken),
+                "grievance": {
+                    "id": f"grv-{self.state.next_grievance:06d}",
+                    "wronged": wronged,
+                    "offender": offender,
+                    "deal_id": deal.id,
+                    "turn": turn,
+                    "reason": reason,
+                    "payment_gold": deal.payment_gold,
+                    "base_magnitude": grievance_base_magnitude(
+                        deal.payment_gold
+                    ),
+                    "half_life_turns": self.rules.grievance_half_life_turns,
+                    "adjudication_source": "deterministic",
+                    "adjudication_metadata": None,
+                },
             },
         )
 

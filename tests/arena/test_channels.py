@@ -165,6 +165,81 @@ def test_deal_proposal_atomically_creates_linked_message_and_deal():
     assert state.next_deal == state.next_message == 2
 
 
+def test_staged_action_event_atomically_applies_effect_source_and_acknowledgement():
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    acknowledgement = {
+        "player_id": 1,
+        "turn": 4,
+        "source_id": "src-1",
+        "status": "applied",
+        "message": "sent private message msg-000001 to player 2",
+        "deal_id": None,
+    }
+
+    state = reduce_event(
+        state,
+        _event(
+            1,
+            "staged_action_applied",
+            {
+                "source_id": "src-1",
+                "acknowledgement": acknowledgement,
+                "effect": {
+                    "kind": "message_sent",
+                    "payload": _message_payload("msg-000001"),
+                },
+            },
+        ),
+    )
+
+    assert state.messages[0].id == "msg-000001"
+    assert state.applied_source_ids == frozenset({"src-1"})
+    assert state.acknowledgements == (ChannelAcknowledgement(**acknowledgement),)
+    assert state.last_event_sequence == 1
+
+
+def test_deal_broken_event_atomically_changes_deal_and_creates_grievance():
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
+    active = {
+        **_deal_payload(
+            state="active", favor_status="not_due", payment_status="due"
+        ),
+        "accepted_turn": 5,
+        "fund_by_turn": 7,
+    }
+    state = reduce_event(state, _event(2, "deal_changed", active))
+    broken = {
+        **active,
+        "state": "broken",
+        "favor_status": "released",
+        "payment_status": "failed",
+        "terminal": {
+            "wronged": 2,
+            "offender": 1,
+            "reason": "payment not funded",
+            "adjudication_source": "deterministic",
+        },
+    }
+
+    state = reduce_event(
+        state,
+        _event(
+            3,
+            "deal_broken",
+            {
+                "deal": broken,
+                "grievance": _grievance_payload(wronged=2, offender=1),
+            },
+        ),
+    )
+
+    assert state.deals[0].state is DealState.BROKEN
+    assert state.grievances[0].deal_id == state.deals[0].id
+    assert state.next_grievance == 2
+    assert state.last_event_sequence == 3
+
+
 def test_projection_filters_typed_records_before_rendering():
     state = initial_channel_state("run-a", frozenset({1, 2, 3}), ChannelRules())
     for seq, sender, recipient, text in [

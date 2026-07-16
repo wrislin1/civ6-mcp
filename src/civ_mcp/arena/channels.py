@@ -449,6 +449,260 @@ def _validate_grievance_link(state: ChannelState, grievance: Grievance) -> None:
         raise ValueError("grievance parties do not match terminal breach")
 
 
+def _message_changes(
+    state: ChannelState,
+    payload: dict,
+    *,
+    label: str = "message",
+) -> dict[str, Any]:
+    record_id = payload.get("id")
+    if isinstance(record_id, str):
+        _assert_unique(state.messages, record_id, "message")
+    _require_counter_id("message", record_id, state.next_message)
+    message = _construct(Message, copy.deepcopy(payload), label)
+    pair_count = sum(
+        existing.from_player == message.from_player
+        and existing.to_player == message.to_player
+        for existing in state.messages
+    )
+    limit = int(state.rules_fingerprint["max_messages_per_pair"])
+    if pair_count >= limit:
+        raise ValueError(
+            "message limit reached for ordered pair "
+            f"{message.from_player}->{message.to_player}"
+        )
+    return {
+        "messages": state.messages + (message,),
+        "next_message": state.next_message + 1,
+    }
+
+
+def _validate_proposal_policy(
+    state: ChannelState,
+    deal: Deal,
+    message: Message,
+) -> None:
+    rules = ChannelRules(**state.rules_fingerprint)
+    for player, label in (
+        (deal.proposer, "proposer"),
+        (deal.counterparty, "counterparty"),
+    ):
+        if isinstance(player, bool) or not isinstance(player, int):
+            raise ValueError(f"deal {label} must be an integer")
+        if player not in state.enabled_players:
+            raise ValueError(f"deal {label} is not channel-enabled")
+    if deal.proposer == deal.counterparty:
+        raise ValueError("deal parties must be distinct")
+
+    active_count = sum(
+        existing.proposer == deal.proposer
+        and existing.counterparty == deal.counterparty
+        and existing.state in (DealState.PROPOSED, DealState.ACTIVE)
+        for existing in state.deals
+    )
+    if active_count >= rules.max_active_deals_per_pair:
+        raise ValueError(
+            "active deal limit reached for ordered pair "
+            f"{deal.proposer}->{deal.counterparty}"
+        )
+
+    if isinstance(deal.created_turn, bool) or not isinstance(deal.created_turn, int):
+        raise ValueError("deal created_turn must be an integer")
+    if deal.created_turn < 0:
+        raise ValueError("deal created_turn must be non-negative")
+    expected_accept_by = deal.created_turn + rules.acceptance_turns
+    if (
+        isinstance(deal.accept_by_turn, bool)
+        or not isinstance(deal.accept_by_turn, int)
+        or deal.accept_by_turn != expected_accept_by
+    ):
+        raise ValueError(f"deal accept_by_turn must be {expected_accept_by}")
+    if (
+        isinstance(deal.completion_window_turns, bool)
+        or not isinstance(deal.completion_window_turns, int)
+        or not 1
+        <= deal.completion_window_turns
+        <= rules.max_completion_turns
+    ):
+        raise ValueError(
+            "deal completion_window_turns must be "
+            f"1..{rules.max_completion_turns}"
+        )
+    if (
+        isinstance(deal.payment_gold, bool)
+        or not isinstance(deal.payment_gold, int)
+        or not 1 <= deal.payment_gold <= rules.max_payment_gold
+    ):
+        raise ValueError(f"deal payment_gold must be 1..{rules.max_payment_gold}")
+    if deal.timing not in ("up_front", "on_delivery"):
+        raise ValueError("deal timing must be up_front or on_delivery")
+
+    for value, label in (
+        (message.from_player, "from_player"),
+        (message.to_player, "to_player"),
+        (message.turn, "turn"),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"proposal message {label} must be an integer")
+    if (
+        not isinstance(message.text, str)
+        or not message.text.strip()
+        or len(message.text) > rules.max_message_chars
+    ):
+        raise ValueError(
+            f"proposal message must be 1..{rules.max_message_chars} characters"
+        )
+
+    from civ_mcp.arena.channel_terms import TermValidationContext, validate_term
+
+    raw_term = {
+        "term_type": deal.favor.term_type,
+        "params": deal.favor.params,
+    }
+    canonical_term = validate_term(
+        raw_term,
+        TermValidationContext(
+            obligated_player=deal.counterparty,
+            enabled_players=state.enabled_players,
+        ),
+    )
+    if canonical_term != raw_term:
+        raise ValueError("favor term params are not canonical")
+
+
+def _deal_proposed_changes(state: ChannelState, payload: dict) -> dict[str, Any]:
+    if set(payload) != {"deal", "message"}:
+        raise ValueError("deal_proposed payload requires exactly deal and message")
+    deal_payload = _require_payload(payload["deal"])
+    message_payload = _require_payload(payload["message"])
+    record_id = deal_payload.get("id")
+    if isinstance(record_id, str):
+        _assert_unique(state.deals, record_id, "deal")
+    _require_counter_id("deal", record_id, state.next_deal)
+    deal = _deal_from_dict(deal_payload)
+    _validate_initial_deal(deal)
+
+    message_id = message_payload.get("id")
+    if isinstance(message_id, str):
+        _assert_unique(state.messages, message_id, "message")
+    _require_counter_id("message", message_id, state.next_message)
+    message = _construct(
+        Message,
+        copy.deepcopy(message_payload),
+        "proposal message",
+    )
+    if (
+        message.from_player,
+        message.to_player,
+        message.turn,
+        message.deal_id,
+    ) != (
+        deal.proposer,
+        deal.counterparty,
+        deal.created_turn,
+        deal.id,
+    ):
+        raise ValueError("proposal message must link the deal parties, turn, and id")
+    _validate_proposal_policy(state, deal, message)
+    pair_count = sum(
+        existing.from_player == message.from_player
+        and existing.to_player == message.to_player
+        for existing in state.messages
+    )
+    limit = int(state.rules_fingerprint["max_messages_per_pair"])
+    if pair_count >= limit:
+        raise ValueError(
+            "message limit reached for ordered pair "
+            f"{message.from_player}->{message.to_player}"
+        )
+    return {
+        "deals": state.deals + (deal,),
+        "messages": state.messages + (message,),
+        "next_deal": state.next_deal + 1,
+        "next_message": state.next_message + 1,
+    }
+
+
+def _deal_changed_changes(state: ChannelState, payload: dict) -> dict[str, Any]:
+    record_id = payload.get("id")
+    if not isinstance(record_id, str):
+        raise ValueError("deal_changed payload requires deal id")
+    index = next(
+        (i for i, deal in enumerate(state.deals) if deal.id == record_id),
+        None,
+    )
+    if index is None:
+        raise ValueError(f"unknown deal id {record_id!r}")
+    before = state.deals[index]
+    if "changes" in payload:
+        if set(payload) != {"id", "changes"} or not isinstance(
+            payload["changes"], dict
+        ):
+            raise ValueError("invalid deal_changed patch payload")
+        updated_payload = {
+            **_deal_to_dict(before),
+            **copy.deepcopy(payload["changes"]),
+            "id": record_id,
+        }
+    else:
+        updated_payload = payload
+    after = _deal_from_dict(updated_payload)
+    if after.id != before.id:
+        raise ValueError("deal id is immutable")
+    _validate_deal_transition(before, after)
+    deals = list(state.deals)
+    deals[index] = after
+    return {"deals": tuple(deals)}
+
+
+def _grievance_changes(state: ChannelState, payload: dict) -> dict[str, Any]:
+    record_id = payload.get("id")
+    if isinstance(record_id, str):
+        _assert_unique(state.grievances, record_id, "grievance")
+    _require_counter_id("grievance", record_id, state.next_grievance)
+    grievance = _construct(Grievance, copy.deepcopy(payload), "grievance")
+    _validate_grievance_link(state, grievance)
+    return {
+        "grievances": state.grievances + (grievance,),
+        "next_grievance": state.next_grievance + 1,
+    }
+
+
+def _acknowledgement_changes(
+    state: ChannelState,
+    payload: dict,
+) -> dict[str, Any]:
+    acknowledgement = _construct(
+        ChannelAcknowledgement,
+        copy.deepcopy(payload),
+        "acknowledgement",
+    )
+    if any(
+        existing.source_id == acknowledgement.source_id
+        for existing in state.acknowledgements
+    ):
+        raise ValueError(
+            f"duplicate acknowledgement source id {acknowledgement.source_id!r}"
+        )
+    return {
+        "acknowledgements": state.acknowledgements + (acknowledgement,)
+    }
+
+
+def _domain_changes(
+    state: ChannelState,
+    kind: str,
+    payload: dict,
+) -> dict[str, Any]:
+    if kind == "message_sent":
+        return _message_changes(state, payload)
+    if kind == "deal_proposed":
+        return _deal_proposed_changes(state, payload)
+    if kind == "deal_changed":
+        return _deal_changed_changes(state, payload)
+    raise ValueError(f"unsupported staged action effect {kind!r}")
+
+
 def reduce_event(state: ChannelState, event: ChannelEvent) -> ChannelState:
     if state.schema_version != SCHEMA_VERSION:
         raise ValueError(f"unsupported channel schema {state.schema_version}")
@@ -466,143 +720,119 @@ def reduce_event(state: ChannelState, event: ChannelEvent) -> ChannelState:
 
     match event.kind:
         case "message_sent":
-            record_id = payload.get("id")
-            if isinstance(record_id, str):
-                _assert_unique(state.messages, record_id, "message")
-            _require_counter_id("message", record_id, state.next_message)
-            message = _construct(Message, copy.deepcopy(payload), "message")
-            pair_count = sum(
-                existing.from_player == message.from_player
-                and existing.to_player == message.to_player
-                for existing in state.messages
-            )
-            limit = int(state.rules_fingerprint["max_messages_per_pair"])
-            if pair_count >= limit:
-                raise ValueError(
-                    "message limit reached for ordered pair "
-                    f"{message.from_player}->{message.to_player}"
-                )
-            changes = {
-                "messages": state.messages + (message,),
-                "next_message": state.next_message + 1,
-            }
+            changes = _message_changes(state, payload)
 
         case "deal_proposed":
-            if set(payload) != {"deal", "message"}:
-                raise ValueError(
-                    "deal_proposed payload requires exactly deal and message"
-                )
-            deal_payload = _require_payload(payload["deal"])
-            message_payload = _require_payload(payload["message"])
-            record_id = deal_payload.get("id")
-            if isinstance(record_id, str):
-                _assert_unique(state.deals, record_id, "deal")
-            _require_counter_id("deal", record_id, state.next_deal)
-            deal = _deal_from_dict(deal_payload)
-            _validate_initial_deal(deal)
-
-            message_id = message_payload.get("id")
-            if isinstance(message_id, str):
-                _assert_unique(state.messages, message_id, "message")
-            _require_counter_id("message", message_id, state.next_message)
-            message = _construct(
-                Message,
-                copy.deepcopy(message_payload),
-                "proposal message",
-            )
-            if (
-                message.from_player,
-                message.to_player,
-                message.turn,
-                message.deal_id,
-            ) != (
-                deal.proposer,
-                deal.counterparty,
-                deal.created_turn,
-                deal.id,
-            ):
-                raise ValueError(
-                    "proposal message must link the deal parties, turn, and id"
-                )
-            pair_count = sum(
-                existing.from_player == message.from_player
-                and existing.to_player == message.to_player
-                for existing in state.messages
-            )
-            limit = int(state.rules_fingerprint["max_messages_per_pair"])
-            if pair_count >= limit:
-                raise ValueError(
-                    "message limit reached for ordered pair "
-                    f"{message.from_player}->{message.to_player}"
-                )
-            changes = {
-                "deals": state.deals + (deal,),
-                "messages": state.messages + (message,),
-                "next_deal": state.next_deal + 1,
-                "next_message": state.next_message + 1,
-            }
+            changes = _deal_proposed_changes(state, payload)
 
         case "deal_changed":
-            record_id = payload.get("id")
-            if not isinstance(record_id, str):
-                raise ValueError("deal_changed payload requires deal id")
-            index = next(
-                (i for i, deal in enumerate(state.deals) if deal.id == record_id),
-                None,
-            )
-            if index is None:
-                raise ValueError(f"unknown deal id {record_id!r}")
-            before = state.deals[index]
-            if "changes" in payload:
-                if set(payload) != {"id", "changes"} or not isinstance(
-                    payload["changes"], dict
-                ):
-                    raise ValueError("invalid deal_changed patch payload")
-                updated_payload = {
-                    **_deal_to_dict(before),
-                    **copy.deepcopy(payload["changes"]),
-                    "id": record_id,
-                }
-            else:
-                updated_payload = payload
-            after = _deal_from_dict(updated_payload)
-            if after.id != before.id:
-                raise ValueError("deal id is immutable")
-            _validate_deal_transition(before, after)
-            deals = list(state.deals)
-            deals[index] = after
-            changes = {"deals": tuple(deals)}
+            changes = _deal_changed_changes(state, payload)
 
         case "grievance_created":
-            record_id = payload.get("id")
-            if isinstance(record_id, str):
-                _assert_unique(state.grievances, record_id, "grievance")
-            _require_counter_id("grievance", record_id, state.next_grievance)
-            grievance = _construct(
-                Grievance, copy.deepcopy(payload), "grievance"
-            )
-            _validate_grievance_link(state, grievance)
-            changes = {
-                "grievances": state.grievances + (grievance,),
-                "next_grievance": state.next_grievance + 1,
-            }
+            changes = _grievance_changes(state, payload)
 
         case "acknowledged":
-            acknowledgement = _construct(
-                ChannelAcknowledgement,
-                copy.deepcopy(payload),
-                "acknowledgement",
+            changes = _acknowledgement_changes(state, payload)
+
+        case "staged_action_applied":
+            if set(payload) != {"source_id", "acknowledgement", "effect"}:
+                raise ValueError(
+                    "staged_action_applied payload requires exactly source_id, "
+                    "acknowledgement, and effect"
+                )
+            source_id = payload["source_id"]
+            if not isinstance(source_id, str) or not source_id:
+                raise ValueError(
+                    "staged_action_applied requires a non-empty source_id"
+                )
+            if source_id in state.applied_source_ids:
+                raise ValueError(f"duplicate source id {source_id!r}")
+
+            effect = payload["effect"]
+            effect_changes: dict[str, Any] = {}
+            effect_state = state
+            effect_kind: str | None = None
+            effect_payload: dict | None = None
+            if effect is not None:
+                effect = _require_payload(effect)
+                if set(effect) != {"kind", "payload"}:
+                    raise ValueError(
+                        "staged action effect requires exactly kind and payload"
+                    )
+                effect_kind = effect["kind"]
+                if not isinstance(effect_kind, str):
+                    raise ValueError("staged action effect kind must be a string")
+                effect_payload = _require_payload(effect["payload"])
+                effect_changes = _domain_changes(
+                    state,
+                    effect_kind,
+                    effect_payload,
+                )
+                effect_state = replace(state, **effect_changes)
+
+            acknowledgement_payload = _require_payload(
+                payload["acknowledgement"]
             )
-            if any(
-                existing.source_id == acknowledgement.source_id
-                for existing in state.acknowledgements
+            acknowledgement_changes = _acknowledgement_changes(
+                effect_state,
+                acknowledgement_payload,
+            )
+            acknowledgement = acknowledgement_changes["acknowledgements"][-1]
+            if acknowledgement.source_id != source_id:
+                raise ValueError(
+                    "staged action acknowledgement source_id must match source_id"
+                )
+            if (
+                isinstance(acknowledgement.player_id, bool)
+                or not isinstance(acknowledgement.player_id, int)
+                or acknowledgement.player_id not in state.enabled_players
             ):
                 raise ValueError(
-                    f"duplicate acknowledgement source id {acknowledgement.source_id!r}"
+                    "staged action acknowledgement player must be channel-enabled"
+                )
+            if (
+                isinstance(acknowledgement.turn, bool)
+                or not isinstance(acknowledgement.turn, int)
+                or acknowledgement.turn < 0
+            ):
+                raise ValueError(
+                    "staged action acknowledgement turn must be non-negative"
+                )
+            expected_status = "rejected" if effect_kind is None else "applied"
+            if acknowledgement.status != expected_status:
+                raise ValueError(
+                    "staged action acknowledgement status must match its effect"
+                )
+            expected_deal_id = None
+            if effect_kind == "deal_proposed" and effect_payload is not None:
+                expected_deal_id = _require_payload(effect_payload["deal"])["id"]
+            elif effect_kind == "deal_changed" and effect_payload is not None:
+                expected_deal_id = effect_payload["id"]
+            if acknowledgement.deal_id != expected_deal_id:
+                raise ValueError(
+                    "staged action acknowledgement deal_id must match its effect"
                 )
             changes = {
-                "acknowledgements": state.acknowledgements + (acknowledgement,)
+                **effect_changes,
+                **acknowledgement_changes,
+                "applied_source_ids": state.applied_source_ids | {source_id},
             }
+
+        case "deal_broken":
+            if set(payload) != {"deal", "grievance"}:
+                raise ValueError(
+                    "deal_broken payload requires exactly deal and grievance"
+                )
+            deal_changes = _deal_changed_changes(
+                state,
+                _require_payload(payload["deal"]),
+            )
+            broken_state = replace(state, **deal_changes)
+            grievance_changes = _grievance_changes(
+                broken_state,
+                _require_payload(payload["grievance"]),
+            )
+            changes = {**deal_changes, **grievance_changes}
 
         case "observation_recorded":
             record_id = payload.get("id")
