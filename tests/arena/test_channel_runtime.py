@@ -1032,6 +1032,122 @@ def test_open_rejects_noncanonical_snapshot_metadata(tmp_path, field, value):
         runtime(tmp_path)
 
 
+@pytest.mark.parametrize(
+    "enabled_players",
+    [
+        [True, 2],
+        [1.0, 2],
+        ["1", 2],
+        [1, 1, 2],
+        {"1": True, "2": True},
+        [-1, 2],
+    ],
+    ids=[
+        "bool-id",
+        "float-id",
+        "string-id",
+        "duplicate-id",
+        "non-array",
+        "negative-id",
+    ],
+)
+def test_open_rejects_noncanonical_enabled_player_identity(
+    tmp_path,
+    enabled_players,
+):
+    rt = runtime(tmp_path)
+    snapshot = json.loads(rt.state_path.read_text())
+    snapshot["enabled_players"] = enabled_players
+    rt.state_path.write_text(json.dumps(snapshot))
+
+    with pytest.raises(ChannelStateError, match="invalid channel snapshot"):
+        runtime(tmp_path)
+
+
+@pytest.mark.parametrize("run_id", ["", True], ids=["empty", "non-string"])
+def test_open_rejects_noncanonical_run_identity(tmp_path, run_id):
+    rt = runtime(tmp_path)
+    snapshot = json.loads(rt.state_path.read_text())
+    snapshot["run_id"] = run_id
+    rt.state_path.write_text(json.dumps(snapshot))
+
+    with pytest.raises(ChannelStateError, match="invalid channel snapshot"):
+        runtime(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "case, value",
+    [
+        ("bool-integer", True),
+        ("float-integer", 3.0),
+        ("string-integer", "3"),
+        ("nested-integer", {"value": 3}),
+        ("zero-integer", 0),
+        ("above-bound-integer", 31),
+        ("bool-threshold", True),
+        ("integer-threshold", 0),
+        ("string-threshold", "0.05"),
+        ("nonfinite-threshold", float("nan")),
+        ("zero-threshold", 0.0),
+        ("above-bound-threshold", 0.06),
+        ("non-object", []),
+        ("missing-key", None),
+        ("extra-key", None),
+    ],
+)
+def test_open_rejects_noncanonical_rules_fingerprint(tmp_path, case, value):
+    rt = runtime(tmp_path)
+    snapshot = json.loads(rt.state_path.read_text())
+    if case == "non-object":
+        snapshot["rules_fingerprint"] = value
+    else:
+        fingerprint = snapshot["rules_fingerprint"]
+        if case == "missing-key":
+            fingerprint.pop("funding_turns")
+        elif case == "extra-key":
+            fingerprint["nested"] = {"funding_turns": 2}
+        elif case.endswith("threshold"):
+            fingerprint["prompt_grievance_threshold"] = value
+        elif case == "above-bound-integer":
+            fingerprint["max_completion_turns"] = value
+        else:
+            fingerprint["acceptance_turns"] = value
+    rt.state_path.write_text(json.dumps(snapshot))
+
+    with pytest.raises(ChannelStateError, match="invalid channel snapshot"):
+        runtime(tmp_path)
+
+
+def test_open_preserves_valid_custom_identity_through_lagging_replay(tmp_path):
+    rules = ChannelRules(
+        acceptance_turns=2,
+        funding_turns=1,
+        max_completion_turns=12,
+        max_active_deals_per_pair=2,
+        max_payment_gold=750,
+        max_message_chars=500,
+        prompt_grievance_threshold=0.01,
+    )
+    enabled_players = frozenset({0, 2, 7})
+    rt = ChannelRuntime.open(tmp_path, "custom-run", enabled_players, rules)
+    rt._commit("source_applied", {"source_id": "prefix"})
+    lagging_snapshot = json.loads(rt.state_path.read_text())
+    lagging_snapshot["enabled_players"] = [7, 0, 2]
+    rt._commit("source_applied", {"source_id": "later"})
+    rt.state_path.write_text(json.dumps(lagging_snapshot))
+
+    reopened = ChannelRuntime.open(
+        tmp_path,
+        "custom-run",
+        enabled_players,
+        rules,
+    )
+
+    assert reopened.state.enabled_players == enabled_players
+    assert reopened.state.rules_fingerprint == rules.fingerprint()
+    assert reopened.state.applied_source_ids == frozenset({"prefix", "later"})
+
+
 def test_open_ignores_a_truncated_final_journal_record(tmp_path):
     rt = runtime(tmp_path)
     rt._commit("source_applied", {"source_id": "complete"})

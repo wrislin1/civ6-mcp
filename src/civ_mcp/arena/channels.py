@@ -4,6 +4,7 @@ import copy
 import json
 from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
+from math import isfinite
 from typing import Any
 
 from civ_mcp.arena.config import ChannelRules
@@ -943,6 +944,19 @@ def state_to_dict(state: ChannelState) -> dict:
 
 
 _STATE_FIELDS = frozenset(ChannelState.__dataclass_fields__)
+_RULE_FIELDS = frozenset(ChannelRules.__dataclass_fields__)
+_RULE_UPPER_BOUNDS = {
+    "max_completion_turns": 30,
+    "max_active_deals_per_pair": 3,
+    "max_payment_gold": 10_000,
+    "max_message_chars": 2_000,
+    "max_narrative_chars": 1_000,
+    "max_messages_per_pair": 200,
+    "prompt_messages_per_counterpart": 10,
+    "recent_terminal_deals": 5,
+    "max_zone_distance": 10,
+    "max_queued_action_bytes": 8_192,
+}
 
 
 def _require_exact_integer(value: Any, label: str, minimum: int) -> int:
@@ -950,6 +964,53 @@ def _require_exact_integer(value: Any, label: str, minimum: int) -> int:
         qualifier = "positive" if minimum == 1 else "non-negative"
         raise ValueError(f"{label} must be a {qualifier} integer")
     return value
+
+
+def _validated_enabled_players(value: Any) -> frozenset[int]:
+    if not isinstance(value, list):
+        raise ValueError("enabled_players must be an array")
+    players = tuple(
+        _require_exact_integer(player, "enabled player id", 0) for player in value
+    )
+    if len(players) != len(set(players)):
+        raise ValueError("enabled_players must not contain duplicates")
+    return frozenset(players)
+
+
+def _validated_rules_fingerprint(value: Any) -> dict[str, int | float]:
+    if not isinstance(value, dict):
+        raise ValueError("rules_fingerprint must be an object")
+    if set(value) != _RULE_FIELDS:
+        raise ValueError("rules_fingerprint fields do not match ChannelRules")
+
+    validated: dict[str, int | float] = {}
+    for field_name in ChannelRules.__dataclass_fields__:
+        raw_value = value[field_name]
+        if field_name == "prompt_grievance_threshold":
+            if (
+                type(raw_value) is not float
+                or not isfinite(raw_value)
+                or not 0 < raw_value <= 0.05
+            ):
+                raise ValueError(
+                    "prompt_grievance_threshold must be a finite float "
+                    "greater than 0 and at most 0.05"
+                )
+            validated[field_name] = raw_value
+            continue
+
+        integer_value = _require_exact_integer(
+            raw_value,
+            f"rules_fingerprint.{field_name}",
+            1,
+        )
+        upper = _RULE_UPPER_BOUNDS.get(field_name)
+        if upper is not None and integer_value > upper:
+            raise ValueError(
+                f"rules_fingerprint.{field_name} must be 1..{upper}"
+            )
+        validated[field_name] = integer_value
+    return validated
 
 
 def state_from_dict(payload: dict) -> ChannelState:
@@ -966,6 +1027,13 @@ def state_from_dict(payload: dict) -> ChannelState:
     )
     if schema_version != SCHEMA_VERSION:
         raise ValueError(f"unsupported channel schema {schema_version!r}")
+    run_id = payload["run_id"]
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise ValueError("run_id must be a non-empty string")
+    enabled_players = _validated_enabled_players(payload["enabled_players"])
+    rules_fingerprint = _validated_rules_fingerprint(
+        payload["rules_fingerprint"]
+    )
     counters = {
         "queue_cursor": _require_exact_integer(
             payload["queue_cursor"], "queue_cursor", 0
@@ -996,9 +1064,9 @@ def state_from_dict(payload: dict) -> ChannelState:
     try:
         return ChannelState(
             schema_version=schema_version,
-            run_id=payload["run_id"],
-            enabled_players=frozenset(payload["enabled_players"]),
-            rules_fingerprint=copy.deepcopy(payload["rules_fingerprint"]),
+            run_id=run_id,
+            enabled_players=enabled_players,
+            rules_fingerprint=rules_fingerprint,
             messages=tuple(
                 _construct(Message, copy.deepcopy(item), "message")
                 for item in payload["messages"]
