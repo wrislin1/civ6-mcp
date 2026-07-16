@@ -95,6 +95,21 @@ def _message_payload(
     }
 
 
+def _proposal_payload(deal: dict | None = None) -> dict:
+    deal = deal or _deal_payload()
+    return {
+        "deal": deal,
+        "message": {
+            "id": "msg-000001",
+            "from_player": deal["proposer"],
+            "to_player": deal["counterparty"],
+            "turn": deal["created_turn"],
+            "text": "clear the northern camp",
+            "deal_id": deal["id"],
+        },
+    }
+
+
 def _grievance_payload(
     *, wronged: int = 1, offender: int = 2, deal_id: str = "deal-000001"
 ) -> dict:
@@ -134,6 +149,20 @@ def test_reducer_assigns_records_from_event_payload_and_round_trips():
     assert restored == state
     assert restored.next_message == 2
     assert restored.last_event_sequence == 1
+
+
+def test_deal_proposal_atomically_creates_linked_message_and_deal():
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+
+    state = reduce_event(
+        state,
+        _event(1, "deal_proposed", _proposal_payload()),
+    )
+
+    assert state.deals[0].id == "deal-000001"
+    assert state.messages[0].deal_id == state.deals[0].id
+    assert state.messages[0].text == "clear the northern camp"
+    assert state.next_deal == state.next_message == 2
 
 
 def test_projection_filters_typed_records_before_rendering():
@@ -192,7 +221,7 @@ def test_records_are_frozen_and_enums_are_string_valued():
 
 def test_reducer_handles_every_canonical_event_and_preserves_payloads():
     state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
     changed = {
         **_deal_payload(
             state="active", favor_status="not_due", payment_status="due"
@@ -324,9 +353,9 @@ def test_reducer_rejects_invalid_sequences_kinds_and_counter_ids(events, match):
 
 def test_reducer_rejects_duplicate_ids_and_illegal_deal_transitions():
     state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
     with pytest.raises(ValueError, match="duplicate deal id"):
-        reduce_event(state, _event(2, "deal_proposed", _deal_payload()))
+        reduce_event(state, _event(2, "deal_proposed", _proposal_payload()))
 
     terminal = _deal_payload(
         state="declined",
@@ -350,17 +379,20 @@ def test_proposal_rejects_acceptance_and_active_lifecycle_fields():
         "fund_by_turn": 6,
     }
     with pytest.raises(ValueError, match="proposed deal cannot be accepted"):
-        reduce_event(state, _event(1, "deal_proposed", incoherent))
+        reduce_event(
+            state,
+            _event(1, "deal_proposed", _proposal_payload(incoherent)),
+        )
 
     accepted = reduce_event(
-        state, _event(1, "deal_proposed", _deal_payload())
+        state, _event(1, "deal_proposed", _proposal_payload())
     )
     assert accepted.deals[0].state is DealState.PROPOSED
 
 
 def test_active_deal_requires_acceptance_and_honored_requires_completion():
     state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
 
     active_without_acceptance = {
         **_deal_payload(
@@ -413,7 +445,7 @@ def test_active_deal_requires_acceptance_and_honored_requires_completion():
 
 def test_proposed_change_rejects_due_legs_but_allows_baseline_updates():
     state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
     injected = _deal_payload(favor_status="due")
     with pytest.raises(ValueError, match="proposed deal must have non-due legs"):
         reduce_event(state, _event(2, "deal_changed", injected))
@@ -429,7 +461,7 @@ def test_proposed_change_rejects_due_legs_but_allows_baseline_updates():
 @pytest.mark.parametrize("terminal_state", ["declined", "expired"])
 def test_unaccepted_terminal_deals_reject_due_legs_and_deadlines(terminal_state):
     state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
     injected = {
         **_deal_payload(
             state=terminal_state,
@@ -459,7 +491,7 @@ def test_unaccepted_terminal_deals_reject_due_legs_and_deadlines(terminal_state)
 
 def test_preacceptance_unverifiable_cannot_invent_acceptance_or_obligations():
     state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
     accepted_injection = {
         **_deal_payload(state="unverifiable", terminal={"reason": "missing"}),
         "accepted_turn": 5,
@@ -493,7 +525,7 @@ def test_preacceptance_unverifiable_cannot_invent_acceptance_or_obligations():
 @pytest.mark.parametrize("accepted_turn", [None, 6])
 def test_postacceptance_unverifiable_preserves_exact_acceptance(accepted_turn):
     state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
     active = {
         **_deal_payload(
             state="active", favor_status="not_due", payment_status="due"
@@ -528,7 +560,7 @@ def test_grievance_requires_existing_broken_deal():
             _event(1, "grievance_created", _grievance_payload()),
         )
 
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
     active = {
         **_deal_payload(
             state="active", favor_status="not_due", payment_status="due"
@@ -552,7 +584,7 @@ def test_grievance_requires_existing_broken_deal():
 
 def test_grievance_parties_match_broken_deal_and_terminal_breach():
     state = initial_channel_state("run-a", frozenset({1, 2, 3}), ChannelRules())
-    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    state = reduce_event(state, _event(1, "deal_proposed", _proposal_payload()))
     active = {
         **_deal_payload(
             state="active", favor_status="not_due", payment_status="due"

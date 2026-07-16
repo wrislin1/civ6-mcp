@@ -488,15 +488,58 @@ def reduce_event(state: ChannelState, event: ChannelEvent) -> ChannelState:
             }
 
         case "deal_proposed":
-            record_id = payload.get("id")
+            if set(payload) != {"deal", "message"}:
+                raise ValueError(
+                    "deal_proposed payload requires exactly deal and message"
+                )
+            deal_payload = _require_payload(payload["deal"])
+            message_payload = _require_payload(payload["message"])
+            record_id = deal_payload.get("id")
             if isinstance(record_id, str):
                 _assert_unique(state.deals, record_id, "deal")
             _require_counter_id("deal", record_id, state.next_deal)
-            deal = _deal_from_dict(payload)
+            deal = _deal_from_dict(deal_payload)
             _validate_initial_deal(deal)
+
+            message_id = message_payload.get("id")
+            if isinstance(message_id, str):
+                _assert_unique(state.messages, message_id, "message")
+            _require_counter_id("message", message_id, state.next_message)
+            message = _construct(
+                Message,
+                copy.deepcopy(message_payload),
+                "proposal message",
+            )
+            if (
+                message.from_player,
+                message.to_player,
+                message.turn,
+                message.deal_id,
+            ) != (
+                deal.proposer,
+                deal.counterparty,
+                deal.created_turn,
+                deal.id,
+            ):
+                raise ValueError(
+                    "proposal message must link the deal parties, turn, and id"
+                )
+            pair_count = sum(
+                existing.from_player == message.from_player
+                and existing.to_player == message.to_player
+                for existing in state.messages
+            )
+            limit = int(state.rules_fingerprint["max_messages_per_pair"])
+            if pair_count >= limit:
+                raise ValueError(
+                    "message limit reached for ordered pair "
+                    f"{message.from_player}->{message.to_player}"
+                )
             changes = {
                 "deals": state.deals + (deal,),
+                "messages": state.messages + (message,),
                 "next_deal": state.next_deal + 1,
+                "next_message": state.next_message + 1,
             }
 
         case "deal_changed":
