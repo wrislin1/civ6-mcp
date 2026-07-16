@@ -1,7 +1,7 @@
 # Arena Channels Human Surface — Seat-0 Control & Analyst View (Design)
 
 **Date:** 2026-07-16
-**Status:** PROPOSED — section-by-section design approved; awaiting written-spec review
+**Status:** Approved by riz (written-spec review, 2026-07-16)
 **Depends on:** deterministic channels core; integrates with active master metadata when present
 
 ## Goal
@@ -27,6 +27,9 @@ It never reads or writes `channels/state.json` or `channels/events.jsonl`, never
 | `src/civ_mcp/arena/channel_web.py` | FastAPI app, authentication, projection streaming, inline seat-0/analyst pages, standalone CLI |
 | `src/civ_mcp/arena/channel_runtime.py` | Drain validated queue records, emit receipts, and atomically publish projections |
 | `src/civ_mcp/arena/channels.py` | Seat-0 and analyst projection serialization/contamination metadata |
+| `src/civ_mcp/arena/config.py` | Add the explicit `human` seat driver and managed-web/analyst runtime flags |
+| `src/civ_mcp/arena/experiment.py` | Validate that a managed surface targets channel-enabled human seat 0 |
+| `src/civ_mcp/arena/coordinator.py` | Poll the queue while the human seat is local without auto-playing or auto-ending its turn |
 | `src/civ_mcp/arena/arena.py` | `--channels-web` validation and managed-child lifecycle |
 | `pyproject.toml` | `civ-arena-channels` console entry point |
 
@@ -159,9 +162,9 @@ The analyst projection may include all messages, deals, deterministic evidence, 
 
 `civ-arena-channels --run-dir PATH --host 127.0.0.1 --port 8765` runs standalone.
 
-`civ-arena --channels-web PORT` may spawn the exact same command as a managed child after the run directory is known. Arena shutdown terminates only that child; standalone servers are never killed by arena cleanup. Child stdout/stderr go to run-local logs.
+`civ-arena --channels-web PORT` may spawn the exact same command as a managed child after the run directory is known. `--channels-analyst` explicitly enables analyst projection publication and passes `--analyst` to that child. Arena shutdown terminates only that child; standalone servers are never killed by arena cleanup. Child stdout/stderr go to run-local logs.
 
-The managed form is valid only when player 0 is configured as the human-pending seat with channels enabled; invalid combinations fail experiment validation before game startup. The standalone command may start before a projection exists and reports the unavailable state until one is published.
+The managed form is valid only when player 0 is configured with `provider: human` and `channels.enabled: true`; a human provider has a blank model, no policy/backend, never appears in `puppet_ids`, and remains local until the person ends the Civ 6 turn. Invalid combinations fail experiment validation before game startup. The standalone command may start before a projection exists and reports the unavailable state until one is published.
 
 `civ-arena-channels enqueue --run-dir PATH --json ACTION` validates and appends through the same queue code, providing a web-independent fallback. It never edits canonical state.
 

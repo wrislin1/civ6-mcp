@@ -1,7 +1,7 @@
 # Arena Game Master — Resident Advisory LLM & Narrative Adjudication (Design)
 
 **Date:** 2026-07-16
-**Status:** PROPOSED — section-by-section design approved; awaiting written-spec review
+**Status:** Approved by riz (written-spec review, 2026-07-16)
 **Depends on:** `2026-07-09-arena-unofficial-channels-design.md`, schema version 1
 
 ## Goal
@@ -33,6 +33,8 @@ The master may not:
 | `src/civ_mcp/arena/master.py` | Typed input/submission/ruling records, prompt construction, output validation, privacy-safe formatting |
 | `src/civ_mcp/arena/master_runtime.py` | One resident backend, per-mode memory, invocation/idempotency, adjudication routing, transcripts |
 | `src/civ_mcp/arena/arena.py` | Construct and preflight the master backend independently of civ policies |
+| `src/civ_mcp/arena/backends.py` | Backward-compatible forced-tool and per-role timeout controls used by the master call |
+| `src/civ_mcp/arena/cost.py` | Preserve player costs while recording the separate `game_master` role |
 | `src/civ_mcp/arena/coordinator.py` | Call the runtime at the defined admission point and pass only `master_block` to the mover |
 | `src/civ_mcp/arena/prompting.py` | Place the optional master block in the fixed opening order |
 | `src/civ_mcp/arena/analyze.py` | Separate master cost, failure, ruling, and contamination summaries |

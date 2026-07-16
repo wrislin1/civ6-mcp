@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-09
 **Revised:** 2026-07-16
-**Status:** PROPOSED — section-by-section design approved; awaiting written-spec review
+**Status:** Approved by riz (written-spec review, 2026-07-16)
 **Predecessor:** Seat-0 Piloting (`845ae09` plus attended live-gate fixes through `0c72cca`)
 **Follow-ons:** `2026-07-16-arena-game-master-design.md`, then `2026-07-16-arena-channels-human-surface-design.md`
 
@@ -43,6 +43,9 @@ The coordinator owns the authoritative ledger. Models may request transitions, b
 | `src/civ_mcp/arena/channel_terms.py` | Term registry, parameter validation, observation requirements, baselines, pure verifier functions, privacy-safe evidence rendering |
 | `src/civ_mcp/arena/channel_protocol.py` | Typed actions, API schemas, CLI JSON-line parsing, source IDs, acknowledgements |
 | `src/civ_mcp/arena/channel_runtime.py` | Single writer; observation collection, action application, payment side effects, deadlines, journal/snapshot persistence |
+| `src/civ_mcp/lua/channel_observation.py` | One targeted InGame query per admission stage for the union of required evidence families |
+| `src/civ_mcp/lua/channel_payments.py` | Exact gold-only pending-offer creation and fingerprint-safe response builders |
+| `src/civ_mcp/game_state.py` | Narrow typed wrappers for channel observation and linked payment operations |
 | `src/civ_mcp/arena/config.py` | Per-civ `ChannelOptions` and run-wide `ChannelRules` |
 | `src/civ_mcp/arena/experiment.py` | YAML parsing and contextual validation |
 | `src/civ_mcp/arena/agent.py` | Compose game tools with context-bound channel tools for API policies |
