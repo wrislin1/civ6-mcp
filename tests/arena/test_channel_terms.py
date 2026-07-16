@@ -733,6 +733,57 @@ def test_unit_term_parameter_validation_is_strict(term):
         validate_term(term, validation_context())
 
 
+@pytest.mark.parametrize(
+    "term_type", ["withdraw_units_from", "keep_units_away"]
+)
+@pytest.mark.parametrize("min_distance", [0, 11])
+def test_unit_distance_terms_reject_values_outside_exact_bounds(
+    term_type, min_distance
+):
+    term = {
+        "term_type": term_type,
+        "params": {
+            "player_id": 1,
+            "min_distance": min_distance,
+            "unit_scope": "military",
+        },
+    }
+    with pytest.raises(ValueError, match="min_distance must be 1..10"):
+        validate_term(term, validation_context())
+
+
+@pytest.mark.parametrize(
+    "term_type", ["withdraw_units_from", "keep_units_away"]
+)
+@pytest.mark.parametrize("min_distance", [1, 10])
+def test_unit_distance_terms_accept_boundary_values(term_type, min_distance):
+    term = {
+        "term_type": term_type,
+        "params": {
+            "player_id": 1,
+            "min_distance": min_distance,
+            "unit_scope": "all",
+        },
+    }
+    assert validate_term(term, validation_context()) == term
+
+
+@pytest.mark.parametrize(
+    "term_type", ["withdraw_units_from", "keep_units_away"]
+)
+def test_unit_distance_terms_reject_bool_as_min_distance(term_type):
+    term = {
+        "term_type": term_type,
+        "params": {
+            "player_id": 1,
+            "min_distance": True,
+            "unit_scope": "all",
+        },
+    }
+    with pytest.raises(ValueError, match="min_distance must be an integer"):
+        validate_term(term, validation_context())
+
+
 def test_distance_terms_compile_protected_players_and_observation_families():
     request = compile_observation_request([
         {"term_type": "withdraw_units_from", "params": {

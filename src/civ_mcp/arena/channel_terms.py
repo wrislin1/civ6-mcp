@@ -224,8 +224,8 @@ def _validate_unit_distance(
     if player_id not in legal_players:
         raise ValueError(f"player {player_id} is not a legal target")
     min_distance = _require_integer(params["min_distance"], "min_distance")
-    if min_distance < 0:
-        raise ValueError("min_distance must be non-negative")
+    if not 1 <= min_distance <= 10:
+        raise ValueError("min_distance must be 1..10")
     unit_scope = params["unit_scope"]
     if not isinstance(unit_scope, str) or unit_scope not in {"military", "all"}:
         raise ValueError("unit_scope must be military or all")
