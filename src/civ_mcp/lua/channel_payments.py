@@ -1,0 +1,197 @@
+"""Exact gold-only Civ 6 trade builders for unofficial-channel settlement."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from civ_mcp.lua._helpers import SENTINEL, _int
+
+
+def _require_int(
+    value: Any,
+    field: str,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{field} must be an integer")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{field} must be at least {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{field} must be at most {maximum}")
+    return value
+
+
+def _payment_inputs(other_player: int, gold: int) -> tuple[int, int]:
+    return (
+        _require_int(other_player, "player", minimum=0, maximum=63),
+        _require_int(gold, "gold", minimum=1, maximum=10_000),
+    )
+
+
+@dataclass(frozen=True)
+class ExactPaymentOffer:
+    payer: int
+    payee: int
+    gold: int
+    duration: int = 0
+    item_count: int = 1
+
+    def fingerprint(self) -> dict[str, int]:
+        return {
+            "payer": self.payer,
+            "payee": self.payee,
+            "gold": self.gold,
+            "duration": self.duration,
+            "item_count": self.item_count,
+        }
+
+
+def build_channel_payment_offer(payee: int, gold: int) -> str:
+    """Propose one lump-sum gold item without accepting any AI response."""
+    payee, gold = _payment_inputs(payee, gold)
+    return f"""
+local me = Game.GetLocalPlayer()
+local target = {payee}
+if me == target then
+    print("ERR:CHANNEL_PAYMENT_SELF")
+    print("{SENTINEL}")
+    return
+end
+if not Players[target] or not Players[target]:IsAlive() then
+    print("ERR:CHANNEL_PAYMENT_INVALID_PAYEE")
+    print("{SENTINEL}")
+    return
+end
+if DealManager.HasPendingDeal(me, target) then
+    print("ERR:CHANNEL_PAYMENT_PENDING_DEAL")
+    print("{SENTINEL}")
+    return
+end
+DealManager.ClearWorkingDeal(DealDirection.OUTGOING, me, target)
+local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, me, target)
+if not deal or deal:GetItemCount() ~= 0 then
+    print("ERR:CHANNEL_PAYMENT_NO_CLEAN_DEAL")
+    print("{SENTINEL}")
+    return
+end
+local goldItem = deal:AddItemOfType(DealItemTypes.GOLD, me)
+if not goldItem then
+    print("ERR:CHANNEL_PAYMENT_ADD_GOLD_FAILED")
+    print("{SENTINEL}")
+    return
+end
+goldItem:SetAmount({gold})
+goldItem:SetDuration(0)
+if deal:GetItemCount() ~= 1 then
+    print("ERR:CHANNEL_PAYMENT_NOT_EXACT")
+    print("{SENTINEL}")
+    return
+end
+DiplomacyManager.RequestSession(me, target, "MAKE_DEAL")
+DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, me, target)
+print("OK:CHANNEL_PAYMENT_PROPOSED")
+print("{SENTINEL}")
+"""
+
+
+def _build_exact_incoming_check(payer: int, gold: int, success_lua: str) -> str:
+    return f"""
+local me = Game.GetLocalPlayer()
+local payer = {payer}
+local target = payer
+if me == payer or not DealManager.HasPendingDeal(payer, me) then
+    print("ERR:NO_EXACT_CHANNEL_PAYMENT")
+    print("{SENTINEL}")
+    return
+end
+local deal = DealManager.GetWorkingDeal(DealDirection.INCOMING, me, payer)
+if not deal or deal:GetItemCount() ~= 1 then
+    print("ERR:NO_EXACT_CHANNEL_PAYMENT")
+    print("{SENTINEL}")
+    return
+end
+local item = nil
+for candidate in deal:Items() do
+    item = candidate
+end
+if not item
+        or item:GetFromPlayerID() ~= payer
+        or item:GetType() ~= DealItemTypes.GOLD
+        or (item:GetAmount() or 0) ~= {gold}
+        or (item:GetDuration() or 0) ~= 0 then
+    print("ERR:NO_EXACT_CHANNEL_PAYMENT")
+    print("{SENTINEL}")
+    return
+end
+{success_lua}
+print("{SENTINEL}")
+"""
+
+
+def build_channel_payment_query(payer: int, gold: int) -> str:
+    """Query one exact incoming payer-to-local-player payment offer."""
+    payer, gold = _payment_inputs(payer, gold)
+    return _build_exact_incoming_check(
+        payer,
+        gold,
+        f'print("PAYMENT|{payer}|" .. me .. "|{gold}|0|1")',
+    )
+
+
+def parse_channel_payment_query(lines: list[str]) -> ExactPaymentOffer | None:
+    """Return only a canonical single-item lump-sum payment fingerprint."""
+    payment_lines = [line for line in lines if line.startswith("PAYMENT|")]
+    if len(payment_lines) != 1:
+        return None
+    parts = payment_lines[0].split("|")
+    if len(parts) != 6:
+        return None
+    try:
+        payer, payee, gold, duration, item_count = map(_int, parts[1:])
+    except (TypeError, ValueError):
+        return None
+    if (
+        not 0 <= payer <= 63
+        or not 0 <= payee <= 63
+        or payer == payee
+        or not 1 <= gold <= 10_000
+        or duration != 0
+        or item_count != 1
+    ):
+        return None
+    return ExactPaymentOffer(
+        payer=payer,
+        payee=payee,
+        gold=gold,
+        duration=duration,
+        item_count=item_count,
+    )
+
+
+def build_channel_payment_response(payer: int, gold: int, accept: bool) -> str:
+    """Accept/reject only after revalidating the exact linked payment offer."""
+    payer, gold = _payment_inputs(payer, gold)
+    if not isinstance(accept, bool):
+        raise TypeError("accept must be a boolean")
+    action = (
+        "DealProposalAction.ACCEPTED" if accept else "DealProposalAction.REJECTED"
+    )
+    verb = "ACCEPTED" if accept else "REJECTED"
+    return _build_exact_incoming_check(
+        payer,
+        gold,
+        f"""DealManager.SendWorkingDeal({action}, me, payer)
+print("OK:CHANNEL_PAYMENT_{verb}")""",
+    )
+
+
+__all__ = [
+    "ExactPaymentOffer",
+    "build_channel_payment_offer",
+    "build_channel_payment_query",
+    "build_channel_payment_response",
+    "parse_channel_payment_query",
+]

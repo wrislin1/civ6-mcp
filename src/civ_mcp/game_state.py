@@ -15,6 +15,7 @@ import re
 from typing import TYPE_CHECKING
 
 from civ_mcp import lua as lq
+from civ_mcp.arena.channel_terms import ChannelObservation, ObservationRequest
 from civ_mcp.connection import GameConnection
 from civ_mcp.lua._helpers import _lua_escape, _one_of, _safe_enum
 from civ_mcp.narrate import (
@@ -926,6 +927,35 @@ class GameState:
         lua = lq.build_pending_deals_query()
         lines = await self.conn.execute_write(lua)
         return lq.parse_pending_deals_response(lines)
+
+    async def get_channel_observation(
+        self, player_id: int, turn: int, request: ObservationRequest
+    ) -> ChannelObservation:
+        lines = await self.conn.execute_write(
+            lq.build_channel_observation_query(player_id, request)
+        )
+        return lq.parse_channel_observation_response(player_id, turn, request, lines)
+
+    async def offer_channel_payment(self, payee: int, gold: int) -> str:
+        return _action_result(
+            await self.conn.execute_write(lq.build_channel_payment_offer(payee, gold))
+        )
+
+    async def get_channel_payment_offer(
+        self, payer: int, gold: int
+    ) -> lq.ExactPaymentOffer | None:
+        lines = await self.conn.execute_write(
+            lq.build_channel_payment_query(payer, gold)
+        )
+        return lq.parse_channel_payment_query(lines)
+
+    async def respond_to_channel_payment(
+        self, payer: int, gold: int, accept: bool
+    ) -> str:
+        lines = await self.conn.execute_write(
+            lq.build_channel_payment_response(payer, gold, accept)
+        )
+        return _action_result(lines)
 
     async def respond_to_deal(self, other_player_id: int, accept: bool) -> str:
         other_player_id = int(other_player_id)

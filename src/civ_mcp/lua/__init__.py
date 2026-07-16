@@ -18,6 +18,17 @@ works identically to the old monolithic ``lua_queries`` module.
 
 # Re-export helpers & sentinel
 from civ_mcp.lua._helpers import SENTINEL  # noqa: F401
+from civ_mcp.lua.channel_observation import (  # noqa: F401
+    build_channel_observation_query,
+    parse_channel_observation_response,
+)
+from civ_mcp.lua.channel_payments import (  # noqa: F401
+    ExactPaymentOffer,
+    build_channel_payment_offer,
+    build_channel_payment_query,
+    build_channel_payment_response,
+    parse_channel_payment_query,
+)
 from civ_mcp.lua.espionage import (  # noqa: F401
     build_get_spies_query,
     build_spy_escape_route,
