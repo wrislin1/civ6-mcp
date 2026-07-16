@@ -77,6 +77,18 @@ files. They were inspected read-only and left untouched.
 | LLM seat zero | `seat0-llm-20260715` | **PASS 2026-07-15** | `arena_runs/seat0-llm-20260715/{transcript.jsonl,report.md}`. 12 cli-claude seat-zero turns (T9–T20), all `played`/`advanced`, 1 end-turn request each, 0 repairs, 0 failed turns; autosaves `0_MCP_0009`–`0_MCP_0020` adopted. T18–T20 each hit `ENDTURN_BLOCKING_UNITS`, cleared by mechanical `finish_units` cleanup (post-cleanup snapshots empty, no refire). Driver mix `cli=12, in_process=24`. Cost $9.73. |
 | Hard-block human escape → full-LLM-control autonomy (redefined per riz 2026-07-15: "blockers should only be things the llm literally cannot do itself") | `seat0-hardblock-20260715-leg1b/leg2/leg3b/leg4` | **PASS 2026-07-15** | Late-game attended save (Korea T298+, 12 civs, Modern era). Escape hatch proven live twice BEFORE the autonomy gaps were closed: leg1b T301 (quiet non-advance) and leg2 T303 (WC bounce) both terminalized `human_pending` with CRITICAL logs and clean waits. Each escalation was then converted into automation (diplomacy-wedge pass, guarded refire, WC gate + resume-submit, mechanical spy escape/governor idle) — final leg4: 8/8 turns T306–T313 `played`/`advanced`, 1 end request each, **5 live diplomacy-wedge saves** (AI deals from Poland/Egypt/Ethiopia answered by the pilot on attempt 1), 0 human escalations, $18.67. Also recovered live: T306 Macedon AI hard-hang via `0_MCP_0306` Lua load (drain deadline CRITICAL + `turn_kind=failed` recorded correctly; loader bugs fixed in `0c72cca`). |
 
+### Full-LLM-control fix waves (2026-07-15, driven by live gate escalations)
+
+| Commit | What the live run exposed → what shipped |
+|---|---|
+| `d4cbaad` | Review-3 wave: 10 verified findings (drain safety, accounting, recovery). |
+| `bf56e6f` | Gate-1 run: report driver-mix line hid the `scripted` bucket. |
+| `b35bf93` | Deal wedged admission 20+ min → diplomacy-wedge pass (idle+drain), spy escape/governor idle mechanical, reactive diplomacy tools in every tier. |
+| `dd66f93` | T301 quiet stall → recheck session probe, ONE guarded refire, human-pending probe. |
+| `a118341` | T303 WC bounce → pre-fire WC gate + default voter; era-neutral pilot prompts. |
+| `5cc43a1` | T303 replay pre-fire block → resume-congress mechanical submit; played-path WC clears-at-end. |
+| `0c72cca` | T306 Macedon hang recovery → load_game_save Lua tier on WSL, extensioned-name match, engagement verification. |
+
 ### Seat-zero turn records
 
 Gate-1 and gate-2 seat-zero turn rows, terminal states, recovery-save names,

@@ -1,12 +1,16 @@
 # Arena Autonomous Seat-0 Piloting Implementation Plan
 
-> **Status:** Tasks 1–9 ✓ DONE — executed 2026-07-14/15 on branch
+> **Status: COMPLETE — all 10 tasks done, all live gates PASSED
+> 2026-07-15.** Tasks 1–9 executed 2026-07-14/15 on branch
 > `arena-seat0-piloting` (tip `be30516`), then hardened by two review fix
 > waves (`2026-07-15-arena-seat0-review-fixes.md`,
 > `2026-07-15-arena-seat0-review2-fixes.md`); merged to main at `845ae09`,
-> 1194 tests green. REMAINING: Task 10 attended live gates on the gaming PC —
-> all gates BLOCKED/NOT EXERCISED as of 2026-07-15, see
-> `2026-07-14-arena-seat0-live-gates.md`. Do not re-execute Tasks 1–9.
+> plus a third review wave (`d4cbaad`). Task 10 attended live gates ran on
+> the gaming PC 2026-07-15 and PASSED — gate 3 redefined mid-run under
+> riz's full-LLM-control directive, driving four further fix waves
+> (`b35bf93`, `dd66f93`, `a118341`, `5cc43a1`, `0c72cca`); see
+> `2026-07-14-arena-seat0-live-gates.md` for the evidence. Do not
+> re-execute any task.
 > Task-8 wording note: riz affirmed (2026-07-15) the implemented task-tally
 > reading — count `turn_kind != "failed"` (slept turns carry real
 > `run_pre_model_tasks` follow-through) — over this plan's literal
