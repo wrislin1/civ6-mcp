@@ -2,6 +2,7 @@ import dataclasses
 
 import pytest
 
+from civ_mcp.arena import channel_terms
 from civ_mcp.arena.channel_terms import (
     ChannelObservation,
     ObservationFamily,
@@ -155,10 +156,12 @@ def test_registry_metadata_and_observation_request_are_closed():
         "forbid_unit_acquisition",
         "found_city_within",
         "declare_war_on",
+        "dont_trade_with",
         "keep_peace_with",
         "keep_units_away",
         "maintain_gold_reserve",
         "military_unit_cap",
+        "send_trade_route_to",
         "withdraw_units_from",
     }
     assert TERM_REGISTRY["destroy_camp"].baseline_phase == "proposal"
@@ -795,3 +798,167 @@ def test_distance_terms_compile_protected_players_and_observation_families():
         {ObservationFamily.UNITS}
     )
     assert request.protected_players == (1, 3)
+
+
+def test_dont_trade_with_counts_successful_outgoing_deal_and_outgoing_route_only():
+    term = {"term_type": "dont_trade_with", "params": {
+        "target_player": 3, "trade_kinds": ["diplomatic_deal", "trade_route"]}}
+    baseline = capture_baseline(term, obs(1))
+    route = ObservedRoute(2, 11, 3, False)
+    audit = ObservedAction(2, 2, "propose_trade", {"other_player_id": 3}, "OK:PROPOSED")
+    assert verify_term(term, baseline, {}, obs(2, trade_routes=(route,)), 5).status == "failed"
+    assert verify_term(term, baseline, {}, obs(2, action_audit=(audit,)), 5).status == "failed"
+
+
+def test_rejected_trade_and_incoming_route_do_not_violate():
+    term = {"term_type": "dont_trade_with", "params": {
+        "target_player": 3, "trade_kinds": ["diplomatic_deal"]}}
+    audit = ObservedAction(2, 2, "propose_trade", {"other_player_id": 3}, "OK:REJECTED")
+    incoming = ObservedRoute(3, 11, 2, False)
+    current = obs(2, action_audit=(audit,), trade_routes=(incoming,))
+    assert verify_term(term, capture_baseline(term, obs(1)), {}, current, 5).status == "pending"
+
+
+def test_city_state_rejects_diplomatic_deal_kind():
+    with pytest.raises(ValueError, match="city-state targets support trade_route only"):
+        validate_term({"term_type": "dont_trade_with", "params": {
+            "target_player": 55, "trade_kinds": ["diplomatic_deal"]}},
+            TermValidationContext(obligated_player=2,
+                enabled_players=frozenset({1, 2}), city_state_players=frozenset({55}),
+                instrumented_trade_players=frozenset({1, 2})))
+
+
+def test_send_trade_route_to_is_endpoint_success():
+    term = {"term_type": "send_trade_route_to", "params": {"target_player": 3}}
+    result = verify_term(
+        term, capture_baseline(term, obs(1)), {},
+        obs(2, trade_routes=(ObservedRoute(2, 11, 3, False),)), due_turn=4,
+    )
+    assert result.status == "satisfied"
+
+
+def test_trade_parameter_validation_requires_unique_supported_kinds_and_instrumentation():
+    context = TermValidationContext(
+        obligated_player=2,
+        enabled_players=frozenset({1, 2, 3}),
+        instrumented_trade_players=frozenset({2}),
+    )
+    valid = {"term_type": "dont_trade_with", "params": {
+        "target_player": 3, "trade_kinds": ["diplomatic_deal", "trade_route"]}}
+    assert validate_term(valid, context) == valid
+
+    invalid_kinds = ([], ["trade_route", "trade_route"], ["embargo"])
+    for trade_kinds in invalid_kinds:
+        with pytest.raises(ValueError):
+            validate_term(
+                {"term_type": "dont_trade_with", "params": {
+                    "target_player": 3, "trade_kinds": trade_kinds}},
+                context,
+            )
+
+    with pytest.raises(ValueError, match="instrumented"):
+        validate_term(
+            {"term_type": "dont_trade_with", "params": {
+                "target_player": 3, "trade_kinds": ["diplomatic_deal"]}},
+            dataclasses.replace(context, instrumented_trade_players=frozenset()),
+        )
+
+
+def test_normalize_action_audit_keeps_only_proven_committed_trade_actions():
+    policy_result = {"transcript": {"steps": [
+        {"tool_name": "propose_trade", "tool_args": {
+            "other_player_id": 3, "mode": "send"},
+            "tool_result_full": "OK:PROPOSED|Rome"},
+        {"tool_name": "propose_trade", "tool_args": {
+            "other_player_id": 4, "mode": "test"},
+            "tool_result_full": "OK:ACCEPTED|counter-offer only"},
+        {"tool_name": "propose_trade", "tool_args": {
+            "other_player_id": 4, "mode": "TEST"},
+            "tool_result_full": "OK:ACCEPTED|counter-offer only"},
+        {"tool_name": "propose_trade", "tool_args": {
+            "other_player_id": 4},
+            "tool_result_full": "OK:ACCEPTED|default test mode"},
+        {"tool_name": "respond_to_trade", "tool_args": {
+            "other_player_id": 5, "accept": True},
+            "tool_result_full": "OK:DEAL_ACCEPTED|Egypt"},
+        {"tool_name": "respond_to_trade", "tool_args": {
+            "other_player_id": 6, "accept": False},
+            "tool_result_full": "OK:DEAL_REJECTED|Greece"},
+        {"tool_name": "respond_to_trade", "tool_args": {
+            "other_player_id": 6, "accept": True},
+            "tool_result_full": "OK:ACCEPTED|not the incoming-deal result"},
+        {"tool_name": "get_trade_options", "tool_args": {
+            "other_player_id": 7}, "tool_result_full": "OK:ACCEPTED"},
+    ]}}
+
+    actions = channel_terms.normalize_action_audit(policy_result, actor=2, turn=9)
+
+    assert actions == (
+        ObservedAction(
+            2,
+            9,
+            "propose_trade",
+            {"other_player_id": 3, "mode": "send"},
+            "OK:PROPOSED|Rome",
+        ),
+        ObservedAction(
+            2,
+            9,
+            "respond_to_trade",
+            {"other_player_id": 5, "accept": True},
+            "OK:DEAL_ACCEPTED|Egypt",
+        ),
+    )
+
+
+def test_dont_trade_with_ignores_baseline_identity_and_known_breach_is_decisive():
+    term = {"term_type": "dont_trade_with", "params": {
+        "target_player": 3, "trade_kinds": ["diplomatic_deal", "trade_route"]}}
+    existing = ObservedRoute(2, 11, 3, False)
+    baseline = capture_baseline(term, obs(1, trade_routes=(existing,)))
+    same_route = dataclasses.replace(
+        obs(2, trade_routes=(existing,)),
+        families_present=frozenset(ObservationFamily) - {ObservationFamily.ACTION_AUDIT},
+    )
+    assert verify_term(term, baseline, {}, same_route, 5).status == "pending"
+
+    new_route = ObservedRoute(2, 12, 3, False)
+    breached = verify_term(
+        term,
+        baseline,
+        {},
+        dataclasses.replace(
+            obs(3, trade_routes=(existing, new_route)),
+            families_present=frozenset(ObservationFamily) - {ObservationFamily.ACTION_AUDIT},
+        ),
+        5,
+    )
+    repaired = verify_term(term, baseline, breached.monitor, obs(4), 5)
+    assert breached.status == repaired.status == "failed"
+
+
+def test_trade_terms_compile_only_parameter_relevant_families():
+    diplomatic = compile_observation_request({
+        "term_type": "dont_trade_with",
+        "params": {"target_player": 3, "trade_kinds": ["diplomatic_deal"]},
+    })
+    route = compile_observation_request({
+        "term_type": "send_trade_route_to",
+        "params": {"target_player": 3},
+    })
+    assert diplomatic.families == frozenset({ObservationFamily.ACTION_AUDIT})
+    assert route.families == frozenset({ObservationFamily.TRADE_ROUTES})
+
+
+def test_dont_trade_with_retires_baseline_route_exemption_after_route_ends():
+    term = {"term_type": "dont_trade_with", "params": {
+        "target_player": 3, "trade_kinds": ["trade_route"]}}
+    route = ObservedRoute(2, 11, 3, False)
+    baseline = capture_baseline(term, obs(1, trade_routes=(route,)))
+
+    ended = verify_term(term, baseline, {}, obs(2), due_turn=5)
+    restarted = verify_term(
+        term, baseline, ended.monitor, obs(3, trade_routes=(route,)), due_turn=5
+    )
+
+    assert (ended.status, restarted.status) == ("pending", "failed")
