@@ -927,6 +927,111 @@ def test_open_rejects_malformed_or_nonconsecutive_complete_journal_records(tmp_p
         )
 
 
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("schema_version", True),
+        ("schema_version", "1"),
+        ("schema_version", 1.0),
+        ("sequence", True),
+        ("sequence", "1"),
+        ("sequence", 1.0),
+        ("sequence", 0),
+        ("sequence", -1),
+        ("id", True),
+        ("kind", True),
+        ("kind", ""),
+        ("payload", []),
+    ],
+    ids=[
+        "bool-schema",
+        "string-schema",
+        "float-schema",
+        "bool-sequence",
+        "string-sequence",
+        "float-sequence",
+        "zero-sequence",
+        "negative-sequence",
+        "non-string-id",
+        "non-string-kind",
+        "empty-kind",
+        "non-object-payload",
+    ],
+)
+def test_open_rejects_noncanonical_complete_event_metadata(tmp_path, field, value):
+    rt = runtime(tmp_path)
+    event = {
+        "schema_version": 1,
+        "id": "evt-000001",
+        "sequence": 1,
+        "kind": "source_applied",
+        "payload": {"source_id": "malformed-metadata"},
+    }
+    event[field] = value
+    with rt.events_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(event) + "\n")
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("schema_version", True),
+        ("schema_version", "1"),
+        ("schema_version", 1.0),
+        ("last_event_sequence", True),
+        ("last_event_sequence", "0"),
+        ("last_event_sequence", 0.0),
+        ("last_event_sequence", -1),
+        ("queue_cursor", False),
+        ("queue_cursor", "0"),
+        ("queue_cursor", 0.0),
+        ("queue_cursor", -1),
+        ("next_message", True),
+        ("next_deal", True),
+        ("next_grievance", True),
+        ("next_observation", True),
+        ("next_event", True),
+        ("next_event", "1"),
+        ("next_event", 1.0),
+        ("next_event", 0),
+        ("next_event", 2),
+    ],
+    ids=[
+        "bool-schema",
+        "string-schema",
+        "float-schema",
+        "bool-last-sequence",
+        "string-last-sequence",
+        "float-last-sequence",
+        "negative-last-sequence",
+        "bool-queue-cursor",
+        "string-queue-cursor",
+        "float-queue-cursor",
+        "negative-queue-cursor",
+        "bool-next-message",
+        "bool-next-deal",
+        "bool-next-grievance",
+        "bool-next-observation",
+        "bool-next-event",
+        "string-next-event",
+        "float-next-event",
+        "zero-next-event",
+        "incoherent-next-event",
+    ],
+)
+def test_open_rejects_noncanonical_snapshot_metadata(tmp_path, field, value):
+    rt = runtime(tmp_path)
+    snapshot = json.loads(rt.state_path.read_text())
+    snapshot[field] = value
+    rt.state_path.write_text(json.dumps(snapshot))
+
+    with pytest.raises(ChannelStateError, match="invalid channel snapshot"):
+        runtime(tmp_path)
+
+
 def test_open_ignores_a_truncated_final_journal_record(tmp_path):
     rt = runtime(tmp_path)
     rt._commit("source_applied", {"source_id": "complete"})

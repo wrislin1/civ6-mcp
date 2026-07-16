@@ -117,7 +117,14 @@ class ChannelRuntime:
                 snapshot = state_from_dict(
                     json.loads(state_path.read_text(encoding="utf-8"))
                 )
-            except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            except (
+                OSError,
+                UnicodeError,
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 raise ChannelStateError(f"invalid channel snapshot: {exc}") from exc
             os.chmod(state_path, 0o600)
             cls._validate_identity(snapshot, run_id, enabled_players, rules)
@@ -130,7 +137,14 @@ class ChannelRuntime:
 
         try:
             events = cls._read_journal(events_path)
-        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        except (
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
             raise ChannelStateError(f"invalid channel journal: {exc}") from exc
 
         journal_sequence = events[-1].sequence if events else 0
@@ -145,7 +159,7 @@ class ChannelRuntime:
                 if event.sequence > snapshot.last_event_sequence:
                     break
                 prefix = reduce_event(prefix, event)
-        except ValueError as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise ChannelStateError(f"invalid channel journal: {exc}") from exc
         if snapshot != prefix:
             raise ChannelStateError(
@@ -157,7 +171,7 @@ class ChannelRuntime:
             for event in events:
                 if event.sequence > snapshot.last_event_sequence:
                     replayed = reduce_event(replayed, event)
-        except ValueError as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise ChannelStateError(f"invalid channel journal: {exc}") from exc
 
         runtime = cls(channels_dir, replayed, rules)

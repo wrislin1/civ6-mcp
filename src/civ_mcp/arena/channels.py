@@ -945,22 +945,57 @@ def state_to_dict(state: ChannelState) -> dict:
 _STATE_FIELDS = frozenset(ChannelState.__dataclass_fields__)
 
 
+def _require_exact_integer(value: Any, label: str, minimum: int) -> int:
+    if type(value) is not int or value < minimum:
+        qualifier = "positive" if minimum == 1 else "non-negative"
+        raise ValueError(f"{label} must be a {qualifier} integer")
+    return value
+
+
 def state_from_dict(payload: dict) -> ChannelState:
     if not isinstance(payload, dict):
         raise ValueError("channel state must be an object")
-    if payload.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError(
-            f"unsupported channel schema {payload.get('schema_version')!r}"
-        )
     missing = _STATE_FIELDS - set(payload)
     unknown = set(payload) - _STATE_FIELDS
     if missing:
         raise ValueError(f"channel state missing fields: {', '.join(sorted(missing))}")
     if unknown:
         raise ValueError(f"channel state has unknown fields: {', '.join(sorted(unknown))}")
+    schema_version = _require_exact_integer(
+        payload["schema_version"], "channel schema_version", 1
+    )
+    if schema_version != SCHEMA_VERSION:
+        raise ValueError(f"unsupported channel schema {schema_version!r}")
+    counters = {
+        "queue_cursor": _require_exact_integer(
+            payload["queue_cursor"], "queue_cursor", 0
+        ),
+        "next_message": _require_exact_integer(
+            payload["next_message"], "next_message", 1
+        ),
+        "next_deal": _require_exact_integer(
+            payload["next_deal"], "next_deal", 1
+        ),
+        "next_grievance": _require_exact_integer(
+            payload["next_grievance"], "next_grievance", 1
+        ),
+        "next_observation": _require_exact_integer(
+            payload["next_observation"], "next_observation", 1
+        ),
+        "next_event": _require_exact_integer(
+            payload["next_event"], "next_event", 1
+        ),
+        "last_event_sequence": _require_exact_integer(
+            payload["last_event_sequence"], "last_event_sequence", 0
+        ),
+    }
+    if counters["next_event"] != counters["last_event_sequence"] + 1:
+        raise ValueError("next_event must follow last_event_sequence")
+    if type(payload["privacy_contaminated"]) is not bool:
+        raise ValueError("privacy_contaminated must be a boolean")
     try:
         return ChannelState(
-            schema_version=payload["schema_version"],
+            schema_version=schema_version,
             run_id=payload["run_id"],
             enabled_players=frozenset(payload["enabled_players"]),
             rules_fingerprint=copy.deepcopy(payload["rules_fingerprint"]),
@@ -983,16 +1018,16 @@ def state_from_dict(payload: dict) -> ChannelState:
             ),
             observations=tuple(copy.deepcopy(payload["observations"])),
             applied_source_ids=frozenset(payload["applied_source_ids"]),
-            queue_cursor=payload["queue_cursor"],
+            queue_cursor=counters["queue_cursor"],
             queue_reservation=copy.deepcopy(payload["queue_reservation"]),
             applied_request_ids=frozenset(payload["applied_request_ids"]),
             privacy_contaminated=payload["privacy_contaminated"],
-            next_message=payload["next_message"],
-            next_deal=payload["next_deal"],
-            next_grievance=payload["next_grievance"],
-            next_observation=payload["next_observation"],
-            next_event=payload["next_event"],
-            last_event_sequence=payload["last_event_sequence"],
+            next_message=counters["next_message"],
+            next_deal=counters["next_deal"],
+            next_grievance=counters["next_grievance"],
+            next_observation=counters["next_observation"],
+            next_event=counters["next_event"],
+            last_event_sequence=counters["last_event_sequence"],
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError(f"invalid channel state: {exc}") from exc
@@ -1011,13 +1046,32 @@ def event_to_dict(event: ChannelEvent) -> dict:
 def event_from_dict(payload: dict) -> ChannelEvent:
     if not isinstance(payload, dict):
         raise ValueError("channel event must be an object")
-    if payload.get("schema_version") != SCHEMA_VERSION:
-        raise ValueError(
-            f"unsupported channel event schema {payload.get('schema_version')!r}"
-        )
     if set(payload) != set(ChannelEvent.__dataclass_fields__):
         raise ValueError("channel event fields do not match schema")
-    return _construct(ChannelEvent, copy.deepcopy(payload), "channel event")
+    schema_version = _require_exact_integer(
+        payload["schema_version"], "channel event schema_version", 1
+    )
+    if schema_version != SCHEMA_VERSION:
+        raise ValueError(f"unsupported channel event schema {schema_version!r}")
+    sequence = _require_exact_integer(
+        payload["sequence"], "channel event sequence", 1
+    )
+    event_id = payload["id"]
+    if not isinstance(event_id, str) or not event_id:
+        raise ValueError("channel event id must be a non-empty string")
+    kind = payload["kind"]
+    if not isinstance(kind, str) or not kind:
+        raise ValueError("channel event kind must be a non-empty string")
+    event_payload = payload["payload"]
+    if not isinstance(event_payload, dict):
+        raise ValueError("channel event payload must be an object")
+    return ChannelEvent(
+        schema_version,
+        event_id,
+        sequence,
+        kind,
+        copy.deepcopy(event_payload),
+    )
 
 
 def effective_magnitude(
