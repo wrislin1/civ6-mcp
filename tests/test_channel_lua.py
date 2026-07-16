@@ -52,6 +52,9 @@ def test_observation_builder_is_one_query_for_a_union_request():
     lua = build_channel_observation_query(1, request)
     assert "Players[1]:GetUnits():Members()" in lua
     assert "Map.GetPlotDistance" in lua
+    assert "for cityPlayer = 0, 63 do" in lua
+    assert "city:GetComponentID()" in lua
+    assert "city:GetOriginalOwner()" in lua
     assert "DestinationCityPlayer" in lua
     assert lua.count('print("---END---")') == 1
     completion_markers = [
@@ -90,7 +93,7 @@ def test_observation_parser_covers_each_authoritative_family():
         [
             "UNIT|2|7|UNIT_WARRIOR|FORMATION_CLASS_LAND_COMBAT|0|4|5",
             "COMPLETE|units",
-            "CITY|2|99|6|7",
+            "CITY|2|99|700|2|6|7",
             "ZONE|99|12|7|4",
             "COMPLETE|cities",
             "TERRITORY|8|9",
@@ -122,12 +125,30 @@ def test_observation_parser_covers_each_authoritative_family():
     )
     assert obs.units[0].owner_id == 2
     assert obs.cities[0].city_id == 99
+    assert obs.cities[0].component_id == 700
+    assert obs.cities[0].original_owner == 2
     assert obs.zone_distances[(99, 12, 7)] == 4
     assert obs.territory == frozenset({(8, 9)})
     assert obs.treasury_gold == 501
     assert obs.wars == frozenset({(2, 3)})
     assert obs.trade_routes[0].trader_unit_id == 11
     assert obs.camps == frozenset({(10, 12)})
+
+
+def test_observation_parser_rejects_non_integer_city_identity_fields():
+    request = ObservationRequest(
+        families=frozenset({ObservationFamily.CITIES})
+    )
+    observation = parse_channel_observation_response(
+        2,
+        9,
+        request,
+        ["CITY|2|99|700.5|2|6|7", "COMPLETE|cities"],
+    )
+
+    assert observation.families_present == frozenset()
+    assert observation.cities == ()
+    assert observation.errors == ("cities",)
 
 
 def test_observation_parser_marks_completed_empty_families_present():

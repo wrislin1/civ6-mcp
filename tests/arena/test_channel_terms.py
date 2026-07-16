@@ -369,3 +369,149 @@ def test_baseline_condition_violation_keeps_first_observation_reference(term, be
     result = verify_term(term, capture_baseline(term, before), {}, obs(2), due_turn=3)
     assert result.status == "failed"
     assert result.monitor == {"violation_observation_id": "turn:1"}
+
+
+def test_destroy_camp_requires_a_later_complete_absence_observation():
+    term = {"term_type": "destroy_camp", "params": {"x": 12, "y": 7}}
+    baseline = capture_baseline(term, obs(1, camps=frozenset({(12, 7)})))
+    same_turn = verify_term(term, baseline, {}, obs(1), due_turn=3)
+    later = verify_term(term, baseline, same_turn.monitor, obs(2), due_turn=3)
+    assert (same_turn.status, later.status) == ("pending", "satisfied")
+
+
+@pytest.mark.parametrize(
+    "term, before, missing_family",
+    [
+        (
+            {"term_type": "keep_peace_with", "params": {"player_id": 3}},
+            obs(1, wars=frozenset({(2, 3)})),
+            ObservationFamily.DIPLOMACY,
+        ),
+        (
+            {"term_type": "maintain_gold_reserve", "params": {"min_gold": 400}},
+            obs(1, treasury_gold=399),
+            ObservationFamily.TREASURY,
+        ),
+    ],
+)
+def test_initial_condition_violation_survives_a_missing_family(
+    term, before, missing_family
+):
+    baseline = capture_baseline(term, before)
+    missing = dataclasses.replace(
+        obs(3),
+        families_present=frozenset(ObservationFamily) - {missing_family},
+        errors=(missing_family.value,),
+    )
+    result = verify_term(term, baseline, {}, missing, due_turn=3)
+    assert result.status == "failed"
+    assert result.monitor == {"violation_observation_id": "turn:1"}
+
+
+@pytest.mark.parametrize(
+    "term, terminal_status",
+    [
+        (
+            {
+                "term_type": "found_city_within",
+                "params": {"x": 12, "y": 7, "radius": 3},
+            },
+            "failed",
+        ),
+        (
+            {
+                "term_type": "dont_settle_within",
+                "params": {"x": 12, "y": 7, "radius": 3},
+            },
+            "satisfied",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "baseline_city, captured_city",
+    [
+        (
+            ObservedCity(
+                3, 10, 13, 7, component_id=700, original_owner=3
+            ),
+            ObservedCity(
+                2, 90, 13, 7, component_id=700, original_owner=3
+            ),
+        ),
+        (
+            ObservedCity(
+                3, 11, 13, 7, component_id=701, original_owner=2
+            ),
+            ObservedCity(
+                2, 91, 13, 7, component_id=701, original_owner=2
+            ),
+        ),
+        (
+            None,
+            ObservedCity(
+                2, 92, 13, 7, component_id=702, original_owner=3
+            ),
+        ),
+    ],
+)
+def test_city_terms_ignore_foreign_capture_recapture_and_foreign_founding(
+    term, terminal_status, baseline_city, captured_city
+):
+    baseline_cities = () if baseline_city is None else (baseline_city,)
+    baseline = capture_baseline(term, obs(1, cities=baseline_cities))
+    result = verify_term(
+        term,
+        baseline,
+        {},
+        obs(
+            3,
+            cities=(captured_city,),
+            zone_distances={(captured_city.city_id, 12, 7): 1},
+        ),
+        due_turn=3,
+    )
+    assert result.status == terminal_status
+
+
+@pytest.mark.parametrize(
+    "term, expected",
+    [
+        (
+            {
+                "term_type": "found_city_within",
+                "params": {"x": 12, "y": 7, "radius": 3},
+            },
+            "satisfied",
+        ),
+        (
+            {
+                "term_type": "dont_settle_within",
+                "params": {"x": 12, "y": 7, "radius": 3},
+            },
+            "failed",
+        ),
+    ],
+)
+def test_city_terms_count_new_obligated_founded_component(term, expected):
+    baseline = capture_baseline(
+        term,
+        obs(
+            1,
+            cities=(
+                ObservedCity(
+                    3, 10, 20, 20, component_id=700, original_owner=3
+                ),
+            ),
+        ),
+    )
+    founded = ObservedCity(
+        2, 99, 13, 7, component_id=800, original_owner=2
+    )
+    result = verify_term(
+        term,
+        baseline,
+        {},
+        obs(2, cities=(founded,), zone_distances={(99, 12, 7): 1}),
+        due_turn=3,
+    )
+    assert result.status == expected

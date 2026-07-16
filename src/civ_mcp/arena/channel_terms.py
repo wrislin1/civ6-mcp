@@ -35,6 +35,8 @@ class ObservedCity:
     city_id: int
     x: int
     y: int
+    component_id: int | None = None
+    original_owner: int | None = None
 
 
 @dataclass(frozen=True)
@@ -266,11 +268,19 @@ def _capture_city_identities(params: dict, observation: ChannelObservation) -> d
     return {
         "baseline_complete": ObservationFamily.CITIES
         in observation.families_present,
+        "city_component_ids": tuple(
+            sorted(
+                city.component_id
+                for city in observation.cities
+                if city.component_id is not None
+            )
+        ),
         "city_ids": tuple(
             sorted(
                 (city.owner_id, city.city_id)
                 for city in observation.cities
-                if city.owner_id == observation.player_id
+                if city.component_id is None
+                and city.owner_id == observation.player_id
             )
         ),
         "favor_started_turn": observation.turn,
@@ -318,7 +328,8 @@ def _verify_destroy_camp(
     observation: ChannelObservation,
     due_turn: int,
 ) -> Verification:
-    del baseline
+    if observation.turn <= baseline["proposal_turn"]:
+        return Verification("pending", monitor=monitor)
     if (params["x"], params["y"]) not in observation.camps:
         return Verification(
             "satisfied",
@@ -338,15 +349,31 @@ def _baseline_city_ids(baseline: dict) -> frozenset[tuple[int, int]]:
     return frozenset(tuple(identity) for identity in baseline.get("city_ids", ()))
 
 
+def _baseline_city_component_ids(baseline: dict) -> frozenset[int]:
+    return frozenset(baseline.get("city_component_ids", ()))
+
+
 def _new_owned_cities(
     baseline: dict, observation: ChannelObservation
 ) -> tuple[ObservedCity, ...]:
-    existing = _baseline_city_ids(baseline)
+    existing_components = _baseline_city_component_ids(baseline)
+    existing_legacy = _baseline_city_ids(baseline)
     return tuple(
         city
         for city in observation.cities
         if city.owner_id == observation.player_id
-        and (city.owner_id, city.city_id) not in existing
+        and (city.original_owner if city.original_owner is not None else city.owner_id)
+        == observation.player_id
+        and (
+            (
+                city.component_id is not None
+                and city.component_id not in existing_components
+            )
+            or (
+                city.component_id is None
+                and (city.owner_id, city.city_id) not in existing_legacy
+            )
+        )
     )
 
 
@@ -623,6 +650,8 @@ def verify_term(
     persistent = _persistent_violation(spec.term_type, monitor)
     if persistent is not None:
         return persistent
+    if baseline.get("initial_violation_turn") is not None:
+        return spec.verify(params, baseline, monitor, observation, due_turn)
     if not spec.families.issubset(observation.families_present):
         monitor = _mark_incomplete(observation, monitor)
         if observation.turn >= due_turn:

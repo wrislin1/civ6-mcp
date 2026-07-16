@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from civ_mcp.arena.channel_terms import (
@@ -13,6 +14,15 @@ from civ_mcp.arena.channel_terms import (
     ObservedUnit,
 )
 from civ_mcp.lua._helpers import SENTINEL, _int
+
+
+_RESPONSE_INTEGER = re.compile(r"-?[0-9]+\Z")
+
+
+def _response_integer(value: str) -> int:
+    if _RESPONSE_INTEGER.fullmatch(value) is None:
+        raise ValueError("expected integer observation field")
+    return int(value)
 
 
 def _require_int(
@@ -119,20 +129,29 @@ print("COMPLETE|units")"""
                 f"{{{x}, {y}}}" for x, y in zone_centers
             )
             zone_lua = f"""
-        for _, center in ipairs({{{center_values}}}) do
-            local distance = Map.GetPlotDistance(
-                city:GetX(), city:GetY(), center[1], center[2]
-            )
-            print("ZONE|" .. city:GetID() .. "|" .. center[1]
-                .. "|" .. center[2] .. "|" .. distance)
-        end"""
+                if city:GetOwner() == {player_id} then
+                    for _, center in ipairs({{{center_values}}}) do
+                        local distance = Map.GetPlotDistance(
+                            city:GetX(), city:GetY(), center[1], center[2]
+                        )
+                        print("ZONE|" .. city:GetID() .. "|" .. center[1]
+                            .. "|" .. center[2] .. "|" .. distance)
+                    end
+                end"""
         sections.append(
             f"""
 if observedPlayer then
-    for _, city in Players[{player_id}]:GetCities():Members() do
-        print("CITY|" .. city:GetOwner() .. "|" .. city:GetID()
-            .. "|" .. city:GetX() .. "|" .. city:GetY())
+    for cityPlayer = 0, 63 do
+        local cityOwner = Players[cityPlayer]
+        if cityOwner then
+            for _, city in cityOwner:GetCities():Members() do
+                print("CITY|" .. city:GetOwner() .. "|" .. city:GetID()
+                    .. "|" .. city:GetComponentID()
+                    .. "|" .. city:GetOriginalOwner()
+                    .. "|" .. city:GetX() .. "|" .. city:GetY())
 {zone_lua}
+            end
+        end
     end
 else
     print("ERROR|cities")
@@ -313,13 +332,15 @@ def parse_channel_observation_response(
             elif tag == "DIST" and len(parts) >= 5:
                 key = (_int(parts[1]), _int(parts[2]), _int(parts[3]))
                 unit_distances[key] = _int(parts[4])
-            elif tag == "CITY" and len(parts) >= 5:
+            elif tag == "CITY" and len(parts) == 7:
                 cities.append(
                     ObservedCity(
-                        owner_id=_int(parts[1]),
-                        city_id=_int(parts[2]),
-                        x=_int(parts[3]),
-                        y=_int(parts[4]),
+                        owner_id=_response_integer(parts[1]),
+                        city_id=_response_integer(parts[2]),
+                        component_id=_response_integer(parts[3]),
+                        original_owner=_response_integer(parts[4]),
+                        x=_response_integer(parts[5]),
+                        y=_response_integer(parts[6]),
                     )
                 )
             elif tag == "ZONE" and len(parts) >= 5:
