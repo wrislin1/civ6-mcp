@@ -5082,3 +5082,623 @@ async def test_seat0_played_path_wc_only_after_repair_fires_anyway(monkeypatch, 
     assert result["seat0_human_pending"] == 0
     events = [e for e in result["log"] if e.get("event") == "seat0_wc_default_vote"]
     assert len(events) == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 11 — unofficial-channel coordinator integration
+# ---------------------------------------------------------------------------
+
+
+class FakeChannelRuntime:
+    def __init__(
+        self,
+        *,
+        run_id="channels-run",
+        enabled_players=frozenset({1, 2}),
+        rules=None,
+        wake_reasons=(),
+        acknowledgements=1,
+        admit_error=None,
+        finish_error=None,
+        reconcile_error=None,
+        poll_error=None,
+        events=None,
+    ):
+        from types import SimpleNamespace
+        from civ_mcp.arena.config import ChannelRules
+
+        self.rules = rules or ChannelRules()
+        self.state = SimpleNamespace(
+            run_id=run_id,
+            enabled_players=frozenset(enabled_players),
+            rules_fingerprint=self.rules.fingerprint(),
+        )
+        self.wake_reasons = tuple(wake_reasons)
+        self.acknowledgements = acknowledgements
+        self.admit_error = admit_error
+        self.finish_error = finish_error
+        self.reconcile_error = reconcile_error
+        self.poll_error = poll_error
+        self.calls = []
+        self.finish_results = []
+        self.events = events
+
+    def _record(self, event):
+        self.calls.append(event)
+        if self.events is not None:
+            self.events.append((event,))
+
+    async def reconcile_payment_intents(
+        self, gs, *, current_turn, current_player_id
+    ):
+        self._record(f"reconcile:{current_player_id}:{current_turn}")
+        if self.reconcile_error is not None:
+            raise self.reconcile_error
+
+    async def admit_player(self, gs, player_id, turn):
+        from types import SimpleNamespace
+        from civ_mcp.arena.channel_protocol import ChannelTurnContext
+
+        self._record(f"admit:{player_id}:{turn}")
+        if self.admit_error is not None:
+            raise self.admit_error
+        context = ChannelTurnContext(
+            self.state.run_id,
+            player_id,
+            turn,
+            self.state.enabled_players,
+            self.rules,
+        )
+        return SimpleNamespace(
+            player_id=player_id,
+            turn=turn,
+            block="CHANNEL BLOCK",
+            context=context,
+            wake_reasons=self.wake_reasons,
+        )
+
+    async def finish_player(self, gs, admission, policy_result):
+        self._record(f"finish:{admission.player_id}:{admission.turn}")
+        self.finish_results.append(policy_result)
+        if self.finish_error is not None:
+            raise self.finish_error
+        return tuple(object() for _ in range(self.acknowledgements))
+
+    async def poll_unseated(self, gs, turn, local_player_id):
+        self._record(f"poll:{local_player_id}:{turn}")
+        if self.poll_error is not None:
+            raise self.poll_error
+
+
+def _channel_options(*, attention_mode="off"):
+    from civ_mcp.arena.config import AttentionOptions, ChannelOptions
+
+    return CivOptions(
+        attention=AttentionOptions(mode=attention_mode),
+        channels=ChannelOptions(enabled=True),
+    )
+
+
+def _channel_config(tmp_path, *, options=None, run_id="channels-run", **kwargs):
+    opts = options or _channel_options()
+    kwargs.setdefault("max_puppet_turns", 1)
+    kwargs.setdefault("idle_poll_limit", 2)
+    kwargs.setdefault("puppet_ids", [1])
+    return ArenaConfig(
+        players=[
+            PlayerSpec(1, "local", "m", options=opts),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id=run_id,
+        transcript_dir=str(tmp_path),
+        **kwargs,
+    )
+
+
+class ChannelRecordingPolicy:
+    provider = "local"
+    model = "channel-test"
+
+    def __init__(self, runtime, *, options=None, final_summary=""):
+        self.runtime = runtime
+        self.options = options or _channel_options()
+        self.final_summary = final_summary
+        self.calls = []
+
+    async def __call__(
+        self,
+        gs,
+        player_id,
+        turn,
+        *,
+        channel_context=None,
+        channel_block="",
+        master_block="",
+    ):
+        self.runtime._record(f"policy:{player_id}:{turn}")
+        self.calls.append(
+            {
+                "channel_context": channel_context,
+                "channel_block": channel_block,
+                "master_block": master_block,
+            }
+        )
+        return {
+            "summary": "channel turn",
+            "actions": [],
+            "transcript": {
+                "steps": [],
+                "final_summary": self.final_summary,
+            },
+        }
+
+
+def _patch_channel_open(monkeypatch, runtime, opened=None):
+    from civ_mcp.arena.channel_runtime import ChannelRuntime
+
+    opened = opened if opened is not None else {}
+
+    def fake_open(cls, run_dir, run_id, enabled_players, rules):
+        opened.update(
+            run_dir=run_dir,
+            run_id=run_id,
+            enabled_players=enabled_players,
+            rules=rules,
+        )
+        return runtime
+
+    monkeypatch.setattr(ChannelRuntime, "open", classmethod(fake_open))
+    return opened
+
+
+@pytest.mark.asyncio
+async def test_channels_open_admit_policy_finish_with_run_identity(
+    monkeypatch, tmp_path
+):
+    from pathlib import Path
+
+    runtime = FakeChannelRuntime(acknowledgements=2)
+    opened = _patch_channel_open(monkeypatch, runtime)
+    policy = ChannelRecordingPolicy(
+        runtime,
+        final_summary=(
+            'CHANNEL {"action":"send_message","to_player":2,"text":"hi"}'
+        ),
+    )
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+    sink = FakeSink()
+    config = _channel_config(tmp_path)
+
+    result = await run_arena(conn, FakeGS(), config, policy=policy, transcript=sink)
+
+    assert opened == {
+        "run_dir": Path(tmp_path) / "channels-run",
+        "run_id": "channels-run",
+        "enabled_players": frozenset({1, 2}),
+        "rules": config.channel_rules,
+    }
+    assert runtime.calls[:4] == [
+        "reconcile:1:7",
+        "admit:1:7",
+        "policy:1:7",
+        "finish:1:7",
+    ]
+    assert len(policy.calls) == 1
+    assert policy.calls[0]["channel_block"] == "CHANNEL BLOCK"
+    assert policy.calls[0]["channel_context"].player_id == 1
+    assert policy.calls[0]["master_block"] == ""
+    assert runtime.finish_results[0]["transcript"]["final_summary"].startswith(
+        "CHANNEL "
+    )
+    assert result["log"][0]["channels"] == {
+        "enabled": True,
+        "acknowledgements": 2,
+        "error": "",
+    }
+    assert sink.records[0]["channels"] == result["log"][0]["channels"]
+
+
+@pytest.mark.asyncio
+async def test_injected_channel_runtime_is_validated_and_used_exactly(
+    monkeypatch, tmp_path
+):
+    from civ_mcp.arena.channel_runtime import ChannelRuntime
+
+    runtime = FakeChannelRuntime()
+
+    def unexpected_open(*args, **kwargs):
+        raise AssertionError("injected runtime must not be replaced")
+
+    monkeypatch.setattr(ChannelRuntime, "open", classmethod(unexpected_open))
+    policy = ChannelRecordingPolicy(runtime)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy=policy,
+        channel_runtime=runtime,
+    )
+
+    assert runtime.calls[:4] == [
+        "reconcile:1:7",
+        "admit:1:7",
+        "policy:1:7",
+        "finish:1:7",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_channel_wake_cancels_attention_sleep_and_finishes(
+    monkeypatch, tmp_path
+):
+    from civ_mcp.arena.attention import AttentionState, save_attention_state
+
+    options = _channel_options(attention_mode="auto")
+    runtime = FakeChannelRuntime(wake_reasons=("payment response due",))
+    _patch_channel_open(monkeypatch, runtime)
+    policy = ChannelRecordingPolicy(runtime, options=options)
+    conn = AttnConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+    save_attention_state(
+        str(tmp_path),
+        "channels-run",
+        1,
+        AttentionState(
+            run_id="channels-run",
+            player_id=1,
+            last_snapshot=dict(_ATTN_BASELINE_SNAPSHOT),
+            last_scan={
+                "at_war_with": [],
+                "era_index": 1,
+                "total_population": 12,
+            },
+        ),
+    )
+    sink = FakeSink()
+
+    result = await run_arena(
+        conn,
+        FakeGSWithConn(conn),
+        _channel_config(tmp_path, options=options),
+        policy=policy,
+        transcript=sink,
+    )
+
+    assert len(policy.calls) == 1
+    assert result["puppet_turns_played"] == 1
+    assert result["turns_slept"] == 0
+    assert runtime.calls.count("admit:1:7") == 1
+    assert runtime.calls.count("finish:1:7") == 1
+    assert sink.records[0]["attention"]["wake_cause"] == "CHANNEL_DUE"
+    assert sink.records[0]["attention"]["wake_detail"] == "payment response due"
+
+
+@pytest.mark.asyncio
+async def test_quiet_channel_sleep_still_finishes_admission(monkeypatch, tmp_path):
+    from civ_mcp.arena.attention import AttentionState, save_attention_state
+
+    options = _channel_options(attention_mode="auto")
+    runtime = FakeChannelRuntime(wake_reasons=())
+    _patch_channel_open(monkeypatch, runtime)
+    policy = ChannelRecordingPolicy(runtime, options=options)
+    conn = AttnConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+    save_attention_state(
+        str(tmp_path),
+        "channels-run",
+        1,
+        AttentionState(
+            run_id="channels-run",
+            player_id=1,
+            last_snapshot=dict(_ATTN_BASELINE_SNAPSHOT),
+            last_scan={
+                "at_war_with": [],
+                "era_index": 1,
+                "total_population": 12,
+            },
+        ),
+    )
+
+    result = await run_arena(
+        conn,
+        FakeGSWithConn(conn),
+        _channel_config(tmp_path, options=options),
+        policy=policy,
+    )
+
+    assert policy.calls == []
+    assert result["turns_slept"] == 1
+    assert runtime.calls.count("admit:1:7") == 1
+    assert runtime.calls.count("finish:1:7") == 1
+    assert runtime.finish_results == [None]
+
+
+@pytest.mark.asyncio
+async def test_channel_admission_exception_fails_open_with_safe_telemetry(
+    monkeypatch, tmp_path
+):
+    runtime = FakeChannelRuntime(admit_error=RuntimeError("projection failed"))
+    _patch_channel_open(monkeypatch, runtime)
+    policy = ChannelRecordingPolicy(runtime)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    result = await run_arena(
+        conn, FakeGS(), _channel_config(tmp_path), policy=policy
+    )
+
+    assert result["puppet_turns_played"] == 1
+    assert policy.calls == [
+        {
+            "channel_context": None,
+            "channel_block": "",
+            "master_block": "",
+        }
+    ]
+    assert "finish:1:7" not in runtime.calls
+    assert result["log"][0]["channels"] == {
+        "enabled": True,
+        "acknowledgements": 0,
+        "error": "RuntimeError('projection failed')",
+    }
+
+
+@pytest.mark.asyncio
+async def test_channel_finish_exception_does_not_block_game_progress(
+    monkeypatch, tmp_path
+):
+    runtime = FakeChannelRuntime(finish_error=RuntimeError("capture failed"))
+    _patch_channel_open(monkeypatch, runtime)
+    policy = ChannelRecordingPolicy(runtime)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    result = await run_arena(
+        conn, FakeGS(), _channel_config(tmp_path), policy=policy
+    )
+
+    assert result["puppet_turns_played"] == 1
+    assert runtime.calls.count("finish:1:7") == 1
+    assert result["log"][0]["channels"] == {
+        "enabled": True,
+        "acknowledgements": 0,
+        "error": "RuntimeError('capture failed')",
+    }
+
+
+@pytest.mark.asyncio
+async def test_failed_policy_still_finishes_channel_before_release(
+    monkeypatch, tmp_path
+):
+    runtime = FakeChannelRuntime()
+    _patch_channel_open(monkeypatch, runtime)
+
+    class FailingPolicy(ChannelRecordingPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            self.runtime._record(f"policy:{player_id}:{turn}")
+            raise RuntimeError("model unavailable")
+
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy=FailingPolicy(runtime),
+    )
+
+    assert runtime.calls[:4] == [
+        "reconcile:1:7",
+        "admit:1:7",
+        "policy:1:7",
+        "finish:1:7",
+    ]
+    assert runtime.finish_results == [None]
+    assert result["puppet_turns_played"] == 0
+    assert result["log"][0]["channels"]["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_channel_baseexception_is_not_swallowed(monkeypatch, tmp_path):
+    runtime = FakeChannelRuntime(admit_error=asyncio.CancelledError())
+    _patch_channel_open(monkeypatch, runtime)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_arena(
+            conn,
+            FakeGS(),
+            _channel_config(tmp_path),
+            policy=ChannelRecordingPolicy(runtime),
+        )
+
+    assert conn.restored is True
+
+
+@pytest.mark.asyncio
+async def test_idle_unconfigured_seat_reconciles_and_polls_unseated(
+    monkeypatch, tmp_path
+):
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+    runtime = FakeChannelRuntime()
+    _patch_channel_open(monkeypatch, runtime)
+    conn = FakeConn()
+    conn._polls = iter(
+        [
+            ["LOCAL|0", "TURN|7", "ACTIVE|false", "LAST|0"],
+            ["LOCAL|0", "TURN|7", "ACTIVE|false", "LAST|0"],
+        ]
+    )
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path, idle_poll_limit=2),
+        policy=ChannelRecordingPolicy(runtime),
+    )
+
+    assert result["puppet_turns_played"] == 0
+    assert runtime.calls == [
+        "reconcile:0:7",
+        "poll:0:7",
+        "reconcile:0:7",
+        "poll:0:7",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_seat0_repair_reuses_admission_and_preserves_raw_channel_order(
+    monkeypatch, tmp_path
+):
+    from civ_mcp.arena.config import ChannelOptions
+
+    harness = Seat0Harness(
+        monkeypatch,
+        [seat0_poll(7, active=True), seat0_poll(7, active=False), seat0_poll(8)],
+    )
+    harness.blocker_queue = [[_RESEARCH], [_RESEARCH], []]
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    normal_summary = (
+        'CHANNEL {"action":"send_message","to_player":2,"text":"normal"}'
+    )
+    repair_summary = (
+        'CHANNEL {"action":"send_message","to_player":2,"text":"repair"}'
+    )
+    policy = Seat0ScriptPolicy(
+        harness,
+        [
+            {
+                "summary": "normal",
+                "actions": [],
+                "transcript": {"steps": [], "final_summary": normal_summary},
+            },
+            {
+                "summary": "repair",
+                "actions": [],
+                "transcript": {"steps": [], "final_summary": repair_summary},
+            },
+        ],
+        options=options,
+    )
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channels",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    sink = EventSink(harness)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channels",
+    )
+
+    result = await run_arena(
+        Seat0CapsConn(),
+        FakeGS(),
+        config,
+        policy=policy,
+        transcript=sink,
+    )
+
+    normal_context = policy.calls[0][2]["channel_context"]
+    repair_context = policy.calls[1][2]["channel_context"]
+    assert repair_context is normal_context
+    assert policy.calls[1][2]["channel_block"] == "CHANNEL BLOCK"
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    assert runtime.finish_results[0]["transcript"]["final_summary"] == (
+        normal_summary + "\n" + repair_summary
+    )
+    names = harness.names()
+    assert names.index("finish:0:7") < names.index("save_anchor")
+    assert result["seat0_turns_played"] == 1
+    assert sink.records[0]["channels"] == {
+        "enabled": True,
+        "acknowledgements": 1,
+        "error": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_seat0_wc_pass_reuses_admission_before_channel_finish(
+    monkeypatch, tmp_path
+):
+    from civ_mcp.arena.config import ChannelOptions
+
+    harness = Seat0Harness(
+        monkeypatch,
+        [seat0_poll(7, active=True), seat0_poll(7, active=False), seat0_poll(8)],
+    )
+    _wc_env(monkeypatch, harness, handler_results=[False, True], status=None)
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    normal_summary = (
+        'CHANNEL {"action":"send_message","to_player":2,"text":"normal"}'
+    )
+    wc_summary = (
+        'CHANNEL {"action":"send_message","to_player":2,"text":"wc"}'
+    )
+    policy = Seat0ScriptPolicy(
+        harness,
+        [
+            {
+                "summary": "normal",
+                "actions": [],
+                "transcript": {"steps": [], "final_summary": normal_summary},
+            },
+            {
+                "summary": "wc",
+                "actions": [],
+                "transcript": {"steps": [], "final_summary": wc_summary},
+            },
+        ],
+        options=options,
+    )
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-wc",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+
+    async def fake_wc():
+        return _WCStatus(fires=True, resolutions=1)
+
+    gs.get_world_congress = fake_wc
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-wc",
+    )
+
+    result = await run_arena(conn, gs, config, policy=policy)
+
+    assert [call[:2] for call in policy.calls] == [(0, 7), (0, 7)]
+    assert policy.calls[1][2]["channel_context"] is policy.calls[0][2][
+        "channel_context"
+    ]
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    assert runtime.finish_results[0]["transcript"]["final_summary"] == (
+        normal_summary + "\n" + wc_summary
+    )
+    names = harness.names()
+    assert names.index("finish:0:7") < names.index("save_anchor")
+    assert result["seat0_turns_played"] == 1

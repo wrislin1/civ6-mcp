@@ -637,3 +637,27 @@ def test_model_mode_spent_directive_still_wakes_no_directive():
     d = evaluate("model", st, scan, dict(_SNAP), max_streak=5, task_event=False)
     assert d.action == "wake"
     assert d.wake_cause == "NO_DIRECTIVE"
+
+
+def test_channel_due_wake_precedes_scan_and_attention_reasons():
+    """A due channel obligation is already authoritative at admission.
+
+    It must be the recorded wake cause even when the ordinary attention scan
+    would also wake, so a sleep directive can never hide the player's final
+    opportunity to respond.
+    """
+    decision = evaluate(
+        "auto",
+        _st(streak=5),
+        None,
+        None,
+        max_streak=5,
+        task_event=True,
+        channel_wake_reasons=("payment response due", "favor due"),
+    )
+
+    assert decision == Decision(
+        "wake",
+        "CHANNEL_DUE",
+        "favor due; payment response due",
+    )

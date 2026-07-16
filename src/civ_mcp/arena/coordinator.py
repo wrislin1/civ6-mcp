@@ -4,6 +4,7 @@ import inspect
 import sys
 from dataclasses import replace as _dc_replace
 from datetime import datetime, timezone
+from pathlib import Path
 from civ_mcp import lua as lq
 from civ_mcp.arena import autoresolve, hook, seat0
 from civ_mcp.arena.agent import load_playbook
@@ -26,6 +27,7 @@ from civ_mcp.arena.attention import (
 )
 from civ_mcp.arena.budget import explicit_n_ctx
 from civ_mcp.arena.capabilities import build_caps_query, parse_caps
+from civ_mcp.arena.channel_runtime import ChannelRuntime
 from civ_mcp.arena.config import CivOptions, resolved_puppet_ids, validate_arena_config
 from civ_mcp.arena.memory import (
     extract_standing_plan,
@@ -402,7 +404,46 @@ def _repair_kwargs(policy, blocker_block: str, caps: dict | None) -> dict | None
     return kwargs
 
 
-async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=None) -> dict:
+def _channel_finish_input(*policy_results: dict | None) -> dict:
+    """Build the private, unclamped capture view for one logical model turn.
+
+    Seat 0 can make a normal, repair, and WC policy call under one admission.
+    Its public transcript merge intentionally keeps one final summary, but the
+    channel runtime must see every raw CHANNEL line and action-audit step in
+    source order. This value is passed only to ``ChannelRuntime.finish_player``.
+    """
+
+    steps: list = []
+    summaries: list[str] = []
+    for result in policy_results:
+        if not isinstance(result, dict):
+            continue
+        payload = result.get("transcript")
+        if not isinstance(payload, dict):
+            continue
+        raw_steps = payload.get("steps")
+        if isinstance(raw_steps, list):
+            steps.extend(raw_steps)
+        summary = payload.get("final_summary")
+        if isinstance(summary, str):
+            summaries.append(summary)
+    return {
+        "transcript": {
+            "steps": steps,
+            "final_summary": "\n".join(summaries),
+        }
+    }
+
+
+async def run_arena(
+    conn,
+    gs,
+    config,
+    policy=None,
+    policy_for=None,
+    transcript=None,
+    channel_runtime=None,
+) -> dict:
     # Validate at entry so programmatic callers cannot bypass the YAML/CLI
     # boundary checks (seat 0 in puppet_ids, unknown/duplicate seats, seat-0
     # attention). resolved_puppet_ids keeps an explicit empty list EMPTY —
@@ -431,6 +472,37 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
     played, slept, game_turns, log = 0, 0, 0, []
     seat0_played, seat0_failed, seat0_pending = 0, 0, 0
     _tx_on = transcript is not None and getattr(transcript, "enabled", True)
+    enabled_channel_players = frozenset(
+        spec.player_id
+        for spec in config.players
+        if spec.options.channels.enabled
+    )
+    channel_runtime_error = ""
+    if enabled_channel_players:
+        try:
+            if channel_runtime is None:
+                channel_runtime = ChannelRuntime.open(
+                    Path(config.transcript_dir) / run_id,
+                    run_id,
+                    enabled_channel_players,
+                    config.channel_rules,
+                )
+            else:
+                ChannelRuntime._validate_identity(
+                    channel_runtime.state,
+                    run_id,
+                    enabled_channel_players,
+                    config.channel_rules,
+                )
+        except Exception as e:
+            channel_runtime_error = repr(e)
+            channel_runtime = None
+            print(f"[arena] channel runtime unavailable: {e!r}", file=sys.stderr)
+    else:
+        # Preserve the pre-channel path exactly when no seat opts in, including
+        # ignoring an optional test/dependency injection that has no configured
+        # participant identity to validate against.
+        channel_runtime = None
     try:
         await hook.inject(conn, sorted(puppet_ids))
         hook_enabled = True  # flips to False once disable_hook_for_drain() fires
@@ -625,7 +697,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
 
         async def _attempt_seat0_repair(
             pol, repair, after_blockers, *, prior_error, caps_kwarg,
-            exclusive, turn,
+            exclusive, turn, channel_kwargs=None,
         ):
             """One-shot focused repair shared by the played branch and the
             RECHECK path. Mutates `repair` (the record's seat0.repair
@@ -645,6 +717,8 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     "policy does not accept required blocker_block keyword"
                 )
                 return None, None
+            if channel_kwargs:
+                repair_kwargs.update(channel_kwargs)
             repair["attempted"] = True
             if exclusive and conn.is_connected:
                 await conn.disconnect()   # repair owns the tuner
@@ -772,7 +846,9 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             print(f"[arena] seat-0 WC default voter registered on turn "
                   f"{turn}: {defaulted}", file=sys.stderr)
 
-        async def _seat0_wc_gate(pol, turn: int) -> None:
+        async def _seat0_wc_gate(
+            pol, turn: int, channel_kwargs=None
+        ) -> dict | None:
             """Solo-path parity (observed live, T303): the World Congress
             opens and closes synchronously INSIDE ACTION_ENDTURN, so votes
             must be registered BEFORE the coordinator fires. When the WC
@@ -787,13 +863,13 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             try:
                 status = await gs.get_world_congress()
             except Exception:
-                return
+                return None
             fires = status.turns_until_next <= 0 or status.is_in_session
             n_res = len(status.resolutions or [])
             if not fires or n_res == 0:
-                return
+                return None
             if await seat0.wc_handler_registered(conn):
-                return
+                return None
             entry = {
                 "event": "seat0_wc_vote_pass",
                 "turn": turn,
@@ -814,11 +890,14 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                 ),
             }])
             kwargs = _repair_kwargs(pol, block, None)
+            result = None
             if kwargs is None:
                 entry["error"] = (
                     "policy does not accept required blocker_block keyword"
                 )
             else:
+                if channel_kwargs:
+                    kwargs.update(channel_kwargs)
                 exclusive = bool(getattr(pol, "needs_exclusive_tuner", False))
                 if exclusive and conn.is_connected:
                     await conn.disconnect()   # the voting pass owns the tuner
@@ -840,6 +919,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             print(f"[arena] seat-0 WC vote pass on turn {turn}: "
                   f"completed={entry['completed']} "
                   f"defaulted={entry['defaulted']}", file=sys.stderr)
+            return result
 
         async def _recheck_cleanup_repair_or_refire() -> None:
             """RECHECK: the previous end request may not have taken (seat 0
@@ -995,6 +1075,27 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
         # drain (end fired / AI processing) is never aborted by them.
         while deadline_polls > 0 and (admission_open() or seat0_state.needs_drain):
             st = await hook.poll(conn)
+            poll_channel_error = ""
+            if channel_runtime is not None and st.turn >= 0:
+                try:
+                    await channel_runtime.reconcile_payment_intents(
+                        gs,
+                        current_turn=st.turn,
+                        current_player_id=st.local,
+                    )
+                except Exception as e:
+                    poll_channel_error = repr(e)
+                    print(
+                        f"[arena] channel payment reconciliation failed: {e!r}",
+                        file=sys.stderr,
+                    )
+                    log.append({
+                        "event": "channel_error",
+                        "stage": "reconcile",
+                        "turn": st.turn,
+                        "player_id": st.local,
+                        "error": poll_channel_error,
+                    })
             # First observe/finalize an in-flight seat-0 turn (the turn number
             # must move strictly forward to signal advance), then give an
             # actually captured puppet priority, then consider a new seat-0
@@ -1127,6 +1228,63 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         task_tracker_error = repr(e)
                         print(f"[arena] task tracker pre-model failed: {e!r}", file=sys.stderr)
 
+                # --- Unofficial-channel admission. The deterministic runtime
+                # owns projection, observation, staging, and deadlines; the
+                # coordinator only brackets this logical turn. Admission is
+                # before the final attention decision so due obligations can
+                # wake a seat that would otherwise sleep.
+                channel_turn_enabled = st.local in enabled_channel_players
+                channel_admission = None
+                channel_acknowledgements = 0
+                channel_finished = False
+                channel_error = channel_runtime_error or poll_channel_error
+                if (
+                    channel_turn_enabled
+                    and channel_runtime is not None
+                    and not poll_channel_error
+                ):
+                    try:
+                        channel_admission = await channel_runtime.admit_player(
+                            gs, st.local, st.turn
+                        )
+                    except Exception as e:
+                        channel_error = repr(e)
+                        print(
+                            f"[arena] channel admission failed for seat "
+                            f"{st.local} turn {st.turn}: {e!r}",
+                            file=sys.stderr,
+                        )
+
+                async def _finish_channel_turn(policy_result) -> None:
+                    nonlocal channel_acknowledgements, channel_error, channel_finished
+                    if channel_admission is None or channel_finished:
+                        return
+                    # Reserve the one finish attempt before awaiting so an
+                    # interrupt can never cause replay inside this run.
+                    channel_finished = True
+                    try:
+                        acknowledgements = await channel_runtime.finish_player(
+                            gs, channel_admission, policy_result
+                        )
+                        channel_acknowledgements = len(acknowledgements)
+                    except Exception as e:
+                        error = repr(e)
+                        channel_error = (
+                            f"{channel_error}; {error}" if channel_error else error
+                        )
+                        print(
+                            f"[arena] channel finish failed for seat "
+                            f"{st.local} turn {st.turn}: {e!r}",
+                            file=sys.stderr,
+                        )
+
+                def _channel_fields() -> dict:
+                    return {
+                        "enabled": True,
+                        "acknowledgements": channel_acknowledgements,
+                        "error": channel_error,
+                    }
+
                 # --- Attention skip-evaluation (spec §2-4): once per captured puppet
                 # turn, decide whether this civ can sleep through it. Every failure
                 # here degrades toward MORE model turns (fail-open), never a blind
@@ -1176,6 +1334,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         decision = evaluate(
                             attention_mode, att_state, att_scan, state_before,
                             max_streak=opts.attention.max_streak, task_event=task_event,
+                            channel_wake_reasons=(
+                                channel_admission.wake_reasons
+                                if channel_admission is not None else ()
+                            ),
                         )
                     except Exception as e:
                         # Corrupt persisted values (dict-shaped but wrong-typed,
@@ -1190,6 +1352,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         decision = Decision("wake", "STATE_CORRUPT", repr(e)[:200])
                         print(f"[arena] attention evaluate failed; reset + wake: {e!r}",
                               file=sys.stderr)
+                    if channel_turn_enabled and channel_admission is None and channel_error:
+                        # Projection/runtime failures degrade toward a model
+                        # turn, never a blind skip with missing private state.
+                        decision = Decision("wake", "CHANNEL_ERROR", channel_error[:200])
                     if (
                         decision is not None
                         and decision.wake_cause == "SCAN_ERROR"
@@ -1198,6 +1364,11 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     ):
                         decision = _dc_replace(decision, wake_detail=scan_error_detail)
                 if decision is not None and decision.action == "sleep":
+                    # A captured-but-slept channel participant still closes
+                    # its admission: this supplies the second authoritative
+                    # observation and finalizes any inclusive deadline only
+                    # after the seat had its chance to wake.
+                    await _finish_channel_turn(None)
                     prev_snapshot = att_state.last_snapshot
                     task_notes = [
                         f"{r.get('kind', '?')} {r.get('action', '')}: {r.get('result', '')}"
@@ -1221,6 +1392,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     log.append({
                         "player": st.local, "turn": st.turn,
                         "slept": True, "attention": attention_fields,
+                        **(
+                            {"channels": _channel_fields()}
+                            if channel_turn_enabled else {}
+                        ),
                     })
                     if _tx_on:
                         state_delta = _state_delta(prev_snapshot, state_before)
@@ -1255,6 +1430,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                                 "error": task_tracker_error,
                             },
                             "attention": attention_fields,
+                            **(
+                                {"channels": _channel_fields()}
+                                if channel_turn_enabled else {}
+                            ),
                         })
                     await hook.finish_units(conn, st.local)
                     slept += 1
@@ -1298,6 +1477,24 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     )
                     if _policy_accepts_kwarg(pol, name)
                 }
+                channel_policy_kwargs = {}
+                if channel_turn_enabled:
+                    for name, value in (
+                        (
+                            "channel_context",
+                            channel_admission.context
+                            if channel_admission is not None else None,
+                        ),
+                        (
+                            "channel_block",
+                            channel_admission.block
+                            if channel_admission is not None else "",
+                        ),
+                        ("master_block", ""),
+                    ):
+                        if _policy_accepts_kwarg(pol, name):
+                            policy_kwargs[name] = value
+                            channel_policy_kwargs[name] = value
                 # Capability snapshot (spec §1): once per puppet turn, cheap
                 # GameCore read. Signature-gated like every injected kwarg;
                 # ANY failure fails open (no kwarg -> agent uses full tier).
@@ -1466,6 +1663,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                             prior_error=normal_error_msg,
                             caps_kwarg=caps_kwarg, exclusive=exclusive,
                             turn=st.turn,
+                            channel_kwargs=channel_policy_kwargs,
                         )
                         repair_attempted = s0_repair["attempted"]
                         repair_error = s0_repair["error"]
@@ -1488,9 +1686,29 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     turn_kind = "played" if any_returned else "failed"
                     remaining_blockers = list(groups.hard) + list(groups.decision)
 
+                    wc_result = None
+                    if (
+                        channel_turn_enabled
+                        and any_returned
+                        and not remaining_blockers
+                    ):
+                        # Keep the WC policy pass inside this admission. Its
+                        # channel tools share the bound context, and its raw
+                        # summary is captured below before any memory/task
+                        # persistence or end-turn release.
+                        wc_result = await _seat0_wc_gate(
+                            pol, st.turn, channel_kwargs=channel_policy_kwargs
+                        )
                     merged = seat0.merge_policy_attempts(normal_result, repair_result)
                     payload = merged["transcript"]
                     _pol_backend = getattr(pol, "backend", None)
+                    await _finish_channel_turn(
+                        _channel_finish_input(
+                            normal_result,
+                            repair_result,
+                            wc_result,
+                        )
+                    )
 
                     # Standing-plan / task capture from the completed turn's
                     # summary (played path only; a failed/unfinished turn has no
@@ -1545,7 +1763,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     state_after = await _overview_snapshot(gs) if _tx_on else None
 
                     def _base_seat0_record(autosave):
-                        return {
+                        record = {
                             **payload,
                             "schema_version": 1,
                             "run_id":   run_id,
@@ -1584,6 +1802,9 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                                 "terminal_state": "",    # set exactly once
                             },
                         }
+                        if channel_turn_enabled:
+                            record["channels"] = _channel_fields()
+                        return record
 
                     if (
                         any_returned
@@ -1605,7 +1826,12 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                         # fire -- the congress runs inside ACTION_ENDTURN),
                         # then best-effort recovery anchor, then one end
                         # request. The record is written when the turn advances.
-                        await _seat0_wc_gate(pol, st.turn)
+                        if not channel_turn_enabled:
+                            # Keep the exact pre-channel ordering for disabled
+                            # seats. Enabled seats ran this pass before channel
+                            # finish so its staged actions and raw summary were
+                            # part of the one admitted capture boundary.
+                            await _seat0_wc_gate(pol, st.turn)
                         anchor = await seat0.save_recovery_anchor(conn, st.turn)
                         autosave_attempts = []
                         if not anchor.get("ok", False):
@@ -1660,8 +1886,13 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     # to the finally's guarded handback.
                     print(f"[arena] puppet turn seat {st.local} turn {st.turn} failed, "
                           f"skipping: {e!r}", file=sys.stderr)
-                    log.append({"turn": st.turn, "player_id": st.local,
-                                "skipped": True, "error": repr(e)})
+                    failed_entry = {
+                        "turn": st.turn,
+                        "player_id": st.local,
+                        "skipped": True,
+                        "error": repr(e),
+                    }
+                    log.append(failed_entry)
                     if attention_on and att_state is not None and att_state.skips_remaining > 0:
                         # Spec section 3: ANY wake cancels the directive remainder.
                         # This failed turn WAS a wake decision -- note_wake never
@@ -1677,6 +1908,9 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                                   file=sys.stderr)
                     if not conn.is_connected:
                         await _reconnect_with_retry(conn)
+                    await _finish_channel_turn(None)
+                    if channel_turn_enabled:
+                        failed_entry["channels"] = _channel_fields()
                     await hook.finish_units(conn, st.local)
                     await hook.restore_local(conn, 0)
                     remaining -= 1
@@ -1685,6 +1919,7 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     continue
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)   # reclaim before we end the turn
+                await _finish_channel_turn(result)
                 # Seat 0 handled its own turn above (repair/end-turn/human-pending)
                 # and continued; only puppet turns reach here.
                 try:
@@ -1819,6 +2054,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     "promotion_sweep": swept,
                     "standing_memory": _standing_memory_fields,
                     "task_tracker": _task_tracker_fields,
+                    **(
+                        {"channels": _channel_fields()}
+                        if channel_turn_enabled else {}
+                    ),
                 })
                 # Puppet-only transcript + handback (seat 0 returned above).
                 if _tx_on and result.get("transcript"):
@@ -1848,6 +2087,8 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                     }
                     if wake_attention_fields is not None:
                         record["attention"] = wake_attention_fields
+                    if channel_turn_enabled:
+                        record["channels"] = _channel_fields()
                     transcript.write(record)
                 # End this puppet's turn and hand control back toward the human.
                 # DESIGN NOTE — the turn-end method is validated by the live dry-run gate (Task 9).
@@ -1955,6 +2196,28 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                             )
                             break
                     continue
+                if (
+                    channel_runtime is not None
+                    and st.turn >= 0
+                    and not poll_channel_error
+                ):
+                    try:
+                        await channel_runtime.poll_unseated(
+                            gs, st.turn, st.local
+                        )
+                    except Exception as e:
+                        error = repr(e)
+                        print(
+                            f"[arena] channel unseated poll failed: {e!r}",
+                            file=sys.stderr,
+                        )
+                        log.append({
+                            "event": "channel_error",
+                            "stage": "poll_unseated",
+                            "turn": st.turn,
+                            "player_id": st.local,
+                            "error": error,
+                        })
                 # Human seat is idle. Do NOT auto-clear VIEW-level diplomacy here:
                 # _clear_blocking_diplomacy cannot distinguish an orphaned first-meet
                 # greeting from a leader scene the human is actively using (declaring

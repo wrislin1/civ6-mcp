@@ -806,7 +806,14 @@ def _hard_triggers(
 def evaluate(
     mode: str, state: AttentionState, scan: AttentionScan | None,
     snapshot: dict | None, *, max_streak: int, task_event: bool,
+    channel_wake_reasons: tuple[str, ...] = (),
 ) -> Decision:
+    if channel_wake_reasons:
+        return Decision(
+            "wake",
+            "CHANNEL_DUE",
+            "; ".join(sorted(set(channel_wake_reasons))),
+        )
     if scan is None or snapshot is None:
         return Decision("wake", "SCAN_ERROR")
     if scan.failed_families:
