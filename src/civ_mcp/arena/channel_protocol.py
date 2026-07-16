@@ -345,11 +345,12 @@ def parse_cli_channel_lines(
     for line_index, line in enumerate(summary.splitlines()):
         if not line.startswith("CHANNEL "):
             continue
-        digest = hashlib.sha256(line.encode()).hexdigest()[:16]
+        line_bytes = line.encode("utf-8", errors="surrogatepass")
+        digest = hashlib.sha256(line_bytes).hexdigest()[:16]
         source_id = f"cli:{run_id}:{actor}:{turn}:{line_index}:{digest}"
         try:
             payload = json.loads(line[len("CHANNEL ") :])
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except Exception:
             parsed_lines.append(
                 ParsedChannelLine(line_index, source_id, actor, None, "invalid CHANNEL JSON")
             )
@@ -381,9 +382,12 @@ def parse_cli_channel_lines(
                 rules=rules,
                 narrative_allowed=narrative_allowed,
             )
-        except ValueError as exc:
+        except Exception as exc:
+            error = "invalid CHANNEL action"
+            if type(exc) is ValueError:
+                error = str(exc) or error
             parsed_lines.append(
-                ParsedChannelLine(line_index, source_id, actor, None, str(exc))
+                ParsedChannelLine(line_index, source_id, actor, None, error)
             )
         else:
             parsed_lines.append(

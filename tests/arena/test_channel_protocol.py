@@ -3,6 +3,7 @@ import hashlib
 import json
 import pytest
 
+import civ_mcp.arena.channel_protocol as channel_protocol
 from civ_mcp.arena.channel_protocol import (
     CHANNEL_ACTION_NAMES,
     ChannelTurnContext,
@@ -197,6 +198,73 @@ def test_cli_source_id_uses_physical_line_index_and_exact_line_hash():
     assert parsed[0].source_id == f"cli:r:1:9:1:{digest}"
     assert parsed[0].staged_action.action == SendMessage(2, "hello")
     assert parsed[1].staged_action is None
+
+
+def test_cli_parser_isolates_all_ordinary_line_failures_and_continues():
+    oversized_integer = (
+        'CHANNEL {"action":"send_message","to_player":'
+        + "9" * 5_000
+        + ',"text":"bad"}'
+    )
+    surrogate = "CHANNEL \ud800"
+    deeply_nested = "CHANNEL " + "[" * 2_000 + "]" * 2_000
+    valid = 'CHANNEL {"action":"send_message","to_player":2,"text":"later"}'
+    summary = "\n".join([oversized_integer, surrogate, deeply_nested, valid])
+
+    first = parse_cli_channel_lines(
+        summary, run_id="r", actor=1, turn=9,
+        enabled_players=frozenset({1, 2}), rules=ChannelRules(),
+    )
+    second = parse_cli_channel_lines(
+        summary, run_id="r", actor=1, turn=9,
+        enabled_players=frozenset({1, 2}), rules=ChannelRules(),
+    )
+
+    assert [line.error for line in first] == [
+        "invalid CHANNEL JSON",
+        "invalid CHANNEL JSON",
+        "invalid CHANNEL JSON",
+        "",
+    ]
+    assert [line.source_id for line in first] == [line.source_id for line in second]
+    surrogate_digest = hashlib.sha256(
+        surrogate.encode("utf-8", errors="surrogatepass")
+    ).hexdigest()[:16]
+    assert first[1].source_id == f"cli:r:1:9:1:{surrogate_digest}"
+    assert first[3].action == SendMessage(2, "later")
+
+
+def test_cli_parser_does_not_contain_base_exceptions(monkeypatch):
+    def interrupt(_text):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(channel_protocol.json, "loads", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        parse_cli_channel_lines(
+            "CHANNEL {}", run_id="r", actor=1, turn=9,
+            enabled_players=frozenset({1, 2}), rules=ChannelRules(),
+        )
+
+
+def test_cli_parser_isolates_unexpected_validation_exceptions(monkeypatch):
+    original = channel_protocol.parse_channel_action
+
+    def fail_one_line(name, args, **kwargs):
+        if args.get("text") == "fail":
+            raise RuntimeError
+        return original(name, args, **kwargs)
+
+    monkeypatch.setattr(channel_protocol, "parse_channel_action", fail_one_line)
+    parsed = parse_cli_channel_lines(
+        "\n".join([
+            'CHANNEL {"action":"send_message","to_player":2,"text":"fail"}',
+            'CHANNEL {"action":"send_message","to_player":2,"text":"later"}',
+        ]),
+        run_id="r", actor=1, turn=9,
+        enabled_players=frozenset({1, 2}), rules=ChannelRules(),
+    )
+    assert [line.error for line in parsed] == ["invalid CHANNEL action", ""]
+    assert parsed[1].action == SendMessage(2, "later")
 
 
 def test_api_source_id_uses_canonical_args_and_successful_stage_index():
