@@ -275,8 +275,15 @@ def _parse_channel_rules(raw: object) -> ChannelRules:
     for field in fields - {"prompt_grievance_threshold"}:
         upper = {
             "max_completion_turns": 30,
+            "max_active_deals_per_pair": 3,
             "max_payment_gold": 10_000,
+            "max_message_chars": 2_000,
+            "max_narrative_chars": 1_000,
+            "max_messages_per_pair": 200,
+            "prompt_messages_per_counterpart": 10,
+            "recent_terminal_deals": 5,
             "max_zone_distance": 10,
+            "max_queued_action_bytes": 8_192,
         }.get(field)
         raw_value = raw.get(field, getattr(_CHANNEL_RULE_DEFAULTS, field))
         value = _int("channel_rules", field, raw_value)
@@ -293,13 +300,13 @@ def _parse_channel_rules(raw: object) -> ChannelRules:
     if isinstance(threshold, bool) or not isinstance(threshold, Real):
         raise _err(
             "channel_rules",
-            "prompt_grievance_threshold must be a number from 0..1",
+            "prompt_grievance_threshold must be a finite number greater than 0 and at most 0.05",
         )
     parsed_threshold = float(threshold)
-    if not isfinite(parsed_threshold) or not 0 <= parsed_threshold <= 1:
+    if not isfinite(parsed_threshold) or not 0 < parsed_threshold <= 0.05:
         raise _err(
             "channel_rules",
-            "prompt_grievance_threshold must be a number from 0..1",
+            "prompt_grievance_threshold must be a finite number greater than 0 and at most 0.05",
         )
     values["prompt_grievance_threshold"] = parsed_threshold
     return ChannelRules(**values)

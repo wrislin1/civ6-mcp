@@ -1167,3 +1167,33 @@ def test_rejects_invalid_channel_config(tmp_path, fragment, match):
     path.write_text(text)
     with pytest.raises(ValueError, match=match):
         load_experiment(path)
+
+
+@pytest.mark.parametrize(("field", "upper"), [
+    ("max_active_deals_per_pair", 3),
+    ("max_message_chars", 2_000),
+    ("max_narrative_chars", 1_000),
+    ("max_messages_per_pair", 200),
+    ("prompt_messages_per_counterpart", 10),
+    ("recent_terminal_deals", 5),
+    ("max_queued_action_bytes", 8_192),
+])
+def test_rejects_channel_rule_integer_above_exact_bound(tmp_path, field, upper):
+    path = tmp_path / "bad-bound.yaml"
+    path.write_text(
+        f"channel_rules: {{{field}: {upper + 1}}}\n"
+        "civs:\n  - {player: 1, provider: local, model: m}\n"
+    )
+    with pytest.raises(ValueError, match=rf"{field} must be 1\.\.{upper}"):
+        load_experiment(path)
+
+
+@pytest.mark.parametrize("value", [0, 0.051])
+def test_rejects_channel_grievance_threshold_outside_supported_bound(tmp_path, value):
+    path = tmp_path / "bad-threshold.yaml"
+    path.write_text(
+        f"channel_rules: {{prompt_grievance_threshold: {value}}}\n"
+        "civs:\n  - {player: 1, provider: local, model: m}\n"
+    )
+    with pytest.raises(ValueError, match="prompt_grievance_threshold"):
+        load_experiment(path)
