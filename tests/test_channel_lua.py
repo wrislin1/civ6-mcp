@@ -138,6 +138,11 @@ def test_payment_state_parser_distinguishes_absent_exact_and_conflicting():
         )
         is None
     )
+
+
+def test_payment_offer_state_rejects_untyped_status_strings():
+    with pytest.raises(TypeError, match="PaymentOfferStatus"):
+        ChannelPaymentOfferState("absent")  # type: ignore[arg-type]
     assert (
         parse_channel_payment_state_query(
             [

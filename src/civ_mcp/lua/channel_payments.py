@@ -64,6 +64,8 @@ class ChannelPaymentOfferState:
     offer: ExactPaymentOffer | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.status, PaymentOfferStatus):
+            raise TypeError("status must be a PaymentOfferStatus")
         if (self.status is PaymentOfferStatus.EXACT) != (self.offer is not None):
             raise ValueError("only an exact payment state may contain an offer")
 
