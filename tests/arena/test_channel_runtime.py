@@ -53,6 +53,19 @@ class PaymentStateView:
     offer: ExactPaymentOffer | None = None
 
 
+class AsyncCallBarrier:
+    def __init__(self, parties: int) -> None:
+        self.parties = parties
+        self.arrivals = 0
+        self.ready = asyncio.Event()
+
+    async def wait(self) -> None:
+        self.arrivals += 1
+        if self.arrivals == self.parties:
+            self.ready.set()
+        await self.ready.wait()
+
+
 class PaymentGameState:
     def __init__(self) -> None:
         self.local_player = 1
@@ -71,6 +84,9 @@ class PaymentGameState:
         self.intent_was_durable = False
         self.snapshot_at_offer: str | None = None
         self.runtime: ChannelRuntime | None = None
+        self.state_query_barrier: AsyncCallBarrier | None = None
+        self.yield_offer = False
+        self.yield_response = False
 
     async def get_channel_observation(self, player_id, turn, request):
         self.observation_requests.append((player_id, turn, request))
@@ -85,6 +101,8 @@ class PaymentGameState:
 
     async def offer_channel_payment(self, payee: int, gold: int) -> str:
         self.offer_calls += 1
+        if self.yield_offer:
+            await asyncio.sleep(0)
         if self.runtime is not None:
             self.intent_was_durable = journal_events(self.runtime)[-1]["kind"] == (
                 "payment_fund_intent"
@@ -125,14 +143,18 @@ class PaymentGameState:
             result = self.state_results.pop(0)
             if isinstance(result, BaseException):
                 raise result
-            return result
-        pending = self.pending.get((payer, payee))
-        expected = ExactPaymentOffer(payer, payee, gold)
-        if pending is None:
-            return PaymentStateView("absent")
-        if pending == expected:
-            return PaymentStateView("exact", expected)
-        return PaymentStateView("conflicting")
+        else:
+            pending = self.pending.get((payer, payee))
+            expected = ExactPaymentOffer(payer, payee, gold)
+            if pending is None:
+                result = PaymentStateView("absent")
+            elif pending == expected:
+                result = PaymentStateView("exact", expected)
+            else:
+                result = PaymentStateView("conflicting")
+        if self.state_query_barrier is not None:
+            await self.state_query_barrier.wait()
+        return result
 
     async def respond_to_channel_payment(
         self,
@@ -141,6 +163,8 @@ class PaymentGameState:
         accept: bool,
     ) -> str:
         self.response_calls.append(accept)
+        if self.yield_response:
+            await asyncio.sleep(0)
         if self.runtime is not None:
             self.snapshot_at_response = self.runtime.state_path.read_text()
         result = (
@@ -3855,7 +3879,8 @@ async def test_open_rejects_two_unfinished_intents_for_one_ordered_pair(
         "payment_fund_intent",
         payment_fund_intent_payload(first, "src-pair-first"),
     )
-    rt._commit(
+    append_complete_event(
+        rt,
         "payment_fund_intent",
         payment_fund_intent_payload(second, "src-pair-second", turn=4),
     )
@@ -4186,3 +4211,137 @@ async def test_reconcile_rejects_wedged_payment_intent_source(
             current_player_id=deal.counterparty,
         )
     assert payment_gs.state_queries == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("intent_kind", ["fund", "response"])
+@pytest.mark.parametrize("collision", ["same_source", "same_pair"])
+async def test_commit_rejects_second_unfinished_payment_intent(
+    tmp_path,
+    payment_gs,
+    intent_kind,
+    collision,
+):
+    rt, _, first_intent = await unfinished_payment_intent(
+        tmp_path,
+        payment_gs,
+        intent_kind,
+    )
+    second_intent = dict(first_intent)
+    if collision == "same_pair":
+        second_intent["source_id"] = f"src-{intent_kind}-same-pair"
+    event_kind = f"payment_{intent_kind}_intent"
+    journal_before = rt.events_path.read_bytes()
+
+    with pytest.raises(ChannelStateError, match="payment intent candidate"):
+        rt._commit(event_kind, second_intent)
+
+    assert rt.events_path.read_bytes() == journal_before
+    reopened = runtime(tmp_path)
+    unfinished = reopened._unfinished_payment_intents()
+    assert len(unfinished) == 1
+    assert unfinished[0][1] == first_intent
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("intent_kind", ["fund", "response"])
+@pytest.mark.parametrize("same_source", [True, False])
+async def test_concurrent_payment_actions_serialize_intent_before_side_effect(
+    tmp_path,
+    payment_gs,
+    intent_kind,
+    same_source,
+):
+    timing = "up_front" if intent_kind == "fund" else "on_delivery"
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing=timing,
+    )
+    actor = deal.proposer
+    action_name = "fund_deal"
+    action_args = {"deal_id": deal.id}
+    if intent_kind == "response":
+        await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+        await apply_payment_action(
+            rt,
+            payment_gs,
+            deal.proposer,
+            "fund_deal",
+            {"deal_id": deal.id},
+            turn=3,
+        )
+        deal = rt.deal(deal.id)
+        actor = deal.counterparty
+        action_name = "respond_to_payment"
+        action_args = {"deal_id": deal.id, "accept": True}
+
+    payment_gs.state_query_barrier = AsyncCallBarrier(2)
+    payment_gs.yield_offer = intent_kind == "fund"
+    payment_gs.yield_response = intent_kind == "response"
+    first_source = f"src-concurrent-{intent_kind}-first"
+    second_source = (
+        first_source
+        if same_source
+        else f"src-concurrent-{intent_kind}-second"
+    )
+    event_count = len(journal_events(rt))
+
+    results = await asyncio.gather(
+        apply_payment_action(
+            rt,
+            payment_gs,
+            actor,
+            action_name,
+            action_args,
+            turn=4 if intent_kind == "response" else 3,
+            source_id=first_source,
+        ),
+        apply_payment_action(
+            rt,
+            payment_gs,
+            actor,
+            action_name,
+            action_args,
+            turn=4 if intent_kind == "response" else 3,
+            source_id=second_source,
+        ),
+        return_exceptions=True,
+    )
+
+    assert all(
+        isinstance(result, ChannelAcknowledgement) for result in results
+    ), results
+    expected_statuses = (
+        ["applied", "duplicate"]
+        if same_source
+        else ["applied", "rejected"]
+    )
+    assert sorted(result.status for result in results) == sorted(expected_statuses)
+    loser_status = "duplicate" if same_source else "rejected"
+    loser = next(result for result in results if result.status == loser_status)
+    assert loser.message == (
+        "payment action is awaiting intent reconciliation"
+        if same_source
+        else "an unresolved payment intent requires reconciliation"
+    )
+    if not same_source:
+        assert loser.source_id not in rt.state.applied_source_ids
+        assert all(
+            acknowledgement.source_id != loser.source_id
+            for acknowledgement in rt.state.acknowledgements
+        )
+    added_events = journal_events(rt)[event_count:]
+    assert sum(
+        event["kind"] == f"payment_{intent_kind}_intent"
+        for event in added_events
+    ) == 1
+    if intent_kind == "fund":
+        assert payment_gs.offer_calls == 1
+        assert rt.deal(deal.id).payment_status is PaymentStatus.OFFERED
+    else:
+        assert payment_gs.response_calls == [True]
+        assert rt.deal(deal.id).state is DealState.HONORED
+
+    reopened = runtime(tmp_path)
+    assert reopened.state == rt.state

@@ -1537,6 +1537,8 @@ class ChannelRuntime:
             kind,
             payload,
         )
+        if kind in {"payment_fund_intent", "payment_response_intent"}:
+            self._validate_payment_intent_candidate(event)
         reduced = self._reduce_persisted_event(self.state, event)
         newly_claimed = self._newly_claimed_sources(self.state, reduced)
         if newly_claimed or kind in {
@@ -1580,6 +1582,27 @@ class ChannelRuntime:
         self.state = reduced
         self._write_snapshot()
         return event
+
+    def _validate_payment_intent_candidate(self, event: ChannelEvent) -> None:
+        initial = initial_channel_state(
+            self.state.run_id,
+            self.state.enabled_players,
+            self.rules,
+        )
+        try:
+            events = self._read_journal(self.events_path) + (event,)
+            self._validate_payment_journal(initial, events)
+        except (
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise ChannelStateError(
+                f"invalid payment intent candidate: {exc}"
+            ) from exc
 
     def _write_snapshot(self) -> None:
         encoded = json.dumps(
@@ -1945,7 +1968,14 @@ class ChannelRuntime:
             turn=turn,
             deadline=deal.fund_by_turn,
         )
-        self._commit("payment_fund_intent", intent)
+        conflict = self._commit_payment_intent_for_action(
+            "payment_fund_intent",
+            intent,
+            staged,
+            turn=turn,
+        )
+        if conflict is not None:
+            return conflict
         try:
             engine_result = await gs.offer_channel_payment(
                 deal.counterparty,
@@ -2094,7 +2124,14 @@ class ChannelRuntime:
             success_deal=success_deal,
             observation_id=observation_id,
         )
-        self._commit("payment_response_intent", intent)
+        conflict = self._commit_payment_intent_for_action(
+            "payment_response_intent",
+            intent,
+            staged,
+            turn=turn,
+        )
+        if conflict is not None:
+            return conflict
         try:
             engine_result = await gs.respond_to_channel_payment(
                 deal.proposer,
@@ -2176,6 +2213,48 @@ class ChannelRuntime:
             grievance=grievance,
             message=f"rejected linked payment for {deal.id}",
         )
+
+    def _commit_payment_intent_for_action(
+        self,
+        kind: str,
+        intent: dict,
+        staged: StagedChannelAction,
+        *,
+        turn: int,
+    ) -> ChannelAcknowledgement | None:
+        try:
+            self._commit(kind, intent)
+        except ChannelStateError:
+            unfinished = self._unfinished_payment_intents()
+            if any(
+                candidate["source_id"] == staged.source_id
+                for _, candidate in unfinished
+            ):
+                return ChannelAcknowledgement(
+                    staged.actor,
+                    turn,
+                    staged.source_id,
+                    "duplicate",
+                    "payment action is awaiting intent reconciliation",
+                )
+            existing = next(
+                (
+                    acknowledgement
+                    for acknowledgement in self.state.acknowledgements
+                    if acknowledgement.source_id == staged.source_id
+                ),
+                None,
+            )
+            if existing is not None:
+                return existing
+            return ChannelAcknowledgement(
+                staged.actor,
+                turn,
+                staged.source_id,
+                "rejected",
+                "an unresolved payment intent requires reconciliation",
+            )
+        return None
 
     @staticmethod
     def _funding_succeeded(engine_result: str) -> bool:
