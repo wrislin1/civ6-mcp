@@ -5121,6 +5121,7 @@ class FakeChannelRuntime:
         self.poll_error = poll_error
         self.calls = []
         self.finish_results = []
+        self.finish_staged_actions = []
         self.events = events
 
     def _record(self, event):
@@ -5160,6 +5161,7 @@ class FakeChannelRuntime:
     async def finish_player(self, gs, admission, policy_result):
         self._record(f"finish:{admission.player_id}:{admission.turn}")
         self.finish_results.append(policy_result)
+        self.finish_staged_actions.append(tuple(admission.context.staged_actions))
         if self.finish_error is not None:
             raise self.finish_error
         return tuple(object() for _ in range(self.acknowledgements))
@@ -5623,7 +5625,10 @@ async def test_seat0_repair_reuses_admission_and_preserves_raw_channel_order(
         normal_summary + "\n" + repair_summary
     )
     names = harness.names()
-    assert names.index("finish:0:7") < names.index("save_anchor")
+    assert names.index("policy", names.index("policy") + 1) < names.index(
+        "finish:0:7"
+    )
+    assert names.index("finish:0:7") < names.index("record")
     assert result["seat0_turns_played"] == 1
     assert sink.records[0]["channels"] == {
         "enabled": True,
@@ -5700,5 +5705,433 @@ async def test_seat0_wc_pass_reuses_admission_before_channel_finish(
         normal_summary + "\n" + wc_summary
     )
     names = harness.names()
-    assert names.index("finish:0:7") < names.index("save_anchor")
+    assert names.index("policy", names.index("policy") + 1) < names.index(
+        "finish:0:7"
+    )
+    assert names.index("finish:0:7") < names.index("restore_local")
     assert result["seat0_turns_played"] == 1
+
+
+@pytest.mark.asyncio
+async def test_seat0_delayed_recheck_repair_stays_in_one_private_channel_capture(
+    monkeypatch, tmp_path
+):
+    """A blocker that surfaces only after the first end request is still part
+    of the admitted seat-0 turn.  The delayed RECHECK repair must reuse the
+    original private prompt/context, and finish must receive every staged API
+    action, raw CHANNEL line, and action-audit step in policy-call order."""
+    from civ_mcp.arena.channel_terms import normalize_action_audit
+    from civ_mcp.arena.config import ChannelOptions
+
+    harness = Seat0Harness(
+        monkeypatch,
+        [
+            seat0_poll(7, active=True),
+            *[seat0_poll(7, active=True) for _ in range(6)],
+            seat0_poll(8, active=True),
+        ],
+    )
+    # Initial normal pass is clear.  The first end request then bounces on a
+    # newly surfaced decision blocker; cleanup cannot choose it, the delayed
+    # repair clears it, and the coordinator re-fires.
+    harness.blocker_queue = [[], [_RESEARCH], [_RESEARCH], []]
+    _wc_env(monkeypatch, harness, handler_results=[False, True], status=None)
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    labels = ("normal", "wc", "recheck")
+
+    def policy_result(label, target):
+        return {
+            "summary": f"{label} public summary",
+            "actions": [],
+            "transcript": {
+                "steps": [
+                    {
+                        "tool_name": "propose_trade",
+                        "tool_args": {
+                            "other_player_id": target,
+                            "mode": "send",
+                        },
+                        "tool_result_full": f"OK:PROPOSED|{label}",
+                    }
+                ],
+                "final_summary": (
+                    "CHANNEL "
+                    f'{{"action":"send_message","to_player":2,'
+                    f'"text":"{label}-raw"}}'
+                ),
+            },
+        }
+
+    class StagingPolicy(Seat0ScriptPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            index = len(self.calls)
+            result = await super().__call__(gs, player_id, turn, **kwargs)
+            kwargs["channel_context"].dispatch(
+                "send_message",
+                {"to_player": 2, "text": f"{labels[index]}-api"},
+            )
+            return result
+
+    policy = StagingPolicy(
+        harness,
+        [
+            policy_result("normal", 2),
+            policy_result("wc", 3),
+            policy_result("recheck", 4),
+        ],
+        options=options,
+    )
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-recheck",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+
+    async def fake_wc():
+        return _WCStatus(fires=True, resolutions=1)
+
+    gs.get_world_congress = fake_wc
+    sink = EventSink(harness)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-recheck",
+        idle_poll_limit=30,
+    )
+
+    result = await run_arena(conn, gs, config, policy=policy, transcript=sink)
+
+    assert [call[:2] for call in policy.calls] == [(0, 7), (0, 7), (0, 7)]
+    normal_channel = {
+        name: policy.calls[0][2][name]
+        for name in ("channel_context", "channel_block", "master_block")
+    }
+    for _, _, kwargs in policy.calls[1:]:
+        assert kwargs["channel_context"] is normal_channel["channel_context"]
+        assert kwargs["channel_block"] == normal_channel["channel_block"]
+        assert kwargs["master_block"] == normal_channel["master_block"]
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    assert [action.action.text for action in runtime.finish_staged_actions[0]] == [
+        "normal-api",
+        "wc-api",
+        "recheck-api",
+    ]
+    private_result = runtime.finish_results[0]
+    assert private_result["transcript"]["final_summary"] == "\n".join(
+        policy_result(label, target)["transcript"]["final_summary"]
+        for label, target in zip(labels, (2, 3, 4), strict=True)
+    )
+    assert [action.tool_args["other_player_id"] for action in normalize_action_audit(
+        private_result, actor=0, turn=7
+    )] == [2, 3, 4]
+    names = harness.names()
+    assert names.index("policy", names.index("end_turn")) < names.index("finish:0:7")
+    assert names.index("finish:0:7") < names.index("reconcile:0:8")
+    assert names.index("finish:0:7") < names.index("record")
+    assert names.count("end_turn") == 2
+    assert result["seat0_turns_played"] == 1
+    # Recheck-only private material never mutates the public seat-0 transcript.
+    assert "recheck-raw" not in sink.records[0]["final_summary"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_drain_diplomacy_pass_reuses_capture_and_supplies_trade_audit(
+    monkeypatch, tmp_path
+):
+    """A standalone diplomacy policy pass during the captured turn can accept
+    an official trade and thereby violate a private ``dont_trade_with`` term.
+    Its committed action audit and channel outputs must reach the same runtime
+    finish before adjudication, without another admission or public leakage."""
+    from civ_mcp.arena.channel_terms import normalize_action_audit
+    from civ_mcp.arena.config import ChannelOptions
+
+    monkeypatch.setattr(coordinator_mod, "SEAT0_DIPLO_DRAIN_POLLS", 4)
+    harness = Seat0Harness(
+        monkeypatch,
+        [
+            seat0_poll(7, active=True),
+            *[seat0_poll(7, active=False) for _ in range(6)],
+            seat0_poll(8, active=True),
+        ],
+    )
+    sessions = _AnsweringSessions("2#5")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    normal_summary = (
+        'CHANNEL {"action":"send_message","to_player":2,"text":"normal-raw"}'
+    )
+    diplomacy_summary = (
+        'CHANNEL {"action":"send_message","to_player":2,"text":"diplo-raw"}'
+    )
+    behaviors = [
+        {
+            "summary": "normal public summary",
+            "actions": [],
+            "transcript": {"steps": [], "final_summary": normal_summary},
+        },
+        {
+            "summary": "diplomacy public summary",
+            "actions": [],
+            "transcript": {
+                "steps": [
+                    {
+                        "tool_name": "respond_to_trade",
+                        "tool_args": {"other_player_id": 2, "accept": True},
+                        "tool_result_full": "OK:DEAL_ACCEPTED|Rome",
+                    }
+                ],
+                "final_summary": diplomacy_summary,
+            },
+        },
+    ]
+
+    class AnsweringStagingPolicy(Seat0ScriptPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            index = len(self.calls)
+            result = await super().__call__(gs, player_id, turn, **kwargs)
+            kwargs["channel_context"].dispatch(
+                "send_message",
+                {"to_player": 2, "text": f"pass-{index}-api"},
+            )
+            if "PENDING DIPLOMACY" in kwargs.get("blocker_block", ""):
+                sessions.value = ""
+            return result
+
+    policy = AnsweringStagingPolicy(harness, behaviors, options=options)
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-diplomacy",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    sink = EventSink(harness)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-diplomacy",
+        idle_poll_limit=30,
+    )
+
+    result = await run_arena(
+        Seat0CapsConn(), FakeGS(), config, policy=policy, transcript=sink
+    )
+
+    assert [call[:2] for call in policy.calls] == [(0, 7), (0, 7)]
+    for name in ("channel_context", "channel_block", "master_block"):
+        if name == "channel_context":
+            assert policy.calls[1][2][name] is policy.calls[0][2][name]
+        else:
+            assert policy.calls[1][2][name] == policy.calls[0][2][name]
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    assert [action.action.text for action in runtime.finish_staged_actions[0]] == [
+        "pass-0-api",
+        "pass-1-api",
+    ]
+    private_result = runtime.finish_results[0]
+    assert private_result["transcript"]["final_summary"] == (
+        normal_summary + "\n" + diplomacy_summary
+    )
+    audit = normalize_action_audit(private_result, actor=0, turn=7)
+    assert [(a.tool_name, a.tool_args["other_player_id"]) for a in audit] == [
+        ("respond_to_trade", 2)
+    ]
+    names = harness.names()
+    assert names.index("policy", names.index("end_turn")) < names.index("finish:0:7")
+    assert names.index("finish:0:7") < names.index("reconcile:0:8")
+    assert names.index("finish:0:7") < names.index("record")
+    assert result["seat0_turns_played"] == 1
+    assert "diplo-raw" not in sink.records[0]["final_summary"]
+    assert all("diplo-raw" not in repr(entry) for entry in result["log"])
+
+
+@pytest.mark.asyncio
+async def test_seat0_channel_capture_finishes_once_after_policy_exception_repair(
+    monkeypatch, tmp_path
+):
+    """A caught normal-policy Exception keeps fail-open repair behavior, then
+    closes the one admission once after the repaired turn advances."""
+    from civ_mcp.arena.config import ChannelOptions
+
+    harness = Seat0Harness(
+        monkeypatch,
+        [seat0_poll(7, active=True), seat0_poll(7, active=False), seat0_poll(8)],
+    )
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    repair_summary = (
+        'CHANNEL {"action":"send_message","to_player":2,"text":"repaired"}'
+    )
+    policy = Seat0ScriptPolicy(
+        harness,
+        [
+            RuntimeError("normal policy failed"),
+            {
+                "summary": "repair complete",
+                "actions": [],
+                "transcript": {"steps": [], "final_summary": repair_summary},
+            },
+        ],
+        options=options,
+    )
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-policy-exception",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    sink = EventSink(harness)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-policy-exception",
+    )
+
+    result = await run_arena(
+        Seat0CapsConn(), FakeGS(), config, policy=policy, transcript=sink
+    )
+
+    assert len(policy.calls) == 2
+    assert policy.calls[1][2]["channel_context"] is policy.calls[0][2][
+        "channel_context"
+    ]
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    assert runtime.finish_results[0]["transcript"]["final_summary"] == repair_summary
+    assert result["seat0_turns_played"] == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+
+
+@pytest.mark.asyncio
+async def test_seat0_human_pending_deadline_finishes_active_channel_capture_once(
+    monkeypatch, tmp_path
+):
+    """A channel-enabled hard blocker retains its admission during the bounded
+    human window, then finalizes it exactly once before outer cleanup."""
+    from civ_mcp.arena.config import ChannelOptions
+
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    hard = _blocker("ENDTURN_BLOCKING_FUTURE_CHOICE", "human decision required")
+    harness.blocker_queue = [[hard], [hard]]
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    policy = Seat0ScriptPolicy(harness, [_returned("normal")], options=options)
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-human-pending",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-human-pending",
+        seat0_human_pending_poll_limit=2,
+    )
+
+    result = await run_arena(Seat0CapsConn(), FakeGS(), config, policy=policy)
+
+    assert result["seat0_human_pending"] == 1
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    names = harness.names()
+    assert names.index("finish:0:7") < names.index("restore_local")
+
+
+@pytest.mark.asyncio
+async def test_seat0_policy_baseexception_finishes_capture_once_in_cleanup(
+    monkeypatch, tmp_path
+):
+    """Policy cancellation still propagates, but the admitted private capture
+    is closed and cleared before the existing best-effort human handback.  An
+    ordinary finish Exception is fail-open and cannot replace that cancellation."""
+    from civ_mcp.arena.config import ChannelOptions
+
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    policy = Seat0ScriptPolicy(
+        harness, [asyncio.CancelledError()], options=options
+    )
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-cancel",
+        enabled_players=frozenset({0, 2}),
+        finish_error=RuntimeError("channel cleanup failed"),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-cancel",
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_arena(Seat0CapsConn(), FakeGS(), config, policy=policy)
+
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    names = harness.names()
+    assert names.index("finish:0:7") < names.index("restore_local")
+
+
+@pytest.mark.asyncio
+async def test_seat0_outer_shutdown_finishes_capture_without_replay(
+    monkeypatch, tmp_path
+):
+    """An unexpected outer-loop shutdown after the first end request uses the
+    final cleanup seam and cannot replay finish during human handback."""
+    from civ_mcp.arena.config import ChannelOptions
+
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    first_poll = hook_mod.poll
+    poll_calls = 0
+
+    async def shutdown_poll(conn):
+        nonlocal poll_calls
+        poll_calls += 1
+        if poll_calls > 1:
+            raise RuntimeError("coordinator shutdown")
+        return await first_poll(conn)
+
+    monkeypatch.setattr(hook_mod, "poll", shutdown_poll)
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    policy = Seat0ScriptPolicy(harness, [_returned("normal")], options=options)
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-shutdown",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-shutdown",
+    )
+
+    with pytest.raises(RuntimeError, match="coordinator shutdown"):
+        await run_arena(Seat0CapsConn(), FakeGS(), config, policy=policy)
+
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    names = harness.names()
+    assert names.index("finish:0:7") < names.index("restore_local")
