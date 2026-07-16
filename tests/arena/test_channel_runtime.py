@@ -61,6 +61,7 @@ class PaymentGameState:
         self.snapshot_at_response: str | None = None
         self.query_calls = 0
         self.state_queries: list[tuple[int, int, int, int]] = []
+        self.state_results: list[object | BaseException] = []
         self.intent_was_durable = False
         self.snapshot_at_offer: str | None = None
         self.runtime: ChannelRuntime | None = None
@@ -114,6 +115,11 @@ class PaymentGameState:
         gold: int,
     ) -> PaymentStateView:
         self.state_queries.append((self.local_player, payer, payee, gold))
+        if self.state_results:
+            result = self.state_results.pop(0)
+            if isinstance(result, BaseException):
+                raise result
+            return result
         pending = self.pending.get((payer, payee))
         expected = ExactPaymentOffer(payer, payee, gold)
         if pending is None:
@@ -2680,6 +2686,110 @@ async def test_ambiguous_response_retry_is_canonical_reopenable_and_not_retried(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "post_query_outcome, expected_recovery, expected_reason",
+    [
+        (
+            "exception",
+            "response_retry_post_query_failed",
+            "payment response retry returned no authoritative result and the "
+            "post-retry offer query failed",
+        ),
+        (
+            "invalid",
+            "response_retry_post_state_invalid",
+            "payment response retry returned no authoritative result and the "
+            "post-retry offer state was invalid",
+        ),
+    ],
+)
+async def test_response_recovery_post_query_outage_is_canonical_and_exactly_once(
+    tmp_path,
+    payment_gs,
+    post_query_outcome,
+    expected_recovery,
+    expected_reason,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="on_delivery",
+    )
+    await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    source_id = f"src-response-post-query-{post_query_outcome}"
+    rt._commit(
+        "payment_response_intent",
+        payment_response_intent_payload(
+            offered,
+            source_id,
+            accept=True,
+        ),
+    )
+    exact_offer = ExactPaymentOffer(
+        offered.proposer,
+        offered.counterparty,
+        offered.payment_gold,
+    )
+    post_query_result = (
+        RuntimeError("post-retry query failed")
+        if post_query_outcome == "exception"
+        else PaymentStateView("malformed", exact_offer)
+    )
+    payment_gs.state_results.extend(
+        [PaymentStateView("exact", exact_offer), post_query_result]
+    )
+    payment_gs.response_results.append("Action completed (no response).")
+    payment_gs.local_player = deal.counterparty
+    reopened = runtime(tmp_path)
+
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=4,
+        current_player_id=deal.counterparty,
+    )
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=4,
+        current_player_id=deal.counterparty,
+    )
+
+    assert payment_gs.response_calls == [True]
+    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
+    assert reopened.state.grievances == ()
+    assert source_id in reopened.state.applied_source_ids
+    acknowledgement = next(
+        item for item in reopened.state.acknowledgements if item.source_id == source_id
+    )
+    assert acknowledgement.status == "applied"
+    result = journal_events(reopened)[-1]
+    assert result["kind"] == "payment_response_result"
+    assert result["payload"]["engine_result"] == "RECOVERY_AMBIGUOUS_RESPONSE"
+    assert result["payload"]["recovery"] == expected_recovery
+    assert result["payload"]["acknowledgement"]["source_id"] == source_id
+    assert result["payload"]["deal"]["terminal"]["reason"] == expected_reason
+    journal_after_recovery = reopened.events_path.read_bytes()
+
+    reopened_again = runtime(tmp_path)
+    await reopened_again.reconcile_payment_intents(
+        payment_gs,
+        current_turn=4,
+        current_player_id=deal.counterparty,
+    )
+
+    assert payment_gs.response_calls == [True]
+    assert reopened_again.events_path.read_bytes() == journal_after_recovery
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("intent_kind", ["fund", "response"])
 async def test_recovery_rejects_regressed_turn_before_query_or_append(
     tmp_path,
@@ -3020,6 +3130,88 @@ async def test_open_rejects_semantically_inconsistent_success_deal(
     )
     intent["success_deal"]["payment_status"] = "offered"
     append_complete_event(rt, "payment_response_intent", intent)
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_kind", ["deal_changed", "staged_action_applied"])
+@pytest.mark.parametrize("timing", ["up_front", "on_delivery"])
+async def test_open_rejects_generic_event_that_settles_linked_payment(
+    tmp_path,
+    payment_gs,
+    event_kind,
+    timing,
+):
+    rt, deal = await accepted_payment_deal(tmp_path, payment_gs, timing=timing)
+    if timing == "on_delivery":
+        await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    forged = rt._accepted_payment_deal(
+        offered,
+        turn=4,
+        observation=observation(
+            deal.counterparty,
+            4,
+            camps=frozenset(),
+        ),
+        observation_id=None,
+    )
+    deal_payload = ChannelRuntime._deal_payload(forged)
+    if event_kind == "deal_changed":
+        payload = deal_payload
+    else:
+        source_id = f"src-forged-settlement-{timing}"
+        payload = {
+            "source_id": source_id,
+            "acknowledgement": {
+                "player_id": deal.counterparty,
+                "turn": 4,
+                "source_id": source_id,
+                "status": "applied",
+                "message": "forged linked payment settlement",
+                "deal_id": deal.id,
+            },
+            "effect": {"kind": "deal_changed", "payload": deal_payload},
+        }
+    append_complete_event(rt, event_kind, payload)
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", [[], "not-an-object"])
+async def test_open_normalizes_non_object_terminal_to_channel_state_error(
+    tmp_path,
+    fake_gs,
+    terminal,
+):
+    rt = runtime(tmp_path)
+    await rt.apply_staged(
+        fake_gs,
+        proposal("proposal-invalid-terminal"),
+        turn=1,
+        observation=observation(1, 1, camps=frozenset({(12, 7)})),
+    )
+    deal = rt.state.deals[-1]
+    declined = dataclasses.replace(
+        deal,
+        state=DealState.DECLINED,
+        favor_status=FavorStatus.RELEASED,
+        payment_status=PaymentStatus.WAIVED,
+        terminal=terminal,
+    )
+    append_complete_event(rt, "deal_changed", ChannelRuntime._deal_payload(declined))
 
     with pytest.raises(ChannelStateError, match="invalid channel journal"):
         runtime(tmp_path)

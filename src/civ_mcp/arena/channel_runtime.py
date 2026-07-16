@@ -488,6 +488,21 @@ class ChannelRuntime:
             cls._validate_deal_exact_types(deal)
             prior = before_deals.get(deal.id)
             if prior is not None:
+                settlement_started = (
+                    prior.payment_status is not PaymentStatus.SETTLED
+                    and deal.payment_status is PaymentStatus.SETTLED
+                )
+                honored_by_settlement = (
+                    prior.state is not DealState.HONORED
+                    and deal.state is DealState.HONORED
+                    and prior.payment_status is not PaymentStatus.SETTLED
+                )
+                if (
+                    settlement_started or honored_by_settlement
+                ) and event.kind != "payment_response_result":
+                    raise ValueError(
+                        "only a payment response result may settle linked payment"
+                    )
                 if (
                     event.kind == "staged_action_applied"
                     and prior.state is DealState.ACTIVE
@@ -681,6 +696,8 @@ class ChannelRuntime:
             if value is not None and type(value) is not int:
                 raise ValueError(f"deal {field} must be an exact integer or null")
         if deal.terminal is not None:
+            if type(deal.terminal) is not dict:
+                raise ValueError("deal terminal must be an object or null")
             for field in ("wronged", "offender", "turn"):
                 value = deal.terminal.get(field)
                 if value is not None and type(value) is not int:
@@ -977,6 +994,28 @@ class ChannelRuntime:
                     intent,
                     "payment response retry returned no authoritative result; "
                     f"the post-retry offer was {status}",
+                )
+            elif recovery in {
+                "response_retry_post_query_failed",
+                "response_retry_post_state_invalid",
+            }:
+                if engine_result != "RECOVERY_AMBIGUOUS_RESPONSE":
+                    raise ValueError("invalid post-retry query recovery")
+                reasons = {
+                    "response_retry_post_query_failed": (
+                        "payment response retry returned no authoritative result "
+                        "and the post-retry offer query failed"
+                    ),
+                    "response_retry_post_state_invalid": (
+                        "payment response retry returned no authoritative result "
+                        "and the post-retry offer state was invalid"
+                    ),
+                }
+                expected_deal = cls._expected_unverifiable_result(
+                    deal,
+                    deal_payload,
+                    intent,
+                    reasons[recovery],
                 )
             else:
                 raise ValueError("unknown payment-response recovery outcome")
@@ -2258,23 +2297,35 @@ class ChannelRuntime:
                         intent["gold"],
                     )
                 except Exception:
-                    continue
-                post_status = self._payment_state_status(post_retry, deal)
-                if post_status is None:
-                    continue
+                    post_status = None
+                    recovery = "response_retry_post_query_failed"
+                    reason = (
+                        "payment response retry returned no authoritative result "
+                        "and the post-retry offer query failed"
+                    )
+                else:
+                    post_status = self._payment_state_status(post_retry, deal)
+                    recovery = "response_retry_post_state_invalid"
+                    reason = (
+                        "payment response retry returned no authoritative result "
+                        "and the post-retry offer state was invalid"
+                    )
+                if post_status is not None:
+                    recovery = f"response_retry_{post_status}_ambiguous"
+                    reason = (
+                        "payment response retry returned no authoritative result; "
+                        f"the post-retry offer was {post_status}"
+                    )
                 unverifiable = self._unverifiable_deal_record(
                     deal,
                     turn=current_turn,
-                    reason=(
-                        "payment response retry returned no authoritative result; "
-                        f"the post-retry offer was {post_status}"
-                    ),
+                    reason=reason,
                 )
                 self._commit_payment_result(
                     "payment_response_result",
                     intent,
                     engine_result="RECOVERY_AMBIGUOUS_RESPONSE",
-                    recovery=f"response_retry_{post_status}_ambiguous",
+                    recovery=recovery,
                     deal=unverifiable,
                     grievance=None,
                     message=f"payment response became unverifiable for {deal.id}",
