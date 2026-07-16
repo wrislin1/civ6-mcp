@@ -15,11 +15,17 @@ from civ_mcp.arena.channel_runtime import (
     grievance_base_magnitude,
 )
 from civ_mcp.arena.config import ChannelRules
-from civ_mcp.arena.channels import DealState, FavorStatus, PaymentStatus
+from civ_mcp.arena.channels import (
+    ChannelAcknowledgement,
+    DealState,
+    FavorStatus,
+    PaymentStatus,
+)
 from civ_mcp.arena.channel_terms import (
     ChannelObservation,
     ObservationFamily,
     ObservedUnit,
+    verify_term,
 )
 from civ_mcp.lua.channel_payments import ExactPaymentOffer
 
@@ -3910,3 +3916,273 @@ async def test_payment_side_effect_does_not_catch_base_exception(
         )
     assert journal_events(rt)[-1]["kind"] == "payment_fund_intent"
     assert "src-fund-cancelled" not in rt.state.applied_source_ids
+
+
+@pytest.mark.asyncio
+async def test_open_rejects_late_favor_failure_without_persisted_violation(
+    tmp_path,
+):
+    rt = runtime(tmp_path)
+    deal = await accepted_deal(
+        rt,
+        FakeGameState(),
+        favor={
+            "term_type": "maintain_gold_reserve",
+            "params": {"min_gold": 400},
+        },
+        within=1,
+        acceptance_observation=observation(2, 2, treasury_gold=500),
+    )
+    late_observation = observation(2, 4, treasury_gold=399)
+    observation_id = rt._ensure_observation_recorded(late_observation)
+    monitor = dict(deal.favor.monitor)
+    monitor["current_observation_id"] = observation_id
+    verification = verify_term(
+        {
+            "term_type": deal.favor.term_type,
+            "params": deal.favor.params,
+        },
+        deal.favor.baseline,
+        monitor,
+        late_observation,
+        deal.favor_due_turn,
+    )
+    assert verification.status == "failed"
+    forged_monitor = {
+        key: value
+        for key, value in verification.monitor.items()
+        if key not in {"current_observation_id", "observation_id"}
+    }
+    forged_deal = dataclasses.replace(
+        deal,
+        favor=dataclasses.replace(deal.favor, monitor=forged_monitor),
+    )
+    broken, grievance = rt._broken_deal_records(
+        forged_deal,
+        turn=late_observation.turn,
+        breach="favor",
+        reason=verification.reason,
+        evidence_refs=tuple(verification.evidence_refs) or (observation_id,),
+    )
+    append_complete_event(
+        rt,
+        "deal_broken",
+        {
+            "deal": ChannelRuntime._deal_payload(broken),
+            "grievance": grievance,
+        },
+    )
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_late_favor_failure_is_unverifiable_and_reopenable(tmp_path):
+    rt = runtime(tmp_path)
+    deal = await accepted_deal(
+        rt,
+        FakeGameState(),
+        favor={
+            "term_type": "maintain_gold_reserve",
+            "params": {"min_gold": 400},
+        },
+        within=1,
+        acceptance_observation=observation(2, 2, treasury_gold=500),
+    )
+    gs = ObservingGameState([observation(2, 4, treasury_gold=399)])
+
+    await rt.admit_player(gs, deal.counterparty, 4)
+
+    reopened = runtime(tmp_path)
+    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
+    assert reopened.state.grievances == ()
+
+
+@pytest.mark.asyncio
+async def test_persisted_favor_violation_can_fail_after_deadline_and_reopen(
+    tmp_path,
+):
+    rt = runtime(tmp_path)
+    deal = await accepted_deal(
+        rt,
+        FakeGameState(),
+        favor={
+            "term_type": "maintain_gold_reserve",
+            "params": {"min_gold": 400},
+        },
+        within=1,
+        acceptance_observation=observation(2, 2, treasury_gold=399),
+    )
+    assert deal.favor.baseline["initial_violation_turn"] == 2
+    gs = ObservingGameState([observation(2, 4, treasury_gold=399)])
+
+    await rt.admit_player(gs, deal.counterparty, 4)
+
+    reopened = runtime(tmp_path)
+    broken = reopened.deal(deal.id)
+    assert broken.state is DealState.BROKEN
+    assert broken.favor_status is FavorStatus.FAILED
+    assert len(reopened.state.grievances) == 1
+    assert broken.terminal["evidence_refs"]
+
+
+async def unfinished_payment_intent(
+    tmp_path,
+    payment_gs: PaymentGameState,
+    intent_kind: str,
+) -> tuple[ChannelRuntime, object, dict]:
+    timing = "up_front" if intent_kind == "fund" else "on_delivery"
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing=timing,
+    )
+    source_id = f"src-{intent_kind}-reserved"
+    if intent_kind == "fund":
+        payload = payment_fund_intent_payload(deal, source_id)
+        rt._commit("payment_fund_intent", payload)
+        return rt, deal, payload
+    await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    payload = payment_response_intent_payload(
+        offered,
+        source_id,
+        accept=True,
+    )
+    rt._commit("payment_response_intent", payload)
+    return rt, offered, payload
+
+
+def source_marking_event(kind: str, source_id: str, actor: int, turn: int) -> dict:
+    acknowledgement = {
+        "player_id": actor,
+        "turn": turn,
+        "source_id": source_id,
+        "status": "rejected",
+        "message": "unrelated replay marker",
+        "deal_id": None,
+    }
+    if kind == "source_applied":
+        return {"source_id": source_id}
+    if kind == "acknowledged":
+        return acknowledgement
+    return {
+        "source_id": source_id,
+        "acknowledgement": acknowledgement,
+        "effect": None,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("intent_kind", ["fund", "response"])
+@pytest.mark.parametrize(
+    "marker_kind",
+    ["source_applied", "staged_action_applied", "acknowledged"],
+)
+async def test_open_rejects_reserved_payment_source_marked_by_non_result(
+    tmp_path,
+    payment_gs,
+    intent_kind,
+    marker_kind,
+):
+    rt, _, intent = await unfinished_payment_intent(
+        tmp_path,
+        payment_gs,
+        intent_kind,
+    )
+    append_complete_event(
+        rt,
+        marker_kind,
+        source_marking_event(
+            marker_kind,
+            intent["source_id"],
+            intent["actor"],
+            intent["turn"],
+        ),
+    )
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "marker_kind",
+    ["source_applied", "staged_action_applied", "acknowledged"],
+)
+async def test_unrelated_source_marker_preserves_unfinished_payment_intent(
+    tmp_path,
+    payment_gs,
+    marker_kind,
+):
+    rt, _, intent = await unfinished_payment_intent(
+        tmp_path,
+        payment_gs,
+        "fund",
+    )
+    unrelated_source = f"unrelated-{marker_kind}"
+    append_complete_event(
+        rt,
+        marker_kind,
+        source_marking_event(
+            marker_kind,
+            unrelated_source,
+            intent["actor"],
+            intent["turn"],
+        ),
+    )
+
+    reopened = runtime(tmp_path)
+    unfinished = reopened._unfinished_payment_intents()
+    assert len(unfinished) == 1
+    assert unfinished[0][1]["source_id"] == intent["source_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wedge", ["applied", "acknowledged"])
+async def test_reconcile_rejects_wedged_payment_intent_source(
+    tmp_path,
+    payment_gs,
+    wedge,
+):
+    rt, deal, intent = await unfinished_payment_intent(
+        tmp_path,
+        payment_gs,
+        "fund",
+    )
+    if wedge == "applied":
+        rt.state = dataclasses.replace(
+            rt.state,
+            applied_source_ids=(
+                rt.state.applied_source_ids | {intent["source_id"]}
+            ),
+        )
+    else:
+        acknowledgement = ChannelAcknowledgement(
+            intent["actor"],
+            intent["turn"],
+            intent["source_id"],
+            "rejected",
+            "wedged payment intent",
+        )
+        rt.state = dataclasses.replace(
+            rt.state,
+            acknowledgements=rt.state.acknowledgements + (acknowledgement,),
+        )
+
+    with pytest.raises(ChannelStateError, match="unfinished payment intent"):
+        await rt.reconcile_payment_intents(
+            payment_gs,
+            current_turn=intent["turn"],
+            current_player_id=deal.counterparty,
+        )
+    assert payment_gs.state_queries == []

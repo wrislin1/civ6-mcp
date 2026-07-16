@@ -118,6 +118,7 @@ class ChannelRuntime:
         events_path = channels_dir / "events.jsonl"
         state_path = channels_dir / "state.json"
         cls._ensure_private_file(events_path)
+        initial = initial_channel_state(run_id, enabled_players, rules)
 
         if state_path.exists() or state_path.is_symlink():
             cls._require_regular_file(state_path)
@@ -141,11 +142,11 @@ class ChannelRuntime:
                 raise ChannelStateError(
                     "channel identity snapshot is missing for a nonempty journal"
                 )
-            snapshot = initial_channel_state(run_id, enabled_players, rules)
+            snapshot = initial
 
         try:
             events = cls._read_journal(events_path)
-            cls._validate_payment_journal(events)
+            cls._validate_payment_journal(initial, events)
         except (
             OSError,
             UnicodeError,
@@ -162,7 +163,7 @@ class ChannelRuntime:
                 "channel snapshot is newer than the write-ahead journal"
             )
 
-        prefix = initial_channel_state(run_id, enabled_players, rules)
+        prefix = initial
         try:
             for event in events:
                 if event.sequence > snapshot.last_event_sequence:
@@ -264,12 +265,17 @@ class ChannelRuntime:
                 os.close(fd)
         return tuple(events)
 
-    @staticmethod
-    def _validate_payment_journal(events: tuple[ChannelEvent, ...]) -> None:
+    @classmethod
+    def _validate_payment_journal(
+        cls,
+        state: ChannelState,
+        events: tuple[ChannelEvent, ...],
+    ) -> None:
         unfinished: dict[str, tuple[str, dict]] = {}
         unfinished_pairs: dict[tuple[int, int], str] = {}
         completed: set[str] = set()
         for event in events:
+            completed_source: str | None = None
             if event.kind in {"payment_fund_intent", "payment_response_intent"}:
                 payload = event.payload
                 source_id = payload.get("source_id") if isinstance(payload, dict) else None
@@ -284,33 +290,76 @@ class ChannelRuntime:
                     raise ValueError("multiple unfinished payment intents for pair")
                 unfinished[source_id] = (event.kind, payload)
                 unfinished_pairs[pair] = source_id
+            elif event.kind in {"payment_fund_result", "payment_response_result"}:
+                completed_source = cls._matching_payment_result_source(
+                    event.kind,
+                    event.payload,
+                    unfinished,
+                )
+            prior_state = state
+            state = cls._reduce_persisted_event(state, event)
+            newly_claimed = cls._newly_claimed_sources(prior_state, state)
+            reserved_claims = newly_claimed & unfinished.keys()
+            if completed_source is None:
+                if reserved_claims:
+                    raise ValueError(
+                        "unfinished payment intent source is reserved for its result"
+                    )
                 continue
-            if event.kind not in {"payment_fund_result", "payment_response_result"}:
-                continue
-            result_intent = event.payload.get("intent")
-            source_id = (
-                result_intent.get("source_id")
-                if isinstance(result_intent, dict)
-                else None
-            )
-            prior = unfinished.get(source_id) if isinstance(source_id, str) else None
-            expected_kind = (
-                "payment_fund_intent"
-                if event.kind == "payment_fund_result"
-                else "payment_response_intent"
-            )
-            if (
-                prior is None
-                or prior[0] != expected_kind
-                or prior[1] != result_intent
-            ):
-                raise ValueError("payment result does not match an unfinished intent")
-            del unfinished[source_id]
+            if reserved_claims != {completed_source}:
+                raise ValueError(
+                    "payment result must exclusively complete its reserved source"
+                )
+            prior_kind, result_intent = unfinished.pop(completed_source)
+            del prior_kind
             pair = (result_intent.get("payer"), result_intent.get("payee"))
-            if unfinished_pairs.get(pair) != source_id:
+            if unfinished_pairs.get(pair) != completed_source:
                 raise ValueError("payment intent pair index is inconsistent")
             del unfinished_pairs[pair]
-            completed.add(source_id)
+            completed.add(completed_source)
+
+    @staticmethod
+    def _matching_payment_result_source(
+        kind: str,
+        payload: object,
+        unfinished: dict[str, tuple[str, dict]],
+    ) -> str:
+        result_intent = payload.get("intent") if isinstance(payload, dict) else None
+        source_id = (
+            result_intent.get("source_id")
+            if isinstance(result_intent, dict)
+            else None
+        )
+        prior = unfinished.get(source_id) if isinstance(source_id, str) else None
+        expected_kind = (
+            "payment_fund_intent"
+            if kind == "payment_fund_result"
+            else "payment_response_intent"
+        )
+        if (
+            prior is None
+            or prior[0] != expected_kind
+            or prior[1] != result_intent
+        ):
+            raise ValueError("payment result does not match an unfinished intent")
+        return source_id
+
+    @staticmethod
+    def _newly_claimed_sources(
+        before: ChannelState,
+        after: ChannelState,
+    ) -> set[str]:
+        before_acknowledged = {
+            acknowledgement.source_id
+            for acknowledgement in before.acknowledgements
+        }
+        after_acknowledged = {
+            acknowledgement.source_id
+            for acknowledgement in after.acknowledgements
+        }
+        return set(after.applied_source_ids - before.applied_source_ids) | (
+            after_acknowledged - before_acknowledged
+        )
 
     @classmethod
     def _reduce_persisted_event(
@@ -376,7 +425,10 @@ class ChannelRuntime:
         source_id = payload["source_id"]
         if not isinstance(source_id, str) or not source_id:
             raise ValueError("payment intent requires a non-empty source_id")
-        if source_id in state.applied_source_ids:
+        if source_id in state.applied_source_ids or any(
+            acknowledgement.source_id == source_id
+            for acknowledgement in state.acknowledgements
+        ):
             raise ValueError(f"duplicate source id {source_id!r}")
         deal_id = payload["deal_id"]
         deal = next(
@@ -801,6 +853,21 @@ class ChannelRuntime:
         ) or not cls._exactly_equal(grievance, expected_grievance):
             raise ValueError("deal_broken aggregate is not canonical")
 
+    @staticmethod
+    def _favor_failure_evidence_arrived_too_late(
+        deal: Deal,
+        observation_turn: int,
+    ) -> bool:
+        persisted_violation = (
+            deal.favor.monitor.get("violation_observation_id") is not None
+            or deal.favor.baseline.get("initial_violation_turn") is not None
+        )
+        return (
+            deal.favor_due_turn is not None
+            and observation_turn > deal.favor_due_turn
+            and not persisted_violation
+        )
+
     @classmethod
     def _expected_favor_breach_records(
         cls,
@@ -829,6 +896,13 @@ class ChannelRuntime:
         if not isinstance(observation_id, str) or not observation_id:
             raise ValueError("favor breach observation id is invalid")
         observation = cls._observation_from_payload(observation_payload)
+        if cls._favor_failure_evidence_arrived_too_late(
+            deal,
+            observation.turn,
+        ):
+            raise ValueError(
+                "first decisive favor observation arrived after the deadline"
+            )
         monitor = dict(deal.favor.monitor)
         monitor["current_observation_id"] = observation_id
         verification = verify_term(
@@ -1464,6 +1538,30 @@ class ChannelRuntime:
             payload,
         )
         reduced = self._reduce_persisted_event(self.state, event)
+        newly_claimed = self._newly_claimed_sources(self.state, reduced)
+        if newly_claimed or kind in {
+            "payment_fund_result",
+            "payment_response_result",
+        }:
+            unfinished = {
+                intent["source_id"]: (intent_kind, intent)
+                for intent_kind, intent in self._unfinished_payment_intents()
+            }
+            reserved_claims = newly_claimed & unfinished.keys()
+            if kind in {"payment_fund_result", "payment_response_result"}:
+                completed_source = self._matching_payment_result_source(
+                    kind,
+                    payload,
+                    unfinished,
+                )
+                if reserved_claims != {completed_source}:
+                    raise ValueError(
+                        "payment result must exclusively complete its reserved source"
+                    )
+            elif reserved_claims:
+                raise ValueError(
+                    "unfinished payment intent source is reserved for its result"
+                )
         encoded = (
             json.dumps(
                 event_to_dict(event),
@@ -2264,16 +2362,27 @@ class ChannelRuntime:
         if type(current_player_id) is not int:
             raise ValueError("current_player_id must be an integer")
         unfinished = self._unfinished_payment_intents()
+        acknowledged_sources = {
+            acknowledgement.source_id
+            for acknowledgement in self.state.acknowledgements
+        }
+        for _, intent in unfinished:
+            source_id = intent["source_id"]
+            if (
+                source_id in self.state.applied_source_ids
+                or source_id in acknowledged_sources
+            ):
+                raise ChannelStateError(
+                    "unfinished payment intent source is already applied or "
+                    "acknowledged"
+                )
         for _, intent in unfinished:
             if (
-                intent["source_id"] not in self.state.applied_source_ids
-                and intent["payee"] == current_player_id
+                intent["payee"] == current_player_id
                 and current_turn < intent["turn"]
             ):
                 raise ValueError("current turn precedes payment intent turn")
         for kind, intent in unfinished:
-            if intent["source_id"] in self.state.applied_source_ids:
-                continue
             if intent["payee"] != current_player_id:
                 continue
             try:
@@ -2984,11 +3093,10 @@ class ChannelRuntime:
             ):
                 continue
             due_turn = deal.favor_due_turn
-            persisted_violation = (
-                deal.favor.monitor.get("violation_observation_id") is not None
-                or deal.favor.baseline.get("initial_violation_turn") is not None
-            )
-            if observation.turn > due_turn and not persisted_violation:
+            if self._favor_failure_evidence_arrived_too_late(
+                deal,
+                observation.turn,
+            ):
                 self._make_unverifiable(
                     deal,
                     turn=observation.turn,
