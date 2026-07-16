@@ -1,20 +1,21 @@
 # Arena Unofficial Channels — Private Bilateral LLM↔LLM Deals & Grievances (Design)
 
-**Date:** 2026-07-09
-**Status:** Approved by riz (brainstorming session, this date) — design capture for a **deferred** slice
-**Predecessor:** Slice 4 (full toolset + era gating) merged at `b3540d8`; Attention & Turn-Skipping slice **merged to main 2026-07-09** at `7f1ac2c` (spec: `docs/superpowers/specs/2026-07-09-arena-attention-turn-skipping-design.md`; its live probes P1–P4 still pending and gate attention-enabled runs).
-**Sequencing:** This is the substance of roadmap item **A (LLM↔LLM interaction)**, which follows the attention slice in the D → A → C → B order. LLM↔LLM was explicitly *moved down*; this document captures the design and checks feasibility so it is ready when A comes up. It is **not** queued for immediate implementation.
-**Scope decision (this session):** Channels only. The **autonomous seat-0** prerequisite is a *separate* future brainstorm + live-gate plan — see Appendix A for the carried-forward findings. *(Update 2026-07-15: that seat-0 slice is now designed, implemented, and merged to main at `845ae09` — spec `2026-07-14-arena-seat0-piloting-design.md`; only its attended live gates remain. A is next in the roadmap once those gates pass.)*
+**Date:** 2026-07-09 · **Revised:** 2026-07-16 (delta review against post-seat-0 main + seat-0 participation + human web surface; riz-approved section-by-section)
+**Status:** ACTIVE — the next slice up. Original design approved by riz 2026-07-09; the 2026-07-16 revision re-verified every code claim, added the CLI captured-line entry path (Section 2), seat-0 participation (Section 8), the human web surface (Section 9), and the analyst view (Section 10).
+**Predecessor:** Slice 4 (full toolset + era gating) merged at `b3540d8`; Attention & Turn-Skipping merged at `7f1ac2c` with live probes P1–P4 **PASSED 2026-07-14** (`480fc8d`); Seat-0 Piloting merged at `845ae09` with all three attended live gates **PASSED 2026-07-15/16** under the full-LLM-control directive (spec: `docs/superpowers/specs/2026-07-14-arena-seat0-piloting-design.md`).
+**Sequencing:** This is the substance of roadmap item **A (LLM↔LLM interaction)** in the D → A → C → B order. Everything riz inserted ahead of A has shipped; this slice is **queued for implementation** (plan next).
+**Scope decision:** Channels **including seat-0 participation** — an LLM-piloted seat 0 participates natively; a human-controlled seat 0 participates through a run-dir queue + LAN web surface (Sections 8–9). The original channels-only carve-out of seat 0 is obsolete; Appendix A is retained as a historical record (superseded).
 
 ## Context & Motivation
 
 The arena runs one LLM per civ seat. Today those LLMs never talk to each other: each
 puppet turn is an isolated invocation whose prompt is assembled from a briefing +
 `memory_block` + `task_block` + a turn announcement (`build_opening_prompt`,
-`agent.py`), driven seat-by-seat by the coordinator (`coordinator.py`). Diplomacy, if
-it happens at all, happens only through the game's official channels (`propose_trade`,
-`send_diplomatic_action`, the World Congress) — all of which the game engine mediates
-and enforces.
+`prompting.py`), driven seat-by-seat by the coordinator (`coordinator.py`); since
+2026-07-15, seat 0 is played in place by an autonomous pilot through that same
+coordinator path. Diplomacy, if it happens at all, happens only through the game's
+official channels (`propose_trade`, `send_diplomatic_action`, the World Congress) —
+all of which the game engine mediates and enforces.
 
 The **unofficial channels** add a side-band the game engine knows nothing about: a civ
 can send another civ a free-text message and attach an *enforceable* structured deal
@@ -30,12 +31,14 @@ and — because unofficial grievances are invisible to the engine — wars that 
 
 ### Feasibility summary (verified against current code)
 
-- **The plumbing already exists three times over.** Per-civ persisted state injected
-  pre-turn and captured post-turn is exactly how `memory.py` (StandingMemory) and
-  `task_tracker.py` (TaskState) work — schema-versioned JSON under the run dir, formatted
-  into a prompt block by the coordinator (`coordinator.py:176-242`) and captured after the
-  turn (`:357`). The unofficial channel is a **fourth instance of that same pattern**; no
-  new architecture.
+- **The plumbing already exists four times over.** Per-civ persisted state injected
+  pre-turn and captured post-turn is exactly how `memory.py` (StandingMemory),
+  `task_tracker.py` (TaskState), and `attention.py` (AttentionState) work —
+  schema-versioned JSON under the run dir, formatted into a prompt block inside
+  `run_arena` (block assembly ~`coordinator.py:1066-1130`; post-turn capture at the
+  seat-0 ~`:1503` and played ~`:1707` sites — line numbers drift, anchor on symbols)
+  and injected via `build_opening_prompt` (`prompting.py`). The unofficial channel is a
+  **fifth instance of that same pattern**; no new architecture.
 - **No new game-engine coupling.** Payments ride the existing `propose_trade` tool; the
   game guarantees the transfer once accepted. Everything else is arena-side bookkeeping +
   prompt injection. Nothing writes to the game's grievance/diplomacy engine.
@@ -114,20 +117,44 @@ Persistence mirrors the existing modules: `load_channels`/`save_channels`, a
 `format_channel_block(player_id, ...)` that renders the civ's private inbox + active deals +
 standing grievances into a prompt block, and a `SCHEMA_VERSION` constant.
 
-## Section 2 — Tools
+## Section 2 — Entry Paths: Tools (API civs) & Captured Lines (CLI civs)
 
-New registry entries, gated per-civ through the same tier/`filter_tools` mechanism every
-other tool uses (`agent.py`). Each is a normal tool call and therefore consumes one step of
-the civ's `max_steps` turn budget.
+*(Revised 2026-07-16. The original tools-only design reached API-driven `LLMPolicy` civs
+but not CLI civs, whose tool surface is the real civ6 MCP server — `.mcp.json`,
+deny-lists, env-gated server-side stripping — not the arena registry. Both entry paths
+below converge on the same `channels.py` apply functions. API dispatch is in-process and
+sequential with the coordinator, and CLI lines are applied post-turn by the coordinator,
+so a single-writer discipline holds everywhere with zero locking.)*
+
+**API-driven civs — registry tools**, gated per-civ. Each is a normal tool call and
+therefore consumes one step of the civ's `max_steps` turn budget.
 
 - **`send_message(to_player, text, deal=None)`** — free prose, plus an optional structured
   `deal` term (`favor`, `payment`, `timing`, `deadline_turn`). Creates a Message row and,
   if `deal` is present, a Deal row in state `proposed`.
 - **`respond_to_deal(deal_id, accept|decline)`** — the recipient's handshake (J1). `accept`
   moves the deal to `active` and starts the obligation clock; `decline` closes it.
+- **Gating note (2026-07-16):** the `full` tier is `tuple(TOOL_REGISTRY)`, so channel
+  tools must be gated by the `channels` knob composed with the tier — never by tier
+  membership alone.
 
-The recipient's **inbox is auto-injected** into its opening prompt (like `memory_block` /
-`task_block`), so no explicit read tool is needed. New messages, active deals awaiting a
+**CLI civs (cli-claude / codex, including a CLI seat-0 pilot) — captured lines** in the
+final summary, applied post-turn by the coordinator: the exact `TASK:` / `SKIP:`
+precedent, riding the raw-summary path the attention slice pinned (the clamp-survival
+battle is pre-won). Three forms (exact grammar is plan-time):
+
+- `MSG to=<pid>: <text>`
+- `DEAL to=<pid> favor=<term>(<params>) pay=<gold> timing=<up_front|on_delivery> deadline=<turn>: <text>`
+- `DEAL ACCEPT <deal_id>` / `DEAL DECLINE <deal_id>`
+
+Malformed lines are dropped fail-open (a bad line never aborts capture) and echoed back in
+the civ's next channel block ("your DEAL line failed to parse: …") so the model can
+self-correct. CLI civs get no mid-turn validation feedback — accepted as the cost of zero
+new MCP-server surface.
+
+The recipient's **inbox is auto-injected** into its opening prompt as `channel_block`,
+slotted between `task_block` and `digest_block` in `build_opening_prompt`'s fixed ordering
+(`prompting.py`), so no explicit read tool is needed. New messages, active deals awaiting a
 response, deals the civ owes on, and standing grievances all render in that block.
 
 ## Section 3 — Payment & the Real Trade System
@@ -146,6 +173,8 @@ selects:
 
 The arena links a deal to its payment by observing the trade (exact observation mechanism —
 trade-log read vs. gold-delta — is an implementation detail for the plan, not a design fork).
+*(2026-07-16: since the seat-0 hardening wave, `get_pending_trades`/`respond_to_trade` live
+in **every** tier, so the payment leg is answerable even by minimal-tier civs.)*
 
 ## Section 4 — Lifecycle & Verification
 
@@ -183,12 +212,18 @@ to grow; free-text messages carry everything not yet in it.
   at (12,7)"; the offender sees "You owe Egypt a paid-for camp-kill; Egypt distrusts you." This
   is the entire behavioral lever — it drives retaliation, refusal of future deals, and the
   unprovoked-looking war. Nothing about a grievance is ever shown to a third party.
+  *(The read-only `/analyst` spectator route — Section 10 — is the sole out-of-band
+  exception, for the human experimenter, never for a civ.)*
 
 ## Section 6 — Agency, Config & Cost
 
 - Channel tools sit behind a per-civ **`channels` knob in the options fingerprint**
   (off/on), exactly like `memory` / `task_tracker` / `briefing`. Off by default; opt-in per
-  experiment.
+  experiment. *(2026-07-16: shape it as a nested options object with `enabled` + parameters
+  — decay `N`, per-pair caps — mirroring `attention`/`memory` in `CivOptions.fingerprint()`.
+  Seat 0 is a normal `players:` entry, so the knob applies to it unchanged; no
+  seat-0-specific validation is needed — `validate_arena_config`'s attention-off rule for
+  seat 0 is unrelated.)*
 - The playbook (`playbook.md`) gains a short section nudging civs to consider unofficial
   diplomacy when it serves their victory path.
 - Using the channel spends turn steps → real token cost (and, for `cli-claude`, real API
@@ -211,6 +246,69 @@ to grow; free-text messages carry everything not yet in it.
   real deal, since the `propose_trade` linkage and game-state verifiers can only be fully
   trusted against the real game.
 
+Additions (2026-07-16):
+
+- **Captured-line parser:** grammar accept/reject tests, malformed-line fail-open + echo,
+  clamp survival on the raw-summary path.
+- **Queue application:** ordering, malformed entries, ack round-trip into the rendered view.
+- **Web backend:** scoped rendering, SSE snapshot shape, POST validation, token check —
+  all offline via a test client.
+- **Privacy extension:** the privacy property above extends to the human surfaces —
+  default-route output and the seat-0 view file must be subsets of seat-0's scoped rows
+  (Section 10).
+- **Live gate addition:** one human send/respond round-trip through the web page during an
+  attended run.
+
+## Section 8 — Seat-0 Participation (added 2026-07-16)
+
+**LLM-piloted seat 0: free by construction.** Puppet turns and seat-0 admissions share one
+coordinator path — the same code builds `memory_block`/`task_block` (and now
+`channel_block`) for whichever seat is played. Seat 0 is a normal `players:` entry, so the
+`channels` knob on its `CivOptions` just works: a CLI pilot uses captured lines, an API
+pilot uses the registry tools. Deal verifiers are player-agnostic; deals with seat 0
+verify identically.
+
+**Human-controlled seat 0** (no pilot configured, or a turn left in human-pending): the
+coordinator still owns all channel state — deadlines, verification, and grievances tick
+regardless of who plays seat 0.
+
+- Seat-0's **scoped** view renders to `channels/seat0_view.md` under the run dir on every
+  state change, plus a console notice line.
+- Human actions (send / accept / decline) enter through an append-only
+  `channels/seat0_queue.jsonl`; the coordinator applies queued actions at its next poll and
+  acknowledges each applied action back into the view file.
+- "Next poll" latency is consistent with the async message-passing model (Non-Goals) — no
+  special timing semantics for humans.
+
+## Section 9 — Human Web Surface (added 2026-07-16)
+
+A new small module (`channels_web.py`) run as a **separate process** — spawnable via a
+watcher CLI flag (`--channels-web[=PORT]`) or standalone — whose entire contract with the
+arena is the two Section-8 files: it reads channel state to render, and appends to the
+queue to act. It can never race the coordinator or touch live turn piloting (a wedged
+request handler is invisible to the run).
+
+- One self-contained page, inline HTML/JS — deliberately **not** part of the `web/` bun
+  toolchain: that app is the Convex-backed public showcase, and live private control
+  traffic stays off it and off the cloud.
+- `GET /` (page), `GET /events` (SSE; server-side ~1s mtime poll of the state file —
+  channel traffic is turn-paced, so this is genuinely realtime), `POST /send`,
+  `POST /respond` (validate → append to queue).
+- Binds LAN-visible with an optional bearer-token env var. A `brothereye.net` hostname via
+  Caddy (plus Cloudflare Access if desired) is a one-line mapping in the brothereye repo,
+  not here.
+- The queue-file format is the contract, so a trivial CLI send/respond fallback stays
+  nearly free (plan decides whether it ships in v1).
+
+## Section 10 — Analyst View & Privacy Extension (added 2026-07-16)
+
+The default page serves **only seat-0's scoped view** — tenet #4 extends to the
+human-as-player. A separate read-only **`/analyst`** route exposes the full ledger (all
+messages, deals, grievances) for *spectating* LLM-piloted runs, with a documented caveat:
+opening it while playing seat 0 makes you an omniscient player and contaminates the run.
+The privacy property test covers both: default-route output and the view file must be
+subsets of seat-0's scoped rows; only `/analyst` may exceed them.
+
 ## Non-Goals
 
 - **No writes to the game's grievance/diplomacy engine** (tenet #1). Unofficial grievances
@@ -219,10 +317,12 @@ to grow; free-text messages carry everything not yet in it.
 - **No shadow economy.** Gold moves only through real trades; the arena does not track a
   parallel currency.
 - **No free-text adjudication in v1.** Only structured terms are verifiable; prose is talk.
-- **No autonomous seat 0** (out of scope this session — Appendix A).
+- ~~**No autonomous seat 0**~~ — *obsolete 2026-07-16*: seat 0 is autonomous (merged
+  `845ae09`) and a first-class channel participant (Section 8).
 - **No synchronous, same-round negotiation.** Turns are sequential; v1 is asynchronous
-  message-passing (a reply lands when the recipient next plays). Real-time bargaining is a
-  later concern and is entangled with the seat-0 work.
+  message-passing (a reply lands when the recipient next plays; human seat-0 actions land
+  on the coordinator's next poll). Real-time bargaining remains a later concern — now a
+  pure simplicity choice, no longer entangled with seat-0 work (shipped).
 
 ## Open Items (for plan time)
 
@@ -233,10 +333,22 @@ to grow; free-text messages carry everything not yet in it.
 - Whether declined/expired deals leave any trace (a soft "they wouldn't deal" signal) or vanish.
 - Playbook wording and whether channel use should be nudged or purely emergent for a cleaner
   research signal.
+- *(2026-07-16)* Exact captured-line grammar (params encoding, deal-id format) and where the
+  parser lives.
+- *(2026-07-16)* `seat0_queue.jsonl` entry schema + ack format.
+- *(2026-07-16)* Web defaults: bind address/port, token env name, SSE poll interval; whether
+  the CLI fallback ships in v1.
 
 ---
 
 ## Appendix A — Carried-forward findings: Autonomous seat 0 (separate future spec)
+
+> **SUPERSEDED 2026-07-16.** The seat-0 piloting slice shipped: merged `845ae09`, all three
+> attended live gates passed 2026-07-15/16 (spec
+> `docs/superpowers/specs/2026-07-14-arena-seat0-piloting-design.md`). `hook.py` now has an
+> `end_turn` builder; the coordinator owns turn-end with a blocker sweep, phase machine, and
+> human-pending fallback; the restore-to-self loop is fixed (seat 0 is played in place).
+> Everything below is a historical record of the pre-seat-0 world.
 
 riz wants LLM-controlled seat 0 (fully autonomous, no human in the loop). That is a **separate
 brainstorm + live-gate plan**, not part of this slice, because it is live-Lua turn-mechanics
