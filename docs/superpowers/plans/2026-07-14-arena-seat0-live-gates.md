@@ -75,7 +75,7 @@ files. They were inspected read-only and left untouched.
 |---|---|---|---|
 | Scripted mixed-seat | `seat0-scripted-20260715` | **PASS 2026-07-15** | `arena_runs/seat0-scripted-20260715/{transcript.jsonl,report.md}`. 8 seat-zero turns (T1–T8), all `played`/`advanced`, 1 end-turn request each, 0 blockers, 0 repairs; autosaves `0_MCP_0001`–`0_MCP_0008` adopted. Driver mix `scripted=8, in_process=16`. Exit 0 on budget exhaustion (24 slots). |
 | LLM seat zero | `seat0-llm-20260715` | **PASS 2026-07-15** | `arena_runs/seat0-llm-20260715/{transcript.jsonl,report.md}`. 12 cli-claude seat-zero turns (T9–T20), all `played`/`advanced`, 1 end-turn request each, 0 repairs, 0 failed turns; autosaves `0_MCP_0009`–`0_MCP_0020` adopted. T18–T20 each hit `ENDTURN_BLOCKING_UNITS`, cleared by mechanical `finish_units` cleanup (post-cleanup snapshots empty, no refire). Driver mix `cli=12, in_process=24`. Cost $9.73. |
-| Hard-block human escape | none | BLOCKED — NOT EXERCISED | No save exposing an unsupported blocker was available; no blocker was fabricated. |
+| Hard-block human escape → full-LLM-control autonomy (redefined per riz 2026-07-15: "blockers should only be things the llm literally cannot do itself") | `seat0-hardblock-20260715-leg1b/leg2/leg3b/leg4` | **PASS 2026-07-15** | Late-game attended save (Korea T298+, 12 civs, Modern era). Escape hatch proven live twice BEFORE the autonomy gaps were closed: leg1b T301 (quiet non-advance) and leg2 T303 (WC bounce) both terminalized `human_pending` with CRITICAL logs and clean waits. Each escalation was then converted into automation (diplomacy-wedge pass, guarded refire, WC gate + resume-submit, mechanical spy escape/governor idle) — final leg4: 8/8 turns T306–T313 `played`/`advanced`, 1 end request each, **5 live diplomacy-wedge saves** (AI deals from Poland/Egypt/Ethiopia answered by the pilot on attempt 1), 0 human escalations, $18.67. Also recovered live: T306 Macedon AI hard-hang via `0_MCP_0306` Lua load (drain deadline CRITICAL + `turn_kind=failed` recorded correctly; loader bugs fixed in `0c72cca`). |
 
 ### Seat-zero turn records
 
@@ -99,6 +99,7 @@ and blocker snapshots are recorded in the run transcripts listed above (grep
 3. For the human-escape gate, an attended real save/state exposing an unsupported
    blocker such as `ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE`.
 
-Gates 1 and 2 passed on 2026-07-15 (see Gate status). Only the hard-block
-human-escape gate still requires the state in item 3 above; items 1–2 are
-satisfied (main at `bf56e6f` on the gaming PC, game live with tuner).
+All three gates passed on 2026-07-15 (see Gate status). Gate 3 was redefined
+mid-day under riz's full-LLM-control directive and passed at main `0c72cca`
+after four fix waves driven by live escalations (deal wedge, guarded refire,
+WC gate, resume-congress submit, load_game_save Lua tier).
