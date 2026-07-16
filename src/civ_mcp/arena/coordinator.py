@@ -436,6 +436,23 @@ def _channel_finish_input(*policy_results: dict | None) -> dict:
     }
 
 
+def _public_channel_summary(summary) -> str:
+    """Remove private protocol records from a public summary copy.
+
+    The channel parser owns whole lines beginning with the exact ``CHANNEL ``
+    prefix, including malformed attempts.  Keep every surrounding prose line
+    in source order.  Callers use this only for channel-enabled seat-0 public
+    records/logs; the original policy result remains untouched for the private
+    finish capture.
+    """
+
+    if not isinstance(summary, str):
+        return ""
+    return "\n".join(
+        line for line in summary.splitlines() if not line.startswith("CHANNEL ")
+    )
+
+
 async def run_arena(
     conn,
     gs,
@@ -510,6 +527,10 @@ async def run_arena(
     # capture variables so a later puppet/player cannot replace its private
     # context or policy-result stream before the turn is terminalized.
     seat0_channel_capture: dict | None = None
+    seat0_channel_admission_attempts: set[int] = set()
+    seat0_channel_errors: dict[int, str] = {}
+    channel_reconciled_key: tuple[int, int] | None = None
+    channel_reconcile_error = ""
 
     def _seat0_capture_for(turn: int) -> dict | None:
         capture = seat0_channel_capture
@@ -563,7 +584,98 @@ async def run_arena(
                 file=sys.stderr,
             )
         finally:
+            seat0_channel_admission_attempts.discard(capture["turn"])
+            seat0_channel_errors.pop(capture["turn"], None)
             seat0_channel_capture = None
+
+    async def ensure_seat0_channel_capture(turn: int) -> dict | None:
+        """Admit one persistent private capture before any seat-0 policy pass.
+
+        Idle diplomacy can run before the normal seat-0 state-machine
+        admission, while repair/WC/drain passes can run afterward.  This seam
+        gives all of them the same context and one finish.  Reconciliation and
+        admission failures are fail-open: the policy pass still runs without
+        private kwargs, and a later public record carries counts/error only.
+        """
+
+        nonlocal seat0_channel_capture, channel_reconciled_key
+        nonlocal channel_reconcile_error
+        capture = _seat0_capture_for(turn)
+        if capture is not None:
+            return capture
+        if 0 not in enabled_channel_players or channel_runtime is None:
+            return None
+        if seat0_channel_capture is not None:
+            await _finish_seat0_channel_capture()
+        if turn in seat0_channel_admission_attempts:
+            return None
+        if channel_reconciled_key == (turn, 0) and channel_reconcile_error:
+            seat0_channel_errors[turn] = channel_reconcile_error
+            return None
+        if channel_reconciled_key != (turn, 0):
+            try:
+                await channel_runtime.reconcile_payment_intents(
+                    gs,
+                    current_turn=turn,
+                    current_player_id=0,
+                )
+                channel_reconciled_key = (turn, 0)
+                channel_reconcile_error = ""
+            except Exception as e:
+                error = repr(e)
+                channel_reconciled_key = (turn, 0)
+                channel_reconcile_error = error
+                seat0_channel_errors[turn] = error
+                print(
+                    f"[arena] channel payment reconciliation failed before "
+                    f"seat 0 turn {turn}: {e!r}",
+                    file=sys.stderr,
+                )
+                log.append({
+                    "event": "channel_error",
+                    "stage": "reconcile",
+                    "turn": turn,
+                    "player_id": 0,
+                    "error": error,
+                })
+                return None
+        seat0_channel_admission_attempts.add(turn)
+        try:
+            admission = await channel_runtime.admit_player(gs, 0, turn)
+        except Exception as e:
+            error = repr(e)
+            seat0_channel_errors[turn] = error
+            print(
+                f"[arena] channel admission failed for seat 0 turn "
+                f"{turn}: {e!r}",
+                file=sys.stderr,
+            )
+            return None
+        pol = policy_for(0)
+        policy_kwargs = {
+            name: value
+            for name, value in (
+                ("channel_context", admission.context),
+                ("channel_block", admission.block),
+                ("master_block", ""),
+            )
+            if _policy_accepts_kwarg(pol, name)
+        }
+        fields = {
+            "enabled": True,
+            "acknowledgements": 0,
+            "error": seat0_channel_errors.get(turn, ""),
+        }
+        seat0_channel_capture = {
+            "player_id": 0,
+            "turn": turn,
+            "admission": admission,
+            "policy_kwargs": policy_kwargs,
+            "policy_results": [],
+            "fields": fields,
+            "finished": False,
+        }
+        return seat0_channel_capture
 
     try:
         await hook.inject(conn, sorted(puppet_ids))
@@ -600,6 +712,13 @@ async def run_arena(
                 await hook.disable(conn)
                 hook_enabled = False
 
+        def _write_seat0_record_once() -> None:
+            if seat0_state.record is None or seat0_state.record_written:
+                return
+            if _tx_on:
+                transcript.write(seat0_state.record)
+            seat0_state.record_written = True
+
         async def _terminalize_seat0_advanced() -> None:
             """Write the pending seat-0 record exactly once with terminal
             `advanced`, count the played turn, and reset for the next
@@ -608,14 +727,18 @@ async def run_arena(
             nonlocal seat0_played
             await _finish_seat0_channel_capture()
             if seat0_state.record is not None and not seat0_state.record_written:
-                seat0_state.record["seat0"]["terminal_state"] = "advanced"
-                seat0_state.record["seat0"]["end_turn_requests"] = (
-                    seat0_state.end_turn_requests
-                )
-                if _tx_on:
-                    transcript.write(seat0_state.record)
-                seat0_state.record_written = True
-                seat0_played += 1
+                if (
+                    seat0_state.record["seat0"]["terminal_state"]
+                    != "human_pending"
+                ):
+                    seat0_state.record["seat0"]["terminal_state"] = "advanced"
+                    seat0_state.record["seat0"]["end_turn_requests"] = (
+                        seat0_state.end_turn_requests
+                    )
+                    seat0_played += 1
+                _write_seat0_record_once()
+            seat0_channel_admission_attempts.discard(seat0_state.turn)
+            seat0_channel_errors.pop(seat0_state.turn, None)
             seat0_state.reset()
 
         async def _terminalize_seat0_regressed(*, observed_turn: int) -> None:
@@ -630,15 +753,19 @@ async def run_arena(
             await _finish_seat0_channel_capture()
             regressed_from = seat0_state.turn
             if seat0_state.record is not None and not seat0_state.record_written:
-                seat0_state.record["turn_kind"] = "failed"
-                seat0_state.record["seat0"]["terminal_state"] = "regressed"
-                seat0_state.record["seat0"]["end_turn_requests"] = (
-                    seat0_state.end_turn_requests
-                )
-                if _tx_on:
-                    transcript.write(seat0_state.record)
-                seat0_state.record_written = True
-                seat0_failed += 1
+                if (
+                    seat0_state.record["seat0"]["terminal_state"]
+                    != "human_pending"
+                ):
+                    seat0_state.record["turn_kind"] = "failed"
+                    seat0_state.record["seat0"]["terminal_state"] = "regressed"
+                    seat0_state.record["seat0"]["end_turn_requests"] = (
+                        seat0_state.end_turn_requests
+                    )
+                    seat0_failed += 1
+                _write_seat0_record_once()
+            seat0_channel_admission_attempts.discard(seat0_state.turn)
+            seat0_channel_errors.pop(seat0_state.turn, None)
             log.append({
                 "level": "CRITICAL",
                 "event": "seat0_turn_regressed",
@@ -658,20 +785,21 @@ async def run_arena(
             normal_error: str, repair_error: str,
         ) -> None:
             """Terminalize an admitted seat-0 turn that the pilot could not
-            finish: transition to `human_pending`, fill and write the record
-            exactly once, emit exactly one structured CRITICAL event, and hand
-            local seat 0 to the human untouched. Chooses NO strategic default —
-            the unresolved blockers are left for the human to decide."""
+            finish: transition to `human_pending`, fill and stage the record,
+            emit exactly one structured CRITICAL event, and hand local seat 0
+            to the human untouched. An active channel capture is finished
+            before the staged record is serialized; a disabled/no-admission
+            turn retains the immediate pre-channel write ordering. Chooses NO
+            strategic default — the unresolved blockers are left for the
+            human to decide."""
             nonlocal seat0_pending, seat0_failed
             seat0_state.mark_human_pending()
             record["turn_kind"] = turn_kind
             record["seat0"]["terminal_state"] = "human_pending"
             record["seat0"]["end_turn_requests"] = seat0_state.end_turn_requests
             seat0_state.record = record
-            if not seat0_state.record_written:
-                if _tx_on:
-                    transcript.write(record)
-                seat0_state.record_written = True
+            if _seat0_capture_for(turn) is None:
+                _write_seat0_record_once()
             if seat0_state.mark_critical_emitted():
                 blocker_types = [b["type"] for b in blockers]
                 log.append({
@@ -781,7 +909,10 @@ async def run_arena(
                     "policy does not accept required blocker_block keyword"
                 )
                 return None, None
-            if channel_kwargs:
+            if 0 in enabled_channel_players:
+                await ensure_seat0_channel_capture(turn)
+                repair_kwargs.update(_seat0_channel_policy_kwargs(turn))
+            elif channel_kwargs:
                 repair_kwargs.update(channel_kwargs)
             repair["attempted"] = True
             if exclusive and conn.is_connected:
@@ -800,7 +931,12 @@ async def run_arena(
                                 "skipped": True, "repair_error": timeout_error})
                 else:
                     repair["completed"] = True
-                    repair["summary"] = (repair_result or {}).get("summary", "")
+                    repair_summary = (repair_result or {}).get("summary", "")
+                    repair["summary"] = (
+                        _public_channel_summary(repair_summary)
+                        if 0 in enabled_channel_players
+                        else repair_summary
+                    )
             except Exception as e:
                 repair["error"] = repr(e)
                 print(f"[arena] seat-0 turn {turn} repair failed: {e!r}",
@@ -870,6 +1006,7 @@ async def run_arena(
                 )
                 log.append(entry)
                 return False
+            await ensure_seat0_channel_capture(turn)
             kwargs.update(_seat0_channel_policy_kwargs(turn))
             exclusive = bool(getattr(pol, "needs_exclusive_tuner", False))
             if exclusive and conn.is_connected:
@@ -882,7 +1019,12 @@ async def run_arena(
                     entry["error"] = timeout_error
                 else:
                     entry["completed"] = True
-                    entry["summary"] = (result or {}).get("summary", "")
+                    summary = (result or {}).get("summary", "")
+                    entry["summary"] = (
+                        _public_channel_summary(summary)
+                        if 0 in enabled_channel_players
+                        else summary
+                    )
                     print(f"[arena] seat-0 diplomacy pass completed on turn "
                           f"{turn} (sessions {sessions}, attempt "
                           f"{diplo_attempts})", file=sys.stderr)
@@ -964,7 +1106,10 @@ async def run_arena(
                     "policy does not accept required blocker_block keyword"
                 )
             else:
-                if channel_kwargs:
+                if 0 in enabled_channel_players:
+                    await ensure_seat0_channel_capture(turn)
+                    kwargs.update(_seat0_channel_policy_kwargs(turn))
+                elif channel_kwargs:
                     kwargs.update(channel_kwargs)
                 exclusive = bool(getattr(pol, "needs_exclusive_tuner", False))
                 if exclusive and conn.is_connected:
@@ -976,7 +1121,12 @@ async def run_arena(
                         entry["error"] = timeout_error
                     else:
                         entry["completed"] = True
-                        entry["summary"] = (result or {}).get("summary", "")
+                        summary = (result or {}).get("summary", "")
+                        entry["summary"] = (
+                            _public_channel_summary(summary)
+                            if 0 in enabled_channel_players
+                            else summary
+                        )
                 except Exception as e:
                     entry["error"] = repr(e)
                 if exclusive and not conn.is_connected:
@@ -1145,6 +1295,11 @@ async def run_arena(
         # drain (end fired / AI processing) is never aborted by them.
         while deadline_polls > 0 and (admission_open() or seat0_state.needs_drain):
             st = await hook.poll(conn)
+            if st.turn >= 0:
+                for attempted_turn in tuple(seat0_channel_admission_attempts):
+                    if attempted_turn != st.turn:
+                        seat0_channel_admission_attempts.discard(attempted_turn)
+                        seat0_channel_errors.pop(attempted_turn, None)
             # Close the prior seat-0 capture before any channel runtime work is
             # attributed to a newly observed game turn.  The state-machine
             # terminalizer below remains the authoritative record/reset seam;
@@ -1157,6 +1312,8 @@ async def run_arena(
             ):
                 await _finish_seat0_channel_capture()
             poll_channel_error = ""
+            channel_reconciled_key = None
+            channel_reconcile_error = ""
             if channel_runtime is not None and st.turn >= 0:
                 try:
                     await channel_runtime.reconcile_payment_intents(
@@ -1164,8 +1321,11 @@ async def run_arena(
                         current_turn=st.turn,
                         current_player_id=st.local,
                     )
+                    channel_reconciled_key = (st.turn, st.local)
                 except Exception as e:
                     poll_channel_error = repr(e)
+                    channel_reconciled_key = (st.turn, st.local)
+                    channel_reconcile_error = poll_channel_error
                     print(
                         f"[arena] channel payment reconciliation failed: {e!r}",
                         file=sys.stderr,
@@ -1324,7 +1484,20 @@ async def run_arena(
                     "acknowledgements": 0,
                     "error": channel_error,
                 }
-                if (
+                if is_seat0 and channel_turn_enabled:
+                    capture = await ensure_seat0_channel_capture(st.turn)
+                    if capture is not None:
+                        channel_admission = capture["admission"]
+                        channel_fields_state = capture["fields"]
+                        channel_error = channel_fields_state["error"]
+                    else:
+                        channel_error = (
+                            seat0_channel_errors.get(st.turn)
+                            or channel_runtime_error
+                            or poll_channel_error
+                        )
+                        channel_fields_state["error"] = channel_error
+                elif (
                     channel_turn_enabled
                     and channel_runtime is not None
                     and not poll_channel_error
@@ -1340,22 +1513,7 @@ async def run_arena(
                             f"{st.local} turn {st.turn}: {e!r}",
                             file=sys.stderr,
                         )
-                channel_fields_state["error"] = channel_error
-                if is_seat0 and channel_admission is not None:
-                    # A previous seat-0 capture must have been finalized by its
-                    # terminal/reset seam.  Fail safely if a future state-machine
-                    # change ever reaches admission with one still present.
-                    if seat0_channel_capture is not None:
-                        await _finish_seat0_channel_capture()
-                    seat0_channel_capture = {
-                        "player_id": 0,
-                        "turn": st.turn,
-                        "admission": channel_admission,
-                        "policy_kwargs": {},
-                        "policy_results": [],
-                        "fields": channel_fields_state,
-                        "finished": False,
-                    }
+                    channel_fields_state["error"] = channel_error
 
                 async def _finish_channel_turn(policy_result) -> None:
                     nonlocal channel_acknowledgements, channel_error, channel_finished
@@ -1701,6 +1859,8 @@ async def run_arena(
                             "terminal_state": "",
                         },
                     }
+                    if channel_turn_enabled:
+                        seat0_state.record["channels"] = _channel_fields()
 
                     # --- Normal attempt (tuner already released if exclusive). --
                     normal_result = None
@@ -1805,7 +1965,11 @@ async def run_arena(
                             pol, st.turn, channel_kwargs=channel_policy_kwargs
                         )
                     merged = seat0.merge_policy_attempts(normal_result, repair_result)
-                    payload = merged["transcript"]
+                    payload = dict(merged["transcript"])
+                    if channel_turn_enabled:
+                        payload["final_summary"] = _public_channel_summary(
+                            payload.get("final_summary", "")
+                        )
                     _pol_backend = getattr(pol, "backend", None)
 
                     # Standing-plan / task capture from the completed turn's
@@ -1882,13 +2046,25 @@ async def run_arena(
                             "seat0": {
                                 "normal": {
                                     "completed": normal_returned,
-                                    "summary": (normal_result or {}).get("summary", ""),
+                                    "summary": (
+                                        _public_channel_summary(
+                                            (normal_result or {}).get("summary", "")
+                                        )
+                                        if channel_turn_enabled
+                                        else (normal_result or {}).get("summary", "")
+                                    ),
                                     "error": normal_error,
                                 },
                                 "repair": {
                                     "attempted": repair_attempted,
                                     "completed": repair_returned,
-                                    "summary": (repair_result or {}).get("summary", ""),
+                                    "summary": (
+                                        _public_channel_summary(
+                                            (repair_result or {}).get("summary", "")
+                                        )
+                                        if channel_turn_enabled
+                                        else (repair_result or {}).get("summary", "")
+                                    ),
                                     "error": repair_error,
                                 },
                                 "blocker_snapshots": blocker_snapshots,
@@ -2250,6 +2426,7 @@ async def run_arena(
                             )
                         if human_polls >= config.seat0_human_pending_poll_limit:
                             await _finish_seat0_channel_capture()
+                            _write_seat0_record_once()
                             log.append({
                                 "level": "CRITICAL",
                                 "event": "seat0_human_pending_deadline",
@@ -2297,6 +2474,23 @@ async def run_arena(
                             break
                     continue
                 if (
+                    0 in enabled_channel_players
+                    and seat0_spec is not None
+                    and st.turn >= 0
+                    and not st.seat0_active
+                    and admission_open()
+                    and (idle_streak + 1) % SEAT0_DIPLO_IDLE_POLLS == 0
+                ):
+                    # A channel-enabled idle diplomacy pass is itself seat-0
+                    # policy work. Admit its persistent capture before an
+                    # unseated observation so the turn gets exactly one
+                    # private pre/post bracket shared with a later normal or
+                    # drain pass.
+                    if await _seat0_diplomacy_pass_if_wedged(st.turn):
+                        idle_streak = 0
+                        deadline_polls = config.idle_poll_limit
+                        continue
+                if (
                     channel_runtime is not None
                     and st.turn >= 0
                     and not poll_channel_error
@@ -2332,6 +2526,7 @@ async def run_arena(
                 idle_streak += 1
                 if (
                     seat0_spec is not None
+                    and 0 not in enabled_channel_players
                     and st.turn >= 0
                     and not st.seat0_active
                     and admission_open()
@@ -2401,14 +2596,15 @@ async def run_arena(
         record_interrupt = None
         if seat0_state.record is not None and not seat0_state.record_written:
             try:
-                seat0_state.mark_interrupted()
-                # The turn's outcome never materialized (mirrors `regressed`):
-                # an interrupted turn must not be counted as a played turn by
-                # analyze(), nor double-count with the replay after recovery.
-                seat0_state.record["turn_kind"] = "failed"
                 _s0 = seat0_state.record["seat0"]
-                _s0["terminal_state"] = "interrupted"
-                _s0["end_turn_requests"] = seat0_state.end_turn_requests
+                if _s0["terminal_state"] != "human_pending":
+                    seat0_state.mark_interrupted()
+                    # The turn's outcome never materialized (mirrors
+                    # `regressed`): an interrupted turn must not be counted as
+                    # played by analyze(), nor double-count with recovery.
+                    seat0_state.record["turn_kind"] = "failed"
+                    _s0["terminal_state"] = "interrupted"
+                    _s0["end_turn_requests"] = seat0_state.end_turn_requests
                 if _tx_on:
                     transcript.write(seat0_state.record)
                 seat0_state.record_written = True

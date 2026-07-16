@@ -2335,6 +2335,18 @@ class EventSink(FakeSink):
         super().write(record)
 
 
+class SnapshotEventSink(EventSink):
+    """Models the real JSONL sink by freezing a record at write time."""
+
+    def write(self, record):
+        import copy
+
+        self._harness.events.append(
+            ("record", record.get("player_id"), record.get("turn"))
+        )
+        self.records.append(copy.deepcopy(record))
+
+
 def _seat0_cfg(tmp_path, *, players=None, run_id="seat0-run", **kwargs):
     kwargs.setdefault("max_puppet_turns", 1)
     kwargs.setdefault("idle_poll_limit", 8)
@@ -5713,6 +5725,114 @@ async def test_seat0_wc_pass_reuses_admission_before_channel_finish(
 
 
 @pytest.mark.asyncio
+async def test_seat0_idle_diplomacy_admits_once_then_normal_reuses_private_capture(
+    monkeypatch, tmp_path
+):
+    """A pre-admission idle diplomacy pass is the first coordinator-owned
+    policy call for seat 0, so it must establish the one channel capture before
+    the call.  A later normal turn reuses it and finish receives both raw
+    outputs plus the committed trade audit without a poll_unseated observation
+    on the admission poll."""
+    from civ_mcp.arena.channel_terms import normalize_action_audit
+    from civ_mcp.arena.config import ChannelOptions
+
+    monkeypatch.setattr(coordinator_mod, "SEAT0_DIPLO_IDLE_POLLS", 1)
+    harness = Seat0Harness(
+        monkeypatch,
+        [
+            seat0_poll(7, active=False),
+            seat0_poll(7, active=True),
+            seat0_poll(7, active=False),
+            seat0_poll(8, active=True),
+        ],
+    )
+    sessions = _AnsweringSessions("2#5")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    canary = "PRIVATE-IDLE-DIPLOMACY-CANARY"
+    diplomacy_raw = (
+        "diplomacy completed\n"
+        'CHANNEL {"action":"send_message","to_player":2,'
+        f'"text":"{canary}"}}'
+    )
+    normal_raw = (
+        "normal completed\n"
+        'CHANNEL {"action":"send_message","to_player":2,'
+        f'"text":"{canary}-normal"}}'
+    )
+    behaviors = [
+        {
+            "summary": diplomacy_raw,
+            "actions": [],
+            "transcript": {
+                "steps": [
+                    {
+                        "tool_name": "respond_to_trade",
+                        "tool_args": {"other_player_id": 2, "accept": True},
+                        "tool_result_full": "OK:DEAL_ACCEPTED|Rome",
+                    }
+                ],
+                "final_summary": diplomacy_raw,
+            },
+        },
+        {
+            "summary": normal_raw,
+            "actions": [],
+            "transcript": {"steps": [], "final_summary": normal_raw},
+        },
+    ]
+
+    class IdleThenNormalPolicy(Seat0ScriptPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            result = await super().__call__(gs, player_id, turn, **kwargs)
+            if "PENDING DIPLOMACY" in kwargs.get("blocker_block", ""):
+                sessions.value = ""
+            return result
+
+    policy = IdleThenNormalPolicy(harness, behaviors, options=options)
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-idle-first",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    sink = SnapshotEventSink(harness)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-idle-first",
+        idle_poll_limit=20,
+    )
+
+    result = await run_arena(
+        Seat0CapsConn(), FakeGS(), config, policy=policy, transcript=sink
+    )
+
+    assert [call[:2] for call in policy.calls] == [(0, 7), (0, 7)]
+    for name in ("channel_context", "channel_block", "master_block"):
+        if name == "channel_context":
+            assert policy.calls[0][2][name] is policy.calls[1][2][name]
+        else:
+            assert policy.calls[0][2][name] == policy.calls[1][2][name]
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    assert "poll:0:7" not in runtime.calls
+    private_result = runtime.finish_results[0]
+    assert private_result["transcript"]["final_summary"] == (
+        diplomacy_raw + "\n" + normal_raw
+    )
+    assert [a.tool_name for a in normalize_action_audit(
+        private_result, actor=0, turn=7
+    )] == ["respond_to_trade"]
+    assert canary not in repr(result["log"])
+    assert canary not in repr(sink.records)
+    assert result["seat0_turns_played"] == 1
+
+
+@pytest.mark.asyncio
 async def test_seat0_delayed_recheck_repair_stays_in_one_private_channel_capture(
     monkeypatch, tmp_path
 ):
@@ -5738,10 +5858,21 @@ async def test_seat0_delayed_recheck_repair_stays_in_one_private_channel_capture
     _wc_env(monkeypatch, harness, handler_results=[False, True], status=None)
     options = CivOptions(channels=ChannelOptions(enabled=True))
     labels = ("normal", "wc", "recheck")
+    canary = "PRIVATE-AUXILIARY-SUMMARY-CANARY"
 
     def policy_result(label, target):
+        raw_summary = (
+            f"{label} public note\n"
+            "CHANNEL "
+            f'{{"action":"send_message","to_player":2,'
+            f'"text":"{canary}-{label}"}}\n'
+            f"CHANNEL malformed-{canary}-{label}"
+        )
         return {
-            "summary": f"{label} public summary",
+            # Real adapters derive this top-level summary from the same final
+            # text, so both copies intentionally carry the private protocol
+            # lines.  Only the private finish input may retain them.
+            "summary": raw_summary,
             "actions": [],
             "transcript": {
                 "steps": [
@@ -5754,11 +5885,7 @@ async def test_seat0_delayed_recheck_repair_stays_in_one_private_channel_capture
                         "tool_result_full": f"OK:PROPOSED|{label}",
                     }
                 ],
-                "final_summary": (
-                    "CHANNEL "
-                    f'{{"action":"send_message","to_player":2,'
-                    f'"text":"{label}-raw"}}'
-                ),
+                "final_summary": raw_summary,
             },
         }
 
@@ -5837,8 +5964,14 @@ async def test_seat0_delayed_recheck_repair_stays_in_one_private_channel_capture
     assert names.index("finish:0:7") < names.index("record")
     assert names.count("end_turn") == 2
     assert result["seat0_turns_played"] == 1
-    # Recheck-only private material never mutates the public seat-0 transcript.
-    assert "recheck-raw" not in sink.records[0]["final_summary"]
+    assert canary in private_result["transcript"]["final_summary"]
+    # Parseable and malformed protocol lines from normal, WC, and delayed
+    # repair stay private; public prose survives in record/log summaries.
+    assert canary not in repr(sink.records)
+    assert canary not in repr(result["log"])
+    assert sink.records[0]["final_summary"] == "normal public note"
+    assert sink.records[0]["seat0"]["normal"]["summary"] == "normal public note"
+    assert sink.records[0]["seat0"]["repair"]["summary"] == "recheck public note"
 
 
 @pytest.mark.asyncio
@@ -6030,9 +6163,11 @@ async def test_seat0_human_pending_deadline_finishes_active_channel_capture_once
     runtime = FakeChannelRuntime(
         run_id="seat0-channel-human-pending",
         enabled_players=frozenset({0, 2}),
+        acknowledgements=2,
         events=harness.events,
     )
     _patch_channel_open(monkeypatch, runtime)
+    sink = SnapshotEventSink(harness)
     config = _seat0_cfg(
         tmp_path,
         players=[
@@ -6043,13 +6178,23 @@ async def test_seat0_human_pending_deadline_finishes_active_channel_capture_once
         seat0_human_pending_poll_limit=2,
     )
 
-    result = await run_arena(Seat0CapsConn(), FakeGS(), config, policy=policy)
+    result = await run_arena(
+        Seat0CapsConn(), FakeGS(), config, policy=policy, transcript=sink
+    )
 
     assert result["seat0_human_pending"] == 1
     assert runtime.calls.count("admit:0:7") == 1
     assert runtime.calls.count("finish:0:7") == 1
     names = harness.names()
+    assert names.index("finish:0:7") < names.index("record")
     assert names.index("finish:0:7") < names.index("restore_local")
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "human_pending"
+    assert sink.records[0]["channels"] == {
+        "enabled": True,
+        "acknowledgements": 2,
+        "error": "",
+    }
 
 
 @pytest.mark.asyncio
@@ -6073,6 +6218,7 @@ async def test_seat0_policy_baseexception_finishes_capture_once_in_cleanup(
         events=harness.events,
     )
     _patch_channel_open(monkeypatch, runtime)
+    sink = SnapshotEventSink(harness)
     config = _seat0_cfg(
         tmp_path,
         players=[
@@ -6083,12 +6229,22 @@ async def test_seat0_policy_baseexception_finishes_capture_once_in_cleanup(
     )
 
     with pytest.raises(asyncio.CancelledError):
-        await run_arena(Seat0CapsConn(), FakeGS(), config, policy=policy)
+        await run_arena(
+            Seat0CapsConn(), FakeGS(), config, policy=policy, transcript=sink
+        )
 
     assert runtime.calls.count("admit:0:7") == 1
     assert runtime.calls.count("finish:0:7") == 1
     names = harness.names()
+    assert names.index("finish:0:7") < names.index("record")
     assert names.index("finish:0:7") < names.index("restore_local")
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "interrupted"
+    assert sink.records[0]["channels"] == {
+        "enabled": True,
+        "acknowledgements": 0,
+        "error": "RuntimeError('channel cleanup failed')",
+    }
 
 
 @pytest.mark.asyncio
