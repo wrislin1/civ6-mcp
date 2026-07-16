@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Callable, Iterable, Literal
@@ -57,6 +58,44 @@ class ObservedRoute:
     destination_is_city_state: bool
 
 
+def _freeze_action_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _FrozenDict(value)
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_action_value(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze_action_value(item) for item in value)
+    return value
+
+
+class _FrozenDict(dict):
+    """Immutable dict compatible with equality, JSON, and dataclasses.asdict."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        source = dict(*args, **kwargs)
+        dict.__init__(
+            self,
+            (
+                (key, _freeze_action_value(value))
+                for key, value in source.items()
+            ),
+        )
+
+    @staticmethod
+    def _immutable(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        raise TypeError("action tool arguments are immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+    __ior__ = _immutable
+
+
 @dataclass(frozen=True)
 class ObservedAction:
     actor_id: int
@@ -64,6 +103,9 @@ class ObservedAction:
     tool_name: str
     tool_args: dict[str, Any]
     tool_result_full: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tool_args", _FrozenDict(self.tool_args))
 
 
 @dataclass(frozen=True)
@@ -1144,12 +1186,20 @@ def _new_prohibited_action(
     existing = _baseline_action_ids(baseline)
     for action in observation.action_audit:
         identity = _action_identity(action)
+        authoritative_after_incomplete_start = (
+            not baseline.get("audit_baseline_complete", False)
+            and action.turn > baseline["favor_started_turn"]
+        )
         if (
             action.actor_id == observation.player_id
             and identity is not None
             and identity[-1] == params["target_player"]
             and identity not in existing
             and _observed_action_is_successful(action)
+            and (
+                baseline.get("audit_baseline_complete", False)
+                or authoritative_after_incomplete_start
+            )
         ):
             return True
     return False
@@ -1180,7 +1230,10 @@ def _verify_dont_trade(
     for kind, baseline_key, family, violation_check in checks:
         if (
             kind in kinds
-            and baseline.get(baseline_key, False)
+            and (
+                baseline.get(baseline_key, False)
+                or kind == "diplomatic_deal"
+            )
             and family in observation.families_present
             and violation_check(params, baseline, monitor, observation)
         ):

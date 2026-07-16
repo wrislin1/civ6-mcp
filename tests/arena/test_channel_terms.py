@@ -1,4 +1,5 @@
 import dataclasses
+import json
 
 import pytest
 
@@ -962,3 +963,113 @@ def test_dont_trade_with_retires_baseline_route_exemption_after_route_ends():
     )
 
     assert (ended.status, restarted.status) == ("pending", "failed")
+
+
+def test_later_authoritative_trade_audit_is_decisive_after_missing_baseline():
+    term = {"term_type": "dont_trade_with", "params": {
+        "target_player": 3, "trade_kinds": ["diplomatic_deal"]}}
+    incomplete_start = dataclasses.replace(
+        obs(10),
+        families_present=frozenset(ObservationFamily)
+        - {ObservationFamily.ACTION_AUDIT},
+    )
+    baseline = capture_baseline(term, incomplete_start)
+    committed = ObservedAction(
+        2,
+        11,
+        "propose_trade",
+        {"other_player_id": 3, "mode": "send"},
+        "OK:PROPOSED|Rome",
+    )
+
+    result = verify_term(
+        term, baseline, {}, obs(11, action_audit=(committed,)), due_turn=12
+    )
+
+    assert result.status == "failed"
+    assert "diplomatic deal with player 3" in result.reason
+
+
+def test_missing_trade_audit_baseline_stays_unverifiable_without_later_violation():
+    term = {"term_type": "dont_trade_with", "params": {
+        "target_player": 3, "trade_kinds": ["diplomatic_deal"]}}
+    incomplete_start = dataclasses.replace(
+        obs(10),
+        families_present=frozenset(ObservationFamily)
+        - {ObservationFamily.ACTION_AUDIT},
+    )
+    baseline = capture_baseline(term, incomplete_start)
+
+    result = verify_term(term, baseline, {}, obs(12), due_turn=12)
+
+    assert result.status == "unverifiable"
+
+
+def test_observed_action_defensively_freezes_source_and_nested_values():
+    source = {
+        "other_player_id": 3,
+        "mode": "send",
+        "nested": {"accept": True, "items": ["silk"]},
+    }
+    action = ObservedAction(2, 11, "propose_trade", source, "OK:PROPOSED|Rome")
+
+    source["other_player_id"] = 4
+    source["mode"] = "test"
+    source["nested"]["accept"] = False
+    source["nested"]["items"].append("tea")
+
+    assert action.tool_args == {
+        "other_player_id": 3,
+        "mode": "send",
+        "nested": {"accept": True, "items": ("silk",)},
+    }
+
+
+def test_normalized_action_arguments_reject_direct_and_nested_mutation():
+    source = {
+        "other_player_id": 3,
+        "mode": "send",
+        "nested": {"accept": True, "items": ["silk"]},
+    }
+    policy_result = {"transcript": {"steps": [{
+        "tool_name": "propose_trade",
+        "tool_args": source,
+        "tool_result_full": "OK:PROPOSED|Rome",
+    }]}}
+    action = channel_terms.normalize_action_audit(
+        policy_result, actor=2, turn=11
+    )[0]
+
+    with pytest.raises(TypeError):
+        action.tool_args["other_player_id"] = 4
+    with pytest.raises(TypeError):
+        action.tool_args["nested"]["accept"] = False
+    with pytest.raises(AttributeError):
+        action.tool_args["nested"]["items"].append("tea")
+
+    source["nested"]["items"].append("horses")
+    assert action.tool_args["nested"]["items"] == ("silk",)
+
+
+def test_frozen_action_arguments_have_deterministic_equality_and_serialization():
+    args = {
+        "other_player_id": 3,
+        "mode": "send",
+        "nested": {"accept": True, "items": ["silk"]},
+    }
+    first = ObservedAction(2, 11, "propose_trade", args, "OK:PROPOSED|Rome")
+    second = ObservedAction(2, 11, "propose_trade", args, "OK:PROPOSED|Rome")
+
+    assert first == second
+    payload = dataclasses.asdict(first)
+    assert json.loads(json.dumps(payload)) == {
+        "actor_id": 2,
+        "turn": 11,
+        "tool_name": "propose_trade",
+        "tool_args": {
+            "other_player_id": 3,
+            "mode": "send",
+            "nested": {"accept": True, "items": ["silk"]},
+        },
+        "tool_result_full": "OK:PROPOSED|Rome",
+    }
