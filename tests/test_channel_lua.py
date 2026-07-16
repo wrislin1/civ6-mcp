@@ -9,11 +9,15 @@ from civ_mcp.lua.channel_observation import (
     parse_channel_observation_response,
 )
 from civ_mcp.lua.channel_payments import (
+    ChannelPaymentOfferState,
     ExactPaymentOffer,
+    PaymentOfferStatus,
     build_channel_payment_offer,
     build_channel_payment_query,
     build_channel_payment_response,
+    build_channel_payment_state_query,
     parse_channel_payment_query,
+    parse_channel_payment_state_query,
 )
 
 
@@ -82,6 +86,70 @@ def test_payment_builders_are_exact_gold_only_and_never_accept_counteroffers():
     response = build_channel_payment_response(1, 100, True)
     assert "GetItemCount() ~= 1" in response
     assert "DealProposalAction.ACCEPTED" in response
+
+
+def test_payment_state_query_supports_only_the_ordered_pair_seats_and_directions():
+    query = build_channel_payment_state_query(1, 2, 100)
+    assert "if me == payer then" in query
+    assert "DealDirection.OUTGOING" in query
+    assert "elseif me == payee then" in query
+    assert "DealDirection.INCOMING" in query
+    assert "DealManager.HasPendingDeal(payer, payee)" in query
+    assert "PAYMENT_STATE|1|2|100|absent" in query
+    assert "PAYMENT_STATE|1|2|100|conflicting" in query
+    assert "PAYMENT_STATE|1|2|100|exact|0|1" in query
+    assert "ERR:CHANNEL_PAYMENT_WRONG_SEAT" in query
+
+
+def test_payment_state_parser_distinguishes_absent_exact_and_conflicting():
+    absent = parse_channel_payment_state_query(
+        ["PAYMENT_STATE|1|2|100|absent", "---END---"],
+        payer=1,
+        payee=2,
+        gold=100,
+    )
+    exact = parse_channel_payment_state_query(
+        ["PAYMENT_STATE|1|2|100|exact|0|1", "---END---"],
+        payer=1,
+        payee=2,
+        gold=100,
+    )
+    conflicting = parse_channel_payment_state_query(
+        ["PAYMENT_STATE|1|2|100|conflicting", "---END---"],
+        payer=1,
+        payee=2,
+        gold=100,
+    )
+
+    assert absent == ChannelPaymentOfferState(PaymentOfferStatus.ABSENT)
+    assert exact == ChannelPaymentOfferState(
+        PaymentOfferStatus.EXACT,
+        ExactPaymentOffer(1, 2, 100),
+    )
+    assert conflicting == ChannelPaymentOfferState(
+        PaymentOfferStatus.CONFLICTING
+    )
+    assert (
+        parse_channel_payment_state_query(
+            ["PAYMENT_STATE|1|3|100|absent"],
+            payer=1,
+            payee=2,
+            gold=100,
+        )
+        is None
+    )
+    assert (
+        parse_channel_payment_state_query(
+            [
+                "PAYMENT_STATE|1|2|100|absent",
+                "PAYMENT_STATE|1|2|100|conflicting",
+            ],
+            payer=1,
+            payee=2,
+            gold=100,
+        )
+        is None
+    )
 
 
 def test_observation_parser_covers_each_authoritative_family():
@@ -234,6 +302,9 @@ def test_observation_builder_prints_only_requested_families():
         (build_channel_payment_offer, (2, '100); os.exit(); --')),
         (build_channel_payment_query, ('2); os.exit(); --', 100)),
         (build_channel_payment_query, (2, '100); os.exit(); --')),
+        (build_channel_payment_state_query, ('1); os.exit(); --', 2, 100)),
+        (build_channel_payment_state_query, (1, '2); os.exit(); --', 100)),
+        (build_channel_payment_state_query, (1, 2, '100); os.exit(); --')),
         (build_channel_payment_response, ('2); os.exit(); --', 100, True)),
         (build_channel_payment_response, (2, '100); os.exit(); --', True)),
     ],
@@ -277,6 +348,7 @@ async def test_game_state_channel_wrappers_use_ingame_write_context():
             ["GOLD|250", "COMPLETE|treasury", "---END---"],
             ["OK:PAYMENT_PROPOSED", "---END---"],
             ["PAYMENT|1|2|100|0|1", "---END---"],
+            ["PAYMENT_STATE|1|2|100|exact|0|1", "---END---"],
             ["OK:PAYMENT_ACCEPTED", "---END---"],
         ]
     )
@@ -285,10 +357,15 @@ async def test_game_state_channel_wrappers_use_ingame_write_context():
     obs = await gs.get_channel_observation(2, 10, request)
     proposed = await gs.offer_channel_payment(2, 100)
     pending = await gs.get_channel_payment_offer(1, 100)
+    pending_state = await gs.get_channel_payment_state(1, 2, 100)
     accepted = await gs.respond_to_channel_payment(1, 100, True)
 
     assert obs.treasury_gold == 250
     assert proposed == "PAYMENT_PROPOSED"
     assert pending == ExactPaymentOffer(1, 2, 100)
+    assert pending_state == ChannelPaymentOfferState(
+        PaymentOfferStatus.EXACT,
+        ExactPaymentOffer(1, 2, 100),
+    )
     assert accepted == "PAYMENT_ACCEPTED"
-    assert len(conn.writes) == 4
+    assert len(conn.writes) == 5

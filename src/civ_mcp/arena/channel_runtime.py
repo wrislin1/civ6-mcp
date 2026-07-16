@@ -22,6 +22,10 @@ from civ_mcp.arena.channel_protocol import (
 from civ_mcp.arena.channel_terms import (
     ChannelObservation,
     ObservationFamily,
+    ObservedAction,
+    ObservedCity,
+    ObservedRoute,
+    ObservedUnit,
     TERM_REGISTRY,
     TermValidationContext,
     capture_baseline,
@@ -259,6 +263,7 @@ class ChannelRuntime:
     @staticmethod
     def _validate_payment_journal(events: tuple[ChannelEvent, ...]) -> None:
         unfinished: dict[str, tuple[str, dict]] = {}
+        unfinished_pairs: dict[tuple[int, int], str] = {}
         completed: set[str] = set()
         for event in events:
             if event.kind in {"payment_fund_intent", "payment_response_intent"}:
@@ -270,7 +275,11 @@ class ChannelRuntime:
                     or source_id in completed
                 ):
                     raise ValueError("duplicate or invalid payment intent source")
+                pair = (payload.get("payer"), payload.get("payee"))
+                if pair in unfinished_pairs:
+                    raise ValueError("multiple unfinished payment intents for pair")
                 unfinished[source_id] = (event.kind, payload)
+                unfinished_pairs[pair] = source_id
                 continue
             if event.kind not in {"payment_fund_result", "payment_response_result"}:
                 continue
@@ -293,6 +302,10 @@ class ChannelRuntime:
             ):
                 raise ValueError("payment result does not match an unfinished intent")
             del unfinished[source_id]
+            pair = (result_intent.get("payer"), result_intent.get("payee"))
+            if unfinished_pairs.get(pair) != source_id:
+                raise ValueError("payment intent pair index is inconsistent")
+            del unfinished_pairs[pair]
             completed.add(source_id)
 
     @classmethod
@@ -334,6 +347,8 @@ class ChannelRuntime:
             "payee",
             "gold",
             "deadline",
+            "preflight_status",
+            "preflight_player",
             "fingerprint",
         }
         required = (
@@ -341,7 +356,11 @@ class ChannelRuntime:
             if kind == "payment_fund_intent"
             else common_fields | {"accept"}
         )
-        allowed = required | ({"success_deal"} if kind == "payment_response_intent" else set())
+        allowed = required | (
+            {"success_deal", "observation_id"}
+            if kind == "payment_response_intent"
+            else set()
+        )
         if not isinstance(payload, dict) or not required <= set(payload) <= allowed:
             raise ValueError(f"invalid {kind} payload")
         source_id = payload["source_id"]
@@ -361,6 +380,10 @@ class ChannelRuntime:
         for field in ("actor", "turn", "payer", "payee", "gold"):
             if type(payload[field]) is not int:
                 raise ValueError(f"payment intent {field} must be an integer")
+        if payload["turn"] < 0 or (
+            deal.accepted_turn is None or payload["turn"] < deal.accepted_turn
+        ):
+            raise ValueError("payment intent turn precedes the active deal phase")
         expected_deadline = (
             deal.fund_by_turn
             if kind == "payment_fund_intent"
@@ -392,6 +415,24 @@ class ChannelRuntime:
         )
         if deal.payment_status is not expected_status:
             raise ValueError("payment intent does not match the payment lifecycle")
+        expected_preflight = (
+            ("absent", deal.proposer)
+            if kind == "payment_fund_intent"
+            else ("exact", deal.counterparty)
+        )
+        if (
+            payload["preflight_status"],
+            payload["preflight_player"],
+        ) != expected_preflight:
+            raise ValueError("payment intent preflight is invalid")
+        if any(
+            candidate.id != deal.id
+            and candidate.proposer == deal.proposer
+            and candidate.counterparty == deal.counterparty
+            and candidate.payment_status is PaymentStatus.OFFERED
+            for candidate in state.deals
+        ):
+            raise ValueError("payment intent conflicts with an offered pair payment")
         fingerprint = payload["fingerprint"]
         if (
             not isinstance(fingerprint, dict)
@@ -401,11 +442,23 @@ class ChannelRuntime:
             or fingerprint != cls._payment_fingerprint(deal)
         ):
             raise ValueError("payment intent fingerprint does not match the deal")
-        if kind == "payment_response_intent" and type(payload["accept"]) is not bool:
-            raise ValueError("payment response intent accept must be a boolean")
+        if kind == "payment_response_intent":
+            if type(payload["accept"]) is not bool:
+                raise ValueError("payment response intent accept must be a boolean")
+            if payload["accept"] != ("success_deal" in payload):
+                raise ValueError(
+                    "accepted payment response requires exactly one success deal"
+                )
         success_deal = payload.get("success_deal")
         if success_deal is not None and not isinstance(success_deal, dict):
             raise ValueError("payment response success_deal must be an object")
+        observation_id = payload.get("observation_id")
+        if observation_id is not None and (
+            not isinstance(observation_id, str) or not observation_id
+        ):
+            raise ValueError("payment response observation_id must be a string")
+        if kind == "payment_response_intent" and payload["accept"]:
+            cls._validated_success_deal(state, deal, payload)
 
     @classmethod
     def _reduce_payment_result(
@@ -450,6 +503,12 @@ class ChannelRuntime:
             payload["recovery"], str
         ):
             raise ValueError("payment recovery marker must be a string or null")
+        cls._validate_payment_result_semantics(
+            state,
+            event.kind,
+            intent,
+            payload,
+        )
         source_id = intent["source_id"]
         acknowledgement = payload["acknowledgement"]
         deal_payload = payload["deal"]
@@ -485,6 +544,401 @@ class ChannelRuntime:
             applied,
             grievances=broken.grievances,
             next_grievance=broken.next_grievance,
+        )
+
+    @classmethod
+    def _validate_payment_result_semantics(
+        cls,
+        state: ChannelState,
+        kind: str,
+        intent: dict,
+        payload: dict,
+    ) -> None:
+        acknowledgement = payload["acknowledgement"]
+        if not isinstance(acknowledgement, dict) or set(acknowledgement) != {
+            "player_id",
+            "turn",
+            "source_id",
+            "status",
+            "message",
+            "deal_id",
+        }:
+            raise ValueError("payment result acknowledgement is invalid")
+        deal_payload = payload["deal"]
+        expected_status = "applied" if deal_payload is not None else "rejected"
+        expected_deal_id = intent["deal_id"] if deal_payload is not None else None
+        if (
+            acknowledgement["player_id"] != intent["actor"]
+            or acknowledgement["turn"] != intent["turn"]
+            or acknowledgement["source_id"] != intent["source_id"]
+            or acknowledgement["status"] != expected_status
+            or acknowledgement["deal_id"] != expected_deal_id
+            or not isinstance(acknowledgement["message"], str)
+            or not acknowledgement["message"]
+        ):
+            raise ValueError("payment acknowledgement does not match its intent")
+
+        deal = next(
+            candidate
+            for candidate in state.deals
+            if candidate.id == intent["deal_id"]
+        )
+        engine_result = payload["engine_result"]
+        recovery = payload["recovery"]
+        expected_deal: Deal | None
+        expected_grievance: dict | None = None
+
+        if kind == "payment_fund_result":
+            offered = replace(
+                deal,
+                payment_status=PaymentStatus.OFFERED,
+                payment_response_by_turn=(
+                    intent["turn"]
+                    + int(state.rules_fingerprint["payment_response_turns"])
+                ),
+            )
+            if recovery is None:
+                if cls._funding_succeeded(engine_result):
+                    expected_deal = offered
+                elif cls._authoritative_payment_failure(engine_result):
+                    expected_deal = None
+                else:
+                    raise ValueError("non-authoritative funding result was completed")
+            elif recovery == "observed_exact_offer":
+                if engine_result != "RECOVERED_EXACT_CHANNEL_PAYMENT":
+                    raise ValueError("invalid exact-offer funding recovery")
+                expected_deal = offered
+            elif recovery == "conflicting_offer":
+                if engine_result != "RECOVERY_CONFLICTING_PAYMENT":
+                    raise ValueError("invalid conflicting funding recovery")
+                expected_deal = None
+            elif recovery == "conflicting_offer_after_deadline":
+                if engine_result != "RECOVERY_CONFLICTING_PAYMENT_LATE":
+                    raise ValueError("invalid late-conflict funding recovery")
+                grievance = payload["grievance"]
+                if not isinstance(grievance, dict):
+                    raise ValueError("late funding conflict requires a grievance")
+                recovery_turn = grievance.get("turn")
+                if (
+                    type(recovery_turn) is not int
+                    or recovery_turn <= intent["deadline"]
+                ):
+                    raise ValueError("late funding conflict turn is invalid")
+                expected_deal, expected_grievance = cls._expected_breach_records(
+                    state,
+                    deal,
+                    turn=recovery_turn,
+                    breach="funding",
+                    reason="linked payment was not funded by the deadline",
+                )
+            elif recovery == "offer_absent":
+                if engine_result != "RECOVERY_PAYMENT_ABSENT":
+                    raise ValueError("invalid absent-offer funding recovery")
+                expected_deal = cls._expected_unverifiable_result(
+                    deal,
+                    deal_payload,
+                    intent,
+                    "funding intent outcome is ambiguous because the exact offer is absent",
+                )
+            else:
+                raise ValueError("unknown funding recovery outcome")
+        else:
+            accept = intent["accept"]
+            if recovery in {None, "response_retried"}:
+                if cls._response_succeeded(engine_result, accept):
+                    if accept:
+                        expected_deal = cls._validated_success_deal(
+                            state, deal, intent
+                        )
+                    else:
+                        expected_deal, expected_grievance = (
+                            cls._expected_breach_records(
+                                state,
+                                deal,
+                                turn=intent["turn"],
+                                breach="payment_response",
+                                reason="exact linked payment was rejected",
+                            )
+                        )
+                elif cls._authoritative_payment_failure(engine_result):
+                    expected_deal = None
+                else:
+                    raise ValueError("non-authoritative payment response was completed")
+            elif recovery in {"offer_absent", "conflicting_offer"}:
+                if engine_result != "RECOVERY_PAYMENT_ABSENT":
+                    raise ValueError("invalid payment-response preflight recovery")
+                status = "absent" if recovery == "offer_absent" else "conflicting"
+                expected_deal = cls._expected_unverifiable_result(
+                    deal,
+                    deal_payload,
+                    intent,
+                    "payment response intent outcome is ambiguous because "
+                    f"the exact offer is {status}",
+                )
+            elif recovery == "response_retry_query_failed":
+                if not cls._authoritative_payment_failure(engine_result):
+                    raise ValueError("invalid response query-failure recovery")
+                expected_deal = cls._expected_unverifiable_result(
+                    deal,
+                    deal_payload,
+                    intent,
+                    "payment response recovery could not verify the engine outcome after retry",
+                )
+            elif recovery == "response_retry_ambiguous":
+                if not cls._authoritative_payment_failure(engine_result):
+                    raise ValueError("invalid ambiguous response recovery")
+                reasons = {
+                    "payment response recovery remained ambiguous after an engine exception",
+                    "payment response recovery returned no authoritative engine result",
+                }
+                expected_deal = cls._expected_unverifiable_result(
+                    deal,
+                    deal_payload,
+                    intent,
+                    reasons,
+                )
+            else:
+                raise ValueError("unknown payment-response recovery outcome")
+
+        expected_payload = (
+            cls._deal_payload(expected_deal) if expected_deal is not None else None
+        )
+        if (
+            deal_payload != expected_payload
+            or payload["grievance"] != expected_grievance
+        ):
+            raise ValueError("payment result effects do not match the engine outcome")
+
+    @classmethod
+    def _validated_success_deal(
+        cls,
+        state: ChannelState,
+        deal: Deal,
+        intent: dict,
+    ) -> Deal:
+        payload = intent.get("success_deal")
+        if not isinstance(payload, dict):
+            raise ValueError("accepted response has no canonical success deal")
+        changed = cls._deal_from_payload(state, payload)
+        settled = replace(deal, payment_status=PaymentStatus.SETTLED)
+        if deal.timing == "on_delivery":
+            expected = cls._honor_settled_deal(settled)
+            if payload != cls._deal_payload(expected):
+                raise ValueError("payment success deal is not the canonical settlement")
+            return expected
+
+        spec = TERM_REGISTRY[deal.favor.term_type]
+        if spec.baseline_phase == "proposal":
+            expected = replace(
+                settled,
+                favor=FavorTerm(
+                    deal.favor.term_type,
+                    deal.favor.params,
+                    deal.favor.baseline,
+                    {},
+                ),
+                favor_status=FavorStatus.DUE,
+                favor_due_turn=intent["turn"] + deal.completion_window_turns,
+            )
+            if payload != cls._deal_payload(expected):
+                raise ValueError("proposal baseline was not preserved at payment acceptance")
+            return expected
+
+        observation_id = intent.get("observation_id")
+        observation_payload = next(
+            (
+                candidate
+                for candidate in state.observations
+                if candidate.get("id") == observation_id
+            ),
+            None,
+        )
+        if not isinstance(observation_payload, dict):
+            raise ValueError("favor-start payment acceptance has no observation")
+        observation = cls._observation_from_payload(observation_payload)
+        if (
+            observation.player_id != intent["actor"]
+            or observation.turn != intent["turn"]
+        ):
+            raise ValueError("payment acceptance observation is not actor-turn bound")
+        baseline = capture_baseline(
+            {
+                "term_type": deal.favor.term_type,
+                "params": deal.favor.params,
+            },
+            observation,
+        )
+        baseline = cls._attach_baseline_observation(baseline, observation_id)
+        if any(
+            key.endswith("baseline_complete") and value is not True
+            for key, value in baseline.items()
+        ):
+            raise ValueError("favor-start payment baseline is incomplete")
+        expected = replace(
+            settled,
+            favor=FavorTerm(
+                deal.favor.term_type,
+                deal.favor.params,
+                baseline,
+                {},
+            ),
+            favor_status=FavorStatus.DUE,
+            favor_due_turn=intent["turn"] + deal.completion_window_turns,
+        )
+        if (
+            changed.payment_status is not PaymentStatus.SETTLED
+            or changed.favor_status is not FavorStatus.DUE
+            or changed.favor_due_turn
+            != intent["turn"] + deal.completion_window_turns
+            or changed.favor.term_type != deal.favor.term_type
+            or changed.favor.params != deal.favor.params
+            or changed.favor.monitor
+            or payload != cls._deal_payload(expected)
+        ):
+            raise ValueError("favor-start payment success deal is not canonical")
+        return expected
+
+    @staticmethod
+    def _observation_from_payload(payload: dict) -> ChannelObservation:
+        def pairs(name: str) -> frozenset[tuple[int, int]]:
+            return frozenset(tuple(item) for item in payload[name])
+
+        return ChannelObservation(
+            player_id=payload["player_id"],
+            turn=payload["turn"],
+            families_present=frozenset(
+                ObservationFamily(value) for value in payload["families_present"]
+            ),
+            units=tuple(ObservedUnit(**item) for item in payload["units"]),
+            cities=tuple(ObservedCity(**item) for item in payload["cities"]),
+            camps=pairs("camps"),
+            territory=pairs("territory"),
+            wars=pairs("wars"),
+            treasury_gold=payload["treasury_gold"],
+            trade_routes=tuple(
+                ObservedRoute(**item) for item in payload["trade_routes"]
+            ),
+            action_audit=tuple(
+                ObservedAction(**item) for item in payload["action_audit"]
+            ),
+            unit_distances={
+                tuple(item[:3]): item[3] for item in payload["unit_distances"]
+            },
+            zone_distances={
+                tuple(item[:3]): item[3] for item in payload["zone_distances"]
+            },
+            errors=tuple(payload["errors"]),
+        )
+
+    @classmethod
+    def _deal_from_payload(cls, state: ChannelState, payload: dict) -> Deal:
+        event = ChannelEvent(
+            SCHEMA_VERSION,
+            f"evt-{state.next_event:06d}",
+            state.next_event,
+            "deal_changed",
+            payload,
+        )
+        changed = reduce_event(state, event)
+        result = next(
+            (deal for deal in changed.deals if deal.id == payload.get("id")),
+            None,
+        )
+        if result is None:
+            raise ValueError("payment success deal does not identify an existing deal")
+        return result
+
+    @staticmethod
+    def _honor_settled_deal(deal: Deal) -> Deal:
+        if deal.favor_status is not FavorStatus.SATISFIED:
+            return deal
+        evidence = deal.favor.monitor.get("satisfaction_observation_id")
+        return replace(
+            deal,
+            state=DealState.HONORED,
+            terminal={
+                "reason": "favor and payment completed",
+                "evidence_refs": [evidence] if isinstance(evidence, str) else [],
+                "adjudication_source": "deterministic",
+            },
+        )
+
+    @classmethod
+    def _expected_breach_records(
+        cls,
+        state: ChannelState,
+        deal: Deal,
+        *,
+        turn: int,
+        breach: str,
+        reason: str,
+    ) -> tuple[Deal, dict]:
+        if breach == "funding":
+            wronged, offender = deal.counterparty, deal.proposer
+        elif breach == "payment_response":
+            wronged, offender = deal.proposer, deal.counterparty
+        else:
+            raise ValueError("invalid payment breach type")
+        broken = replace(
+            deal,
+            state=DealState.BROKEN,
+            favor_status=(
+                FavorStatus.RELEASED
+                if deal.favor_status is FavorStatus.NOT_DUE
+                else deal.favor_status
+            ),
+            payment_status=PaymentStatus.FAILED,
+            terminal={
+                "wronged": wronged,
+                "offender": offender,
+                "reason": reason,
+                "evidence_refs": [],
+                "adjudication_source": "deterministic",
+            },
+        )
+        grievance = {
+            "id": f"grv-{state.next_grievance:06d}",
+            "wronged": wronged,
+            "offender": offender,
+            "deal_id": deal.id,
+            "turn": turn,
+            "reason": reason,
+            "payment_gold": deal.payment_gold,
+            "base_magnitude": grievance_base_magnitude(deal.payment_gold),
+            "half_life_turns": int(
+                state.rules_fingerprint["grievance_half_life_turns"]
+            ),
+            "adjudication_source": "deterministic",
+            "adjudication_metadata": None,
+        }
+        return broken, grievance
+
+    @classmethod
+    def _expected_unverifiable_result(
+        cls,
+        deal: Deal,
+        payload: object,
+        intent: dict,
+        reason: str | set[str],
+    ) -> Deal:
+        if not isinstance(payload, dict):
+            raise ValueError("unverifiable payment result requires a deal")
+        terminal = payload.get("terminal")
+        if not isinstance(terminal, dict):
+            raise ValueError("unverifiable payment result requires terminal evidence")
+        turn = terminal.get("turn")
+        actual_reason = terminal.get("reason")
+        allowed_reasons = {reason} if isinstance(reason, str) else reason
+        if (
+            type(turn) is not int
+            or turn < intent["turn"]
+            or actual_reason not in allowed_reasons
+        ):
+            raise ValueError("unverifiable payment result is not canonical")
+        return cls._unverifiable_deal_record(
+            deal,
+            turn=turn,
+            reason=actual_reason,
         )
 
     def _commit(self, kind: str, payload: dict) -> ChannelEvent:
@@ -858,6 +1312,21 @@ class ChannelRuntime:
             raise _ActionRejected(
                 "an unresolved payment intent requires reconciliation"
             )
+        try:
+            payment_state = await gs.get_channel_payment_state(
+                deal.proposer,
+                deal.counterparty,
+                deal.payment_gold,
+            )
+        except Exception as exc:
+            raise _ActionRejected(
+                "could not verify the ordered-pair payment state: "
+                f"{type(exc).__name__}"
+            ) from exc
+        if self._payment_state_status(payment_state, deal) != "absent":
+            raise _ActionRejected(
+                "the ordered pair already has a pending or conflicting deal"
+            )
         intent = self._payment_intent_payload(
             deal,
             staged,
@@ -963,8 +1432,9 @@ class ChannelRuntime:
                 "an unresolved payment intent requires reconciliation"
             )
         try:
-            offer = await gs.get_channel_payment_offer(
+            payment_state = await gs.get_channel_payment_state(
                 deal.proposer,
+                deal.counterparty,
                 deal.payment_gold,
             )
         except Exception as exc:
@@ -972,7 +1442,7 @@ class ChannelRuntime:
                 "could not verify the exact linked payment: "
                 f"{type(exc).__name__}"
             ) from exc
-        if self._offer_fingerprint(offer) != self._payment_fingerprint(deal):
+        if self._payment_state_status(payment_state, deal) != "exact":
             raise _ActionRejected("the exact linked payment offer is not pending")
 
         success_deal = None
@@ -990,6 +1460,7 @@ class ChannelRuntime:
             deadline=deal.payment_response_by_turn,
             accept=action.accept,
             success_deal=success_deal,
+            observation_id=observation_id,
         )
         self._commit("payment_response_intent", intent)
         try:
@@ -999,7 +1470,11 @@ class ChannelRuntime:
                 action.accept,
             )
         except Exception as exc:
-            await self.reconcile_payment_intents(gs)
+            await self.reconcile_payment_intents(
+                gs,
+                current_turn=turn,
+                current_player_id=staged.actor,
+            )
             recovered = next(
                 (
                     acknowledgement
@@ -1117,6 +1592,22 @@ class ChannelRuntime:
             return None
         return fingerprint
 
+    @classmethod
+    def _payment_state_status(cls, payment_state: Any, deal: Deal) -> str | None:
+        if payment_state is None:
+            return None
+        status = getattr(payment_state, "status", None)
+        status = getattr(status, "value", status)
+        if status not in {"absent", "exact", "conflicting"}:
+            return None
+        offer = getattr(payment_state, "offer", None)
+        if status == "exact":
+            if cls._offer_fingerprint(offer) != cls._payment_fingerprint(deal):
+                return None
+        elif offer is not None:
+            return None
+        return status
+
     def _payment_intent_payload(
         self,
         deal: Deal,
@@ -1126,6 +1617,7 @@ class ChannelRuntime:
         deadline: int,
         accept: bool | None = None,
         success_deal: Deal | None = None,
+        observation_id: str | None = None,
     ) -> dict:
         payload = {
             "source_id": staged.source_id,
@@ -1136,12 +1628,18 @@ class ChannelRuntime:
             "payee": deal.counterparty,
             "gold": deal.payment_gold,
             "deadline": deadline,
+            "preflight_status": "absent" if accept is None else "exact",
+            "preflight_player": (
+                deal.proposer if accept is None else deal.counterparty
+            ),
             "fingerprint": self._payment_fingerprint(deal),
         }
         if accept is not None:
             payload["accept"] = accept
         if success_deal is not None:
             payload["success_deal"] = self._deal_payload(success_deal)
+        if accept is not None and observation_id is not None:
+            payload["observation_id"] = observation_id
         return payload
 
     def _accepted_payment_deal(
@@ -1220,25 +1718,39 @@ class ChannelRuntime:
                     unfinished.pop(source_id, None)
         return tuple(unfinished.values())
 
-    async def reconcile_payment_intents(self, gs: Any) -> None:
+    async def reconcile_payment_intents(
+        self,
+        gs: Any,
+        *,
+        current_turn: int,
+        current_player_id: int,
+    ) -> None:
+        if type(current_turn) is not int or current_turn < 0:
+            raise ValueError("current_turn must be a non-negative integer")
+        if type(current_player_id) is not int:
+            raise ValueError("current_player_id must be an integer")
         for kind, intent in self._unfinished_payment_intents():
             if intent["source_id"] in self.state.applied_source_ids:
+                continue
+            if intent["payee"] != current_player_id:
                 continue
             try:
                 deal = self.deal(intent["deal_id"])
             except ValueError:
                 continue
             try:
-                offer = await gs.get_channel_payment_offer(
+                payment_state = await gs.get_channel_payment_state(
                     intent["payer"],
+                    intent["payee"],
                     intent["gold"],
                 )
             except Exception:
                 continue
-            observed = self._offer_fingerprint(offer)
-            expected = intent["fingerprint"]
+            status = self._payment_state_status(payment_state, deal)
+            if status is None:
+                continue
             if kind == "payment_fund_intent":
-                if observed == expected:
+                if status == "exact":
                     offered = replace(
                         deal,
                         payment_status=PaymentStatus.OFFERED,
@@ -1255,23 +1767,40 @@ class ChannelRuntime:
                         grievance=None,
                         message=f"recovered linked payment offer for {deal.id}",
                     )
-                elif offer is not None:
-                    self._commit_payment_result(
-                        "payment_fund_result",
-                        intent,
-                        engine_result="RECOVERY_CONFLICTING_PAYMENT",
-                        recovery="conflicting_offer",
-                        deal=None,
-                        grievance=None,
-                        message=(
-                            "conflicting pending payment left funding due for "
-                            f"{deal.id}"
-                        ),
-                    )
+                elif status == "conflicting":
+                    if current_turn <= intent["deadline"]:
+                        self._commit_payment_result(
+                            "payment_fund_result",
+                            intent,
+                            engine_result="RECOVERY_CONFLICTING_PAYMENT",
+                            recovery="conflicting_offer",
+                            deal=None,
+                            grievance=None,
+                            message=(
+                                "conflicting pending payment left funding due for "
+                                f"{deal.id}"
+                            ),
+                        )
+                    else:
+                        broken, grievance = self._broken_deal_records(
+                            deal,
+                            turn=current_turn,
+                            breach="funding",
+                            reason="linked payment was not funded by the deadline",
+                        )
+                        self._commit_payment_result(
+                            "payment_fund_result",
+                            intent,
+                            engine_result="RECOVERY_CONFLICTING_PAYMENT_LATE",
+                            recovery="conflicting_offer_after_deadline",
+                            deal=broken,
+                            grievance=grievance,
+                            message=f"payment funding breached for {deal.id}",
+                        )
                 else:
                     unverifiable = self._unverifiable_deal_record(
                         deal,
-                        turn=intent["turn"],
+                        turn=current_turn,
                         reason=(
                             "funding intent outcome is ambiguous because the "
                             "exact offer is absent"
@@ -1288,20 +1817,24 @@ class ChannelRuntime:
                     )
                 continue
 
-            if observed != expected:
+            if status != "exact":
                 unverifiable = self._unverifiable_deal_record(
                     deal,
-                    turn=intent["turn"],
+                    turn=current_turn,
                     reason=(
                         "payment response intent outcome is ambiguous because "
-                        "the exact offer is absent"
+                        f"the exact offer is {status}"
                     ),
                 )
                 self._commit_payment_result(
                     "payment_response_result",
                     intent,
                     engine_result="RECOVERY_PAYMENT_ABSENT",
-                    recovery="offer_absent",
+                    recovery=(
+                        "offer_absent"
+                        if status == "absent"
+                        else "conflicting_offer"
+                    ),
                     deal=unverifiable,
                     grievance=None,
                     message=f"payment response became unverifiable for {deal.id}",
@@ -1316,14 +1849,15 @@ class ChannelRuntime:
                 )
             except Exception as exc:
                 try:
-                    remaining = await gs.get_channel_payment_offer(
+                    remaining = await gs.get_channel_payment_state(
                         intent["payer"],
+                        intent["payee"],
                         intent["gold"],
                     )
                 except Exception:
                     unverifiable = self._unverifiable_deal_record(
                         deal,
-                        turn=intent["turn"],
+                        turn=current_turn,
                         reason=(
                             "payment response recovery could not verify the "
                             "engine outcome after retry"
@@ -1339,10 +1873,10 @@ class ChannelRuntime:
                         message=f"payment response became unverifiable for {deal.id}",
                     )
                     continue
-                if self._offer_fingerprint(remaining) != expected:
+                if self._payment_state_status(remaining, deal) != "exact":
                     unverifiable = self._unverifiable_deal_record(
                         deal,
-                        turn=intent["turn"],
+                        turn=current_turn,
                         reason=(
                             "payment response recovery remained ambiguous "
                             "after an engine exception"
@@ -1410,7 +1944,7 @@ class ChannelRuntime:
             else:
                 unverifiable = self._unverifiable_deal_record(
                     deal,
-                    turn=intent["turn"],
+                    turn=current_turn,
                     reason=(
                         "payment response recovery returned no authoritative "
                         "engine result"
@@ -1464,17 +1998,28 @@ class ChannelRuntime:
         observation_id: str | None,
         turn: int,
     ) -> Deal:
-        try:
-            baseline = capture_baseline(
-                {
-                    "term_type": deal.favor.term_type,
-                    "params": deal.favor.params,
-                },
-                observation,
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise _ActionRejected(str(exc)) from exc
-        baseline = self._attach_baseline_observation(baseline, observation_id)
+        spec = TERM_REGISTRY[deal.favor.term_type]
+        if spec.baseline_phase == "proposal":
+            if not deal.favor.baseline:
+                raise _ActionRejected("proposal-phase favor baseline is missing")
+            baseline = deal.favor.baseline
+        else:
+            try:
+                baseline = capture_baseline(
+                    {
+                        "term_type": deal.favor.term_type,
+                        "params": deal.favor.params,
+                    },
+                    observation,
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise _ActionRejected(str(exc)) from exc
+            baseline = self._attach_baseline_observation(baseline, observation_id)
+            if any(
+                key.endswith("baseline_complete") and value is not True
+                for key, value in baseline.items()
+            ):
+                raise _ActionRejected("favor-start observation baseline is incomplete")
         return replace(
             deal,
             favor=FavorTerm(
@@ -1764,6 +2309,23 @@ class ChannelRuntime:
                 except ValueError:
                     continue
                 if deal.timing == "on_delivery":
+                    terms.append(
+                        {
+                            "term_type": deal.favor.term_type,
+                            "params": deal.favor.params,
+                        }
+                    )
+            elif isinstance(action, RespondToPayment) and action.accept:
+                try:
+                    deal = self.deal(action.deal_id)
+                except ValueError:
+                    continue
+                if (
+                    deal.timing == "up_front"
+                    and deal.state is DealState.ACTIVE
+                    and deal.payment_status is PaymentStatus.OFFERED
+                    and staged.actor == deal.counterparty
+                ):
                     terms.append(
                         {
                             "term_type": deal.favor.term_type,

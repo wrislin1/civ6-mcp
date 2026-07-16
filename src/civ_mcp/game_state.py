@@ -949,6 +949,19 @@ class GameState:
         )
         return lq.parse_channel_payment_query(lines)
 
+    async def get_channel_payment_state(
+        self, payer: int, payee: int, gold: int
+    ) -> lq.ChannelPaymentOfferState | None:
+        lines = await self.conn.execute_write(
+            lq.build_channel_payment_state_query(payer, payee, gold)
+        )
+        return lq.parse_channel_payment_state_query(
+            lines,
+            payer=payer,
+            payee=payee,
+            gold=gold,
+        )
+
     async def respond_to_channel_payment(
         self, payer: int, gold: int, accept: bool
     ) -> str:
