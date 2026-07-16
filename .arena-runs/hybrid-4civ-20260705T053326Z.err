@@ -1,0 +1,33 @@
+Traceback (most recent call last):
+  File "/home/riz/projects/civ6-mcp/.venv/bin/civ-arena", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/riz/projects/civ6-mcp/src/civ_mcp/arena/arena.py", line 199, in main
+    asyncio.run(_run(build_args()))
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/riz/projects/civ6-mcp/src/civ_mcp/arena/arena.py", line 195, in _run
+    result = await run_arena(conn, gs, cfg, policy_for=policy_for, transcript=transcript)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/riz/projects/civ6-mcp/src/civ_mcp/arena/coordinator.py", line 69, in run_arena
+    st = await hook.poll(conn)
+         ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/riz/projects/civ6-mcp/src/civ_mcp/arena/hook.py", line 73, in poll
+    async def poll(conn):              return parse_poll(await conn.execute_read(POLL_LUA))
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/riz/projects/civ6-mcp/src/civ_mcp/connection.py", line 123, in execute_read
+    return await self._execute_and_collect(self.gamecore_index, lua_code, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/riz/projects/civ6-mcp/src/civ_mcp/connection.py", line 146, in _execute_and_collect
+    return await self._locked_execute(state_index, lua_code, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/riz/projects/civ6-mcp/src/civ_mcp/connection.py", line 182, in _locked_execute
+    raise LuaError(msg.payload)
+civ_mcp.connection.LuaError: ERR:Invalid Lua State

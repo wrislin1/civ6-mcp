@@ -1,0 +1,14 @@
+{"turn": 1, "player_id": 1, "provider": "cli-claude", "model": "cli-claude", "prompt_tokens": 4494, "completion_tokens": 3454, "usd": 0.674003}
+{"turn": 1, "player_id": 2, "provider": "cli-codex", "model": "gpt-5.5", "prompt_tokens": 443243, "completion_tokens": 2052, "usd": 0.0}
+{"turn": 1, "player_id": 3, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 545, "completion_tokens": 55, "usd": 0.0}
+{"turn": 1, "player_id": 3, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 837, "completion_tokens": 13, "usd": 0.0}
+{"turn": 1, "player_id": 3, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 1106, "completion_tokens": 22, "usd": 0.0}
+{"turn": 1, "player_id": 3, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 1143, "completion_tokens": 19, "usd": 0.0}
+{"turn": 1, "player_id": 3, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 1178, "completion_tokens": 13, "usd": 0.0}
+{"turn": 1, "player_id": 3, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 1451, "completion_tokens": 44, "usd": 0.0}
+{"turn": 1, "player_id": 4, "provider": "local", "model": "qwen3.6-27b", "prompt_tokens": 866, "completion_tokens": 144, "usd": 0.0}
+{"turn": 1, "player_id": 4, "provider": "local", "model": "qwen3.6-27b", "prompt_tokens": 1401, "completion_tokens": 476, "usd": 0.0}
+{"turn": 1, "player_id": 4, "provider": "local", "model": "qwen3.6-27b", "prompt_tokens": 1592, "completion_tokens": 82, "usd": 0.0}
+{"turn": 1, "player_id": 4, "provider": "local", "model": "qwen3.6-27b", "prompt_tokens": 1848, "completion_tokens": 129, "usd": 0.0}
+{"turn": 1, "player_id": 4, "provider": "local", "model": "qwen3.6-27b", "prompt_tokens": 1937, "completion_tokens": 148, "usd": 0.0}
+{"turn": 1, "player_id": 4, "provider": "local", "model": "qwen3.6-27b", "prompt_tokens": 2024, "completion_tokens": 110, "usd": 0.0}

@@ -1,0 +1,7 @@
+{"turn": 10, "player_id": 1, "provider": "local", "model": "qwen3-coder:30b", "prompt_tokens": 871, "completion_tokens": 38, "usd": 0.0}
+{"turn": 10, "player_id": 1, "provider": "local", "model": "qwen3-coder:30b", "prompt_tokens": 1684, "completion_tokens": 174, "usd": 0.0}
+{"turn": 10, "player_id": 1, "provider": "local", "model": "qwen3-coder:30b", "prompt_tokens": 2323, "completion_tokens": 227, "usd": 0.0}
+{"turn": 10, "player_id": 1, "provider": "local", "model": "qwen3-coder:30b", "prompt_tokens": 2628, "completion_tokens": 100, "usd": 0.0}
+{"turn": 10, "player_id": 1, "provider": "local", "model": "qwen3-coder:30b", "prompt_tokens": 2790, "completion_tokens": 70, "usd": 0.0}
+{"turn": 10, "player_id": 1, "provider": "local", "model": "qwen3-coder:30b", "prompt_tokens": 2916, "completion_tokens": 124, "usd": 0.0}
+{"turn": 10, "player_id": 2, "provider": "cli-codex", "model": "gpt-5.5", "prompt_tokens": 243118, "completion_tokens": 1503, "usd": 0.0}

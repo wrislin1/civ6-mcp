@@ -1,0 +1,114 @@
+{
+  "result": {
+    "puppet_turns_played": 1,
+    "turns_slept": 3,
+    "log": [
+      {
+        "player": 5,
+        "turn": 209,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 1,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 210,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 2,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 211,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 3,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 212,
+        "summary": "STANDING PLAN:\n- Use builders to repair pillaged tiles in Kish and Eridu.\n- Continue production of settlers and key buildings.\n- Move military units to secure borders.\n\nTASK: Repairing pasture at (41,20) with Builder (1).\n\nSKIP: 1\nWAKE IF: GREAT_PERSON_AVAILABLE, CITY_GREW",
+        "actions": [
+          {
+            "tool": "improve_tile",
+            "result": "IMPROVING|IMPROVEMENT_FARM|37,13"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|41,20|from:41,19|now_at:41,20|(moved dx:+0 dy:+1)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|37,20|from:38,20|now_at:37,20|(moved dx:-1 dy:+0)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|39,14|from:38,12|now_at:39,14|(moved dx:+1 dy:+2)"
+          },
+          {
+            "tool": "set_city_production",
+            "result": "PRODUCING|UNIT_SETTLER|7 turns"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|37,40|from:35,42|now_at:36,40|(moved dx:+1 dy:-2)|STOPPED_MID_PATH (moves exhausted)"
+          },
+          {
+            "tool": "improve_tile",
+            "result": "REPAIRING|IMPROVEMENT_PASTURE|41,20"
+          },
+          {
+            "tool": "improve_tile",
+            "result": "Error: CANNOT_IMPROVE|Builder has no moves remaining this turn"
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: NO_MOVES|Unit has no movement points remaining this turn. Use skip or wait until next turn."
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        }
+      }
+    ]
+  },
+  "cost": {
+    "by_player": {
+      "5": {
+        "prompt_tokens": 95423,
+        "completion_tokens": 7548,
+        "usd": 0.0
+      }
+    },
+    "total_usd": 0.0
+  }
+}

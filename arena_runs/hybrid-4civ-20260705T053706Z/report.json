@@ -1,0 +1,3646 @@
+{
+  "by_player": {
+    "1": {
+      "player_id": 1,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 1,
+          "score": 0,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 5840,
+          "completion_tokens": 728,
+          "wall_clock_s": 18.756627559661865,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 2.7,
+            "culture": 3.6,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 2,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 5974,
+          "completion_tokens": 694,
+          "wall_clock_s": 11.62718915939331,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 3,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 5974,
+          "completion_tokens": 516,
+          "wall_clock_s": 8.339854955673218,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 4,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 5975,
+          "completion_tokens": 996,
+          "wall_clock_s": 12.52968454360962,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 5,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 4776,
+          "completion_tokens": 557,
+          "wall_clock_s": 7.540745973587036,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 6,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6021,
+          "completion_tokens": 775,
+          "wall_clock_s": 11.907368421554565,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 7,
+          "score": 9,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6016,
+          "completion_tokens": 982,
+          "wall_clock_s": 13.745354175567627,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 8,
+          "score": 12,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 5941,
+          "completion_tokens": 197,
+          "wall_clock_s": 5.4968039989471436,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 9,
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6201,
+          "completion_tokens": 1670,
+          "wall_clock_s": 22.162105798721313,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 10,
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6265,
+          "completion_tokens": 848,
+          "wall_clock_s": 11.567682981491089,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 11,
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6235,
+          "completion_tokens": 715,
+          "wall_clock_s": 10.476132154464722,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 12,
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6247,
+          "completion_tokens": 1177,
+          "wall_clock_s": 17.524942636489868,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 13,
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6252,
+          "completion_tokens": 1219,
+          "wall_clock_s": 16.51736307144165,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 14,
+          "score": 12,
+          "cities": 1,
+          "units": 3,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 6530,
+          "completion_tokens": 1871,
+          "wall_clock_s": 24.22787880897522,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 15,
+          "score": 15,
+          "cities": 1,
+          "units": 3,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 6511,
+          "completion_tokens": 1065,
+          "wall_clock_s": 15.74037504196167,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "score": 15,
+          "cities": 1,
+          "units": 3,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 5273,
+          "completion_tokens": 874,
+          "wall_clock_s": 14.903093576431274,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "score": 15,
+          "cities": 1,
+          "units": 3,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 3826,
+          "completion_tokens": 666,
+          "wall_clock_s": 7.345456838607788,
+          "step_count": 3,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Bronze Working",
+            "civic": "Foreign Trade"
+          }
+        },
+        {
+          "turn": 18,
+          "score": 20,
+          "cities": 1,
+          "units": 3,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 6506,
+          "completion_tokens": 1993,
+          "wall_clock_s": 22.81033444404602,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Bronze Working",
+            "civic": "Foreign Trade"
+          }
+        },
+        {
+          "turn": 19,
+          "score": 20,
+          "cities": 1,
+          "units": 3,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 6528,
+          "completion_tokens": 976,
+          "wall_clock_s": 16.518046855926514,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Bronze Working",
+            "civic": "Foreign Trade"
+          }
+        },
+        {
+          "turn": 20,
+          "score": 20,
+          "cities": 1,
+          "units": 3,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 6539,
+          "completion_tokens": 1422,
+          "wall_clock_s": 19.891648292541504,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Bronze Working",
+            "civic": "Foreign Trade"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": {
+          "turn": 1,
+          "note": "cities delta=1"
+        },
+        "explored_vs_idle": {
+          "turn": 2,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 1,
+          "tool": "set_research"
+        },
+        "wasted_move": {
+          "turn": 6,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      }
+    },
+    "2": {
+      "player_id": 2,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 1,
+          "score": 4,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5626,
+          "completion_tokens": 450,
+          "wall_clock_s": 7.671509027481079,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 2.7,
+            "culture": 1.4,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 2,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 6037,
+          "completion_tokens": 628,
+          "wall_clock_s": 9.287153482437134,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 3,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 6017,
+          "completion_tokens": 511,
+          "wall_clock_s": 8.249518156051636,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 4,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 6037,
+          "completion_tokens": 636,
+          "wall_clock_s": 9.494068384170532,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 5,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 6064,
+          "completion_tokens": 825,
+          "wall_clock_s": 13.326957941055298,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 6,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 6037,
+          "completion_tokens": 520,
+          "wall_clock_s": 10.210101127624512,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 7,
+          "score": 14,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 5983,
+          "completion_tokens": 963,
+          "wall_clock_s": 14.01211929321289,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 8,
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 6183,
+          "completion_tokens": 618,
+          "wall_clock_s": 10.530598163604736,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 9,
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 3721,
+          "completion_tokens": 633,
+          "wall_clock_s": 7.039530038833618,
+          "step_count": 3,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 10,
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 3728,
+          "completion_tokens": 1035,
+          "wall_clock_s": 12.988411903381348,
+          "step_count": 3,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 11,
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 6215,
+          "completion_tokens": 530,
+          "wall_clock_s": 11.4247465133667,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 12,
+          "score": 15,
+          "cities": 1,
+          "units": 2,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 6457,
+          "completion_tokens": 1108,
+          "wall_clock_s": 16.423321962356567,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 13,
+          "score": 15,
+          "cities": 1,
+          "units": 2,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 6284,
+          "completion_tokens": 1243,
+          "wall_clock_s": 18.258098602294922,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 14,
+          "score": 18,
+          "cities": 1,
+          "units": 2,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 3724,
+          "completion_tokens": 607,
+          "wall_clock_s": 6.845592737197876,
+          "step_count": 3,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 15,
+          "score": 20,
+          "cities": 1,
+          "units": 2,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 6292,
+          "completion_tokens": 1201,
+          "wall_clock_s": 14.731072664260864,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "score": 20,
+          "cities": 1,
+          "units": 2,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 6216,
+          "completion_tokens": 824,
+          "wall_clock_s": 11.5890531539917,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "score": 20,
+          "cities": 1,
+          "units": 2,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 6320,
+          "completion_tokens": 1053,
+          "wall_clock_s": 16.897995471954346,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 40.000000000000014,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 18,
+          "score": 21,
+          "cities": 1,
+          "units": 2,
+          "science": 4.3,
+          "culture": 3.5,
+          "prompt_tokens": 6424,
+          "completion_tokens": 1241,
+          "wall_clock_s": 16.507341861724854,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 19,
+          "score": 22,
+          "cities": 1,
+          "units": 2,
+          "science": 4.3,
+          "culture": 5.6,
+          "prompt_tokens": 6245,
+          "completion_tokens": 1491,
+          "wall_clock_s": 17.618115663528442,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 20,
+          "score": 23,
+          "cities": 1,
+          "units": 2,
+          "science": 4.3,
+          "culture": 5.6,
+          "prompt_tokens": 6368,
+          "completion_tokens": 1015,
+          "wall_clock_s": 16.199591398239136,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Craftsmanship"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": {
+          "turn": 1,
+          "note": "cities delta=1"
+        },
+        "explored_vs_idle": {
+          "turn": 2,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 1,
+          "tool": "set_research"
+        },
+        "wasted_move": {
+          "turn": 5,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      }
+    },
+    "3": {
+      "player_id": 3,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 1,
+          "score": 0,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5747,
+          "completion_tokens": 248,
+          "wall_clock_s": 23.386000633239746,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 2.7,
+            "culture": 1.4,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "None",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 2,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5954,
+          "completion_tokens": 569,
+          "wall_clock_s": 10.025953531265259,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 3,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4730,
+          "completion_tokens": 870,
+          "wall_clock_s": 12.122699499130249,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 4,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4730,
+          "completion_tokens": 889,
+          "wall_clock_s": 10.522453546524048,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 5,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5942,
+          "completion_tokens": 1160,
+          "wall_clock_s": 15.029683828353882,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 6,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5908,
+          "completion_tokens": 792,
+          "wall_clock_s": 10.435528039932251,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 7,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4728,
+          "completion_tokens": 552,
+          "wall_clock_s": 7.588973522186279,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 8,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4728,
+          "completion_tokens": 1072,
+          "wall_clock_s": 12.334124088287354,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 9,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5996,
+          "completion_tokens": 877,
+          "wall_clock_s": 12.935816287994385,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 10,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 5915,
+          "completion_tokens": 235,
+          "wall_clock_s": 5.767372369766235,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 11,
+          "score": 9,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 5957,
+          "completion_tokens": 158,
+          "wall_clock_s": 5.253389596939087,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 12,
+          "score": 9,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 4787,
+          "completion_tokens": 469,
+          "wall_clock_s": 7.0382936000823975,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 13,
+          "score": 9,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 4816,
+          "completion_tokens": 836,
+          "wall_clock_s": 10.111458539962769,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 14,
+          "score": 12,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 6069,
+          "completion_tokens": 1285,
+          "wall_clock_s": 15.383147716522217,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 15,
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 3.6,
+          "prompt_tokens": 6341,
+          "completion_tokens": 1048,
+          "wall_clock_s": 16.636646270751953,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "score": 16,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6338,
+          "completion_tokens": 1207,
+          "wall_clock_s": 17.530136823654175,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6426,
+          "completion_tokens": 484,
+          "wall_clock_s": 8.524223327636719,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 18,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6385,
+          "completion_tokens": 207,
+          "wall_clock_s": 6.055039882659912,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 19,
+          "score": 19,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6451,
+          "completion_tokens": 1723,
+          "wall_clock_s": 21.168091297149658,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 20,
+          "score": 22,
+          "cities": 1,
+          "units": 3,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6781,
+          "completion_tokens": 2788,
+          "wall_clock_s": 31.976101875305176,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": {
+          "turn": 1,
+          "note": "cities delta=1"
+        },
+        "explored_vs_idle": {
+          "turn": 2,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 2,
+          "tool": "set_research"
+        },
+        "wasted_move": {
+          "turn": 2,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      }
+    },
+    "4": {
+      "player_id": 4,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 1,
+          "score": 0,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5807,
+          "completion_tokens": 574,
+          "wall_clock_s": 25.758533000946045,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 2.7,
+            "culture": 1.4,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 2,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5370,
+          "completion_tokens": 638,
+          "wall_clock_s": 12.1838698387146,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 3,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5917,
+          "completion_tokens": 517,
+          "wall_clock_s": 8.361387729644775,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 4,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5917,
+          "completion_tokens": 659,
+          "wall_clock_s": 11.35655951499939,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 5,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 5917,
+          "completion_tokens": 512,
+          "wall_clock_s": 8.261404514312744,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 6,
+          "score": 7,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 6104,
+          "completion_tokens": 697,
+          "wall_clock_s": 11.29891300201416,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 7,
+          "score": 7,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 6152,
+          "completion_tokens": 964,
+          "wall_clock_s": 12.682271242141724,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 8,
+          "score": 7,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 6142,
+          "completion_tokens": 751,
+          "wall_clock_s": 12.636784076690674,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 9,
+          "score": 7,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4982,
+          "completion_tokens": 629,
+          "wall_clock_s": 11.555190801620483,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 10,
+          "score": 8,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 6212,
+          "completion_tokens": 196,
+          "wall_clock_s": 6.650701522827148,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 11,
+          "score": 8,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 6286,
+          "completion_tokens": 1012,
+          "wall_clock_s": 14.089936256408691,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 12,
+          "score": 8,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 6333,
+          "completion_tokens": 1831,
+          "wall_clock_s": 21.453168392181396,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 13,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6054,
+          "completion_tokens": 1103,
+          "wall_clock_s": 16.310038328170776,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 14,
+          "score": 9,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 3599,
+          "completion_tokens": 535,
+          "wall_clock_s": 8.408632278442383,
+          "step_count": 3,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 15,
+          "score": 12,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6017,
+          "completion_tokens": 170,
+          "wall_clock_s": 6.395708084106445,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "score": 12,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6053,
+          "completion_tokens": 929,
+          "wall_clock_s": 12.191190719604492,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "score": 14,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4906,
+          "completion_tokens": 1008,
+          "wall_clock_s": 13.637218713760376,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 18,
+          "score": 14,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6032,
+          "completion_tokens": 1112,
+          "wall_clock_s": 14.305330991744995,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 19,
+          "score": 14,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6391,
+          "completion_tokens": 780,
+          "wall_clock_s": 10.672765731811523,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 20,
+          "score": 14,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 6037,
+          "completion_tokens": 1130,
+          "wall_clock_s": 14.318321943283081,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": {
+          "turn": 1,
+          "note": "cities delta=1"
+        },
+        "explored_vs_idle": {
+          "turn": 1,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 1,
+          "tool": "set_research"
+        },
+        "wasted_move": {
+          "turn": 1,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      }
+    },
+    "5": {
+      "player_id": 5,
+      "model": "qwen3.6-27b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 1,
+          "score": 3,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3787,
+          "completion_tokens": 420,
+          "wall_clock_s": 45.11994385719299,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 2.7,
+            "culture": 1.4,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 2,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3865,
+          "completion_tokens": 1928,
+          "wall_clock_s": 56.118051290512085,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 3,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3865,
+          "completion_tokens": 1219,
+          "wall_clock_s": 38.13811779022217,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 4,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3856,
+          "completion_tokens": 1799,
+          "wall_clock_s": 54.01745319366455,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 5,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3856,
+          "completion_tokens": 1047,
+          "wall_clock_s": 33.39783954620361,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 6,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4141,
+          "completion_tokens": 2198,
+          "wall_clock_s": 70.77374529838562,
+          "step_count": 10,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 7,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4045,
+          "completion_tokens": 1316,
+          "wall_clock_s": 45.17534112930298,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 8,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4033,
+          "completion_tokens": 991,
+          "wall_clock_s": 33.527738094329834,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 9,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4069,
+          "completion_tokens": 2646,
+          "wall_clock_s": 79.24995374679565,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 10,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4069,
+          "completion_tokens": 2585,
+          "wall_clock_s": 80.57961750030518,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 11,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4058,
+          "completion_tokens": 2514,
+          "wall_clock_s": 77.79251527786255,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 12,
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4087,
+          "completion_tokens": 2932,
+          "wall_clock_s": 89.32075262069702,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 13,
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4095,
+          "completion_tokens": 2215,
+          "wall_clock_s": 69.1280951499939,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 14,
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4142,
+          "completion_tokens": 890,
+          "wall_clock_s": 33.102922439575195,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 15,
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4089,
+          "completion_tokens": 1379,
+          "wall_clock_s": 44.389678955078125,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4040,
+          "completion_tokens": 761,
+          "wall_clock_s": 26.309869050979614,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4101,
+          "completion_tokens": 1638,
+          "wall_clock_s": 51.68664216995239,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 18,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4112,
+          "completion_tokens": 2578,
+          "wall_clock_s": 77.43053603172302,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 19,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4110,
+          "completion_tokens": 1307,
+          "wall_clock_s": 44.75359773635864,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Writing",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 20,
+          "score": 19,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4107,
+          "completion_tokens": 826,
+          "wall_clock_s": 661.5950167179108,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 20.000000000000004,
+            "cities": 0,
+            "units": 0,
+            "research": "Writing",
+            "civic": "Craftsmanship"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": {
+          "turn": 1,
+          "note": "cities delta=1"
+        },
+        "explored_vs_idle": {
+          "turn": 1,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 1,
+          "tool": "set_research"
+        },
+        "wasted_move": {
+          "turn": 4,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      }
+    },
+    "6": {
+      "player_id": 6,
+      "model": "qwen3.6-27b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 1,
+          "score": 3,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3861,
+          "completion_tokens": 1595,
+          "wall_clock_s": 50.443984270095825,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 2.7,
+            "culture": 1.4,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 2,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 2388,
+          "completion_tokens": 650,
+          "wall_clock_s": 21.618096113204956,
+          "step_count": 3,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 3,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3935,
+          "completion_tokens": 2231,
+          "wall_clock_s": 69.12435388565063,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 4,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3885,
+          "completion_tokens": 516,
+          "wall_clock_s": 20.533437728881836,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 5,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3889,
+          "completion_tokens": 696,
+          "wall_clock_s": 25.858273029327393,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 6,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4147,
+          "completion_tokens": 1651,
+          "wall_clock_s": 53.18691396713257,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 7,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4092,
+          "completion_tokens": 1939,
+          "wall_clock_s": 61.41791844367981,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 8,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 4090,
+          "completion_tokens": 1309,
+          "wall_clock_s": 44.22423768043518,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 9,
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4088,
+          "completion_tokens": 880,
+          "wall_clock_s": 33.77122259140015,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 10,
+          "score": 11,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4173,
+          "completion_tokens": 1571,
+          "wall_clock_s": 52.100581407547,
+          "step_count": 9,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 11,
+          "score": 11,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4099,
+          "completion_tokens": 843,
+          "wall_clock_s": 32.54480218887329,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 12,
+          "score": 11,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4087,
+          "completion_tokens": 8742,
+          "wall_clock_s": 258.124507188797,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 13,
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4105,
+          "completion_tokens": 720,
+          "wall_clock_s": 29.299094438552856,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 14,
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 4169,
+          "completion_tokens": 2652,
+          "wall_clock_s": 81.40162515640259,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 15,
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4161,
+          "completion_tokens": 3700,
+          "wall_clock_s": 112.08028745651245,
+          "step_count": 9,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4228,
+          "completion_tokens": 1000,
+          "wall_clock_s": 36.026615142822266,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4115,
+          "completion_tokens": 1392,
+          "wall_clock_s": 47.078125,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 18,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4115,
+          "completion_tokens": 1239,
+          "wall_clock_s": 42.45364713668823,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 19,
+          "score": 17,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 4113,
+          "completion_tokens": 1833,
+          "wall_clock_s": 57.00668382644653,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 20,
+          "score": 16,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 5.0,
+          "prompt_tokens": 4107,
+          "completion_tokens": 1350,
+          "wall_clock_s": 46.835898876190186,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Astrology",
+            "civic": "Craftsmanship"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": {
+          "turn": 1,
+          "note": "cities delta=1"
+        },
+        "explored_vs_idle": {
+          "turn": 1,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 1,
+          "tool": "set_research"
+        },
+        "wasted_move": {
+          "turn": 3,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      }
+    },
+    "7": {
+      "player_id": 7,
+      "model": "qwen3.6-27b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 1,
+          "score": 0,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3753,
+          "completion_tokens": 511,
+          "wall_clock_s": 20.471450090408325,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 2.7,
+            "culture": 1.4,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "None",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 2,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3915,
+          "completion_tokens": 850,
+          "wall_clock_s": 29.60888671875,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 3,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3917,
+          "completion_tokens": 1055,
+          "wall_clock_s": 33.93010234832764,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 4,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3915,
+          "completion_tokens": 841,
+          "wall_clock_s": 29.772222995758057,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 5,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3917,
+          "completion_tokens": 773,
+          "wall_clock_s": 26.361870527267456,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 6,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 1.4,
+          "prompt_tokens": 3994,
+          "completion_tokens": 1730,
+          "wall_clock_s": 54.47197937965393,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 7,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 2.5,
+          "prompt_tokens": 4031,
+          "completion_tokens": 793,
+          "wall_clock_s": 27.684882879257202,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 1.1,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 8,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.7,
+          "culture": 2.5,
+          "prompt_tokens": 3926,
+          "completion_tokens": 1314,
+          "wall_clock_s": 41.86084032058716,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 9,
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 2.8,
+          "prompt_tokens": 3933,
+          "completion_tokens": 2388,
+          "wall_clock_s": 72.3032853603363,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Archery",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 10,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 3.2,
+          "culture": 2.8,
+          "prompt_tokens": 4044,
+          "completion_tokens": 1491,
+          "wall_clock_s": 50.96859669685364,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 11,
+          "score": 8,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 4053,
+          "completion_tokens": 1568,
+          "wall_clock_s": 49.240270137786865,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.5999999999999996,
+            "culture": 0.30000000000000027,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 12,
+          "score": 10,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 3985,
+          "completion_tokens": 1799,
+          "wall_clock_s": 57.51138639450073,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 13,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 3966,
+          "completion_tokens": 934,
+          "wall_clock_s": 31.282302141189575,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 14,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 3943,
+          "completion_tokens": 2104,
+          "wall_clock_s": 63.32078218460083,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 15,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 3964,
+          "completion_tokens": 753,
+          "wall_clock_s": 26.438868045806885,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 3.1,
+          "prompt_tokens": 3964,
+          "completion_tokens": 1026,
+          "wall_clock_s": 32.999123334884644,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "score": 13,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 3968,
+          "completion_tokens": 727,
+          "wall_clock_s": 23.836090803146362,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 18,
+          "score": 15,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 3968,
+          "completion_tokens": 963,
+          "wall_clock_s": 32.39203596115112,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 19,
+          "score": 15,
+          "cities": 1,
+          "units": 1,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 3959,
+          "completion_tokens": 969,
+          "wall_clock_s": 32.93774104118347,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 20,
+          "score": 15,
+          "cities": 1,
+          "units": 1,
+          "science": 4.3,
+          "culture": 4.5,
+          "prompt_tokens": 4072,
+          "completion_tokens": 1064,
+          "wall_clock_s": 35.586071729660034,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": {
+          "turn": 1,
+          "note": "cities delta=1"
+        },
+        "explored_vs_idle": {
+          "turn": 1,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 6,
+          "tool": "set_city_production"
+        },
+        "wasted_move": {
+          "turn": 2,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      }
+    }
+  },
+  "config_summary": {
+    "1": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 6,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        }
+      },
+      "n_ctx": null,
+      "turns": 20,
+      "avg_steps": 5.45,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "2": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 6,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        }
+      },
+      "n_ctx": null,
+      "turns": 20,
+      "avg_steps": 5.25,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "3": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 6,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        }
+      },
+      "n_ctx": null,
+      "turns": 20,
+      "avg_steps": 5.05,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "4": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 6,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        }
+      },
+      "n_ctx": null,
+      "turns": 20,
+      "avg_steps": 5.35,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "5": {
+      "model": "qwen3.6-27b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 3,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        }
+      },
+      "n_ctx": null,
+      "turns": 20,
+      "avg_steps": 6.1,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "6": {
+      "model": "qwen3.6-27b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 3,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        }
+      },
+      "n_ctx": null,
+      "turns": 20,
+      "avg_steps": 6.85,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "7": {
+      "model": "qwen3.6-27b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 3,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        }
+      },
+      "n_ctx": null,
+      "turns": 20,
+      "avg_steps": 5.25,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    }
+  }
+}

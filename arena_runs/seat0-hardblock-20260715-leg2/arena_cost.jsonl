@@ -1,0 +1,5 @@
+{"turn": 301, "player_id": 0, "provider": "cli-claude", "model": "cli-claude", "prompt_tokens": 34, "completion_tokens": 19593, "usd": 1.706484}
+{"turn": 302, "player_id": 0, "provider": "cli-claude", "model": "cli-claude", "prompt_tokens": 32, "completion_tokens": 14223, "usd": 1.413495}
+{"turn": 302, "player_id": 0, "provider": "cli-claude", "model": "cli-claude", "prompt_tokens": 12, "completion_tokens": 1775, "usd": 0.333924}
+{"turn": 303, "player_id": 0, "provider": "cli-claude", "model": "cli-claude", "prompt_tokens": 70, "completion_tokens": 13769, "usd": 1.883558}
+{"turn": 303, "player_id": 0, "provider": "cli-claude", "model": "cli-claude", "prompt_tokens": 22, "completion_tokens": 5740, "usd": 0.594243}

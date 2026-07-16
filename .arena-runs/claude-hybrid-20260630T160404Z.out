@@ -1,0 +1,66 @@
+{
+  "result": {
+    "puppet_turns_played": 2,
+    "log": [
+      {
+        "player": 1,
+        "turn": 1,
+        "summary": "max_steps reached",
+        "actions": [
+          {
+            "tool": "get_overview",
+            "result": "GameOverview(turn=1, player_id=1, civ_name='Scotland', leader_name='Robert the Bruce', gold=10.0, gold_per_turn=0.0, science_yield=0.0, culture_yield=0.0, faith=0.0, current_research='None', current_civic='Code of Laws', num_cities=0, num_units=2, score=3, diplomatic_favor=0, favor_per_turn=0, explo"
+          },
+          {
+            "tool": "get_units",
+            "result": "[UnitInfo(unit_id=65536, unit_index=0, name='Settler', unit_type='UNIT_SETTLER', x=12, y=11, moves_remaining=2.0, max_moves=2.0, health=100, max_health=100, combat_strength=0, ranged_strength=0, build_charges=0, targets=[], needs_promotion=False, can_upgrade=False, upgrade_target='', upgrade_cost=0,"
+          },
+          {
+            "tool": "found_city",
+            "result": "FOUNDED|12,11"
+          },
+          {
+            "tool": "get_cities",
+            "result": "([CityInfo(city_id=65536, name='Stirling', x=12, y=11, population=1, food=4.0, production=4.8, gold=6.0, science=2.7, culture=1.4, faith=0.0, housing=6.0, amenities=3, turns_to_grow=8, food_surplus=2.0, food_stored=0.0, growth_threshold=15, currently_building='nothing', production_turns_left=0, defe"
+          },
+          {
+            "tool": "set_research",
+            "result": "RESEARCHING|TECH_POTTERY"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|10,11|from:11,11|now_at:10,11|(moved dx:-1 dy:+0)"
+          }
+        ]
+      },
+      {
+        "player": 2,
+        "turn": 1,
+        "summary": "Founded **Sparta** at (22,33) on the best available site (river + mountain-adjacent, near deer/wheat/furs); set research to Animal Husbandry, Code of Laws civic already completing, queued a Scout for exploration, and fortified the Warrior as garrison.",
+        "actions": [],
+        "usage": {
+          "prompt_tokens": 7172,
+          "completion_tokens": 2346,
+          "usd": 0.6660115000000001,
+          "exit": 0,
+          "stderr": "Permission deny rule \"MultiEdit\" matches no known tool \u2014 check for typos.\nPermission deny rule \"NotebookRead\" matches no known tool \u2014 check for typos.\nPermission deny rule \"LS\" matches no known tool \u2014 check for typos.\n"
+        }
+      }
+    ]
+  },
+  "cost": {
+    "by_player": {
+      "1": {
+        "prompt_tokens": 6531,
+        "completion_tokens": 1097,
+        "usd": 0.0
+      },
+      "2": {
+        "prompt_tokens": 7172,
+        "completion_tokens": 2346,
+        "usd": 0.666012
+      }
+    },
+    "total_usd": 0.666012
+  }
+}

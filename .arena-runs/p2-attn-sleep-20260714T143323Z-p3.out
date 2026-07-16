@@ -1,0 +1,63 @@
+{
+  "result": {
+    "puppet_turns_played": 1,
+    "turns_slept": 0,
+    "log": [
+      {
+        "player": 5,
+        "turn": 172,
+        "summary": "",
+        "actions": [
+          {
+            "tool": "attack_unit",
+            "result": "Combat Estimate (Melee):\n  UNIT_KNIGHT (CS:60, HP:100) vs UNIT_WARRIOR (CS:20, HP:60)\n  Modifiers: att CHARGE_BONUS_VS_FORTIFIED +10\n  Est damage to defender: ~517\n  Est damage to attacker: ~1\n  -> LIKELY KILL\nError: STOPPED_SHORT|Unit moved to (40,16) but could not reach target at (37,15) \u2014 3 tiles"
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: STACKING_CONFLICT|Friendly UNIT_BUILDER already on (39,20). Cannot stack same formation class."
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|43,19|from:42,22|now_at:43,20|(moved dx:+1 dy:-2)|STOPPED_MID_PATH (moves exhausted)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|37,16|from:36,27|now_at:36,27|BLOCKED (impassable mountain)"
+          },
+          {
+            "tool": "set_city_production",
+            "result": "PRODUCING|BUILDING_MONUMENT|5 turns"
+          },
+          {
+            "tool": "set_city_production",
+            "result": "PRODUCING|BUILDING_MONUMENT|14 turns"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        }
+      }
+    ]
+  },
+  "cost": {
+    "by_player": {
+      "5": {
+        "prompt_tokens": 59272,
+        "completion_tokens": 9306,
+        "usd": 0.0
+      }
+    },
+    "total_usd": 0.0
+  }
+}

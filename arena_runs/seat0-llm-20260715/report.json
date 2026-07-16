@@ -1,0 +1,1131 @@
+{
+  "by_player": {
+    "1": {
+      "player_id": 1,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 9,
+          "turn_kind": "played",
+          "score": 7,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 53617,
+          "completion_tokens": 902,
+          "wall_clock_s": 25.503286361694336,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 10,
+          "turn_kind": "played",
+          "score": 8,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 54699,
+          "completion_tokens": 436,
+          "wall_clock_s": 10.609436273574829,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 11,
+          "turn_kind": "played",
+          "score": 8,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 55570,
+          "completion_tokens": 548,
+          "wall_clock_s": 12.860241413116455,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 12,
+          "turn_kind": "played",
+          "score": 8,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 55060,
+          "completion_tokens": 531,
+          "wall_clock_s": 12.079469203948975,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 13,
+          "turn_kind": "played",
+          "score": 8,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 55032,
+          "completion_tokens": 1327,
+          "wall_clock_s": 21.407154321670532,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 14,
+          "turn_kind": "played",
+          "score": 8,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 1.7,
+          "prompt_tokens": 55834,
+          "completion_tokens": 467,
+          "wall_clock_s": 12.0889732837677,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 15,
+          "turn_kind": "played",
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 54272,
+          "completion_tokens": 768,
+          "wall_clock_s": 16.154696702957153,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "turn_kind": "played",
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 55798,
+          "completion_tokens": 617,
+          "wall_clock_s": 14.102938175201416,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "turn_kind": "played",
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 55147,
+          "completion_tokens": 365,
+          "wall_clock_s": 9.400004625320435,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 18,
+          "turn_kind": "played",
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 56363,
+          "completion_tokens": 858,
+          "wall_clock_s": 15.039392709732056,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 19,
+          "turn_kind": "played",
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 55221,
+          "completion_tokens": 1077,
+          "wall_clock_s": 18.717910289764404,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 20,
+          "turn_kind": "played",
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 55255,
+          "completion_tokens": 667,
+          "wall_clock_s": 13.842382431030273,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Craftsmanship"
+          }
+        }
+      ],
+      "failed_turns": 0,
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.09473684210526316
+      },
+      "rubric": {
+        "founded_extra_city": null,
+        "explored_vs_idle": {
+          "turn": 9,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 9,
+          "tool": "set_research"
+        },
+        "wasted_move": {
+          "turn": 9,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": {
+          "turn": 12,
+          "note": "skip/fortify after truncation"
+        }
+      },
+      "behavior": {
+        "driver": "in_process",
+        "provider": "local",
+        "model": "gemma4-26b",
+        "standing_memory_injected_turns": 0,
+        "standing_memory_captured_turns": 0,
+        "task_follow_through_attempts": 0,
+        "task_completions": 0,
+        "task_blocked": 0,
+        "task_lost": 0,
+        "task_failed": 0,
+        "great_people_tool_calls": 0,
+        "trade_route_tool_calls": 0,
+        "religion_wc_tool_calls": 0
+      }
+    },
+    "2": {
+      "player_id": 2,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 9,
+          "turn_kind": "played",
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 55674,
+          "completion_tokens": 742,
+          "wall_clock_s": 15.467260122299194,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 10,
+          "turn_kind": "played",
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 38531,
+          "completion_tokens": 565,
+          "wall_clock_s": 13.759663581848145,
+          "step_count": 10,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 11,
+          "turn_kind": "played",
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 54795,
+          "completion_tokens": 436,
+          "wall_clock_s": 10.60016679763794,
+          "step_count": 7,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 12,
+          "turn_kind": "played",
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 57023,
+          "completion_tokens": 853,
+          "wall_clock_s": 15.983806848526001,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 13,
+          "turn_kind": "played",
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 56435,
+          "completion_tokens": 519,
+          "wall_clock_s": 12.628307104110718,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 14,
+          "turn_kind": "played",
+          "score": 13,
+          "cities": 1,
+          "units": 2,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 47591,
+          "completion_tokens": 423,
+          "wall_clock_s": 9.730786085128784,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Bronze Working",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 15,
+          "turn_kind": "played",
+          "score": 15,
+          "cities": 1,
+          "units": 3,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 56846,
+          "completion_tokens": 1429,
+          "wall_clock_s": 21.131038188934326,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Bronze Working",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 16,
+          "turn_kind": "played",
+          "score": 15,
+          "cities": 1,
+          "units": 3,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 54576,
+          "completion_tokens": 674,
+          "wall_clock_s": 14.287562131881714,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Craftsmanship"
+          }
+        },
+        {
+          "turn": 17,
+          "turn_kind": "played",
+          "score": 15,
+          "cities": 1,
+          "units": 3,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 56058,
+          "completion_tokens": 628,
+          "wall_clock_s": 13.945685625076294,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Foreign Trade"
+          }
+        },
+        {
+          "turn": 18,
+          "turn_kind": "played",
+          "score": 18,
+          "cities": 1,
+          "units": 3,
+          "science": 3.2,
+          "culture": 3.9,
+          "prompt_tokens": 54575,
+          "completion_tokens": 842,
+          "wall_clock_s": 17.84807300567627,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Foreign Trade"
+          }
+        },
+        {
+          "turn": 19,
+          "turn_kind": "played",
+          "score": 18,
+          "cities": 1,
+          "units": 3,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 53814,
+          "completion_tokens": 1125,
+          "wall_clock_s": 19.67656183242798,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Foreign Trade"
+          }
+        },
+        {
+          "turn": 20,
+          "turn_kind": "played",
+          "score": 19,
+          "cities": 1,
+          "units": 4,
+          "science": 3.8,
+          "culture": 4.2,
+          "prompt_tokens": 53689,
+          "completion_tokens": 1134,
+          "wall_clock_s": 19.103266954421997,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Pottery",
+            "civic": "Foreign Trade"
+          }
+        }
+      ],
+      "failed_turns": 0,
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.07368421052631578
+      },
+      "rubric": {
+        "founded_extra_city": null,
+        "explored_vs_idle": {
+          "turn": 9,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 16,
+          "tool": "set_research"
+        },
+        "wasted_move": {
+          "turn": 9,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": {
+          "turn": 11,
+          "note": "skip/fortify after truncation"
+        }
+      },
+      "behavior": {
+        "driver": "in_process",
+        "provider": "local",
+        "model": "gemma4-26b",
+        "standing_memory_injected_turns": 0,
+        "standing_memory_captured_turns": 0,
+        "task_follow_through_attempts": 0,
+        "task_completions": 0,
+        "task_blocked": 0,
+        "task_lost": 0,
+        "task_failed": 0,
+        "great_people_tool_calls": 0,
+        "trade_route_tool_calls": 0,
+        "religion_wc_tool_calls": 0
+      }
+    },
+    "0": {
+      "player_id": 0,
+      "model": "",
+      "provider": "cli-claude",
+      "series": [
+        {
+          "turn": 9,
+          "turn_kind": "played",
+          "score": 0,
+          "cities": 1,
+          "units": 1,
+          "science": 2.5,
+          "culture": 1.3,
+          "prompt_tokens": 28,
+          "completion_tokens": 9442,
+          "wall_clock_s": 158.22399029299777,
+          "step_count": 27,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 2.5,
+            "culture": 1.3,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 10,
+          "turn_kind": "played",
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.5,
+          "culture": 1.3,
+          "prompt_tokens": 19,
+          "completion_tokens": 10531,
+          "wall_clock_s": 170.2244246850023,
+          "step_count": 22,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 11,
+          "turn_kind": "played",
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.5,
+          "culture": 1.3,
+          "prompt_tokens": 16,
+          "completion_tokens": 7621,
+          "wall_clock_s": 131.62757333099944,
+          "step_count": 24,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 12,
+          "turn_kind": "played",
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.5,
+          "culture": 1.3,
+          "prompt_tokens": 22,
+          "completion_tokens": 10384,
+          "wall_clock_s": 171.9937977720001,
+          "step_count": 27,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 13,
+          "turn_kind": "played",
+          "score": 7,
+          "cities": 1,
+          "units": 1,
+          "science": 2.5,
+          "culture": 1.3,
+          "prompt_tokens": 16,
+          "completion_tokens": 8498,
+          "wall_clock_s": 145.1147174580001,
+          "step_count": 27,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 14,
+          "turn_kind": "played",
+          "score": 7,
+          "cities": 1,
+          "units": 2,
+          "science": 2.5,
+          "culture": 1.3,
+          "prompt_tokens": 15,
+          "completion_tokens": 5047,
+          "wall_clock_s": 87.27590813499774,
+          "step_count": 19,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 15,
+          "turn_kind": "played",
+          "score": 7,
+          "cities": 1,
+          "units": 2,
+          "science": 2.5,
+          "culture": 1.3,
+          "prompt_tokens": 22,
+          "completion_tokens": 7041,
+          "wall_clock_s": 123.70582832299988,
+          "step_count": 30,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 16,
+          "turn_kind": "played",
+          "score": 7,
+          "cities": 1,
+          "units": 2,
+          "science": 2.5,
+          "culture": 1.3,
+          "prompt_tokens": 154,
+          "completion_tokens": 6382,
+          "wall_clock_s": 149.64185423099843,
+          "step_count": 28,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 17,
+          "turn_kind": "played",
+          "score": 10,
+          "cities": 1,
+          "units": 2,
+          "science": 3.0,
+          "culture": 1.6,
+          "prompt_tokens": 283,
+          "completion_tokens": 6801,
+          "wall_clock_s": 119.19002510299833,
+          "step_count": 24,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 18,
+          "turn_kind": "played",
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.0,
+          "culture": 1.6,
+          "prompt_tokens": 123,
+          "completion_tokens": 7304,
+          "wall_clock_s": 124.44896664000044,
+          "step_count": 27,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Animal Husbandry",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 19,
+          "turn_kind": "played",
+          "score": 12,
+          "cities": 1,
+          "units": 2,
+          "science": 3.0,
+          "culture": 1.6,
+          "prompt_tokens": 14,
+          "completion_tokens": 5289,
+          "wall_clock_s": 93.28501605199926,
+          "step_count": 21,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        },
+        {
+          "turn": 20,
+          "turn_kind": "played",
+          "score": 14,
+          "cities": 1,
+          "units": 2,
+          "science": 3.0,
+          "culture": 1.6,
+          "prompt_tokens": 287,
+          "completion_tokens": 7839,
+          "wall_clock_s": 132.8230467479989,
+          "step_count": 26,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Mining",
+            "civic": "Code of Laws"
+          }
+        }
+      ],
+      "failed_turns": 0,
+      "rates": {
+        "invalid_call_rate": 0.056291390728476824,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": {
+          "turn": 9,
+          "note": "cities delta=1"
+        },
+        "explored_vs_idle": {
+          "turn": 9,
+          "note": "explored (automate/move)"
+        },
+        "set_research_or_production": {
+          "turn": 9,
+          "tool": "set_city_production"
+        },
+        "wasted_move": {
+          "turn": 13,
+          "note": "move returned error/blocked"
+        },
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      },
+      "behavior": {
+        "driver": "cli",
+        "provider": "cli-claude",
+        "model": "",
+        "standing_memory_injected_turns": 0,
+        "standing_memory_captured_turns": 0,
+        "task_follow_through_attempts": 0,
+        "task_completions": 0,
+        "task_blocked": 0,
+        "task_lost": 0,
+        "task_failed": 0,
+        "great_people_tool_calls": 0,
+        "trade_route_tool_calls": 0,
+        "religion_wc_tool_calls": 0
+      }
+    }
+  },
+  "config_summary": {
+    "0": {
+      "model": "",
+      "provider": "cli-claude",
+      "civ_options": {},
+      "n_ctx": null,
+      "turns": 12,
+      "avg_steps": 25.166666666666668,
+      "invalid_call_rate": 0.056291390728476824,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "1": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "full",
+        "result_char_cap": 1500,
+        "max_steps": 8,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        },
+        "memory": {
+          "enabled": false,
+          "max_chars": 1200,
+          "max_age_turns": 10
+        },
+        "task_tracker": {
+          "enabled": false,
+          "max_tasks": 8
+        },
+        "attention": {
+          "mode": "off",
+          "max_skip": 5,
+          "max_streak": 5,
+          "threat_radius": 4
+        }
+      },
+      "n_ctx": null,
+      "turns": 12,
+      "avg_steps": 7.916666666666667,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "2": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "full",
+        "result_char_cap": 1500,
+        "max_steps": 8,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        },
+        "memory": {
+          "enabled": false,
+          "max_chars": 1200,
+          "max_age_turns": 10
+        },
+        "task_tracker": {
+          "enabled": false,
+          "max_tasks": 8
+        },
+        "attention": {
+          "mode": "off",
+          "max_skip": 5,
+          "max_streak": 5,
+          "threat_radius": 4
+        }
+      },
+      "n_ctx": null,
+      "turns": 12,
+      "avg_steps": 7.916666666666667,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    }
+  },
+  "behavior": {
+    "failed_turns": 0,
+    "standing_memory_turns": 0,
+    "standing_memory_captured_turns": 0,
+    "task_tracker_turns": 0,
+    "task_pre_model_actions": 0,
+    "task_completed": 0,
+    "task_blocked_visible_hostile": 0,
+    "task_lost": 0,
+    "task_failed": 0,
+    "drivers": {
+      "in_process": 24,
+      "cli": 12
+    },
+    "puppeted_players": [
+      0,
+      1,
+      2
+    ]
+  },
+  "attention": {}
+}

@@ -1,0 +1,263 @@
+{
+  "by_player": {
+    "0": {
+      "player_id": 0,
+      "model": "",
+      "provider": "cli-claude",
+      "series": [
+        {
+          "turn": 306,
+          "turn_kind": "played",
+          "score": 1406,
+          "cities": 8,
+          "units": 51,
+          "science": 573.7,
+          "culture": 312.4,
+          "prompt_tokens": 48,
+          "completion_tokens": 23207,
+          "wall_clock_s": 361.41552374599996,
+          "step_count": 47,
+          "state_delta": {
+            "score": 0,
+            "gold": -2285.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Guidance Systems",
+            "civic": "Space Race"
+          }
+        },
+        {
+          "turn": 307,
+          "turn_kind": "played",
+          "score": 1407,
+          "cities": 8,
+          "units": 51,
+          "science": 569.4,
+          "culture": 281.8,
+          "prompt_tokens": 45,
+          "completion_tokens": 23185,
+          "wall_clock_s": 369.3337952610018,
+          "step_count": 59,
+          "state_delta": {
+            "score": 0,
+            "gold": -280.0,
+            "science": -92.0,
+            "culture": -43.099999999999966,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Lasers",
+            "civic": "Space Race"
+          }
+        },
+        {
+          "turn": 308,
+          "turn_kind": "played",
+          "score": 1414,
+          "cities": 8,
+          "units": 51,
+          "science": 559.9,
+          "culture": 270.4,
+          "prompt_tokens": 44,
+          "completion_tokens": 22263,
+          "wall_clock_s": 341.2924203729999,
+          "step_count": 55,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Lasers",
+            "civic": "Space Race"
+          }
+        },
+        {
+          "turn": 309,
+          "turn_kind": "played",
+          "score": 1421,
+          "cities": 9,
+          "units": 52,
+          "science": 562.3,
+          "culture": 272.3,
+          "prompt_tokens": 120,
+          "completion_tokens": 20988,
+          "wall_clock_s": 354.2026848109963,
+          "step_count": 61,
+          "state_delta": {
+            "score": 0,
+            "gold": -800.0,
+            "science": -2.6000000000000227,
+            "culture": 2.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 1,
+            "research": "Lasers",
+            "civic": "Space Race"
+          }
+        },
+        {
+          "turn": 310,
+          "turn_kind": "played",
+          "score": 1426,
+          "cities": 9,
+          "units": 52,
+          "science": 577.9,
+          "culture": 272.3,
+          "prompt_tokens": 27,
+          "completion_tokens": 12826,
+          "wall_clock_s": 222.3138787889984,
+          "step_count": 37,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 22.399999999999977,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Nuclear Fusion",
+            "civic": "Space Race"
+          }
+        },
+        {
+          "turn": 311,
+          "turn_kind": "played",
+          "score": 1428,
+          "cities": 9,
+          "units": 52,
+          "science": 546.2,
+          "culture": 272.3,
+          "prompt_tokens": 36,
+          "completion_tokens": 15944,
+          "wall_clock_s": 251.09408151699608,
+          "step_count": 48,
+          "state_delta": {
+            "score": 0,
+            "gold": -543.6,
+            "science": -31.199999999999932,
+            "culture": 0.0,
+            "faith": 193.70000000000027,
+            "cities": 0,
+            "units": 0,
+            "research": "Nuclear Fusion",
+            "civic": "Suffrage"
+          }
+        },
+        {
+          "turn": 312,
+          "turn_kind": "played",
+          "score": 1432,
+          "cities": 9,
+          "units": 53,
+          "science": 519.5,
+          "culture": 284.4,
+          "prompt_tokens": 78,
+          "completion_tokens": 23352,
+          "wall_clock_s": 386.89246748299774,
+          "step_count": 74,
+          "state_delta": {
+            "score": 0,
+            "gold": -929.9999999999999,
+            "science": 20.19999999999999,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 1,
+            "research": "Nuclear Fusion",
+            "civic": "Suffrage"
+          }
+        },
+        {
+          "turn": 313,
+          "turn_kind": "played",
+          "score": 1437,
+          "cities": 9,
+          "units": 53,
+          "science": 515.5,
+          "culture": 284.4,
+          "prompt_tokens": 47,
+          "completion_tokens": 17912,
+          "wall_clock_s": 294.8470354070014,
+          "step_count": 51,
+          "state_delta": {
+            "score": 0,
+            "gold": 788.0,
+            "science": -3.0,
+            "culture": 0.0,
+            "faith": 193.69999999999982,
+            "cities": 0,
+            "units": 0,
+            "research": "Nuclear Fusion",
+            "civic": "Suffrage"
+          }
+        }
+      ],
+      "failed_turns": 0,
+      "rates": {
+        "invalid_call_rate": 0.004629629629629629,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": null,
+        "explored_vs_idle": null,
+        "set_research_or_production": null,
+        "wasted_move": null,
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      },
+      "behavior": {
+        "driver": "cli",
+        "provider": "cli-claude",
+        "model": "",
+        "standing_memory_injected_turns": 0,
+        "standing_memory_captured_turns": 0,
+        "task_follow_through_attempts": 0,
+        "task_completions": 0,
+        "task_blocked": 0,
+        "task_lost": 0,
+        "task_failed": 0,
+        "great_people_tool_calls": 10,
+        "trade_route_tool_calls": 5,
+        "religion_wc_tool_calls": 10
+      }
+    }
+  },
+  "config_summary": {
+    "0": {
+      "model": "",
+      "provider": "cli-claude",
+      "civ_options": {},
+      "n_ctx": null,
+      "turns": 8,
+      "avg_steps": 54.0,
+      "invalid_call_rate": 0.004629629629629629,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    }
+  },
+  "behavior": {
+    "failed_turns": 0,
+    "standing_memory_turns": 0,
+    "standing_memory_captured_turns": 0,
+    "task_tracker_turns": 0,
+    "task_pre_model_actions": 0,
+    "task_completed": 0,
+    "task_blocked_visible_hostile": 0,
+    "task_lost": 0,
+    "task_failed": 0,
+    "drivers": {
+      "in_process": 0,
+      "cli": 8
+    },
+    "puppeted_players": [
+      0
+    ]
+  },
+  "attention": {}
+}

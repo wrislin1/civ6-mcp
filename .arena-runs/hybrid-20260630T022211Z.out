@@ -1,0 +1,74 @@
+{
+  "result": {
+    "puppet_turns_played": 2,
+    "log": [
+      {
+        "player": 1,
+        "turn": 12,
+        "summary": "max_steps reached",
+        "actions": [
+          {
+            "tool": "get_overview",
+            "result": "GameOverview(turn=12, player_id=1, civ_name='Mongolia', leader_name='Kublai Khan (Mongolia)', gold=70.0, gold_per_turn=6.0, science_yield=3.8, culture_yield=2.0, faith=0.0, current_research='Animal Husbandry', current_civic='Code of Laws', num_cities=1, num_units=2, score=13, diplomatic_favor=0, fav"
+          },
+          {
+            "tool": "get_units",
+            "result": "[UnitInfo(unit_id=196608, unit_index=0, name='Scout', unit_type='UNIT_SCOUT', x=15, y=32, moves_remaining=3.0, max_moves=3.0, health=100, max_health=100, combat_strength=10, ranged_strength=0, build_charges=0, targets=[], needs_promotion=False, can_upgrade=False, upgrade_target='', upgrade_cost=0, v"
+          },
+          {
+            "tool": "get_cities",
+            "result": "([CityInfo(city_id=65536, name='Xanadu', x=14, y=36, population=3, food=10.0, production=6.0, gold=6.0, science=3.8, culture=2.0, faith=0.0, housing=6.0, amenities=4, turns_to_grow=8, food_surplus=4.0, food_stored=1.0, growth_threshold=33, currently_building='UNIT_BUILDER', production_turns_left=7, "
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|15,35|from:15,32|now_at:15,34|(moved dx:+0 dy:+2)|STOPPED_MID_PATH (moves exhausted)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|16,34|from:15,34|now_at:15,34|BLOCKED (tile appears passable - path may be blocked by intermediate tiles)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|14,35|from:15,34|now_at:14,35|(moved dx:-1 dy:+1)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: NO_MOVES|Unit has no movement points remaining this turn. Use skip or wait until next turn."
+          },
+          {
+            "tool": "skip_unit",
+            "result": "SKIPPED"
+          }
+        ]
+      },
+      {
+        "player": 2,
+        "turn": 12,
+        "summary": "Turn 12 done: Tokyo kept on Slinger, Mining and Code of Laws confirmed, builder farmed (52,25), and warrior scouted north to (52,16); no active notifications remain.",
+        "actions": [],
+        "usage": {
+          "prompt_tokens": 232182,
+          "completion_tokens": 1644,
+          "usd": 0.0,
+          "exit": 0,
+          "stderr": "Reading additional input from stdin...\n"
+        }
+      }
+    ]
+  },
+  "cost": {
+    "by_player": {
+      "1": {
+        "prompt_tokens": 10690,
+        "completion_tokens": 404,
+        "usd": 0.0
+      },
+      "2": {
+        "prompt_tokens": 232182,
+        "completion_tokens": 1644,
+        "usd": 0.0
+      }
+    },
+    "total_usd": 0.0
+  }
+}

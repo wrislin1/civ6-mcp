@@ -1,0 +1,92 @@
+{
+  "result": {
+    "puppet_turns_played": 1,
+    "turns_slept": 1,
+    "log": [
+      {
+        "player": 5,
+        "turn": 203,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 1,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 204,
+        "summary": "max_steps reached",
+        "actions": [
+          {
+            "tool": "upgrade_unit",
+            "result": "UPGRADED|UNIT_KNIGHT -> UNIT_CUIRASSIER"
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: STACKING_CONFLICT|Friendly UNIT_BUILDER already on (43,19). Cannot stack same formation class."
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: STACKING_CONFLICT|Friendly UNIT_BUILDER already on (37,10). Cannot stack same formation class."
+          },
+          {
+            "tool": "set_city_production",
+            "result": "PRODUCING|BUILDING_UNIVERSITY|12 turns"
+          },
+          {
+            "tool": "set_research",
+            "result": "RESEARCHING|TECH_CARTOGRAPHY"
+          },
+          {
+            "tool": "move_unit",
+            "result": "CAPTURE_MOVE|26,52|from:28,52|now_at:28,52|BLOCKED (tile appears passable - path may be blocked by intermediate tiles)"
+          },
+          {
+            "tool": "get_map_area",
+            "result": "25 tiles:\n  (41,17): GRASS_HILLS Hills River (MINE) {F:2 P:1} (owned by Sumeria) [mv:2]\n  (42,17): GRASS Coast (Road) [ENTERTAINMENT_COMPLEX] {F:0 P:0} (owned by Sumeria)\n  (43,17): COAST {F:1 P:0 G:1}\n  (44,17): OCEAN {F:1 P:0}\n  (45,17): COAST [fog]\n  (41,18): GRASS_HILLS Hills River (Road) [THEAT"
+          },
+          {
+            "tool": "improve_tile",
+            "result": "Error: IMPROVEMENT_NOT_FOUND|REPAIR not in game database"
+          },
+          {
+            "tool": "improve_tile",
+            "result": "Error: IMPROVEMENT_NOT_FOUND|PASTURE not in game database"
+          },
+          {
+            "tool": "get_builder_tasks",
+            "result": "=== BUILDER TASKS (15 tasks, 4 idle builders) ===\n\nURGENT:\n  (41,20): repair PASTURE [city: Kish] \u2014 nearest builder id:2686977, 3 tiles\n\nHIGH:\n  (42,20): HONEY+ \u2014 build CAMP [city: Kish] \u2014 nearest builder id:2686977, 2 tiles\n  (37,20): COPPER \u2014 build MINE [city: Eridu] \u2014 nearest builder id:2162695, "
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        }
+      }
+    ]
+  },
+  "cost": {
+    "by_player": {
+      "5": {
+        "prompt_tokens": 315476,
+        "completion_tokens": 7298,
+        "usd": 0.0
+      }
+    },
+    "total_usd": 0.0
+  }
+}

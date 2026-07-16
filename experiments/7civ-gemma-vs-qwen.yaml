@@ -1,0 +1,13 @@
+# 7-civ human-in-loop: you play seat 0 (Cree), LLM puppets players 1-7.
+# gemma4-26b -> GPU0 (:11440), qwen3.6-27b -> GPU1 (:11441, trimmed to max_steps 3 for speed).
+max_puppet_turns: 140          # 7 puppets x 20 rounds (TOTAL across seats)
+idle_poll_limit: 10800         # generous: waits for your turn-ends across ~1h run
+gateway_url: http://192.168.20.196:11444/v1   # fallback; every civ pins its own below
+civs:
+  - { player: 1, provider: local, model: gemma4-26b,  gateway: http://192.168.20.196:11440/v1 }
+  - { player: 2, provider: local, model: gemma4-26b,  gateway: http://192.168.20.196:11440/v1 }
+  - { player: 3, provider: local, model: gemma4-26b,  gateway: http://192.168.20.196:11440/v1 }
+  - { player: 4, provider: local, model: gemma4-26b,  gateway: http://192.168.20.196:11440/v1 }
+  - { player: 5, provider: local, model: qwen3.6-27b, gateway: http://192.168.20.196:11441/v1, max_steps: 3 }
+  - { player: 6, provider: local, model: qwen3.6-27b, gateway: http://192.168.20.196:11441/v1, max_steps: 3 }
+  - { player: 7, provider: local, model: qwen3.6-27b, gateway: http://192.168.20.196:11441/v1, max_steps: 3 }

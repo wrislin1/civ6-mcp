@@ -1,0 +1,7 @@
+{"turn": 1, "player_id": 1, "provider": "local", "model": "gemma4:26b", "prompt_tokens": 545, "completion_tokens": 82, "usd": 0.0}
+{"turn": 1, "player_id": 1, "provider": "local", "model": "gemma4:26b", "prompt_tokens": 836, "completion_tokens": 60, "usd": 0.0}
+{"turn": 1, "player_id": 1, "provider": "local", "model": "gemma4:26b", "prompt_tokens": 1105, "completion_tokens": 125, "usd": 0.0}
+{"turn": 1, "player_id": 1, "provider": "local", "model": "gemma4:26b", "prompt_tokens": 1140, "completion_tokens": 130, "usd": 0.0}
+{"turn": 1, "player_id": 1, "provider": "local", "model": "gemma4:26b", "prompt_tokens": 1434, "completion_tokens": 441, "usd": 0.0}
+{"turn": 1, "player_id": 1, "provider": "local", "model": "gemma4:26b", "prompt_tokens": 1471, "completion_tokens": 259, "usd": 0.0}
+{"turn": 1, "player_id": 2, "provider": "cli-claude", "model": "cli-claude", "prompt_tokens": 7172, "completion_tokens": 2346, "usd": 0.666012}

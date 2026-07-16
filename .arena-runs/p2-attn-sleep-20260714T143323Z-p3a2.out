@@ -1,0 +1,131 @@
+{
+  "result": {
+    "puppet_turns_played": 1,
+    "turns_slept": 4,
+    "log": [
+      {
+        "player": 5,
+        "turn": 186,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 1,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 187,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 2,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 188,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 3,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 189,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 4,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 190,
+        "summary": "max_steps reached",
+        "actions": [
+          {
+            "tool": "get_overview",
+            "result": "Turn 190 | Sumeria (Gilgamesh) | Score: 343 | Prince\nGold: 777 (+47/turn) | Income: 79 | Maintenance: -32 (units: 12) | Science: 101.0 | Culture: 50.4 | Faith: 134 | Favor: 181 (+4/turn)\nResearch: Military Science | Civic: Mercantilism\nCities: 6 | Population: 44 | Units: 10 \u2014 3 Builder, 2 Trader, 2 "
+          },
+          {
+            "tool": "get_units",
+            "result": "10 units:\n  The Magnificent Raiders (UNIT_KNIGHT) at (31,34) \u2014 CS:50 moves 2/2 [id:2031616, idx:0]\n  Pikeman (UNIT_PIKEMAN) at (31,33) \u2014 CS:45 moves 2/2 [id:1638401, idx:1]\n  Builder (UNIT_BUILDER) at (38,13) \u2014 moves 2/2 charges:1 [id:2097154, idx:2]\n    >> Can build: IMPROVEMENT_PASTURE\n  Trader (U"
+          },
+          {
+            "tool": "get_cities",
+            "result": "6 cities:\n  Uruk (pop 13) at (40,16) \u2014 Food 38 Prod 15 Gold 29 Sci 49 Cul 27 | Housing 15 Amenities 13 | Growth: 140/152 food (2t, +12.0/t) | Building: BUILDING_BANK (7 turns) | Walls 200/200 Garrison 200/200 Def:67 Gar:KNIGHT [id:65536]\n    Districts: CAMPUS(37,15) COMMERCIAL_HUB(39,18) ENCAMPMENT("
+          },
+          {
+            "tool": "get_map_area",
+            "result": "25 tiles:\n  (41,17): GRASS_HILLS Hills River (MINE) {F:2 P:1} (owned by Sumeria) [mv:2]\n  (42,17): GRASS Coast (Road) [ENTERTAINMENT_COMPLEX] {F:0 P:0} (owned by Sumeria)\n  (43,17): COAST {F:1 P:0 G:1}\n  (44,17): OCEAN {F:1 P:0}\n  (45,17): COAST [fog]\n  (41,18): GRASS_HILLS Hills River (Road) [THEAT"
+          },
+          {
+            "tool": "get_builder_tasks",
+            "result": "=== BUILDER TASKS (21 tasks, 3 idle builders) ===\n\nURGENT:\n  (37,11): HORSES* \u2014 build PASTURE [city: Sippar] \u2014 nearest builder id:2097154, 2 tiles\n  (42,20): repair CAMP [city: Kish] \u2014 nearest builder id:2293766, 2 tiles\n  (41,20): repair PASTURE [city: Kish] \u2014 nearest builder id:2293766, 3 tiles\n  "
+          },
+          {
+            "tool": "improve_tile",
+            "result": "IMPROVING|IMPROVEMENT_PASTURE|38,13"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|42,20|from:43,19|now_at:42,20|(moved dx:-1 dy:+1)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|45,24|from:44,22|now_at:45,24|(moved dx:+1 dy:+2)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: STACKING_CONFLICT|Friendly UNIT_KNIGHT already on (31,34). Cannot stack same formation class."
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|32,34|from:31,34|now_at:32,34|(moved dx:+1 dy:+0)"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        }
+      }
+    ]
+  },
+  "cost": {
+    "by_player": {
+      "5": {
+        "prompt_tokens": 115865,
+        "completion_tokens": 3733,
+        "usd": 0.0
+      }
+    },
+    "total_usd": 0.0
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "result": {
+    "puppet_turns_played": 1,
+    "turns_slept": 1,
+    "log": [
+      {
+        "player": 5,
+        "turn": 216,
+        "slept": true,
+        "attention": {
+          "mode": "auto",
+          "decision": "slept",
+          "directive": null,
+          "skips_remaining": 0,
+          "streak": 1,
+          "wake_cause": null
+        }
+      },
+      {
+        "player": 5,
+        "turn": 217,
+        "summary": "max_steps reached",
+        "actions": [
+          {
+            "tool": "get_units",
+            "result": "12 units:\n  The Magnificent Raiders (UNIT_KNIGHT) at (35,49) \u2014 CS:50 moves 4/4 [id:2031616, idx:0]\n  Builder (UNIT_BUILDER) at (37,20) \u2014 moves 2/2 charges:3 [id:2686977, idx:1]\n    >> Can build: IMPROVEMENT_MINE\n  Builder (UNIT_BUILDER) at (40,19) \u2014 moves 2/2 charges:2 [id:2621442, idx:2]\n  Trader ("
+          },
+          {
+            "tool": "get_cities",
+            "result": "6 cities:\n  Uruk (pop 15) at (40,16) \u2014 Food 45 Prod 20 Gold 50 Sci 65 Cul 36 | Housing 17 Amenities 16 | Growth: 30/179 food (10t, +15.0/t) | Building: BUILDING_ARMORY (9 turns) | Walls 200/200 Garrison 200/200 Def:81 Gar:CUIRASSIER [id:65536]\n    Districts: CAMPUS(37,15) COMMERCIAL_HUB(39,18) ENCAM"
+          },
+          {
+            "tool": "upgrade_unit",
+            "result": "UPGRADED|UNIT_QUADRIREME -> UNIT_FRIGATE"
+          },
+          {
+            "tool": "improve_tile",
+            "result": "IMPROVING|IMPROVEMENT_MINE|37,20"
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: NO_MOVES|Unit has no movement points remaining this turn. Use skip or wait until next turn."
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|38,17|from:40,19|now_at:39,18|(moved dx:-1 dy:-1)|STOPPED_MID_PATH (moves exhausted)"
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: STACKING_CONFLICT|Friendly UNIT_BUILDER already on (36,8). Cannot stack same formation class."
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: STACKING_CONFLICT|Friendly UNIT_BUILDER already on (37,20). Cannot stack same formation class."
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: STACKING_CONFLICT|Friendly UNIT_CUIRASSIER already on (40,16). Cannot stack same formation class."
+          },
+          {
+            "tool": "move_unit",
+            "result": "Error: STACKING_CONFLICT|Friendly UNIT_KNIGHT already on (35,49). Cannot stack same formation class."
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        }
+      }
+    ]
+  },
+  "cost": {
+    "by_player": {
+      "5": {
+        "prompt_tokens": 345061,
+        "completion_tokens": 2858,
+        "usd": 0.0
+      }
+    },
+    "total_usd": 0.0
+  }
+}

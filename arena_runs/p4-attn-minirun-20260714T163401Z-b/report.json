@@ -1,0 +1,420 @@
+{
+  "by_player": {
+    "3": {
+      "player_id": 3,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 222,
+          "score": 434,
+          "cities": 9,
+          "units": 7,
+          "science": 55.5,
+          "culture": 127.0,
+          "prompt_tokens": 102418,
+          "completion_tokens": 5548,
+          "wall_clock_s": 71.43202137947083,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": -1,
+            "research": "Buttress",
+            "civic": "Urbanization"
+          }
+        },
+        {
+          "turn": 223,
+          "score": 435,
+          "cities": 9,
+          "units": 7,
+          "science": 55.5,
+          "culture": 127.0,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "wall_clock_s": null,
+          "step_count": 0,
+          "state_delta": {
+            "score": 1,
+            "gold": 27.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 141.10000000000002,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Urbanization"
+          }
+        },
+        {
+          "turn": 224,
+          "score": 437,
+          "cities": 9,
+          "units": 7,
+          "science": 62.3,
+          "culture": 127.0,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "wall_clock_s": null,
+          "step_count": 0,
+          "state_delta": {
+            "score": 2,
+            "gold": 27.0,
+            "science": 6.799999999999997,
+            "culture": 0.0,
+            "faith": 141.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Scorched Earth"
+          }
+        },
+        {
+          "turn": 225,
+          "score": 440,
+          "cities": 9,
+          "units": 7,
+          "science": 62.3,
+          "culture": 127.0,
+          "prompt_tokens": 112101,
+          "completion_tokens": 5029,
+          "wall_clock_s": 62.677406787872314,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Scorched Earth"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": null,
+        "explored_vs_idle": null,
+        "set_research_or_production": null,
+        "wasted_move": null,
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      },
+      "behavior": {
+        "driver": "in_process",
+        "provider": "local",
+        "model": "gemma4-26b",
+        "standing_memory_injected_turns": 0,
+        "standing_memory_captured_turns": 0,
+        "task_follow_through_attempts": 0,
+        "task_completions": 0,
+        "task_blocked": 0,
+        "task_lost": 0,
+        "task_failed": 0,
+        "great_people_tool_calls": 0,
+        "trade_route_tool_calls": 0,
+        "religion_wc_tool_calls": 0
+      }
+    },
+    "5": {
+      "player_id": 5,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 222,
+          "score": 403,
+          "cities": 6,
+          "units": 10,
+          "science": 117.7,
+          "culture": 68.1,
+          "prompt_tokens": 99164,
+          "completion_tokens": 3147,
+          "wall_clock_s": 42.9033043384552,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Rifling",
+            "civic": "Colonialism"
+          }
+        },
+        {
+          "turn": 223,
+          "score": 403,
+          "cities": 6,
+          "units": 10,
+          "science": 117.7,
+          "culture": 68.1,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "wall_clock_s": null,
+          "step_count": 0,
+          "state_delta": {
+            "score": 0,
+            "gold": 108.60000000000002,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 8.699999999999989,
+            "cities": 0,
+            "units": 0,
+            "research": "Rifling",
+            "civic": "Colonialism"
+          }
+        },
+        {
+          "turn": 224,
+          "score": 403,
+          "cities": 6,
+          "units": 10,
+          "science": 117.7,
+          "culture": 68.1,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "wall_clock_s": null,
+          "step_count": 0,
+          "state_delta": {
+            "score": 0,
+            "gold": 108.59999999999991,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 8.600000000000023,
+            "cities": 0,
+            "units": 0,
+            "research": "Rifling",
+            "civic": "Colonialism"
+          }
+        },
+        {
+          "turn": 225,
+          "score": 403,
+          "cities": 6,
+          "units": 10,
+          "science": 117.7,
+          "culture": 68.1,
+          "prompt_tokens": 87155,
+          "completion_tokens": 3169,
+          "wall_clock_s": 51.457998752593994,
+          "step_count": 16,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Rifling",
+            "civic": "Colonialism"
+          }
+        }
+      ],
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.0
+      },
+      "rubric": {
+        "founded_extra_city": null,
+        "explored_vs_idle": null,
+        "set_research_or_production": null,
+        "wasted_move": null,
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      },
+      "behavior": {
+        "driver": "in_process",
+        "provider": "local",
+        "model": "gemma4-26b",
+        "standing_memory_injected_turns": 0,
+        "standing_memory_captured_turns": 0,
+        "task_follow_through_attempts": 0,
+        "task_completions": 0,
+        "task_blocked": 0,
+        "task_lost": 0,
+        "task_failed": 0,
+        "great_people_tool_calls": 0,
+        "trade_route_tool_calls": 0,
+        "religion_wc_tool_calls": 0
+      }
+    }
+  },
+  "config_summary": {
+    "3": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "full",
+        "result_char_cap": 6000,
+        "max_steps": 8,
+        "playbook": "condensed",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": true,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "threats"
+          ]
+        },
+        "memory": {
+          "enabled": false,
+          "max_chars": 1200,
+          "max_age_turns": 10
+        },
+        "task_tracker": {
+          "enabled": false,
+          "max_tasks": 8
+        },
+        "attention": {
+          "mode": "auto",
+          "max_skip": 5,
+          "max_streak": 2,
+          "threat_radius": 4
+        }
+      },
+      "n_ctx": 131072,
+      "turns": 2,
+      "avg_steps": 11.5,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 2345.5,
+      "avg_score_delta": 0.0
+    },
+    "5": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "full",
+        "result_char_cap": 6000,
+        "max_steps": 8,
+        "playbook": "condensed",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": true,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "threats"
+          ]
+        },
+        "memory": {
+          "enabled": false,
+          "max_chars": 1200,
+          "max_age_turns": 10
+        },
+        "task_tracker": {
+          "enabled": false,
+          "max_tasks": 8
+        },
+        "attention": {
+          "mode": "hybrid",
+          "max_skip": 5,
+          "max_streak": 2,
+          "threat_radius": 4
+        }
+      },
+      "n_ctx": 131072,
+      "turns": 2,
+      "avg_steps": 12.0,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 1579.0,
+      "avg_score_delta": 0.0
+    }
+  },
+  "behavior": {
+    "standing_memory_turns": 0,
+    "standing_memory_captured_turns": 0,
+    "task_tracker_turns": 0,
+    "task_pre_model_actions": 0,
+    "task_completed": 0,
+    "task_blocked_visible_hostile": 0,
+    "task_lost": 0,
+    "task_failed": 0,
+    "drivers": {
+      "in_process": 4,
+      "cli": 0
+    },
+    "puppeted_players": [
+      3,
+      5
+    ]
+  },
+  "attention": {
+    "3": {
+      "captured": 4,
+      "model_turns": 2,
+      "slept_turns": 2,
+      "skip_rate": 0.5,
+      "max_streak": 2,
+      "streak_histogram": {
+        "2": 1
+      },
+      "wake_causes": {
+        "STREAK_CAP": 1
+      },
+      "directive": {
+        "issued": 0,
+        "not_recognized": 0,
+        "clamped": 0,
+        "unknown_tokens": 0
+      },
+      "savings": {
+        "llm_calls_avoided": 2,
+        "est_usd": 0.0,
+        "est_wall_clock_s": 134.10942816734314
+      },
+      "false_quiet": {
+        "streaks": 1,
+        "false_quiet_streaks": 0,
+        "rate": 0.0
+      }
+    },
+    "5": {
+      "captured": 4,
+      "model_turns": 2,
+      "slept_turns": 2,
+      "skip_rate": 0.5,
+      "max_streak": 2,
+      "streak_histogram": {
+        "2": 1
+      },
+      "wake_causes": {
+        "STREAK_CAP": 1
+      },
+      "directive": {
+        "issued": 1,
+        "not_recognized": 0,
+        "clamped": 0,
+        "unknown_tokens": 0
+      },
+      "savings": {
+        "llm_calls_avoided": 2,
+        "est_usd": 0.0,
+        "est_wall_clock_s": 94.3613030910492
+      },
+      "false_quiet": {
+        "streaks": 1,
+        "false_quiet_streaks": 0,
+        "rate": 0.0
+      }
+    }
+  }
+}
