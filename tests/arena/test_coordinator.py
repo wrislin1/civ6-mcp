@@ -5135,6 +5135,7 @@ class FakeChannelRuntime:
         self.reconcile_error = reconcile_error
         self.poll_error = poll_error
         self.calls = []
+        self.finish_admissions = []
         self.finish_results = []
         self.finish_staged_actions = []
         self.events = events
@@ -5175,6 +5176,7 @@ class FakeChannelRuntime:
 
     async def finish_player(self, gs, admission, policy_result):
         self._record(f"finish:{admission.player_id}:{admission.turn}")
+        self.finish_admissions.append(admission)
         self.finish_results.append(policy_result)
         self.finish_staged_actions.append(tuple(admission.context.staged_actions))
         if self.finish_error is not None:
@@ -5338,6 +5340,65 @@ def _privacy_channel_result(canary: str, *, driver: str) -> dict:
         "tool_call_id": "game-1",
         "content": "OK:DEAL_ACCEPTED|Rome",
     }
+    schema_specific_steps = [
+        {
+            "type": "tool_use",
+            "id": "private-anthropic-use",
+            "name": "send_message",
+            "input": {"text": f"private anthropic {canary}"},
+        },
+        {
+            "type": "tool_result",
+            "tool_use_id": "private-anthropic-use",
+            "content": f"private anthropic result {canary}",
+        },
+        {
+            "type": "tool_use",
+            "id": "public-anthropic-use",
+            "name": "respond_to_trade",
+            "input": {"other_player_id": 2, "accept": True},
+        },
+        {
+            "type": "tool_result",
+            "tool_use_id": "public-anthropic-use",
+            "content": "ordinary anthropic game result",
+        },
+        {
+            "type": "function_call",
+            "id": "private-openai-function",
+            "call_id": "private-openai-call",
+            "name": "propose_deal",
+            "arguments": f'{{"secret":"{canary}"}}',
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "private-openai-call",
+            "output": f"private OpenAI result {canary}",
+        },
+        {
+            "type": "function_call",
+            "id": "public-openai-function",
+            "call_id": "public-openai-call",
+            "name": "set_research",
+            "arguments": '{"tech_type":"TECH_WRITING"}',
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "public-openai-call",
+            "output": "ordinary OpenAI game result",
+        },
+        {
+            "type": "send_message",
+            "to_player": 2,
+            "text": f"private direct action {canary}",
+        },
+        {
+            "type": "unit_action",
+            "unit_id": 42,
+            "action": "fortify",
+            "result": "ordinary direct game action",
+        },
+    ]
     return {
         "summary": raw_text,
         "actions": [
@@ -5361,6 +5422,7 @@ def _privacy_channel_result(canary: str, *, driver: str) -> dict:
                 *id_only_channel_results,
                 game_step,
                 id_only_game_result,
+                *schema_specific_steps,
             ],
             "invalid_tool_calls": [
                 {
@@ -5393,9 +5455,24 @@ def _assert_public_channel_result_is_private_free(public_value, canary: str) -> 
     for name in CHANNEL_ACTION_NAMES:
         assert f'"{name}"' not in serialized
     assert '"channel-' not in serialized
+    for private_id in (
+        "private-anthropic-use",
+        "private-openai-function",
+        "private-openai-call",
+    ):
+        assert private_id not in serialized
     assert '"respond_to_trade"' in serialized
     assert '"set_research"' in serialized
     assert '"game-1"' in serialized
+    for public_id in (
+        "public-anthropic-use",
+        "public-openai-function",
+        "public-openai-call",
+    ):
+        assert public_id in serialized
+    assert "ordinary anthropic game result" in serialized
+    assert "ordinary OpenAI game result" in serialized
+    assert "ordinary direct game action" in serialized
     assert "ordinary public prose" in serialized
 
 
@@ -5728,6 +5805,54 @@ async def test_failed_policy_still_finishes_channel_before_release(
     assert runtime.finish_results == [None]
     assert result["puppet_turns_played"] == 0
     assert result["log"][0]["channels"]["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_admitted_puppet_cancellation_finishes_staged_channel_action_once(
+    monkeypatch, tmp_path
+):
+    """A BaseException after admission cannot bypass the private post
+    observation. The same admission/context and its staged API action reach one
+    fail-open finish attempt before the original cancellation propagates."""
+    canary = "PRIVATE-PUPPET-CANCEL-STAGED"
+    runtime = FakeChannelRuntime(
+        finish_error=RuntimeError("post observation storage failed")
+    )
+    _patch_channel_open(monkeypatch, runtime)
+
+    class CancellingPolicy(ChannelRecordingPolicy):
+        context = None
+
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            self.runtime._record(f"policy:{player_id}:{turn}")
+            self.context = kwargs["channel_context"]
+            self.context.dispatch(
+                "send_message", {"to_player": 2, "text": canary}
+            )
+            raise asyncio.CancelledError("cancel after staged channel action")
+
+    policy = CancellingPolicy(runtime)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    with pytest.raises(
+        asyncio.CancelledError, match="cancel after staged channel action"
+    ):
+        await run_arena(
+            conn, FakeGS(), _channel_config(tmp_path), policy=policy
+        )
+
+    assert runtime.calls.count("admit:1:7") == 1
+    assert runtime.calls.count("finish:1:7") == 1
+    assert not any(call.startswith("poll:") for call in runtime.calls)
+    assert runtime.finish_admissions[0].context is policy.context
+    assert runtime.finish_staged_actions[0] == tuple(policy.context.staged_actions)
+    assert len(runtime.finish_staged_actions[0]) == 1
+    assert runtime.finish_staged_actions[0][0].action.text == canary
+    assert runtime.finish_results[0]["staged_actions"] == tuple(
+        policy.context.staged_actions
+    )
+    assert conn.restored is True
 
 
 @pytest.mark.asyncio

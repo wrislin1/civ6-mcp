@@ -443,6 +443,7 @@ def _channel_finish_input(*policy_results: dict | None) -> dict:
 
 
 _PUBLIC_CHANNEL_DROP = object()
+_CHANNEL_RESULT_MISSING = object()
 _PRIVATE_CHANNEL_RESULT_FIELDS = frozenset({
     "channel_action",
     "channel_actions",
@@ -461,10 +462,14 @@ def _channel_action_mapping(
 ) -> bool:
     """Whether a result mapping represents a private channel action/call."""
 
-    tool_call_id = value.get("tool_call_id")
-    if isinstance(tool_call_id, str) and tool_call_id in channel_tool_call_ids:
-        return True
-    for key in ("tool_name", "tool", "name", "action"):
+    for key in ("tool_call_id", "tool_use_id", "call_id"):
+        referenced_id = value.get(key)
+        if (
+            isinstance(referenced_id, str)
+            and referenced_id in channel_tool_call_ids
+        ):
+            return True
+    for key in ("tool_name", "tool", "name", "action", "type"):
         if value.get(key) in CHANNEL_ACTION_NAMES:
             return True
     function = value.get("function")
@@ -473,7 +478,10 @@ def _channel_action_mapping(
     action = value.get("action")
     return (
         isinstance(action, dict)
-        and any(action.get(key) in CHANNEL_ACTION_NAMES for key in ("name", "type"))
+        and any(
+            action.get(key) in CHANNEL_ACTION_NAMES
+            for key in ("name", "type", "action", "tool")
+        )
     )
 
 
@@ -491,11 +499,11 @@ def _public_channel_result(result: dict) -> dict:
 
     def collect_channel_tool_call_ids(value) -> None:
         if isinstance(value, dict):
-            if (
-                _channel_action_mapping(value, set())
-                and isinstance(value.get("id"), str)
-            ):
-                channel_tool_call_ids.add(value["id"])
+            if _channel_action_mapping(value, set()):
+                for key in ("id", "call_id"):
+                    producer_id = value.get(key)
+                    if isinstance(producer_id, str):
+                        channel_tool_call_ids.add(producer_id)
             for item in value.values():
                 collect_channel_tool_call_ids(item)
         elif isinstance(value, (list, tuple)):
@@ -616,10 +624,74 @@ async def run_arena(
     # capture variables so a later puppet/player cannot replace its private
     # context or policy-result stream before the turn is terminalized.
     seat0_channel_capture: dict | None = None
+    puppet_channel_capture: dict | None = None
     seat0_channel_admission_attempts: set[int] = set()
     seat0_channel_errors: dict[int, str] = {}
     channel_reconciled_key: tuple[int, int] | None = None
     channel_reconcile_error = ""
+
+    def _puppet_capture_for(player_id: int, turn: int) -> dict | None:
+        capture = puppet_channel_capture
+        if (
+            capture is None
+            or capture["player_id"] != player_id
+            or capture["turn"] != turn
+            or capture["finished"]
+        ):
+            return None
+        return capture
+
+    async def _finish_puppet_channel_capture(
+        policy_result=_CHANNEL_RESULT_MISSING,
+        *,
+        synthesize_if_missing: bool = False,
+    ) -> None:
+        """Finish and clear an admitted puppet capture exactly once.
+
+        Unlike ordinary Exceptions, BaseException leaves the captured loop
+        immediately. Keeping ownership at run scope lets outer cleanup perform
+        the private post observation before human handback. The synthetic
+        private input is used only when no policy result exists; staged API
+        actions remain authoritative on the bound admission context.
+        """
+
+        nonlocal puppet_channel_capture
+        capture = puppet_channel_capture
+        if capture is None:
+            return
+        if capture["finished"]:
+            puppet_channel_capture = None
+            return
+        if policy_result is not _CHANNEL_RESULT_MISSING:
+            capture["policy_result"] = policy_result
+        capture["finished"] = True
+        finish_input = capture["policy_result"]
+        if finish_input is _CHANNEL_RESULT_MISSING:
+            if synthesize_if_missing:
+                finish_input = {
+                    "transcript": {"steps": [], "final_summary": ""},
+                    "staged_actions": tuple(
+                        capture["admission"].context.staged_actions
+                    ),
+                }
+            else:
+                finish_input = None
+        try:
+            acknowledgements = await channel_runtime.finish_player(
+                gs, capture["admission"], finish_input
+            )
+            capture["fields"]["acknowledgements"] = len(acknowledgements)
+        except Exception as e:
+            error = repr(e)
+            prior = capture["fields"]["error"]
+            capture["fields"]["error"] = f"{prior}; {error}" if prior else error
+            print(
+                f"[arena] channel finish failed for seat "
+                f"{capture['player_id']} turn {capture['turn']}: {e!r}",
+                file=sys.stderr,
+            )
+        finally:
+            puppet_channel_capture = None
 
     def _seat0_capture_for(turn: int) -> dict | None:
         capture = seat0_channel_capture
@@ -1603,6 +1675,19 @@ async def run_arena(
                             file=sys.stderr,
                         )
                     channel_fields_state["error"] = channel_error
+                if not is_seat0 and channel_admission is not None:
+                    if puppet_channel_capture is not None:
+                        await _finish_puppet_channel_capture(
+                            synthesize_if_missing=True
+                        )
+                    puppet_channel_capture = {
+                        "player_id": st.local,
+                        "turn": st.turn,
+                        "admission": channel_admission,
+                        "policy_result": _CHANNEL_RESULT_MISSING,
+                        "fields": channel_fields_state,
+                        "finished": False,
+                    }
 
                 async def _finish_channel_turn(policy_result) -> None:
                     nonlocal channel_acknowledgements, channel_error, channel_finished
@@ -1611,6 +1696,13 @@ async def run_arena(
                     # Reserve the one finish attempt before awaiting so an
                     # interrupt can never cause replay inside this run.
                     channel_finished = True
+                    if not is_seat0:
+                        await _finish_puppet_channel_capture(policy_result)
+                        channel_acknowledgements = channel_fields_state[
+                            "acknowledgements"
+                        ]
+                        channel_error = channel_fields_state["error"]
+                        return
                     try:
                         acknowledgements = await channel_runtime.finish_player(
                             gs, channel_admission, policy_result
@@ -2234,6 +2326,9 @@ async def run_arena(
 
                 try:
                     result = await pol(gs, st.local, st.turn, **policy_kwargs)
+                    puppet_capture = _puppet_capture_for(st.local, st.turn)
+                    if puppet_capture is not None:
+                        puppet_capture["policy_result"] = result
                 except Exception as e:
                     # A single failed LLM turn -- e.g. the gateway 500s on a malformed/
                     # truncated tool call (openai.InternalServerError) -- must degrade THIS
@@ -2673,11 +2768,22 @@ async def run_arena(
         # cleanup below. Ordinary write failures are swallowed; interrupts are
         # retained until every human-safety cleanup step has been attempted.
         channel_interrupt = None
+        if puppet_channel_capture is not None:
+            try:
+                await _finish_puppet_channel_capture(synthesize_if_missing=True)
+            except BaseException as e:
+                if not isinstance(e, Exception):
+                    channel_interrupt = e
+                print(
+                    f"[arena] WARNING: puppet channel finish failed in cleanup: "
+                    f"{e!r}",
+                    file=sys.stderr,
+                )
         if seat0_channel_capture is not None:
             try:
                 await _finish_seat0_channel_capture()
             except BaseException as e:
-                if not isinstance(e, Exception):
+                if not isinstance(e, Exception) and channel_interrupt is None:
                     channel_interrupt = e
                 print(
                     f"[arena] WARNING: seat-0 channel finish failed in cleanup: "
