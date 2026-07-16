@@ -504,6 +504,26 @@ async def apply_mechanical_cleanup(conn, blockers: list[dict]) -> list[dict]:
                 "action": "acknowledge_informational",
                 "result": result,
             })
+        elif blocking_type in (
+            "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION",
+            "ENDTURN_BLOCKING_WORLD_CONGRESS_SPECIAL_SESSION",
+        ):
+            # 'Resume Congress' shape: a 0-resolution session has no
+            # strategic content and just needs submitting. The Lua proves
+            # the 0-resolution condition atomically; a session with real
+            # votes prints WC_HAS_RESOLUTIONS and stays with the policy.
+            lines = await conn.execute_write(lq.build_wc_resume_submit())
+            if any("WC_RESUMED" in ln for ln in lines):
+                result = "WC_RESUMED"
+            elif any("WC_HAS_RESOLUTIONS" in ln for ln in lines):
+                result = "WC_HAS_RESOLUTIONS"
+            else:
+                result = "UNCONFIRMED"
+            cleanup.append({
+                "type": blocking_type,
+                "action": "wc_resume_submit",
+                "result": result,
+            })
         elif blocking_type == "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE":
             # Same resolution the solo end_turn path applies (end_turn.py):
             # the spy takes the fastest escape route.

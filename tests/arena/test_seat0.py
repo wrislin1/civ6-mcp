@@ -965,3 +965,39 @@ async def test_register_default_wc_voter_false_on_failure():
     conn = ScriptedConn()
     conn.queue_write(["ERR:SOMETHING", lq.SENTINEL])
     assert await seat0.register_default_wc_voter(conn) is False
+
+
+@pytest.mark.asyncio
+async def test_apply_mechanical_cleanup_wc_session_submits_when_nothing_to_vote():
+    """The 'Resume Congress' shape (observed live, T303): a WC_SESSION
+    blocker with zero resolutions has no strategic content -- submitting the
+    session is mechanical. The Lua proves the 0-resolution condition itself
+    (atomic), so a session with real votes is never touched."""
+    conn = ScriptedConn()
+    conn.queue_write(["WC_RESUMED", lq.SENTINEL])
+    blockers = [
+        {"type": "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION", "message": "Resume Congress"}
+    ]
+    cleanup = await apply_mechanical_cleanup(conn, blockers)
+
+    assert cleanup == [
+        {
+            "type": "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION",
+            "action": "wc_resume_submit",
+            "result": "WC_RESUMED",
+        }
+    ]
+    assert conn.writes == [lq.build_wc_resume_submit()]
+
+
+@pytest.mark.asyncio
+async def test_apply_mechanical_cleanup_wc_session_left_when_resolutions_exist():
+    conn = ScriptedConn()
+    conn.queue_write(["WC_HAS_RESOLUTIONS|3", lq.SENTINEL])
+    blockers = [
+        {"type": "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION", "message": "Resume Congress"}
+    ]
+    cleanup = await apply_mechanical_cleanup(conn, blockers)
+
+    assert cleanup[0]["action"] == "wc_resume_submit"
+    assert cleanup[0]["result"] == "WC_HAS_RESOLUTIONS"

@@ -81,6 +81,7 @@ from civ_mcp.lua.congress import (  # noqa: F401
     build_congress_submit,
     build_congress_vote,
     build_register_wc_voter,
+    build_wc_resume_submit,
     build_world_congress_query,
     parse_world_congress_response,
 )

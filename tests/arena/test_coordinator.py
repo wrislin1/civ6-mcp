@@ -5049,3 +5049,36 @@ async def test_seat0_recheck_wc_only_blocker_defaults_and_refires(monkeypatch, t
     assert result["seat0_human_pending"] == 0
     events = [e for e in result["log"] if e.get("event") == "seat0_wc_default_vote"]
     assert len(events) == 1
+
+
+@pytest.mark.asyncio
+async def test_seat0_played_path_wc_only_after_repair_fires_anyway(monkeypatch, tmp_path):
+    """A live WC session (with resolutions) blocking BEFORE any end request:
+    the repair pass is the pilot's voting chance; a persisting all-WC blocker
+    set is clears-at-end, so the played path ensures a voter (default if the
+    pilot registered none) and fires instead of human_pending."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),
+        seat0_poll(7, active=False),
+        seat0_poll(8, active=True),
+    ])
+    wc = _blocker("ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION", "Resume Congress")
+    harness.blockers = [wc]  # persists through every query
+    calls = _wc_env(monkeypatch, harness, handler_results=[False], status=None)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=30, run_id="seat0-wc-played")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    names = harness.names()
+    assert names.count("end_turn") == 1
+    assert calls["default"] == 1
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert result["seat0_human_pending"] == 0
+    events = [e for e in result["log"] if e.get("event") == "seat0_wc_default_vote"]
+    assert len(events) == 1

@@ -141,6 +141,14 @@ SEAT0_DIPLO_IDLE_POLLS = 10    # idle polls between probes while seat 0 is inact
 SEAT0_DIPLO_DRAIN_POLLS = 45   # drain polls between probes during the AI phase
 SEAT0_DIPLO_ATTEMPT_LIMIT = 3  # policy passes per wedged turn before CRITICAL
 
+# WC session blockers clear only INSIDE ACTION_ENDTURN (the congress runs as
+# a turn segment), so persisting after the pilot's voting chance is not
+# failure -- ensure a voter handler and fire.
+_WC_SESSION_TYPES = frozenset({
+    "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION",
+    "ENDTURN_BLOCKING_WORLD_CONGRESS_SPECIAL_SESSION",
+})
+
 
 async def _sweep_orphan_sessions(conn) -> str:
     """Best-effort: close open diplomacy sessions not involving the local
@@ -748,6 +756,22 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             log.append(entry)
             return True
 
+        async def _seat0_ensure_wc_voter(turn: int) -> None:
+            """Ensure a WC voter handler exists before (re)firing into a live
+            congress: keep the pilot's handler when registered, register the
+            default voter otherwise (logged). Never raises."""
+            if await seat0.wc_handler_registered(conn):
+                return
+            defaulted = await seat0.register_default_wc_voter(conn)
+            log.append({
+                "event": "seat0_wc_default_vote",
+                "turn": turn,
+                "player_id": 0,
+                "registered": defaulted,
+            })
+            print(f"[arena] seat-0 WC default voter registered on turn "
+                  f"{turn}: {defaulted}", file=sys.stderr)
+
         async def _seat0_wc_gate(pol, turn: int) -> None:
             """Solo-path parity (observed live, T303): the World Congress
             opens and closes synchronously INSIDE ACTION_ENDTURN, so votes
@@ -934,24 +958,10 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
             # above was the pilot's chance to register one; default
             # otherwise) and treat the state as clear-to-refire.
             wc_only = bool(remaining_blockers) and all(
-                b["type"] in (
-                    "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION",
-                    "ENDTURN_BLOCKING_WORLD_CONGRESS_SPECIAL_SESSION",
-                )
-                for b in remaining_blockers
+                b["type"] in _WC_SESSION_TYPES for b in remaining_blockers
             )
             if wc_only and seat0_state.may_fire_end_turn:
-                if not await seat0.wc_handler_registered(conn):
-                    defaulted = await seat0.register_default_wc_voter(conn)
-                    log.append({
-                        "event": "seat0_wc_default_vote",
-                        "turn": turn,
-                        "player_id": 0,
-                        "registered": defaulted,
-                    })
-                    print(f"[arena] seat-0 WC default voter registered on "
-                          f"turn {turn} (post-bounce): {defaulted}",
-                          file=sys.stderr)
+                await _seat0_ensure_wc_voter(turn)
                 remaining_blockers = []
                 bounced = True
             if not remaining_blockers and bounced and seat0_state.may_fire_end_turn:
@@ -1575,6 +1585,21 @@ async def run_arena(conn, gs, config, policy=None, policy_for=None, transcript=N
                             },
                         }
 
+                    if (
+                        any_returned
+                        and remaining_blockers
+                        and all(
+                            b["type"] in _WC_SESSION_TYPES
+                            for b in remaining_blockers
+                        )
+                    ):
+                        # A live WC session blocking BEFORE any end request
+                        # (a resumed session with real resolutions): the
+                        # repair pass above was the pilot's voting chance,
+                        # and the blocker itself only clears INSIDE
+                        # ACTION_ENDTURN -- ensure a voter and fire.
+                        await _seat0_ensure_wc_voter(st.turn)
+                        remaining_blockers = []
                     if any_returned and not remaining_blockers:
                         # PLAYED: WC gate first (votes must exist BEFORE the
                         # fire -- the congress runs inside ACTION_ENDTURN),

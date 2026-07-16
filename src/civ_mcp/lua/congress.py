@@ -203,6 +203,36 @@ print("{SENTINEL}")
 """.replace("{SENTINEL}", SENTINEL)
 
 
+def build_wc_resume_submit() -> str:
+    """Submit an interrupted 0-resolution World Congress session (InGame).
+
+    The 'Resume Congress' shape (observed live 2026-07-15, turn 303): a
+    bounced end request leaves ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION up
+    with zero resolutions -- nothing to vote on, but the session must be
+    submitted to resume turn processing. The 0-resolution check happens in
+    Lua so a session with real votes is never touched (prints
+    WC_HAS_RESOLUTIONS instead). Deliberately does NOT send ACTION_ENDTURN:
+    in the arena the coordinator is the sole end-turn authority.
+    """
+    return """
+local wc = Game.GetWorldCongress()
+if not wc then print("WC_NONE") print("{SENTINEL}") return end
+local ress = wc:GetResolutions()
+if ress and #ress > 0 then
+    print("WC_HAS_RESOLUTIONS|" .. #ress)
+else
+    local me = Game.GetLocalPlayer()
+    local intro = ContextPtr:LookUpControl("/InGame/WorldCongressIntro")
+    if intro then intro:SetHide(true) end
+    local popup = ContextPtr:LookUpControl("/InGame/WorldCongressPopup")
+    if popup then popup:SetHide(true) end
+    UI.RequestPlayerOperation(me, PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN, {})
+    print("WC_RESUMED")
+end
+print("{SENTINEL}")
+""".replace("{SENTINEL}", SENTINEL)
+
+
 def build_register_wc_voter(votes: list[dict] | None = None) -> str:
     """Register a one-shot Events.WorldCongressStage1 handler (InGame context).
 
