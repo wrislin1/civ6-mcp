@@ -149,12 +149,17 @@ def test_validation_returns_a_canonical_copy_and_rejects_narrative():
 
 def test_registry_metadata_and_observation_request_are_closed():
     assert set(TERM_REGISTRY) == {
+        "allow_only_unit_category",
         "destroy_camp",
         "dont_settle_within",
+        "forbid_unit_acquisition",
         "found_city_within",
         "declare_war_on",
         "keep_peace_with",
+        "keep_units_away",
         "maintain_gold_reserve",
+        "military_unit_cap",
+        "withdraw_units_from",
     }
     assert TERM_REGISTRY["destroy_camp"].baseline_phase == "proposal"
     assert TERM_REGISTRY["found_city_within"].baseline_phase == "favor_start"
@@ -515,3 +520,227 @@ def test_city_terms_count_new_obligated_founded_component(term, expected):
         due_turn=3,
     )
     assert result.status == expected
+
+
+@pytest.mark.parametrize("formation,religious,categories", [
+    ("FORMATION_CLASS_LAND_COMBAT", 0, {"military"}),
+    ("FORMATION_CLASS_SUPPORT", 0, {"military"}),
+    ("FORMATION_CLASS_CIVILIAN", 0, {"civilian"}),
+    ("FORMATION_CLASS_CIVILIAN", 110, {"civilian", "religious"}),
+])
+def test_unit_category_is_definition_driven(formation, religious, categories):
+    unit = ObservedUnit(2, 7, "UNIT_X", formation, religious, 1, 1)
+    assert unit_categories(unit) == categories
+
+
+def test_upgrade_same_identity_is_not_acquisition_but_new_identity_is():
+    term = {"term_type": "forbid_unit_acquisition", "params": {"category": "military"}}
+    old = ObservedUnit(2, 7, "UNIT_WARRIOR", "FORMATION_CLASS_LAND_COMBAT", 0, 1, 1)
+    upgraded = ObservedUnit(2, 7, "UNIT_SWORDSMAN", "FORMATION_CLASS_LAND_COMBAT", 0, 1, 1)
+    new = ObservedUnit(2, 8, "UNIT_ARCHER", "FORMATION_CLASS_LAND_COMBAT", 0, 2, 1)
+    baseline = capture_baseline(term, obs(1, units=(old,)))
+    assert verify_term(term, baseline, {}, obs(2, units=(upgraded,)), due_turn=4).status == "pending"
+    assert verify_term(term, baseline, {}, obs(2, units=(upgraded, new)), due_turn=4).status == "failed"
+
+
+def test_keep_units_away_has_one_turn_grace_and_persists_transient_violation():
+    term = {"term_type": "keep_units_away", "params": {
+        "player_id": 1, "min_distance": 3, "unit_scope": "military"}}
+    unit = ObservedUnit(2, 7, "UNIT_WARRIOR", "FORMATION_CLASS_LAND_COMBAT", 0, 5, 5)
+    baseline = capture_baseline(term, obs(10, units=(unit,), unit_distances={(2, 7, 1): 1}))
+    grace = verify_term(term, baseline, {}, obs(11, units=(unit,), unit_distances={(2, 7, 1): 1}), 15)
+    breach = verify_term(term, baseline, grace.monitor, obs(12, units=(unit,), unit_distances={(2, 7, 1): 1}), 15)
+    left = verify_term(term, baseline, breach.monitor, obs(13, units=(unit,), unit_distances={(2, 7, 1): 5}), 15)
+    assert (grace.status, breach.status, left.status) == ("pending", "failed", "failed")
+
+
+def test_allow_only_category_accepts_overlap_and_rejects_another_new_category():
+    term = {
+        "term_type": "allow_only_unit_category",
+        "params": {"category": "civilian"},
+    }
+    religious = ObservedUnit(
+        2, 8, "UNIT_MISSIONARY", "FORMATION_CLASS_CIVILIAN", 100, 2, 1
+    )
+    military = ObservedUnit(
+        2, 9, "UNIT_WARRIOR", "FORMATION_CLASS_LAND_COMBAT", 0, 3, 1
+    )
+    baseline = capture_baseline(term, obs(1))
+    allowed = verify_term(term, baseline, {}, obs(2, units=(religious,)), 4)
+    rejected = verify_term(
+        term, baseline, allowed.monitor, obs(3, units=(religious, military)), 4
+    )
+    assert (allowed.status, rejected.status) == ("pending", "failed")
+
+
+def test_post_start_upgrade_of_seen_identity_is_not_another_acquisition():
+    term = {
+        "term_type": "allow_only_unit_category",
+        "params": {"category": "civilian"},
+    }
+    civilian = ObservedUnit(
+        2, 7, "UNIT_BUILDER", "FORMATION_CLASS_CIVILIAN", 0, 2, 1
+    )
+    changed = ObservedUnit(
+        2, 7, "UNIT_WARRIOR", "FORMATION_CLASS_LAND_COMBAT", 0, 2, 1
+    )
+    baseline = capture_baseline(term, obs(10))
+    acquired = verify_term(term, baseline, {}, obs(11, units=(civilian,)), 13)
+    changed_type = verify_term(
+        term, baseline, acquired.monitor, obs(12, units=(changed,)), 13
+    )
+    assert (acquired.status, changed_type.status) == ("pending", "pending")
+
+
+def test_military_cap_applies_at_favor_start_and_persists_first_excess():
+    term = {"term_type": "military_unit_cap", "params": {"max_units": 1}}
+    units = (
+        ObservedUnit(2, 7, "UNIT_WARRIOR", "FORMATION_CLASS_LAND_COMBAT", 0, 1, 1),
+        ObservedUnit(2, 8, "UNIT_BATTERING_RAM", "FORMATION_CLASS_SUPPORT", 0, 2, 1),
+    )
+    baseline = capture_baseline(term, obs(10, units=units))
+    result = verify_term(term, baseline, {}, obs(11), due_turn=15)
+    assert result.status == "failed"
+    assert result.monitor == {
+        "violation_observation_id": "turn:10",
+        "violation_count": 2,
+    }
+
+
+def test_withdrawal_requires_complete_current_distances():
+    term = {"term_type": "withdraw_units_from", "params": {
+        "player_id": 1, "min_distance": 3, "unit_scope": "military"}}
+    military = ObservedUnit(
+        2, 7, "UNIT_WARRIOR", "FORMATION_CLASS_LAND_COMBAT", 0, 5, 5
+    )
+    civilian = ObservedUnit(
+        2, 8, "UNIT_BUILDER", "FORMATION_CLASS_CIVILIAN", 0, 6, 5
+    )
+    baseline = capture_baseline(term, obs(10, units=(military, civilian)))
+
+    pending = verify_term(
+        term,
+        baseline,
+        {},
+        obs(11, units=(military, civilian), unit_distances={(2, 7, 1): 2}),
+        12,
+    )
+    incomplete = verify_term(
+        term, baseline, pending.monitor, obs(12, units=(military,)), 12
+    )
+    complete = verify_term(
+        term,
+        baseline,
+        pending.monitor,
+        obs(12, units=(military,), unit_distances={(2, 7, 1): 3}),
+        12,
+    )
+    assert (pending.status, incomplete.status, complete.status) == (
+        "pending", "unverifiable", "satisfied"
+    )
+
+
+def test_withdrawal_distance_records_are_complete_unit_family_evidence():
+    term = {"term_type": "withdraw_units_from", "params": {
+        "player_id": 1, "min_distance": 3, "unit_scope": "all"}}
+    unit = ObservedUnit(
+        2, 7, "UNIT_BUILDER", "FORMATION_CLASS_CIVILIAN", 0, 5, 5
+    )
+    observation = obs(
+        12,
+        families_present=frozenset({ObservationFamily.UNITS}),
+        units=(unit,),
+        unit_distances={(2, 7, 1): 3},
+    )
+    result = verify_term(
+        term, capture_baseline(term, obs(10)), {}, observation, due_turn=12
+    )
+    assert result.status == "satisfied"
+
+
+def test_withdrawal_known_deadline_breach_is_decisive_despite_another_gap():
+    term = {"term_type": "withdraw_units_from", "params": {
+        "player_id": 1, "min_distance": 3, "unit_scope": "all"}}
+    units = (
+        ObservedUnit(2, 7, "UNIT_BUILDER", "FORMATION_CLASS_CIVILIAN", 0, 5, 5),
+        ObservedUnit(2, 8, "UNIT_SETTLER", "FORMATION_CLASS_CIVILIAN", 0, 6, 5),
+    )
+    result = verify_term(
+        term,
+        capture_baseline(term, obs(10)),
+        {},
+        obs(12, units=units, unit_distances={(2, 7, 1): 2}),
+        due_turn=12,
+    )
+    assert result.status == "failed"
+
+
+def test_keep_units_away_partial_distance_gap_is_terminally_unverifiable():
+    term = {"term_type": "keep_units_away", "params": {
+        "player_id": 1, "min_distance": 3, "unit_scope": "all"}}
+    unit = ObservedUnit(
+        2, 7, "UNIT_BUILDER", "FORMATION_CLASS_CIVILIAN", 0, 5, 5
+    )
+    baseline = capture_baseline(term, obs(10, units=(unit,)))
+    missing = verify_term(term, baseline, {}, obs(12, units=(unit,)), 13)
+    at_due = verify_term(
+        term,
+        baseline,
+        missing.monitor,
+        obs(13, units=(unit,), unit_distances={(2, 7, 1): 5}),
+        13,
+    )
+    assert (missing.status, at_due.status) == ("pending", "unverifiable")
+
+
+def test_keep_units_away_known_breach_is_decisive_despite_another_gap():
+    term = {"term_type": "keep_units_away", "params": {
+        "player_id": 1, "min_distance": 3, "unit_scope": "all"}}
+    units = (
+        ObservedUnit(2, 7, "UNIT_BUILDER", "FORMATION_CLASS_CIVILIAN", 0, 5, 5),
+        ObservedUnit(2, 8, "UNIT_SETTLER", "FORMATION_CLASS_CIVILIAN", 0, 6, 5),
+    )
+    result = verify_term(
+        term,
+        capture_baseline(term, obs(10)),
+        {},
+        obs(12, units=units, unit_distances={(2, 7, 1): 2}),
+        due_turn=13,
+    )
+    assert result.status == "failed"
+
+
+@pytest.mark.parametrize(
+    "term",
+    [
+        {"term_type": "forbid_unit_acquisition", "params": {"category": "siege"}},
+        {"term_type": "forbid_unit_acquisition", "params": {"category": []}},
+        {"term_type": "allow_only_unit_category", "params": {"category": 3}},
+        {"term_type": "military_unit_cap", "params": {"max_units": -1}},
+        {"term_type": "military_unit_cap", "params": {"max_units": True}},
+        {"term_type": "withdraw_units_from", "params": {
+            "player_id": 2, "min_distance": 3, "unit_scope": "military"}},
+        {"term_type": "keep_units_away", "params": {
+            "player_id": 1, "min_distance": -1, "unit_scope": "all"}},
+        {"term_type": "keep_units_away", "params": {
+            "player_id": 1, "min_distance": 3, "unit_scope": "civilian"}},
+        {"term_type": "keep_units_away", "params": {
+            "player_id": 1, "min_distance": 3, "unit_scope": []}},
+    ],
+)
+def test_unit_term_parameter_validation_is_strict(term):
+    with pytest.raises(ValueError):
+        validate_term(term, validation_context())
+
+
+def test_distance_terms_compile_protected_players_and_observation_families():
+    request = compile_observation_request([
+        {"term_type": "withdraw_units_from", "params": {
+            "player_id": 3, "min_distance": 2, "unit_scope": "all"}},
+        {"term_type": "keep_units_away", "params": {
+            "player_id": 1, "min_distance": 3, "unit_scope": "military"}},
+    ])
+    assert request.families == frozenset(
+        {ObservationFamily.UNITS}
+    )
+    assert request.protected_players == (1, 3)

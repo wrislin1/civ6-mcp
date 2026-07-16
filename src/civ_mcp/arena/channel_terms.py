@@ -29,6 +29,16 @@ class ObservedUnit:
     y: int
 
 
+MILITARY_FORMATIONS = frozenset(
+    {
+        "FORMATION_CLASS_LAND_COMBAT",
+        "FORMATION_CLASS_NAVAL",
+        "FORMATION_CLASS_AIR",
+        "FORMATION_CLASS_SUPPORT",
+    }
+)
+
+
 @dataclass(frozen=True)
 class ObservedCity:
     owner_id: int
@@ -175,6 +185,57 @@ def _validate_gold(params: dict, _: TermValidationContext) -> dict:
     return {"min_gold": min_gold}
 
 
+def _validate_unit_category(params: dict, _: TermValidationContext) -> dict:
+    params = _require_exact_fields(
+        params, "term params", frozenset({"category"})
+    )
+    category = params["category"]
+    if not isinstance(category, str) or category not in {
+        "military",
+        "civilian",
+        "religious",
+    }:
+        raise ValueError("category must be military, civilian, or religious")
+    return {"category": category}
+
+
+def _validate_military_unit_cap(params: dict, _: TermValidationContext) -> dict:
+    params = _require_exact_fields(
+        params, "term params", frozenset({"max_units"})
+    )
+    max_units = _require_integer(params["max_units"], "max_units")
+    if max_units < 0:
+        raise ValueError("max_units must be non-negative")
+    return {"max_units": max_units}
+
+
+def _validate_unit_distance(
+    params: dict, context: TermValidationContext
+) -> dict:
+    params = _require_exact_fields(
+        params,
+        "term params",
+        frozenset({"player_id", "min_distance", "unit_scope"}),
+    )
+    player_id = _require_integer(params["player_id"], "player_id")
+    if player_id == context.obligated_player:
+        raise ValueError("term cannot target the obligated player")
+    legal_players = context.enabled_players | context.city_state_players
+    if player_id not in legal_players:
+        raise ValueError(f"player {player_id} is not a legal target")
+    min_distance = _require_integer(params["min_distance"], "min_distance")
+    if min_distance < 0:
+        raise ValueError("min_distance must be non-negative")
+    unit_scope = params["unit_scope"]
+    if not isinstance(unit_scope, str) or unit_scope not in {"military", "all"}:
+        raise ValueError("unit_scope must be military or all")
+    return {
+        "player_id": player_id,
+        "min_distance": min_distance,
+        "unit_scope": unit_scope,
+    }
+
+
 def _observation_ref(observation: ChannelObservation, monitor: dict) -> str:
     supplied = monitor.get("current_observation_id", monitor.get("observation_id"))
     if isinstance(supplied, str) and supplied:
@@ -194,11 +255,16 @@ def _persistent_violation(
     reference = monitor.get("violation_observation_id")
     if reference is None:
         return None
+    persisted_monitor = {
+        key: value
+        for key, value in monitor.items()
+        if key not in {"current_observation_id", "observation_id"}
+    }
     return Verification(
         "failed",
         f"{term_type} was violated in an earlier observation",
         _evidence_refs(reference),
-        {"violation_observation_id": reference},
+        persisted_monitor,
     )
 
 
@@ -317,6 +383,49 @@ def _capture_gold(params: dict, observation: ChannelObservation) -> dict:
         "initial_violation_observation_id": f"turn:{observation.turn}"
         if complete and observation.treasury_gold < params["min_gold"]
         else None,
+        "favor_started_turn": observation.turn,
+    }
+
+
+def _capture_unit_identities(
+    params: dict, observation: ChannelObservation
+) -> dict:
+    del params
+    return {
+        "baseline_complete": ObservationFamily.UNITS
+        in observation.families_present,
+        "unit_ids": tuple(
+            sorted(
+                (unit.owner_id, unit.unit_id)
+                for unit in observation.units
+                if unit.owner_id == observation.player_id
+            )
+        ),
+        "favor_started_turn": observation.turn,
+    }
+
+
+def _military_unit_count(observation: ChannelObservation) -> int:
+    return sum(
+        unit.owner_id == observation.player_id
+        and "military" in unit_categories(unit)
+        for unit in observation.units
+    )
+
+
+def _capture_military_unit_cap(
+    params: dict, observation: ChannelObservation
+) -> dict:
+    complete = ObservationFamily.UNITS in observation.families_present
+    count = _military_unit_count(observation) if complete else None
+    exceeds_cap = count is not None and count > params["max_units"]
+    return {
+        "baseline_complete": complete,
+        "initial_violation_turn": observation.turn if exceeds_cap else None,
+        "initial_violation_observation_id": f"turn:{observation.turn}"
+        if exceeds_cap
+        else None,
+        "initial_violation_count": count if exceeds_cap else None,
         "favor_started_turn": observation.turn,
     }
 
@@ -543,6 +652,277 @@ def _verify_gold(
     )
 
 
+def _baseline_unit_ids(baseline: dict) -> frozenset[tuple[int, int]]:
+    return frozenset(tuple(identity) for identity in baseline.get("unit_ids", ()))
+
+
+def _seen_unit_ids(monitor: dict) -> frozenset[tuple[int, int]]:
+    return frozenset(tuple(identity) for identity in monitor.get("seen_unit_ids", ()))
+
+
+def _new_owned_units(
+    baseline: dict, monitor: dict, observation: ChannelObservation
+) -> tuple[ObservedUnit, ...]:
+    existing = _baseline_unit_ids(baseline) | _seen_unit_ids(monitor)
+    return tuple(
+        unit
+        for unit in observation.units
+        if unit.owner_id == observation.player_id
+        and (unit.owner_id, unit.unit_id) not in existing
+    )
+
+
+def _remember_owned_unit_ids(
+    monitor: dict, observation: ChannelObservation
+) -> dict:
+    updated = dict(monitor)
+    seen = _seen_unit_ids(monitor) | frozenset(
+        (unit.owner_id, unit.unit_id)
+        for unit in observation.units
+        if unit.owner_id == observation.player_id
+    )
+    updated["seen_unit_ids"] = tuple(sorted(seen))
+    return updated
+
+
+def _verify_unit_acquisition(
+    params: dict,
+    baseline: dict,
+    monitor: dict,
+    observation: ChannelObservation,
+    due_turn: int,
+    *,
+    allow_only: bool,
+) -> Verification:
+    if not baseline.get("baseline_complete", False):
+        monitor = dict(monitor)
+        monitor.setdefault("incomplete_observation_id", "favor_start")
+        return _deadline_result(
+            observation,
+            due_turn,
+            terminal_status="satisfied",
+            reason="no prohibited unit acquisition was observed",
+            monitor=monitor,
+        )
+    category = params["category"]
+    new_units = _new_owned_units(baseline, monitor, observation)
+    if allow_only:
+        violated = any(category not in unit_categories(unit) for unit in new_units)
+        reason = (
+            f"a newly acquired unit omitted the accepted {category} category "
+            f"on turn {observation.turn}"
+        )
+    else:
+        violated = any(category in unit_categories(unit) for unit in new_units)
+        reason = (
+            f"a new {category} unit was acquired on turn {observation.turn}"
+        )
+    if violated:
+        return _violation(reason, observation, monitor)
+    monitor = _remember_owned_unit_ids(monitor, observation)
+    return _deadline_result(
+        observation,
+        due_turn,
+        terminal_status="satisfied",
+        reason="no prohibited unit acquisition was observed",
+        monitor=monitor,
+    )
+
+
+def _verify_forbid_unit_acquisition(
+    params: dict,
+    baseline: dict,
+    monitor: dict,
+    observation: ChannelObservation,
+    due_turn: int,
+) -> Verification:
+    return _verify_unit_acquisition(
+        params,
+        baseline,
+        monitor,
+        observation,
+        due_turn,
+        allow_only=False,
+    )
+
+
+def _verify_allow_only_unit_category(
+    params: dict,
+    baseline: dict,
+    monitor: dict,
+    observation: ChannelObservation,
+    due_turn: int,
+) -> Verification:
+    return _verify_unit_acquisition(
+        params,
+        baseline,
+        monitor,
+        observation,
+        due_turn,
+        allow_only=True,
+    )
+
+
+def _military_cap_violation(
+    params: dict,
+    count: int,
+    turn: int,
+    observation_reference: str,
+) -> Verification:
+    return Verification(
+        "failed",
+        f"the military unit cap of {params['max_units']} was exceeded "
+        f"by a count of {count} on turn {turn}",
+        _evidence_refs(observation_reference),
+        {
+            "violation_observation_id": observation_reference,
+            "violation_count": count,
+        },
+    )
+
+
+def _verify_military_unit_cap(
+    params: dict,
+    baseline: dict,
+    monitor: dict,
+    observation: ChannelObservation,
+    due_turn: int,
+) -> Verification:
+    initial_violation_turn = baseline.get("initial_violation_turn")
+    if initial_violation_turn is not None:
+        return _military_cap_violation(
+            params,
+            baseline["initial_violation_count"],
+            initial_violation_turn,
+            baseline["initial_violation_observation_id"],
+        )
+    if not baseline.get("baseline_complete", True):
+        monitor = dict(monitor)
+        monitor.setdefault("incomplete_observation_id", "favor_start")
+    count = _military_unit_count(observation)
+    if count > params["max_units"]:
+        return _military_cap_violation(
+            params,
+            count,
+            observation.turn,
+            _observation_ref(observation, monitor),
+        )
+    return _deadline_result(
+        observation,
+        due_turn,
+        terminal_status="satisfied",
+        reason=f"the military unit count remained at or below {params['max_units']}",
+        monitor=monitor,
+    )
+
+
+def _in_scope_units(
+    params: dict, observation: ChannelObservation
+) -> tuple[ObservedUnit, ...]:
+    return tuple(
+        unit
+        for unit in observation.units
+        if unit.owner_id == observation.player_id
+        and (
+            params["unit_scope"] == "all"
+            or "military" in unit_categories(unit)
+        )
+    )
+
+
+def _unit_territory_distances(
+    params: dict, observation: ChannelObservation
+) -> tuple[int | None, ...]:
+    return tuple(
+        observation.unit_distances.get(
+            (unit.owner_id, unit.unit_id, params["player_id"])
+        )
+        for unit in _in_scope_units(params, observation)
+    )
+
+
+def _distance_summary(params: dict) -> str:
+    return (
+        f"player {params['player_id']} for {params['unit_scope']} units at "
+        f"a minimum distance of {params['min_distance']} hexes"
+    )
+
+
+def _verify_withdraw_units(
+    params: dict,
+    baseline: dict,
+    monitor: dict,
+    observation: ChannelObservation,
+    due_turn: int,
+) -> Verification:
+    del baseline
+    distances = _unit_territory_distances(params, observation)
+    if any(
+        distance is not None and distance < params["min_distance"]
+        for distance in distances
+    ):
+        if observation.turn < due_turn:
+            return Verification("pending", monitor=monitor)
+        return Verification(
+            "failed",
+            f"the withdrawal from {_distance_summary(params)} was incomplete "
+            f"on turn {observation.turn}",
+            monitor=monitor,
+        )
+    if any(distance is None for distance in distances):
+        if observation.turn >= due_turn:
+            return Verification(
+                "unverifiable",
+                f"distance data was incomplete for {_distance_summary(params)} "
+                "at the deadline",
+                monitor=_mark_incomplete(observation, monitor),
+            )
+        return Verification("pending", monitor=monitor)
+    return Verification(
+        "satisfied",
+        f"the withdrawal from {_distance_summary(params)} was observed "
+        f"on turn {observation.turn}",
+        monitor=monitor,
+    )
+
+
+def _verify_keep_units_away(
+    params: dict,
+    baseline: dict,
+    monitor: dict,
+    observation: ChannelObservation,
+    due_turn: int,
+) -> Verification:
+    if observation.turn <= baseline["favor_started_turn"] + 1:
+        return _deadline_result(
+            observation,
+            due_turn,
+            terminal_status="satisfied",
+            reason=f"the exclusion from {_distance_summary(params)} was maintained",
+            monitor=monitor,
+        )
+    distances = _unit_territory_distances(params, observation)
+    if any(
+        distance is not None and distance < params["min_distance"]
+        for distance in distances
+    ):
+        return _violation(
+            f"the exclusion from {_distance_summary(params)} was violated "
+            f"on turn {observation.turn}",
+            observation,
+            monitor,
+        )
+    if any(distance is None for distance in distances):
+        monitor = _mark_incomplete(observation, monitor)
+    return _deadline_result(
+        observation,
+        due_turn,
+        terminal_status="satisfied",
+        reason=f"the exclusion from {_distance_summary(params)} was maintained",
+        monitor=monitor,
+    )
+
+
 def _render_evidence(verification: Verification) -> str:
     return verification.reason
 
@@ -608,6 +988,56 @@ TERM_REGISTRY: dict[str, TermSpec] = {
         _verify_gold,
         _render_evidence,
     ),
+    "forbid_unit_acquisition": TermSpec(
+        "forbid_unit_acquisition",
+        TermMode.CONTINUOUS,
+        "favor_start",
+        frozenset({ObservationFamily.UNITS}),
+        _validate_unit_category,
+        _capture_unit_identities,
+        _verify_forbid_unit_acquisition,
+        _render_evidence,
+    ),
+    "allow_only_unit_category": TermSpec(
+        "allow_only_unit_category",
+        TermMode.CONTINUOUS,
+        "favor_start",
+        frozenset({ObservationFamily.UNITS}),
+        _validate_unit_category,
+        _capture_unit_identities,
+        _verify_allow_only_unit_category,
+        _render_evidence,
+    ),
+    "military_unit_cap": TermSpec(
+        "military_unit_cap",
+        TermMode.CONTINUOUS,
+        "favor_start",
+        frozenset({ObservationFamily.UNITS}),
+        _validate_military_unit_cap,
+        _capture_military_unit_cap,
+        _verify_military_unit_cap,
+        _render_evidence,
+    ),
+    "withdraw_units_from": TermSpec(
+        "withdraw_units_from",
+        TermMode.ENDPOINT,
+        "favor_start",
+        frozenset({ObservationFamily.UNITS}),
+        _validate_unit_distance,
+        _capture_empty,
+        _verify_withdraw_units,
+        _render_evidence,
+    ),
+    "keep_units_away": TermSpec(
+        "keep_units_away",
+        TermMode.CONTINUOUS,
+        "favor_start",
+        frozenset({ObservationFamily.UNITS}),
+        _validate_unit_distance,
+        _capture_empty,
+        _verify_keep_units_away,
+        _render_evidence,
+    ),
 }
 
 
@@ -652,6 +1082,11 @@ def verify_term(
         return persistent
     if baseline.get("initial_violation_turn") is not None:
         return spec.verify(params, baseline, monitor, observation, due_turn)
+    if (
+        spec.term_type == "keep_units_away"
+        and observation.turn <= baseline["favor_started_turn"] + 1
+    ):
+        return spec.verify(params, baseline, monitor, observation, due_turn)
     if not spec.families.issubset(observation.families_present):
         monitor = _mark_incomplete(observation, monitor)
         if observation.turn >= due_turn:
@@ -689,8 +1124,14 @@ def compile_observation_request(terms: Iterable[dict] | dict) -> ObservationRequ
 
 
 def unit_categories(unit: ObservedUnit) -> frozenset[str]:
-    del unit
-    return frozenset()
+    values: set[str] = set()
+    if unit.formation_class in MILITARY_FORMATIONS:
+        values.add("military")
+    if unit.formation_class == "FORMATION_CLASS_CIVILIAN":
+        values.add("civilian")
+        if unit.religious_strength > 0:
+            values.add("religious")
+    return frozenset(values)
 
 
 __all__ = [
