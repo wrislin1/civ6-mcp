@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import copy
 import inspect
 import sys
 from dataclasses import replace as _dc_replace
@@ -28,6 +29,7 @@ from civ_mcp.arena.attention import (
 from civ_mcp.arena.budget import explicit_n_ctx
 from civ_mcp.arena.capabilities import build_caps_query, parse_caps
 from civ_mcp.arena.channel_runtime import ChannelRuntime
+from civ_mcp.arena.channel_protocol import CHANNEL_ACTION_NAMES
 from civ_mcp.arena.config import CivOptions, resolved_puppet_ids, validate_arena_config
 from civ_mcp.arena.memory import (
     extract_standing_plan,
@@ -414,11 +416,15 @@ def _channel_finish_input(*policy_results: dict | None) -> dict:
     ``ChannelRuntime.finish_player``.
     """
 
+    raw_results = [result for result in policy_results if isinstance(result, dict)]
+    if len(raw_results) == 1:
+        # Preserve the exact original object for the common single-pass turn.
+        # Public projection happens only after this private handoff.
+        return raw_results[0]
+
     steps: list = []
     summaries: list[str] = []
-    for result in policy_results:
-        if not isinstance(result, dict):
-            continue
+    for result in raw_results:
         payload = result.get("transcript")
         if not isinstance(payload, dict):
             continue
@@ -436,21 +442,104 @@ def _channel_finish_input(*policy_results: dict | None) -> dict:
     }
 
 
-def _public_channel_summary(summary) -> str:
-    """Remove private protocol records from a public summary copy.
+_PUBLIC_CHANNEL_DROP = object()
+_PRIVATE_CHANNEL_RESULT_FIELDS = frozenset({
+    "channel_action",
+    "channel_actions",
+    "channel_block",
+    "channel_context",
+    "master_block",
+    "staged_action",
+    "staged_actions",
+    "staged_channel_action",
+    "staged_channel_actions",
+})
 
-    The channel parser owns whole lines beginning with the exact ``CHANNEL ``
-    prefix, including malformed attempts.  Keep every surrounding prose line
-    in source order.  Callers use this only for channel-enabled seat-0 public
-    records/logs; the original policy result remains untouched for the private
-    finish capture.
+
+def _channel_action_mapping(
+    value: dict, channel_tool_call_ids: set[str]
+) -> bool:
+    """Whether a result mapping represents a private channel action/call."""
+
+    tool_call_id = value.get("tool_call_id")
+    if isinstance(tool_call_id, str) and tool_call_id in channel_tool_call_ids:
+        return True
+    for key in ("tool_name", "tool", "name", "action"):
+        if value.get(key) in CHANNEL_ACTION_NAMES:
+            return True
+    function = value.get("function")
+    if isinstance(function, dict) and function.get("name") in CHANNEL_ACTION_NAMES:
+        return True
+    action = value.get("action")
+    return (
+        isinstance(action, dict)
+        and any(action.get(key) in CHANNEL_ACTION_NAMES for key in ("name", "type"))
+    )
+
+
+def _public_channel_result(result: dict) -> dict:
+    """Build the sole deep public view of a channel-enabled policy result.
+
+    Raw result objects belong exclusively to ``finish_player``.  This explicit
+    recursive reconstruction removes all channel protocol/action shapes from
+    logs and transcript records without mutating the original: exact protocol
+    lines in text, channel tool calls/results, invalid calls, and staged action
+    fields. Ordinary game tools and prose retain their source order.
     """
 
-    if not isinstance(summary, str):
-        return ""
-    return "\n".join(
-        line for line in summary.splitlines() if not line.startswith("CHANNEL ")
-    )
+    channel_tool_call_ids: set[str] = set()
+
+    def collect_channel_tool_call_ids(value) -> None:
+        if isinstance(value, dict):
+            if (
+                _channel_action_mapping(value, set())
+                and isinstance(value.get("id"), str)
+            ):
+                channel_tool_call_ids.add(value["id"])
+            for item in value.values():
+                collect_channel_tool_call_ids(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect_channel_tool_call_ids(item)
+
+    collect_channel_tool_call_ids(result)
+
+    def project(value):
+        if isinstance(value, str):
+            return "\n".join(
+                line
+                for line in value.splitlines()
+                if not line.startswith("CHANNEL ")
+            )
+        if isinstance(value, dict):
+            if _channel_action_mapping(value, channel_tool_call_ids):
+                return _PUBLIC_CHANNEL_DROP
+            public = {}
+            for key, item in value.items():
+                if key in _PRIVATE_CHANNEL_RESULT_FIELDS:
+                    continue
+                projected = project(item)
+                if projected is not _PUBLIC_CHANNEL_DROP:
+                    public[copy.deepcopy(key)] = projected
+            return public
+        if isinstance(value, list):
+            public = []
+            for item in value:
+                projected = project(item)
+                if projected is not _PUBLIC_CHANNEL_DROP:
+                    public.append(projected)
+            return public
+        if isinstance(value, tuple):
+            public = []
+            for item in value:
+                projected = project(item)
+                if projected is not _PUBLIC_CHANNEL_DROP:
+                    public.append(projected)
+            return tuple(public)
+        return copy.deepcopy(value)
+
+    public = project(result)
+    return public if isinstance(public, dict) else {}
 
 
 async def run_arena(
@@ -931,12 +1020,12 @@ async def run_arena(
                                 "skipped": True, "repair_error": timeout_error})
                 else:
                     repair["completed"] = True
-                    repair_summary = (repair_result or {}).get("summary", "")
-                    repair["summary"] = (
-                        _public_channel_summary(repair_summary)
+                    public_repair_result = (
+                        _public_channel_result(repair_result or {})
                         if 0 in enabled_channel_players
-                        else repair_summary
+                        else repair_result or {}
                     )
+                    repair["summary"] = public_repair_result.get("summary", "")
             except Exception as e:
                 repair["error"] = repr(e)
                 print(f"[arena] seat-0 turn {turn} repair failed: {e!r}",
@@ -1019,12 +1108,12 @@ async def run_arena(
                     entry["error"] = timeout_error
                 else:
                     entry["completed"] = True
-                    summary = (result or {}).get("summary", "")
-                    entry["summary"] = (
-                        _public_channel_summary(summary)
+                    public_result = (
+                        _public_channel_result(result or {})
                         if 0 in enabled_channel_players
-                        else summary
+                        else result or {}
                     )
+                    entry["summary"] = public_result.get("summary", "")
                     print(f"[arena] seat-0 diplomacy pass completed on turn "
                           f"{turn} (sessions {sessions}, attempt "
                           f"{diplo_attempts})", file=sys.stderr)
@@ -1121,12 +1210,12 @@ async def run_arena(
                         entry["error"] = timeout_error
                     else:
                         entry["completed"] = True
-                        summary = (result or {}).get("summary", "")
-                        entry["summary"] = (
-                            _public_channel_summary(summary)
+                        public_result = (
+                            _public_channel_result(result or {})
                             if 0 in enabled_channel_players
-                            else summary
+                            else result or {}
                         )
+                        entry["summary"] = public_result.get("summary", "")
                 except Exception as e:
                     entry["error"] = repr(e)
                 if exclusive and not conn.is_connected:
@@ -1965,11 +2054,19 @@ async def run_arena(
                             pol, st.turn, channel_kwargs=channel_policy_kwargs
                         )
                     merged = seat0.merge_policy_attempts(normal_result, repair_result)
-                    payload = dict(merged["transcript"])
                     if channel_turn_enabled:
-                        payload["final_summary"] = _public_channel_summary(
-                            payload.get("final_summary", "")
+                        public_merged = _public_channel_result(merged)
+                        public_normal_result = _public_channel_result(
+                            normal_result or {}
                         )
+                        public_repair_result = _public_channel_result(
+                            repair_result or {}
+                        )
+                    else:
+                        public_merged = merged
+                        public_normal_result = normal_result or {}
+                        public_repair_result = repair_result or {}
+                    payload = public_merged["transcript"]
                     _pol_backend = getattr(pol, "backend", None)
 
                     # Standing-plan / task capture from the completed turn's
@@ -2046,25 +2143,13 @@ async def run_arena(
                             "seat0": {
                                 "normal": {
                                     "completed": normal_returned,
-                                    "summary": (
-                                        _public_channel_summary(
-                                            (normal_result or {}).get("summary", "")
-                                        )
-                                        if channel_turn_enabled
-                                        else (normal_result or {}).get("summary", "")
-                                    ),
+                                    "summary": public_normal_result.get("summary", ""),
                                     "error": normal_error,
                                 },
                                 "repair": {
                                     "attempted": repair_attempted,
                                     "completed": repair_returned,
-                                    "summary": (
-                                        _public_channel_summary(
-                                            (repair_result or {}).get("summary", "")
-                                        )
-                                        if channel_turn_enabled
-                                        else (repair_result or {}).get("summary", "")
-                                    ),
+                                    "summary": public_repair_result.get("summary", ""),
                                     "error": repair_error,
                                 },
                                 "blocker_snapshots": blocker_snapshots,
@@ -2194,6 +2279,11 @@ async def run_arena(
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)   # reclaim before we end the turn
                 await _finish_channel_turn(result)
+                public_result = (
+                    _public_channel_result(result)
+                    if channel_turn_enabled
+                    else result
+                )
                 # Seat 0 handled its own turn above (repair/end-turn/human-pending)
                 # and continued; only puppet turns reach here.
                 try:
@@ -2209,8 +2299,8 @@ async def run_arena(
                 final_summary = ""
                 if opts.standing_plan_enabled or opts.attention_directives_enabled:
                     final_summary = (
-                        result.get("transcript", {}).get("final_summary")
-                        or result.get("summary", "")
+                        public_result.get("transcript", {}).get("final_summary")
+                        or public_result.get("summary", "")
                     )
                 if opts.standing_plan_enabled:
                     captured_plan = extract_standing_plan(
@@ -2295,7 +2385,7 @@ async def run_arena(
                         print(f"[arena] attention state save failed: {e!r}", file=sys.stderr)
                 _log_entry = {
                     k: v
-                    for k, v in result.items()
+                    for k, v in public_result.items()
                     if k not in ("transcript", "promotion_sweep")
                 }
                 # Report what actually reached the model, not what was loaded:
@@ -2334,8 +2424,8 @@ async def run_arena(
                     ),
                 })
                 # Puppet-only transcript + handback (seat 0 returned above).
-                if _tx_on and result.get("transcript"):
-                    payload = result["transcript"]
+                if _tx_on and public_result.get("transcript"):
+                    payload = public_result["transcript"]
                     steps = payload.get("steps", [])
                     state_delta = _state_delta(state_before, state_after)
                     _pol_backend = getattr(pol, "backend", None)
@@ -2350,7 +2440,7 @@ async def run_arena(
                         "model":    getattr(_pol_backend, "model", getattr(pol, "model", "")),
                         "driver":   _transcript_driver(pol),
                         "step_count": len(steps),
-                        "usd":      float(result.get("usage", {}).get("usd", 0.0)),
+                        "usd":      float(public_result.get("usage", {}).get("usd", 0.0)),
                         "state_before": state_before,
                         "state_after":  state_after,
                         "state_delta":  state_delta,
@@ -2494,6 +2584,7 @@ async def run_arena(
                     channel_runtime is not None
                     and st.turn >= 0
                     and not poll_channel_error
+                    and _seat0_capture_for(st.turn) is None
                 ):
                     try:
                         await channel_runtime.poll_unseated(

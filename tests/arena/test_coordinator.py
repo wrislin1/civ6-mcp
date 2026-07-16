@@ -1,5 +1,8 @@
-import pytest
 import asyncio
+import copy
+import json
+
+import pytest
 from civ_mcp import lua as lq
 from civ_mcp.arena import autoresolve
 from civ_mcp.arena import coordinator as coordinator_mod
@@ -5265,6 +5268,137 @@ def _patch_channel_open(monkeypatch, runtime, opened=None):
     return opened
 
 
+def _privacy_channel_result(canary: str, *, driver: str) -> dict:
+    """Realistic API/CLI result carrying every private representation."""
+    from civ_mcp.arena.channel_protocol import CHANNEL_ACTION_NAMES
+
+    raw_text = (
+        "ordinary public prose\n"
+        'CHANNEL {"action":"send_message","to_player":2,'
+        f'"text":"{canary}-line"}}\n'
+        f"CHANNEL malformed-{canary}"
+    )
+    channel_calls = [
+        {
+            "id": f"channel-{index}",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps({"secret": f"{canary}-{name}"}),
+            },
+        }
+        for index, name in enumerate(CHANNEL_ACTION_NAMES)
+    ]
+    assistant_step = {
+        "idx": 0,
+        "role": "assistant",
+        "type": "agent_message" if driver == "cli" else "assistant",
+        "text": raw_text,
+        "content": raw_text,
+        "tool_calls": channel_calls + [
+            {
+                "id": "game-1",
+                "type": "function",
+                "function": {
+                    "name": "respond_to_trade",
+                    "arguments": '{"other_player_id":2,"accept":true}',
+                },
+            }
+        ],
+    }
+    channel_steps = [
+        {
+            "idx": index + 1,
+            "role": "tool",
+            "tool_name": name,
+            "tool_args": {"secret": f"{canary}-{name}"},
+            "tool_result_full": f"private result {canary}-{name}",
+        }
+        for index, name in enumerate(CHANNEL_ACTION_NAMES)
+    ]
+    game_step = {
+        "idx": 99,
+        "role": "tool",
+        "tool_name": "respond_to_trade",
+        "tool_args": {"other_player_id": 2, "accept": True},
+        "tool_result_full": "OK:DEAL_ACCEPTED|Rome",
+    }
+    id_only_channel_results = [
+        {
+            "idx": 200 + index,
+            "role": "tool",
+            "tool_call_id": f"channel-{index}",
+            "content": f"private id-only result {canary}-{name}",
+        }
+        for index, name in enumerate(CHANNEL_ACTION_NAMES)
+    ]
+    id_only_game_result = {
+        "idx": 299,
+        "role": "tool",
+        "tool_call_id": "game-1",
+        "content": "OK:DEAL_ACCEPTED|Rome",
+    }
+    return {
+        "summary": raw_text,
+        "actions": [
+            {"tool": name, "result": f"private {canary}-{name}"}
+            for name in CHANNEL_ACTION_NAMES
+        ] + [{"tool": "respond_to_trade", "result": "OK:DEAL_ACCEPTED|Rome"}],
+        "staged_actions": [
+            {
+                "source_id": f"private-{canary}",
+                "actor": 1,
+                "action": {
+                    "name": "send_message",
+                    "text": f"private staged {canary}",
+                },
+            }
+        ],
+        "transcript": {
+            "steps": [
+                assistant_step,
+                *channel_steps,
+                *id_only_channel_results,
+                game_step,
+                id_only_game_result,
+            ],
+            "invalid_tool_calls": [
+                {
+                    "tool_name": name,
+                    "arguments": f'{{"secret":"{canary}-{name}"}}',
+                    "reason": "bad_arguments",
+                }
+                for name in CHANNEL_ACTION_NAMES
+            ] + [
+                {
+                    "tool_name": "set_research",
+                    "arguments": '{"tech_type":"TECH_WRITING"}',
+                    "reason": "game-side rejection",
+                }
+            ],
+            "staged_channel_actions": [
+                {"action": "fund_deal", "deal_id": f"{canary}-deal"}
+            ],
+            "final_summary": raw_text,
+        },
+    }
+
+
+def _assert_public_channel_result_is_private_free(public_value, canary: str) -> None:
+    from civ_mcp.arena.channel_protocol import CHANNEL_ACTION_NAMES
+
+    serialized = json.dumps(public_value, sort_keys=True)
+    assert canary not in serialized
+    assert "CHANNEL " not in serialized
+    for name in CHANNEL_ACTION_NAMES:
+        assert f'"{name}"' not in serialized
+    assert '"channel-' not in serialized
+    assert '"respond_to_trade"' in serialized
+    assert '"set_research"' in serialized
+    assert '"game-1"' in serialized
+    assert "ordinary public prose" in serialized
+
+
 @pytest.mark.asyncio
 async def test_channels_open_admit_policy_finish_with_run_identity(
     monkeypatch, tmp_path
@@ -5311,6 +5445,85 @@ async def test_channels_open_admit_policy_finish_with_run_identity(
         "error": "",
     }
     assert sink.records[0]["channels"] == result["log"][0]["channels"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("driver", ["api", "cli"])
+async def test_channel_enabled_puppet_public_view_removes_all_private_result_shapes(
+    monkeypatch, tmp_path, driver
+):
+    """API tool calls and CLI agent-message lines remain available to the
+    private finish input, but no channel protocol/tool/action representation
+    reaches the public puppet log or transcript record."""
+    canary = f"PRIVATE-PUPPET-{driver.upper()}-CANARY"
+    raw_result = _privacy_channel_result(canary, driver=driver)
+    raw_before = copy.deepcopy(raw_result)
+    runtime = FakeChannelRuntime()
+    _patch_channel_open(monkeypatch, runtime)
+
+    class PrivacyPolicy:
+        provider = "cli-codex" if driver == "cli" else "local"
+        model = "privacy-test"
+        options = _channel_options()
+
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            return raw_result
+
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+    sink = FakeSink()
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy=PrivacyPolicy(),
+        transcript=sink,
+    )
+
+    assert runtime.finish_results == [raw_before]
+    assert runtime.finish_results[0] is raw_result
+    assert raw_result == raw_before
+    _assert_public_channel_result_is_private_free(
+        {"log": result["log"], "records": sink.records}, canary
+    )
+
+
+@pytest.mark.asyncio
+async def test_channel_disabled_puppet_result_remains_byte_identical(tmp_path):
+    """The privacy projection is opt-in with channels; disabled policy result
+    summaries, actions, and nested transcript payloads retain the prior bytes."""
+    canary = "DISABLED-CHANNEL-SHAPE-CANARY"
+    raw_result = _privacy_channel_result(canary, driver="api")
+
+    class DisabledPrivacyPolicy:
+        provider = "local"
+        model = "privacy-disabled"
+        options = CivOptions()
+
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            return raw_result
+
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+    sink = FakeSink()
+    config = ArenaConfig(
+        players=[PlayerSpec(1, "local", "m")],
+        puppet_ids=[1],
+        run_id="channels-disabled-privacy",
+        transcript_dir=str(tmp_path),
+        max_puppet_turns=1,
+    )
+
+    result = await run_arena(
+        conn, FakeGS(), config, policy=DisabledPrivacyPolicy(), transcript=sink
+    )
+
+    assert result["log"][0]["summary"] == raw_result["summary"]
+    assert result["log"][0]["actions"] == raw_result["actions"]
+    for key, value in raw_result["transcript"].items():
+        assert sink.records[0][key] == value
+    assert canary in json.dumps({"log": result["log"], "records": sink.records})
 
 
 @pytest.mark.asyncio
@@ -5725,6 +5938,51 @@ async def test_seat0_wc_pass_reuses_admission_before_channel_finish(
 
 
 @pytest.mark.asyncio
+async def test_channel_enabled_seat0_public_view_removes_all_private_result_shapes(
+    monkeypatch, tmp_path
+):
+    """Seat zero uses the same deep public projection as puppets while its
+    sole private finish input remains the original unmodified API result."""
+    from civ_mcp.arena.config import ChannelOptions
+
+    canary = "PRIVATE-SEAT0-API-CANARY"
+    raw_result = _privacy_channel_result(canary, driver="api")
+    raw_before = copy.deepcopy(raw_result)
+    harness = Seat0Harness(
+        monkeypatch,
+        [seat0_poll(7, active=True), seat0_poll(7, active=False), seat0_poll(8)],
+    )
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+    policy = Seat0RecordingPolicy(harness, result=raw_result, options=options)
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-deep-privacy",
+        enabled_players=frozenset({0, 2}),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    sink = SnapshotEventSink(harness)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-deep-privacy",
+    )
+
+    result = await run_arena(
+        Seat0CapsConn(), FakeGS(), config, policy=policy, transcript=sink
+    )
+
+    assert runtime.finish_results == [raw_before]
+    assert runtime.finish_results[0] is raw_result
+    assert raw_result == raw_before
+    _assert_public_channel_result_is_private_free(
+        {"log": result["log"], "records": sink.records}, canary
+    )
+
+
+@pytest.mark.asyncio
 async def test_seat0_idle_diplomacy_admits_once_then_normal_reuses_private_capture(
     monkeypatch, tmp_path
 ):
@@ -5830,6 +6088,67 @@ async def test_seat0_idle_diplomacy_admits_once_then_normal_reuses_private_captu
     assert canary not in repr(result["log"])
     assert canary not in repr(sink.records)
     assert result["seat0_turns_played"] == 1
+
+
+@pytest.mark.asyncio
+async def test_active_idle_seat0_capture_suppresses_unseated_poll_until_finish(
+    monkeypatch, tmp_path
+):
+    """Once idle diplomacy admits seat zero, later inactive polls on the same
+    turn cannot add a third channel observation or finalize a due obligation.
+    A turn mismatch finishes/clears the capture, after which ordinary unseated
+    polling resumes for the newly observed turn."""
+    from civ_mcp.arena.config import ChannelOptions
+
+    monkeypatch.setattr(coordinator_mod, "SEAT0_DIPLO_IDLE_POLLS", 1)
+    harness = Seat0Harness(
+        monkeypatch,
+        [
+            seat0_poll(7, active=False),
+            seat0_poll(7, active=False),
+            seat0_poll(7, active=False),
+            seat0_poll(8, active=False),
+        ],
+    )
+    sessions = _AnsweringSessions("2#5")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+    options = CivOptions(channels=ChannelOptions(enabled=True))
+
+    class IdleDiplomacyPolicy(Seat0ScriptPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            result = await super().__call__(gs, player_id, turn, **kwargs)
+            sessions.value = ""
+            return result
+
+    policy = IdleDiplomacyPolicy(
+        harness,
+        [_returned("idle diplomacy")],
+        options=options,
+    )
+    runtime = FakeChannelRuntime(
+        run_id="seat0-channel-idle-lifetime",
+        enabled_players=frozenset({0, 2}),
+        wake_reasons=("local payment response due",),
+        events=harness.events,
+    )
+    _patch_channel_open(monkeypatch, runtime)
+    config = _seat0_cfg(
+        tmp_path,
+        players=[
+            PlayerSpec(0, "local", "m", options=options),
+            PlayerSpec(2, "local", "m", options=_channel_options()),
+        ],
+        run_id="seat0-channel-idle-lifetime",
+        idle_poll_limit=6,
+    )
+
+    await run_arena(Seat0CapsConn(), FakeGS(), config, policy=policy)
+
+    assert runtime.calls.count("admit:0:7") == 1
+    assert runtime.calls.count("finish:0:7") == 1
+    assert "poll:0:7" not in runtime.calls
+    assert "poll:0:8" in runtime.calls
+    assert runtime.calls.index("finish:0:7") < runtime.calls.index("poll:0:8")
 
 
 @pytest.mark.asyncio
