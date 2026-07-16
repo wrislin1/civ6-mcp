@@ -455,69 +455,90 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
        reliable — works for autosaves and quicksaves that Lua can't find).
     """
     import asyncio
-    import sys
 
-    # On the Aspyr Linux port, Network.LoadGame silently does nothing
-    # (same as Network.SaveGame). Skip Lua tier and go straight to OCR
-    # menu navigation which actually works.
-    if sys.platform != "linux":
-        # Tier 1: Lua query-match-load (Windows/macOS only)
-        try:
-            await conn.execute_write(
-                f"if not ExposedMembers then ExposedMembers = {{}} end; "
-                f"ExposedMembers.MCPLoadResult = nil; "
-                f"ExposedMembers.MCPLoadDone = false; "
-                f"local function OnResults(fileList, qid) "
-                f"  UI.CloseFileListQuery(qid); "
-                f"  LuaEvents.FileListQueryResults.Remove(OnResults); "
-                f"  for i, s in ipairs(fileList) do "
-                f'    if s.Name == "{save_name}" then '
-                f'      ExposedMembers.MCPLoadResult = "FOUND"; '
-                f"      ExposedMembers.MCPLoadDone = true; "
-                f"      Network.LeaveGame(); "
-                f"      Network.LoadGame(s, ServerType.SERVER_TYPE_NONE); "
-                f"      return "
-                f"    end "
-                f"  end; "
-                f'  ExposedMembers.MCPLoadResult = "NOT_FOUND"; '
-                f"  ExposedMembers.MCPLoadDone = true; "
-                f"end; "
-                f"LuaEvents.FileListQueryResults.Add(OnResults); "
-                f"local opts = SaveLocationOptions.NORMAL + SaveLocationOptions.AUTOSAVE "
-                f"  + SaveLocationOptions.QUICKSAVE + SaveLocationOptions.LOAD_METADATA; "
-                f"UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
-                f'print("QUERY_SENT"); '
+    # Tier 1: Lua query-match-load. Always attempted -- gating on
+    # sys.platform tests where PYTHON runs, not where the game runs (WSL
+    # drives the WINDOWS build on the gaming PC; observed live 2026-07-15).
+    # The Aspyr Linux port's inert Network.LoadGame is handled by the
+    # post-FOUND verification below instead: a real load wipes the Lua
+    # state (or tears the contexts down entirely), the inert port leaves
+    # MCPLoadResult set, and only a verified load reports success.
+    #
+    # The engine's file list reports names WITH the .Civ6Save extension
+    # (observed live: 205 entries, all extensioned), so match both forms.
+    try:
+        await conn.execute_write(
+            f"if not ExposedMembers then ExposedMembers = {{}} end; "
+            f"ExposedMembers.MCPLoadResult = nil; "
+            f"ExposedMembers.MCPLoadDone = false; "
+            f"local function OnResults(fileList, qid) "
+            f"  UI.CloseFileListQuery(qid); "
+            f"  LuaEvents.FileListQueryResults.Remove(OnResults); "
+            f"  for i, s in ipairs(fileList) do "
+            f'    if s.Name == "{save_name}" or s.Name == "{save_name}.Civ6Save" then '
+            f'      ExposedMembers.MCPLoadResult = "FOUND"; '
+            f"      ExposedMembers.MCPLoadDone = true; "
+            f"      Network.LeaveGame(); "
+            f"      Network.LoadGame(s, ServerType.SERVER_TYPE_NONE); "
+            f"      return "
+            f"    end "
+            f"  end; "
+            f'  ExposedMembers.MCPLoadResult = "NOT_FOUND"; '
+            f"  ExposedMembers.MCPLoadDone = true; "
+            f"end; "
+            f"LuaEvents.FileListQueryResults.Add(OnResults); "
+            f"local opts = SaveLocationOptions.NORMAL + SaveLocationOptions.AUTOSAVE "
+            f"  + SaveLocationOptions.QUICKSAVE + SaveLocationOptions.LOAD_METADATA; "
+            f"UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
+            f'print("QUERY_SENT"); '
+            f'print("{lq.SENTINEL}")'
+        )
+
+        found = False
+        for _ in range(20):
+            await asyncio.sleep(0.25)
+            check = await conn.execute_write(
+                f"if ExposedMembers.MCPLoadDone then "
+                f'  print("RESULT|" .. tostring(ExposedMembers.MCPLoadResult)) '
+                f'else print("PENDING") end; '
                 f'print("{lq.SENTINEL}")'
             )
+            if any(line == "RESULT|FOUND" for line in check):
+                found = True
+                break
+            if any(line == "RESULT|NOT_FOUND" for line in check):
+                break  # fall through to Tier 2
 
-            for _ in range(20):
+        if found:
+            # Verify the load actually engaged. A real load wipes Lua
+            # state (MCPLoadResult reads nil) or tears the contexts down
+            # (execute raises); the inert Aspyr-Linux Network.LoadGame
+            # leaves the flag set, in which case fall through to Tier 2
+            # instead of claiming a load that never happened.
+            success = (
+                f"Loading save: {save_name}. Game will reload — "
+                f"wait ~10 seconds then call get_game_overview to verify."
+            )
+            for _ in range(40):
                 await asyncio.sleep(0.25)
-                check = await conn.execute_write(
-                    f"if ExposedMembers.MCPLoadDone then "
-                    f'  print("RESULT|" .. tostring(ExposedMembers.MCPLoadResult)) '
-                    f'else print("PENDING") end; '
-                    f'print("{lq.SENTINEL}")'
-                )
-                for line in check:
-                    if line == "RESULT|FOUND":
-                        return (
-                            f"Loading save: {save_name}. Game will reload — "
-                            f"wait ~10 seconds then call get_game_overview to verify."
-                        )
-                    if line == "RESULT|NOT_FOUND":
-                        break  # fall through to Tier 2
-                else:
-                    continue
-                break  # NOT_FOUND — try filesystem
+                try:
+                    verify = await conn.execute_write(
+                        f"print((ExposedMembers and ExposedMembers.MCPLoadResult) "
+                        f'and "STILL_SET" or "WIPED"); '
+                        f'print("{lq.SENTINEL}")'
+                    )
+                except Exception:
+                    return success  # contexts tearing down: load in progress
+                if any("WIPED" in line for line in verify):
+                    return success
+            log.info(
+                "Lua reported FOUND for '%s' but the load never engaged "
+                "(inert Network.LoadGame) -- falling through", save_name,
+            )
 
-            log.info("Lua query did not find '%s', trying filesystem", save_name)
-        except Exception:
-            log.debug("Lua load_game_save failed", exc_info=True)
-    else:
-        log.info(
-            "Linux: skipping Lua load (Aspyr port bug), using OCR nav for '%s'",
-            save_name,
-        )
+        log.info("Lua load did not engage for '%s', trying filesystem", save_name)
+    except Exception:
+        log.debug("Lua load_game_save failed", exc_info=True)
 
     # Tier 2: Filesystem verify + OCR menu load
     import os
