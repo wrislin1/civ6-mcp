@@ -1,12 +1,17 @@
+from dataclasses import replace
+
 import pytest
 from civ_mcp.arena.config import (
     ArenaConfig,
     AttentionOptions,
     BriefingOptions,
+    ChannelOptions,
+    ChannelRules,
     CivOptions,
     MemoryOptions,
     PlayerSpec,
     TaskTrackerOptions,
+    channel_config_fingerprint,
     parse_player_spec,
     resolved_puppet_ids,
     validate_arena_config,
@@ -242,3 +247,21 @@ def test_seat0_requires_attention_off():
     cfg = ArenaConfig(players=[_seat(0, attention="auto")], puppet_ids=[])
     with pytest.raises(ValueError, match="seat 0.*attention.mode.*off"):
         validate_arena_config(cfg)
+
+
+def test_channel_defaults_are_off_and_fingerprinted():
+    opts = CivOptions()
+    assert opts.channels == ChannelOptions(enabled=False)
+    assert opts.fingerprint()["channels"] == {"enabled": False}
+
+
+def test_channel_rules_defaults_and_enabled_set_are_canonical():
+    cfg = ArenaConfig(players=[
+        PlayerSpec(2, "local", "m", options=CivOptions(channels=ChannelOptions(True))),
+        PlayerSpec(1, "local", "m"),
+    ])
+    fp = channel_config_fingerprint(cfg)
+    assert fp["schema_version"] == 1
+    assert fp["enabled_players"] == [2]
+    assert fp["rules"] == ChannelRules().fingerprint()
+    assert channel_config_fingerprint(replace(cfg, players=list(reversed(cfg.players)))) == fp

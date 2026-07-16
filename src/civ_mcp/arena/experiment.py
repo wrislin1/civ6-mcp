@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from numbers import Integral
+from dataclasses import dataclass, replace
+from math import isfinite
+from numbers import Integral, Real
 from pathlib import Path
 
 import yaml
@@ -13,6 +14,8 @@ from civ_mcp.arena.config import (
     ArenaConfig,
     AttentionOptions,
     BriefingOptions,
+    ChannelOptions,
+    ChannelRules,
     CivOptions,
     MemoryOptions,
     PlayerSpec,
@@ -35,23 +38,38 @@ _SHARED_KNOBS = (
     "memory",
     "task_tracker",
     "attention",
+    "channels",
 )
 _CIV_KEYS = {"player", "provider", "model", "gateway", *_LOCAL_KNOBS, *_SHARED_KNOBS}
 _TOP_KEYS = {
     "run_id", "max_puppet_turns", "idle_poll_limit", "gateway_url",
     "max_game_turns", "seat0_drain_poll_limit",
-    "seat0_human_pending_poll_limit", "civs",
+    "seat0_human_pending_poll_limit", "channel_rules", "civs",
 }
 _BRIEFING_DEFAULTS = BriefingOptions()
 _MEMORY_DEFAULTS = MemoryOptions()
 _TASK_TRACKER_DEFAULTS = TaskTrackerOptions()
 _ATTENTION_DEFAULTS = AttentionOptions()
+_CHANNEL_DEFAULTS = ChannelOptions()
+_CHANNEL_RULE_DEFAULTS = ChannelRules()
 _CIV_DEFAULTS = CivOptions()
 _ARENA_DEFAULTS = ArenaConfig(players=[])
 
 
 class _UniqueKeySafeLoader(yaml.SafeLoader):
     pass
+
+
+@dataclass(frozen=True)
+class _LegacyBooleanToken:
+    value: str
+
+
+def _construct_strict_bool(loader: _UniqueKeySafeLoader, node: yaml.ScalarNode) -> bool | _LegacyBooleanToken:
+    value = loader.construct_scalar(node)
+    if value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    return _LegacyBooleanToken(value)
 
 
 def _construct_unique_mapping(loader: _UniqueKeySafeLoader, node: yaml.MappingNode, deep: bool = False) -> dict:
@@ -73,6 +91,10 @@ def _construct_unique_mapping(loader: _UniqueKeySafeLoader, node: yaml.MappingNo
 _UniqueKeySafeLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
     _construct_unique_mapping,
+)
+_UniqueKeySafeLoader.add_constructor(
+    "tag:yaml.org,2002:bool",
+    _construct_strict_bool,
 )
 
 
@@ -233,6 +255,56 @@ def _parse_attention(civ_label: str, raw: object) -> AttentionOptions:
     )
 
 
+def _parse_channels(civ_label: str, raw: object) -> ChannelOptions:
+    if not isinstance(raw, dict):
+        raise _err(civ_label, f"channels must be a mapping, got {raw!r}")
+    _validate_mapping_keys(civ_label, raw, {"enabled"}, "channels")
+    enabled = raw.get("enabled", _CHANNEL_DEFAULTS.enabled)
+    if not isinstance(enabled, bool):
+        raise _err(civ_label, f"channels.enabled must be a boolean, got {enabled!r}")
+    return ChannelOptions(enabled=enabled)
+
+
+def _parse_channel_rules(raw: object) -> ChannelRules:
+    if not isinstance(raw, dict):
+        raise _err("channel_rules", f"must be a mapping, got {raw!r}")
+    fields = set(ChannelRules.__dataclass_fields__)
+    _validate_mapping_keys("channel_rules", raw, fields)
+
+    values: dict[str, int | float] = {}
+    for field in fields - {"prompt_grievance_threshold"}:
+        upper = {
+            "max_completion_turns": 30,
+            "max_payment_gold": 10_000,
+            "max_zone_distance": 10,
+        }.get(field)
+        raw_value = raw.get(field, getattr(_CHANNEL_RULE_DEFAULTS, field))
+        value = _int("channel_rules", field, raw_value)
+        if upper is not None and not 1 <= value <= upper:
+            raise _err("channel_rules", f"{field} must be 1..{upper}")
+        if upper is None and value <= 0:
+            raise _err("channel_rules", f"{field} must be positive")
+        values[field] = value
+
+    threshold = raw.get(
+        "prompt_grievance_threshold",
+        _CHANNEL_RULE_DEFAULTS.prompt_grievance_threshold,
+    )
+    if isinstance(threshold, bool) or not isinstance(threshold, Real):
+        raise _err(
+            "channel_rules",
+            "prompt_grievance_threshold must be a number from 0..1",
+        )
+    parsed_threshold = float(threshold)
+    if not isfinite(parsed_threshold) or not 0 <= parsed_threshold <= 1:
+        raise _err(
+            "channel_rules",
+            "prompt_grievance_threshold must be a number from 0..1",
+        )
+    values["prompt_grievance_threshold"] = parsed_threshold
+    return ChannelRules(**values)
+
+
 def _parse_tools(civ_label: str, raw: object) -> str | tuple[str, ...]:
     if isinstance(raw, str):
         selector: str | tuple[str, ...] = raw
@@ -287,6 +359,9 @@ def _parse_civ(raw: dict[object, object]) -> PlayerSpec:
     attention = (
         _ATTENTION_DEFAULTS if "attention" not in raw else _parse_attention(label, raw["attention"])
     )
+    channels = (
+        _CHANNEL_DEFAULTS if "channels" not in raw else _parse_channels(label, raw["channels"])
+    )
 
     if provider != "local":
         opts = CivOptions(
@@ -296,6 +371,7 @@ def _parse_civ(raw: dict[object, object]) -> PlayerSpec:
             memory=memory,
             task_tracker=task_tracker,
             attention=attention,
+            channels=channels,
         )
         return PlayerSpec(player_id, provider, model, gateway, opts)
 
@@ -313,6 +389,7 @@ def _parse_civ(raw: dict[object, object]) -> PlayerSpec:
         memory=memory,
         task_tracker=task_tracker,
         attention=attention,
+        channels=channels,
     )
     return PlayerSpec(player_id, provider, model, gateway, opts)
 
@@ -369,6 +446,11 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
     cfg = replace(
         arena_defaults,
         players=players,
+        channel_rules=(
+            arena_defaults.channel_rules
+            if "channel_rules" not in data
+            else _parse_channel_rules(data["channel_rules"])
+        ),
         max_puppet_turns=_top_int(
             config_path,
             "max_puppet_turns",

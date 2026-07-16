@@ -60,6 +60,34 @@ class AttentionOptions:
     max_streak: int = 5      # coordinator-side consecutive-sleep cap
     threat_radius: int = 4   # hostile-scan radius around cities/civilians
 
+
+@dataclass(frozen=True)
+class ChannelOptions:
+    enabled: bool = False
+
+
+@dataclass(frozen=True)
+class ChannelRules:
+    acceptance_turns: int = 3
+    funding_turns: int = 2
+    payment_response_turns: int = 2
+    max_completion_turns: int = 30
+    max_active_deals_per_pair: int = 3
+    max_payment_gold: int = 10_000
+    max_message_chars: int = 2_000
+    max_narrative_chars: int = 1_000
+    max_messages_per_pair: int = 200
+    prompt_messages_per_counterpart: int = 10
+    recent_terminal_deals: int = 5
+    max_zone_distance: int = 10
+    grievance_half_life_turns: int = 30
+    prompt_grievance_threshold: float = 0.05
+    max_queued_action_bytes: int = 8 * 1024
+
+    def fingerprint(self) -> dict[str, int | float]:
+        return {name: getattr(self, name) for name in self.__dataclass_fields__}
+
+
 @dataclass(frozen=True)
 class CivOptions:
     tools: str | tuple = "minimal"
@@ -71,6 +99,7 @@ class CivOptions:
     memory: MemoryOptions = field(default_factory=MemoryOptions)
     task_tracker: TaskTrackerOptions = field(default_factory=TaskTrackerOptions)
     attention: AttentionOptions = field(default_factory=AttentionOptions)
+    channels: ChannelOptions = field(default_factory=ChannelOptions)
 
     def fingerprint(self) -> dict:
         return {
@@ -96,6 +125,7 @@ class CivOptions:
                 "max_streak": self.attention.max_streak,
                 "threat_radius": self.attention.threat_radius,
             },
+            "channels": {"enabled": self.channels.enabled},
         }
 
     @property
@@ -190,6 +220,17 @@ class ArenaConfig:
     puppet_ids: list[int] | None = None
     run_id: str = ""
     transcript_dir: str = "arena_runs"
+    channel_rules: ChannelRules = field(default_factory=ChannelRules)
+
+
+def channel_config_fingerprint(config: ArenaConfig) -> dict:
+    return {
+        "schema_version": 1,
+        "enabled_players": sorted(
+            spec.player_id for spec in config.players if spec.options.channels.enabled
+        ),
+        "rules": config.channel_rules.fingerprint(),
+    }
 
 
 def resolved_puppet_ids(config: ArenaConfig) -> list[int]:

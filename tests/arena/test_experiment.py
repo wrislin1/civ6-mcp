@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from civ_mcp.arena.config import CivOptions, MemoryOptions, TaskTrackerOptions
+from civ_mcp.arena.config import ChannelRules, CivOptions, MemoryOptions, TaskTrackerOptions
 from civ_mcp.arena.experiment import load_experiment
 from civ_mcp.arena.registry import resolve_tools
 
@@ -1128,3 +1128,42 @@ def test_seat0_poll_limit_knobs_reject_non_positive(tmp_path, field, bad):
     )
     with pytest.raises(ValueError):
         load_experiment(_write(tmp_path, text))
+
+
+def test_loads_per_civ_channels_and_run_wide_rules(tmp_path):
+    path = tmp_path / "channels.yaml"
+    path.write_text("""
+channel_rules:
+  acceptance_turns: 3
+  grievance_half_life_turns: 30
+civs:
+  - player: 1
+    provider: local
+    model: m
+    channels: {enabled: true}
+  - player: 2
+    provider: cli-codex
+    model: gpt-5
+    channels: {enabled: false}
+""")
+    cfg = load_experiment(path)
+    assert cfg.players[0].options.channels.enabled is True
+    assert cfg.players[1].options.channels.enabled is False
+    assert cfg.channel_rules == ChannelRules()
+
+
+@pytest.mark.parametrize("fragment, match", [
+    ("channels: {enabled: yes}", "channels.enabled must be a boolean"),
+    ("channel_rules: {max_payment_gold: 10001}", "max_payment_gold must be 1..10000"),
+    ("channel_rules: {max_completion_turns: 31}", "max_completion_turns must be 1..30"),
+    ("channel_rules: {max_zone_distance: 0}", "max_zone_distance must be 1..10"),
+])
+def test_rejects_invalid_channel_config(tmp_path, fragment, match):
+    path = tmp_path / "bad.yaml"
+    if fragment.startswith("channels"):
+        text = f"civs:\n  - {{player: 1, provider: local, model: m, {fragment}}}\n"
+    else:
+        text = f"{fragment}\ncivs:\n  - {{player: 1, provider: local, model: m}}\n"
+    path.write_text(text)
+    with pytest.raises(ValueError, match=match):
+        load_experiment(path)
