@@ -3218,6 +3218,345 @@ async def test_open_normalizes_non_object_terminal_to_channel_state_error(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("deadline_delta", [-1, 1])
+async def test_open_rejects_established_favor_deadline_mutation(
+    tmp_path,
+    payment_gs,
+    deadline_delta,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="up_front",
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.counterparty,
+        "respond_to_payment",
+        {"deal_id": deal.id, "accept": True},
+        turn=4,
+        action_observation=observation(
+            deal.counterparty,
+            4,
+            camps=frozenset({(12, 7)}),
+        ),
+    )
+    active = rt.deal(deal.id)
+    assert active.favor_due_turn is not None
+    forged = dataclasses.replace(
+        active,
+        favor_due_turn=active.favor_due_turn + deadline_delta,
+    )
+    append_complete_event(rt, "deal_changed", ChannelRuntime._deal_payload(forged))
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_favor_can_complete_at_immutable_inclusive_deadline(
+    tmp_path,
+    payment_gs,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="up_front",
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.counterparty,
+        "respond_to_payment",
+        {"deal_id": deal.id, "accept": True},
+        turn=4,
+        action_observation=observation(
+            deal.counterparty,
+            4,
+            camps=frozenset({(12, 7)}),
+        ),
+    )
+    due_turn = rt.deal(deal.id).favor_due_turn
+    assert due_turn is not None
+    payment_gs.observations.extend(
+        [
+            observation(deal.counterparty, due_turn, camps=frozenset()),
+            observation(deal.counterparty, due_turn, camps=frozenset()),
+        ]
+    )
+    admission = await rt.admit_player(payment_gs, deal.counterparty, due_turn)
+    await rt.finish_player(payment_gs, admission, None)
+
+    reopened = runtime(tmp_path)
+    completed = reopened.deal(deal.id)
+    assert completed.state is DealState.HONORED
+    assert completed.favor_due_turn == due_turn
+    assert completed.favor.monitor["satisfaction_observation_id"].startswith(
+        "obs-"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_kind", ["deal_changed", "staged_action_applied"])
+@pytest.mark.parametrize("payment_phase", ["due", "offered"])
+async def test_open_rejects_generic_event_that_breaks_active_payment_deal(
+    tmp_path,
+    payment_gs,
+    event_kind,
+    payment_phase,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="up_front",
+    )
+    if payment_phase == "offered":
+        await apply_payment_action(
+            rt,
+            payment_gs,
+            deal.proposer,
+            "fund_deal",
+            {"deal_id": deal.id},
+            turn=3,
+        )
+    active = rt.deal(deal.id)
+    if payment_phase == "due":
+        breach = "funding"
+        turn = active.fund_by_turn
+        reason = "promised payment was not funded by the deadline"
+    else:
+        breach = "payment_response"
+        turn = active.payment_response_by_turn
+        reason = "exact linked payment was not accepted by the deadline"
+    assert turn is not None
+    broken, _ = rt._broken_deal_records(
+        active,
+        turn=turn,
+        breach=breach,
+        reason=reason,
+    )
+    deal_payload = ChannelRuntime._deal_payload(broken)
+    if event_kind == "deal_changed":
+        payload = deal_payload
+    else:
+        source_id = f"src-forged-break-{payment_phase}"
+        payload = {
+            "source_id": source_id,
+            "acknowledgement": {
+                "player_id": active.proposer,
+                "turn": turn,
+                "source_id": source_id,
+                "status": "applied",
+                "message": "forged payment breach without grievance",
+                "deal_id": active.id,
+            },
+            "effect": {"kind": "deal_changed", "payload": deal_payload},
+        }
+    append_complete_event(rt, event_kind, payload)
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "reversed_parties",
+        "magnitude",
+        "arbitrary_reason",
+        "reason_mismatch",
+        "phase_mismatch",
+    ],
+)
+async def test_open_rejects_noncanonical_deal_broken_aggregate(
+    tmp_path,
+    payment_gs,
+    malformation,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="up_front",
+    )
+    active = rt.deal(deal.id)
+    assert active.fund_by_turn is not None
+    broken, grievance = rt._broken_deal_records(
+        active,
+        turn=active.fund_by_turn,
+        breach="funding",
+        reason="promised payment was not funded by the deadline",
+    )
+    deal_payload = ChannelRuntime._deal_payload(broken)
+    if malformation == "reversed_parties":
+        deal_payload["terminal"].update(
+            {"wronged": active.proposer, "offender": active.counterparty}
+        )
+        grievance.update(
+            {"wronged": active.proposer, "offender": active.counterparty}
+        )
+    elif malformation == "magnitude":
+        grievance["base_magnitude"] = 9.75
+    elif malformation == "arbitrary_reason":
+        deal_payload["terminal"]["reason"] = "fabricated payment breach"
+        grievance["reason"] = "fabricated payment breach"
+    elif malformation == "reason_mismatch":
+        grievance["reason"] = "grievance reason diverged from terminal"
+    else:
+        deal_payload["terminal"].update(
+            {
+                "wronged": active.proposer,
+                "offender": active.counterparty,
+                "reason": "exact linked payment was not accepted by the deadline",
+            }
+        )
+        grievance.update(
+            {
+                "wronged": active.proposer,
+                "offender": active.counterparty,
+                "reason": "exact linked payment was not accepted by the deadline",
+            }
+        )
+    append_complete_event(
+        rt,
+        "deal_broken",
+        {"deal": deal_payload, "grievance": grievance},
+    )
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", [["not-an-object"], "not-an-object"])
+async def test_open_normalizes_non_object_deal_broken_terminal(
+    tmp_path,
+    payment_gs,
+    terminal,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="up_front",
+    )
+    active = rt.deal(deal.id)
+    assert active.fund_by_turn is not None
+    broken, grievance = rt._broken_deal_records(
+        active,
+        turn=active.fund_by_turn,
+        breach="funding",
+        reason="promised payment was not funded by the deadline",
+    )
+    deal_payload = ChannelRuntime._deal_payload(broken)
+    deal_payload["terminal"] = terminal
+    append_complete_event(
+        rt,
+        "deal_broken",
+        {"deal": deal_payload, "grievance": grievance},
+    )
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "breach_path",
+    ["funding_deadline", "response_deadline", "favor_failure", "response_rejection"],
+)
+async def test_canonical_breach_path_remains_reopenable(
+    tmp_path,
+    payment_gs,
+    breach_path,
+):
+    if breach_path == "favor_failure":
+        rt = runtime(tmp_path)
+        deal = await accepted_deal(
+            rt,
+            payment_gs,
+            favor={
+                "term_type": "maintain_gold_reserve",
+                "params": {"min_gold": 400},
+            },
+            within=3,
+            acceptance_observation=observation(2, 2, treasury_gold=500),
+        )
+        due_turn = deal.favor_due_turn
+        assert due_turn is not None
+        payment_gs.observations.extend(
+            [
+                observation(2, due_turn, treasury_gold=500),
+                observation(2, due_turn, treasury_gold=399),
+            ]
+        )
+        admission = await rt.admit_player(payment_gs, 2, due_turn)
+        await rt.finish_player(payment_gs, admission, None)
+    else:
+        rt, deal = await accepted_payment_deal(
+            tmp_path,
+            payment_gs,
+            timing="up_front" if breach_path == "funding_deadline" else "on_delivery",
+        )
+        if breach_path != "funding_deadline":
+            await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+            await apply_payment_action(
+                rt,
+                payment_gs,
+                deal.proposer,
+                "fund_deal",
+                {"deal_id": deal.id},
+                turn=3,
+            )
+        if breach_path == "funding_deadline":
+            deadline = rt.deal(deal.id).fund_by_turn
+            assert deadline is not None
+            await rt.poll_unseated(
+                payment_gs,
+                turn=deadline + 1,
+                local_player_id=None,
+            )
+        elif breach_path == "response_deadline":
+            deadline = rt.deal(deal.id).payment_response_by_turn
+            assert deadline is not None
+            await rt.poll_unseated(
+                payment_gs,
+                turn=deadline + 1,
+                local_player_id=None,
+            )
+        else:
+            await apply_payment_action(
+                rt,
+                payment_gs,
+                deal.counterparty,
+                "respond_to_payment",
+                {"deal_id": deal.id, "accept": False},
+                turn=4,
+            )
+
+    reopened = runtime(tmp_path)
+    assert reopened.deal(deal.id).state is DealState.BROKEN
+    assert len(reopened.state.grievances) == 1
+    assert reopened.state.grievances[0].deal_id == deal.id
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("payment_phase", ["due", "offered", "settled"])
 async def test_open_rejects_on_delivery_payment_before_favor_satisfaction(
     tmp_path,

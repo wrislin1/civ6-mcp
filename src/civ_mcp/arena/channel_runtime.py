@@ -333,6 +333,9 @@ class ChannelRuntime:
             )
         elif event.kind in {"payment_fund_result", "payment_response_result"}:
             reduced = cls._reduce_payment_result(state, event)
+        elif event.kind == "deal_broken":
+            cls._validate_deal_broken_event(state, event.payload)
+            reduced = reduce_event(state, event)
         else:
             reduced = reduce_event(state, event)
         cls._validate_payment_lifecycle(state, reduced, event)
@@ -503,6 +506,18 @@ class ChannelRuntime:
                     raise ValueError(
                         "only a payment response result may settle linked payment"
                     )
+                newly_broken = (
+                    prior.state is DealState.ACTIVE
+                    and deal.state is DealState.BROKEN
+                )
+                if newly_broken and event.kind not in {
+                    "deal_broken",
+                    "payment_fund_result",
+                    "payment_response_result",
+                }:
+                    raise ValueError(
+                        "active payment breach requires an atomic canonical event"
+                    )
                 if (
                     event.kind == "staged_action_applied"
                     and prior.state is DealState.ACTIVE
@@ -534,6 +549,11 @@ class ChannelRuntime:
                     raise ValueError(
                         "only a funding result may start the payment response phase"
                     )
+                if (
+                    prior.favor_due_turn is not None
+                    and deal.favor_due_turn != prior.favor_due_turn
+                ):
+                    raise ValueError("favor deadline is immutable once established")
             if deal.state is not DealState.ACTIVE:
                 continue
             if deal.accepted_turn is None:
@@ -704,6 +724,143 @@ class ChannelRuntime:
                     raise ValueError(
                         f"deal terminal {field} must be an exact integer"
                     )
+
+    @classmethod
+    def _validate_deal_broken_event(
+        cls,
+        state: ChannelState,
+        payload: dict,
+    ) -> None:
+        if not isinstance(payload, dict) or set(payload) != {"deal", "grievance"}:
+            raise ValueError("deal_broken payload requires deal and grievance")
+        deal_payload = payload["deal"]
+        grievance = payload["grievance"]
+        if not isinstance(deal_payload, dict) or not isinstance(grievance, dict):
+            raise ValueError("deal_broken aggregate requires object payloads")
+        terminal = deal_payload.get("terminal")
+        if type(terminal) is not dict:
+            raise ValueError("broken deal terminal must be an object")
+        deal_id = deal_payload.get("id")
+        prior = next(
+            (
+                candidate
+                for candidate in state.deals
+                if candidate.id == deal_id
+            ),
+            None,
+        )
+        if prior is None or prior.state is not DealState.ACTIVE:
+            raise ValueError("deal_broken requires an active deal")
+        turn = grievance.get("turn")
+        if type(turn) is not int or turn < 0:
+            raise ValueError("deal_broken grievance turn must be an exact integer")
+
+        if prior.payment_status is PaymentStatus.DUE:
+            if prior.fund_by_turn is None or turn < prior.fund_by_turn:
+                raise ValueError("funding breach precedes its deadline")
+            expected_deal, expected_grievance = cls._canonical_breach_records(
+                state,
+                prior,
+                turn=turn,
+                breach="funding",
+                reason="promised payment was not funded by the deadline",
+            )
+        elif prior.payment_status is PaymentStatus.OFFERED:
+            if (
+                prior.payment_response_by_turn is None
+                or turn < prior.payment_response_by_turn
+            ):
+                raise ValueError("payment response breach precedes its deadline")
+            expected_deal, expected_grievance = cls._canonical_breach_records(
+                state,
+                prior,
+                turn=turn,
+                breach="payment_response",
+                reason=(
+                    "exact linked payment was not accepted by the deadline"
+                ),
+            )
+        elif (
+            prior.favor_status is FavorStatus.DUE
+            and prior.payment_status
+            in {PaymentStatus.NOT_DUE, PaymentStatus.SETTLED}
+        ):
+            expected_deal, expected_grievance = (
+                cls._expected_favor_breach_records(
+                    state,
+                    prior,
+                    turn=turn,
+                )
+            )
+        else:
+            raise ValueError("deal_broken does not match an active obligation")
+
+        if not cls._exactly_equal(
+            deal_payload,
+            cls._deal_payload(expected_deal),
+        ) or not cls._exactly_equal(grievance, expected_grievance):
+            raise ValueError("deal_broken aggregate is not canonical")
+
+    @classmethod
+    def _expected_favor_breach_records(
+        cls,
+        state: ChannelState,
+        deal: Deal,
+        *,
+        turn: int,
+    ) -> tuple[Deal, dict]:
+        if deal.favor_due_turn is None:
+            raise ValueError("favor breach requires an established deadline")
+        observation_payload = next(
+            (
+                candidate
+                for candidate in reversed(state.observations)
+                if isinstance(candidate, dict)
+                and type(candidate.get("player_id")) is int
+                and candidate.get("player_id") == deal.counterparty
+                and type(candidate.get("turn")) is int
+                and candidate.get("turn") == turn
+            ),
+            None,
+        )
+        if observation_payload is None:
+            raise ValueError("favor breach requires an actor-turn observation")
+        observation_id = observation_payload.get("id")
+        if not isinstance(observation_id, str) or not observation_id:
+            raise ValueError("favor breach observation id is invalid")
+        observation = cls._observation_from_payload(observation_payload)
+        monitor = dict(deal.favor.monitor)
+        monitor["current_observation_id"] = observation_id
+        verification = verify_term(
+            {
+                "term_type": deal.favor.term_type,
+                "params": deal.favor.params,
+            },
+            deal.favor.baseline,
+            monitor,
+            observation,
+            deal.favor_due_turn,
+        )
+        if verification.status != "failed":
+            raise ValueError("favor observation does not prove a breach")
+        persisted_monitor = {
+            key: value
+            for key, value in verification.monitor.items()
+            if key not in {"current_observation_id", "observation_id"}
+        }
+        updated = replace(
+            deal,
+            favor=replace(deal.favor, monitor=persisted_monitor),
+        )
+        evidence_refs = tuple(verification.evidence_refs) or (observation_id,)
+        return cls._canonical_breach_records(
+            state,
+            updated,
+            turn=turn,
+            breach="favor",
+            reason=verification.reason,
+            evidence_refs=evidence_refs,
+        )
 
     @staticmethod
     def _satisfaction_turn(state: ChannelState, deal: Deal) -> int:
@@ -1192,26 +1349,63 @@ class ChannelRuntime:
         breach: str,
         reason: str,
     ) -> tuple[Deal, dict]:
-        if breach == "funding":
-            wronged, offender = deal.counterparty, deal.proposer
-        elif breach == "payment_response":
-            wronged, offender = deal.proposer, deal.counterparty
-        else:
+        if breach not in {"funding", "payment_response"}:
             raise ValueError("invalid payment breach type")
-        broken = replace(
+        return cls._canonical_breach_records(
+            state,
             deal,
-            state=DealState.BROKEN,
-            favor_status=(
+            turn=turn,
+            breach=breach,
+            reason=reason,
+        )
+
+    @classmethod
+    def _canonical_breach_records(
+        cls,
+        state: ChannelState,
+        deal: Deal,
+        *,
+        turn: int,
+        breach: str,
+        reason: str,
+        evidence_refs: tuple[str, ...] = (),
+    ) -> tuple[Deal, dict]:
+        if breach == "favor":
+            wronged, offender = deal.proposer, deal.counterparty
+            favor_status = FavorStatus.FAILED
+            payment_status = (
+                PaymentStatus.WAIVED
+                if deal.payment_status is PaymentStatus.NOT_DUE
+                else deal.payment_status
+            )
+        elif breach == "funding":
+            wronged, offender = deal.counterparty, deal.proposer
+            favor_status = (
                 FavorStatus.RELEASED
                 if deal.favor_status is FavorStatus.NOT_DUE
                 else deal.favor_status
-            ),
-            payment_status=PaymentStatus.FAILED,
+            )
+            payment_status = PaymentStatus.FAILED
+        elif breach == "payment_response":
+            wronged, offender = deal.proposer, deal.counterparty
+            favor_status = (
+                FavorStatus.RELEASED
+                if deal.favor_status is FavorStatus.NOT_DUE
+                else deal.favor_status
+            )
+            payment_status = PaymentStatus.FAILED
+        else:
+            raise ValueError(f"unknown deterministic breach {breach!r}")
+        broken = replace(
+            deal,
+            state=DealState.BROKEN,
+            favor_status=favor_status,
+            payment_status=payment_status,
             terminal={
                 "wronged": wronged,
                 "offender": offender,
                 "reason": reason,
-                "evidence_refs": [],
+                "evidence_refs": list(evidence_refs),
                 "adjudication_source": "deterministic",
             },
         )
@@ -2967,59 +3161,14 @@ class ChannelRuntime:
         reason: str,
         evidence_refs: tuple[str, ...] = (),
     ) -> tuple[Deal, dict]:
-        if breach == "favor":
-            wronged, offender = deal.proposer, deal.counterparty
-            favor_status = FavorStatus.FAILED
-            payment_status = (
-                PaymentStatus.WAIVED
-                if deal.payment_status is PaymentStatus.NOT_DUE
-                else deal.payment_status
-            )
-        elif breach == "funding":
-            wronged, offender = deal.counterparty, deal.proposer
-            favor_status = (
-                FavorStatus.RELEASED
-                if deal.favor_status is FavorStatus.NOT_DUE
-                else deal.favor_status
-            )
-            payment_status = PaymentStatus.FAILED
-        elif breach == "payment_response":
-            wronged, offender = deal.proposer, deal.counterparty
-            favor_status = (
-                FavorStatus.RELEASED
-                if deal.favor_status is FavorStatus.NOT_DUE
-                else deal.favor_status
-            )
-            payment_status = PaymentStatus.FAILED
-        else:
-            raise ValueError(f"unknown deterministic breach {breach!r}")
-        broken = replace(
+        return self._canonical_breach_records(
+            self.state,
             deal,
-            state=DealState.BROKEN,
-            favor_status=favor_status,
-            payment_status=payment_status,
-            terminal={
-                "wronged": wronged,
-                "offender": offender,
-                "reason": reason,
-                "evidence_refs": list(evidence_refs),
-                "adjudication_source": "deterministic",
-            },
+            turn=turn,
+            breach=breach,
+            reason=reason,
+            evidence_refs=evidence_refs,
         )
-        grievance = {
-            "id": f"grv-{self.state.next_grievance:06d}",
-            "wronged": wronged,
-            "offender": offender,
-            "deal_id": deal.id,
-            "turn": turn,
-            "reason": reason,
-            "payment_gold": deal.payment_gold,
-            "base_magnitude": grievance_base_magnitude(deal.payment_gold),
-            "half_life_turns": self.rules.grievance_half_life_turns,
-            "adjudication_source": "deterministic",
-            "adjudication_metadata": None,
-        }
-        return broken, grievance
 
     def _make_unverifiable(
         self,
