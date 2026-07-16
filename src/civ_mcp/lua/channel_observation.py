@@ -108,7 +108,8 @@ if observedPlayer then
     end
 else
     print("ERROR|units")
-end"""
+end
+print("COMPLETE|units")"""
         )
 
     if ObservationFamily.CITIES in families:
@@ -135,7 +136,8 @@ if observedPlayer then
     end
 else
     print("ERROR|cities")
-end"""
+end
+print("COMPLETE|cities")"""
         )
 
     map_lines: list[str] = []
@@ -165,7 +167,9 @@ for plotIndex = 0, Map.GetPlotCount() - 1 do
     if plot then
         {chr(10).join(map_lines)}
     end
-end"""
+end
+{"" if ObservationFamily.TERRITORY not in families else 'print("COMPLETE|territory")'}
+{"" if ObservationFamily.CAMPS not in families else 'print("COMPLETE|camps")'}"""
         )
 
     if ObservationFamily.TREASURY in families:
@@ -175,7 +179,8 @@ if observedPlayer then
     print("GOLD|" .. math.floor(Players[{player_id}]:GetTreasury():GetGoldBalance()))
 else
     print("ERROR|treasury")
-end"""
+end
+print("COMPLETE|treasury")"""
         )
 
     if ObservationFamily.DIPLOMACY in families:
@@ -191,7 +196,8 @@ if observedPlayer then
     end
 else
     print("ERROR|diplomacy")
-end"""
+end
+print("COMPLETE|diplomacy")"""
         )
 
     if ObservationFamily.TRADE_ROUTES in families:
@@ -225,7 +231,8 @@ if observedPlayer then
     end
 else
     print("ERROR|trade_routes")
-end"""
+end
+print("COMPLETE|trade_routes")"""
         )
 
     sections.append(f'print("{SENTINEL}")')
@@ -253,7 +260,9 @@ def parse_channel_observation_response(
 ) -> ChannelObservation:
     """Parse the targeted union query without inventing unrequested evidence."""
     requested, _, _ = _validated_request(request)
-    families_present = set(requested - {ObservationFamily.ACTION_AUDIT})
+    game_requested = requested - {ObservationFamily.ACTION_AUDIT}
+    completed_families: set[ObservationFamily] = set()
+    failed_families: set[ObservationFamily] = set()
     units: list[ObservedUnit] = []
     cities: list[ObservedCity] = []
     routes: list[ObservedRoute] = []
@@ -263,7 +272,7 @@ def parse_channel_observation_response(
     unit_distances: dict[tuple[int, int, int], int] = {}
     zone_distances: dict[tuple[int, int, int], int] = {}
     treasury_gold = 0
-    errors: list[str] = []
+    unknown_errors: list[str] = []
 
     for line in lines:
         parts = line.split("|")
@@ -272,11 +281,18 @@ def parse_channel_observation_response(
             try:
                 family = ObservationFamily(parts[1])
             except ValueError:
-                errors.append(parts[1])
+                unknown_errors.append(parts[1])
             else:
-                if family in requested:
-                    families_present.discard(family)
-                    errors.append(family.value)
+                if family in game_requested:
+                    failed_families.add(family)
+            continue
+        if tag == "COMPLETE" and len(parts) >= 2:
+            try:
+                family = ObservationFamily(parts[1])
+            except ValueError:
+                continue
+            if family in game_requested:
+                completed_families.add(family)
             continue
         family = _TAG_FAMILY.get(tag)
         if family is None or family not in requested:
@@ -329,9 +345,34 @@ def parse_channel_observation_response(
             else:
                 raise ValueError("malformed observation line")
         except (TypeError, ValueError):
-            families_present.discard(family)
-            if family.value not in errors:
-                errors.append(family.value)
+            failed_families.add(family)
+
+    families_present: set[ObservationFamily] = set()
+    errors = list(unknown_errors)
+    for family in ObservationFamily:
+        if family not in game_requested:
+            continue
+        if family in completed_families and family not in failed_families:
+            families_present.add(family)
+        else:
+            errors.append(family.value)
+
+    if ObservationFamily.UNITS not in families_present:
+        units.clear()
+        unit_distances.clear()
+    if ObservationFamily.CITIES not in families_present:
+        cities.clear()
+        zone_distances.clear()
+    if ObservationFamily.CAMPS not in families_present:
+        camps.clear()
+    if ObservationFamily.TERRITORY not in families_present:
+        territory.clear()
+    if ObservationFamily.DIPLOMACY not in families_present:
+        wars.clear()
+    if ObservationFamily.TREASURY not in families_present:
+        treasury_gold = 0
+    if ObservationFamily.TRADE_ROUTES not in families_present:
+        routes.clear()
 
     return ChannelObservation(
         player_id=_require_int(player_id, "player_id", minimum=0, maximum=63),

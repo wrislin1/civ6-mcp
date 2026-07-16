@@ -30,7 +30,9 @@ def test_observation_parser_preserves_stable_ids_categories_and_route_owner():
         [
             "UNIT|1|17|UNIT_MILITARY_ENGINEER|FORMATION_CLASS_SUPPORT|0|9|8",
             "DIST|1|17|2|3",
+            "COMPLETE|units",
             "ROUTE|1|22|5|1",
+            "COMPLETE|trade_routes",
             "---END---",
         ],
     )
@@ -52,6 +54,19 @@ def test_observation_builder_is_one_query_for_a_union_request():
     assert "Map.GetPlotDistance" in lua
     assert "DestinationCityPlayer" in lua
     assert lua.count('print("---END---")') == 1
+    completion_markers = [
+        "units",
+        "cities",
+        "territory",
+        "camps",
+        "treasury",
+        "diplomacy",
+        "trade_routes",
+    ]
+    marker_positions = [
+        lua.index(f'print("COMPLETE|{family}")') for family in completion_markers
+    ]
+    assert marker_positions == sorted(marker_positions)
 
 
 def test_payment_builders_are_exact_gold_only_and_never_accept_counteroffers():
@@ -74,13 +89,20 @@ def test_observation_parser_covers_each_authoritative_family():
         request,
         [
             "UNIT|2|7|UNIT_WARRIOR|FORMATION_CLASS_LAND_COMBAT|0|4|5",
+            "COMPLETE|units",
             "CITY|2|99|6|7",
             "ZONE|99|12|7|4",
+            "COMPLETE|cities",
             "TERRITORY|8|9",
+            "COMPLETE|territory",
             "GOLD|501",
+            "COMPLETE|treasury",
             "WAR|2|3",
+            "COMPLETE|diplomacy",
             "ROUTE|2|11|55|1",
+            "COMPLETE|trade_routes",
             "CAMP|10|12",
+            "COMPLETE|camps",
             "---END---",
         ],
     )
@@ -108,15 +130,58 @@ def test_observation_parser_covers_each_authoritative_family():
     assert obs.camps == frozenset({(10, 12)})
 
 
-def test_observation_parser_marks_requested_empty_families_present():
+def test_observation_parser_marks_completed_empty_families_present():
     request = ObservationRequest(
         families=frozenset({ObservationFamily.UNITS, ObservationFamily.CAMPS})
     )
-    obs = parse_channel_observation_response(2, 9, request, ["---END---"])
+    obs = parse_channel_observation_response(
+        2,
+        9,
+        request,
+        ["COMPLETE|units", "COMPLETE|camps"],
+    )
 
     assert obs.families_present == request.families
     assert obs.units == ()
     assert obs.camps == frozenset()
+    assert obs.errors == ()
+
+
+def test_observation_parser_keeps_completed_earlier_family_not_truncated_later_one():
+    request = ObservationRequest(
+        families=frozenset(
+            {ObservationFamily.UNITS, ObservationFamily.TRADE_ROUTES}
+        )
+    )
+    obs = parse_channel_observation_response(
+        2,
+        9,
+        request,
+        [
+            "UNIT|2|7|UNIT_WARRIOR|FORMATION_CLASS_LAND_COMBAT|0|4|5",
+            "COMPLETE|units",
+            "ROUTE|2|11|3|0",
+        ],
+    )
+
+    assert obs.families_present == frozenset({ObservationFamily.UNITS})
+    assert obs.units[0].unit_id == 7
+    assert obs.trade_routes == ()
+    assert obs.errors == ("trade_routes",)
+
+
+def test_observation_parser_treats_fully_truncated_output_as_unavailable():
+    request = ObservationRequest(
+        families=frozenset(
+            {ObservationFamily.CAMPS, ObservationFamily.TREASURY}
+        )
+    )
+    obs = parse_channel_observation_response(2, 9, request, [])
+
+    assert obs.families_present == frozenset()
+    assert obs.camps == frozenset()
+    assert obs.treasury_gold == 0
+    assert obs.errors == ("treasury", "camps")
 
 
 def test_observation_builder_prints_only_requested_families():
@@ -188,7 +253,7 @@ async def test_game_state_channel_wrappers_use_ingame_write_context():
     request = ObservationRequest(families=frozenset({ObservationFamily.TREASURY}))
     conn = _CannedWriteConnection(
         [
-            ["GOLD|250", "---END---"],
+            ["GOLD|250", "COMPLETE|treasury", "---END---"],
             ["OK:PAYMENT_PROPOSED", "---END---"],
             ["PAYMENT|1|2|100|0|1", "---END---"],
             ["OK:PAYMENT_ACCEPTED", "---END---"],
