@@ -7,17 +7,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, Literal
 
+from civ_mcp.arena.channel_terms import (
+    TERM_REGISTRY,
+    TermValidationContext,
+    validate_term,
+)
 from civ_mcp.arena.config import ChannelRules
 
 
-CORE_TERM_NAMES = (
-    "destroy_camp",
-    "dont_settle_within",
-    "found_city_within",
-    "declare_war_on",
-    "keep_peace_with",
-    "maintain_gold_reserve",
-)
+CORE_TERM_NAMES = tuple(TERM_REGISTRY)
 
 CHANNEL_ACTION_NAMES = (
     "send_message",
@@ -494,6 +492,21 @@ class ChannelTurnContext:
     staged_actions: list[StagedChannelAction] = field(default_factory=list)
 
     def dispatch(self, name: str, args: dict) -> str:
+        term_validator = self.term_validator
+        if term_validator is None and name == "propose_deal":
+            def registry_validator(term: dict) -> dict:
+                return validate_term(
+                    term,
+                    TermValidationContext(
+                        obligated_player=_require_integer(
+                            args["to_player"], "to_player"
+                        ),
+                        enabled_players=self.enabled_players,
+                    ),
+                )
+
+            term_validator = registry_validator
+
         action = parse_channel_action(
             name,
             args,
@@ -501,7 +514,7 @@ class ChannelTurnContext:
             enabled_players=self.enabled_players,
             rules=self.rules,
             narrative_allowed=self.narrative_allowed,
-            term_validator=self.term_validator,
+            term_validator=term_validator,
         )
         index = len(self.staged_actions)
         canonical = json.dumps(args, sort_keys=True, separators=(",", ":"))
