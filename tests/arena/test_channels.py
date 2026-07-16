@@ -411,6 +411,115 @@ def test_active_deal_requires_acceptance_and_honored_requires_completion():
     assert state.deals[0].state is DealState.HONORED
 
 
+def test_proposed_change_rejects_due_legs_but_allows_baseline_updates():
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    injected = _deal_payload(favor_status="due")
+    with pytest.raises(ValueError, match="proposed deal must have non-due legs"):
+        reduce_event(state, _event(2, "deal_changed", injected))
+
+    baseline_update = _deal_payload()
+    baseline_update["favor"]["baseline"] = {"camp_present": True}
+    baseline_update["favor"]["monitor"] = {"last_observation": "obs-000001"}
+    state = reduce_event(state, _event(2, "deal_changed", baseline_update))
+    assert state.deals[0].favor.baseline == {"camp_present": True}
+    assert state.deals[0].favor.monitor == {"last_observation": "obs-000001"}
+
+
+@pytest.mark.parametrize("terminal_state", ["declined", "expired"])
+def test_unaccepted_terminal_deals_reject_due_legs_and_deadlines(terminal_state):
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    injected = {
+        **_deal_payload(
+            state=terminal_state,
+            favor_status="due",
+            payment_status="waived",
+            terminal={"reason": terminal_state},
+        ),
+        "favor_due_turn": 10,
+    }
+    with pytest.raises(
+        ValueError, match=f"{terminal_state} deal must have non-due legs"
+    ):
+        reduce_event(state, _event(2, "deal_changed", injected))
+
+    valid = {
+        **_deal_payload(
+            state=terminal_state,
+            favor_status="released",
+            payment_status="waived",
+            terminal={"reason": terminal_state},
+        )
+    }
+    state = reduce_event(state, _event(2, "deal_changed", valid))
+    assert state.deals[0].accepted_turn is None
+    assert state.deals[0].favor_due_turn is None
+
+
+def test_preacceptance_unverifiable_cannot_invent_acceptance_or_obligations():
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    accepted_injection = {
+        **_deal_payload(state="unverifiable", terminal={"reason": "missing"}),
+        "accepted_turn": 5,
+    }
+    with pytest.raises(
+        ValueError, match="cannot introduce accepted_turn before activation"
+    ):
+        reduce_event(state, _event(2, "deal_changed", accepted_injection))
+
+    due_injection = {
+        **_deal_payload(
+            state="unverifiable",
+            payment_status="due",
+            terminal={"reason": "missing"},
+        ),
+        "fund_by_turn": 7,
+    }
+    with pytest.raises(
+        ValueError, match="pre-acceptance unverifiable deal must have non-due legs"
+    ):
+        reduce_event(state, _event(2, "deal_changed", due_injection))
+
+    valid = _deal_payload(
+        state="unverifiable", terminal={"reason": "missing proposal evidence"}
+    )
+    state = reduce_event(state, _event(2, "deal_changed", valid))
+    assert state.deals[0].accepted_turn is None
+    assert state.deals[0].payment_status is PaymentStatus.NOT_DUE
+
+
+@pytest.mark.parametrize("accepted_turn", [None, 6])
+def test_postacceptance_unverifiable_preserves_exact_acceptance(accepted_turn):
+    state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
+    state = reduce_event(state, _event(1, "deal_proposed", _deal_payload()))
+    active = {
+        **_deal_payload(
+            state="active", favor_status="not_due", payment_status="due"
+        ),
+        "accepted_turn": 5,
+        "fund_by_turn": 7,
+    }
+    state = reduce_event(state, _event(2, "deal_changed", active))
+    mutated = {
+        **active,
+        "state": "unverifiable",
+        "accepted_turn": accepted_turn,
+        "terminal": {"reason": "missing payment evidence"},
+    }
+    with pytest.raises(ValueError, match="accepted_turn is immutable after acceptance"):
+        reduce_event(state, _event(3, "deal_changed", mutated))
+
+    valid = {
+        **mutated,
+        "accepted_turn": 5,
+    }
+    state = reduce_event(state, _event(3, "deal_changed", valid))
+    assert state.deals[0].accepted_turn == 5
+    assert state.deals[0].state is DealState.UNVERIFIABLE
+
+
 def test_grievance_requires_existing_broken_deal():
     state = initial_channel_state("run-a", frozenset({1, 2}), ChannelRules())
     with pytest.raises(ValueError, match="unknown grievance deal"):

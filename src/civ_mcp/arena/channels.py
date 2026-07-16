@@ -302,17 +302,20 @@ def _validate_initial_deal(deal: Deal) -> None:
 
 def _validate_deal_coherence(deal: Deal) -> None:
     accepted = deal.accepted_turn is not None
+    post_acceptance_deadlines = (
+        deal.fund_by_turn,
+        deal.payment_response_by_turn,
+        deal.favor_due_turn,
+    )
     if deal.state is DealState.PROPOSED:
         if accepted:
             raise ValueError("proposed deal cannot be accepted")
-        if any(
-            deadline is not None
-            for deadline in (
-                deal.fund_by_turn,
-                deal.payment_response_by_turn,
-                deal.favor_due_turn,
-            )
+        if (
+            deal.favor_status is not FavorStatus.NOT_DUE
+            or deal.payment_status is not PaymentStatus.NOT_DUE
         ):
+            raise ValueError("proposed deal must have non-due legs")
+        if any(deadline is not None for deadline in post_acceptance_deadlines):
             raise ValueError("proposed deal cannot have active lifecycle deadlines")
         return
 
@@ -326,8 +329,33 @@ def _validate_deal_coherence(deal: Deal) -> None:
         if deal.accepted_turn < deal.created_turn:
             raise ValueError("accepted_turn cannot precede created_turn")
 
-    if deal.state in (DealState.DECLINED, DealState.EXPIRED) and accepted:
-        raise ValueError(f"{deal.state.value} deal cannot be accepted")
+    if deal.state in (DealState.DECLINED, DealState.EXPIRED):
+        if accepted:
+            raise ValueError(f"{deal.state.value} deal cannot be accepted")
+        if (
+            deal.favor_status not in (FavorStatus.NOT_DUE, FavorStatus.RELEASED)
+            or deal.payment_status
+            not in (PaymentStatus.NOT_DUE, PaymentStatus.WAIVED)
+        ):
+            raise ValueError(f"{deal.state.value} deal must have non-due legs")
+        if any(deadline is not None for deadline in post_acceptance_deadlines):
+            raise ValueError(
+                f"{deal.state.value} deal cannot have active lifecycle deadlines"
+            )
+
+    if deal.state is DealState.UNVERIFIABLE and not accepted:
+        if (
+            deal.favor_status not in (FavorStatus.NOT_DUE, FavorStatus.RELEASED)
+            or deal.payment_status
+            not in (PaymentStatus.NOT_DUE, PaymentStatus.WAIVED)
+        ):
+            raise ValueError(
+                "pre-acceptance unverifiable deal must have non-due legs"
+            )
+        if any(deadline is not None for deadline in post_acceptance_deadlines):
+            raise ValueError(
+                "pre-acceptance unverifiable deal cannot have active lifecycle deadlines"
+            )
 
     if deal.state is DealState.ACTIVE:
         if deal.favor_status is FavorStatus.DUE and deal.favor_due_turn is None:
@@ -373,6 +401,11 @@ def _validate_deal_transition(before: Deal, after: Deal) -> None:
         raise ValueError("deal favor parameters are immutable")
     if before.payment_gold != after.payment_gold or before.timing != after.timing:
         raise ValueError("deal payment terms are immutable")
+    if before.accepted_turn is None:
+        if after.accepted_turn is not None and after.state is not DealState.ACTIVE:
+            raise ValueError("cannot introduce accepted_turn before activation")
+    elif after.accepted_turn != before.accepted_turn:
+        raise ValueError("accepted_turn is immutable after acceptance")
     if after.state not in _DEAL_TRANSITIONS[before.state]:
         raise ValueError(
             f"illegal deal state transition {before.state.value}->{after.state.value}"
