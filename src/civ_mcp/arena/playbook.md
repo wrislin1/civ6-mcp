@@ -119,6 +119,13 @@ If a war is going badly or has stopped producing gains, propose_peace after the
 or another valid DECLARE_*_WAR token declares it, but attacks usually work next
 turn; declare, position safely, then attack on the following turn.
 
+## Private unofficial channels
+When private channels are available, use the exposed channel tools (or the exact
+`CHANNEL` JSON lines shown in a CLI prompt) to send messages and request deals.
+Prose alone is non-binding; only registered favor terms are enforceable in core
+mode. The channel runtime, not either player, determines actors, deadlines,
+payment evidence, outcomes, and grievances.
+
 ## Standing plan
 End every turn's reasoning with a line starting `STANDING PLAN:` summarizing your
 intent for the next several turns. Use `TASK` lines under it for a single

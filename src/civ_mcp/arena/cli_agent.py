@@ -4,6 +4,7 @@ import asyncio, json, os, signal, time
 from civ_mcp.arena.agent import load_playbook
 from civ_mcp.arena.briefing import Briefing
 from civ_mcp.arena.budget import explicit_n_ctx
+from civ_mcp.arena.channel_protocol import ChannelTurnContext
 from civ_mcp.arena.config import CivOptions
 from civ_mcp.arena.memory import find_standing_plan_start
 from civ_mcp.arena.prompt_context import maybe_build_briefing
@@ -95,6 +96,14 @@ _PROMPT_SUMMARY_TAIL = " When done, give a one-line summary."
 # (ATTENTION_INSTRUCTION); demanding "one-line" contradicts that and suppresses
 # directive emission (final-review Important 1).
 _PROMPT_SUMMARY_TAIL_ATTENTION = " When done, give a short summary."
+
+_CHANNEL_CAPTURE_INSTRUCTION = """To request private unofficial-channel actions, append only the needed exact JSON lines to your final response:
+CHANNEL {"action":"send_message","to_player":2,"text":"..."}
+CHANNEL {"action":"propose_deal","to_player":2,"text":"...","favor":{"term_type":"keep_peace_with","params":{"player_id":3}},"payment_gold":100,"timing":"on_delivery","within":10}
+CHANNEL {"action":"respond_to_deal","deal_id":"deal-000001","accept":true}
+CHANNEL {"action":"fund_deal","deal_id":"deal-000001"}
+CHANNEL {"action":"respond_to_payment","deal_id":"deal-000001","accept":true}
+Use one complete action per line and valid compact JSON. Do not add actor, evidence, verdict, or grievance fields."""
 
 def _clamp_final_summary(text: str, max_summary_chars: int) -> str:
     # memory.find_standing_plan_start shares extraction's exact matcher, so a
@@ -491,9 +500,12 @@ class CLIAgentPolicy:
         *,
         memory_block: str = "",
         task_block: str = "",
+        channel_block: str = "",
+        master_block: str = "",
         digest_block: str = "",
         blocker_block: str = "",
         briefing: Briefing | None = None,
+        channel_context: ChannelTurnContext | None = None,
     ) -> dict:
         # Shared flags first (Task 4): a focused end-turn repair pass reuses
         # this same policy object, model, timeout, and CLI environment -- it
@@ -525,6 +537,8 @@ class CLIAgentPolicy:
             briefing_text=briefing.text,
             memory_block=memory_block,
             task_block=task_block,
+            channel_block=channel_block,
+            master_block=master_block,
             digest_block=digest_block,
             blocker_block=blocker_block,
             include_standing_plan_instruction=include_standing_plan_instruction,
@@ -537,6 +551,8 @@ class CLIAgentPolicy:
                 if include_attention_instruction
                 else _PROMPT_SUMMARY_TAIL
             )
+        if channel_context is not None:
+            opening += f"\n\n{_CHANNEL_CAPTURE_INSTRUCTION}"
         core = _PROMPT.format(pid=player_id, turn=turn)
         prompt = f"{core}\n\n{opening}"
         if self._system_prefix:
@@ -545,6 +561,8 @@ class CLIAgentPolicy:
             "memory": bool(memory_block),
             "task_tracker": bool(task_block),
             "standing_plan_instruction": include_standing_plan_instruction,
+            "channels": channel_context is not None or bool(channel_block),
+            "master": bool(master_block),
             "digest": bool(digest_block),
             "attention_instruction": include_attention_instruction,
             "blocker_repair": repair_mode,

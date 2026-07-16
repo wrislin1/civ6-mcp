@@ -530,6 +530,81 @@ async def test_policy_accepts_digest_block_and_attention_instruction_in_model_mo
     assert out["transcript"]["prompt_injections"]["attention_instruction"] is True
 
 
+# ---------------------------------------------------------------------------
+# Task 10: bound unofficial-channel tools stay outside the game registry
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_llm_policy_exposes_bound_channel_tools_outside_registry():
+    from civ_mcp.arena.channel_protocol import (
+        CHANNEL_ACTION_NAMES,
+        ChannelTurnContext,
+    )
+    from civ_mcp.arena.config import ChannelRules
+    from civ_mcp.arena.registry import TOOL_REGISTRY
+
+    ctx = ChannelTurnContext(
+        "run-1", 1, 4, frozenset({1, 2}), ChannelRules()
+    )
+    channel_reply = Reply(
+        text=None,
+        tool_calls=[{
+            "id": "channel-1",
+            "name": "send_message",
+            "arguments": '{"to_player": 2, "text": "hello"}',
+        }],
+        prompt_tokens=10,
+        completion_tokens=2,
+    )
+    backend = SpyBackend([channel_reply, _no_tool_reply()])
+    policy = LLMPolicy(
+        backend,
+        FakeCost(),
+        options=CivOptions(tools=["get_units"]),
+    )
+
+    result = await policy(
+        None,
+        player_id=1,
+        turn=4,
+        caps={},
+        channel_context=ctx,
+    )
+
+    exposed = {tool["function"]["name"] for tool in backend.calls[0]["tools"]}
+    assert set(CHANNEL_ACTION_NAMES) <= exposed
+    assert set(CHANNEL_ACTION_NAMES).isdisjoint(TOOL_REGISTRY)
+    assert ctx.staged_actions[0].actor == 1
+    assert ctx.staged_actions[0].action.text == "hello"
+    assert result["transcript"]["invalid_tool_calls"] == []
+    assert result["transcript"]["prompt_injections"]["channels"] is True
+    assert result["transcript"]["prompt_injections"]["master"] is False
+
+
+@pytest.mark.asyncio
+async def test_llm_policy_omits_channel_tools_without_bound_context():
+    from civ_mcp.arena.channel_protocol import CHANNEL_ACTION_NAMES
+
+    backend = SpyBackend([_no_tool_reply()])
+    policy = LLMPolicy(
+        backend,
+        FakeCost(),
+        options=CivOptions(tools=["get_units"]),
+    )
+
+    await policy(None, player_id=1, turn=4)
+
+    exposed = {tool["function"]["name"] for tool in backend.calls[0]["tools"]}
+    assert set(CHANNEL_ACTION_NAMES).isdisjoint(exposed)
+
+
+def test_playbook_explains_core_channel_enforcement_boundary():
+    playbook = load_playbook()
+
+    assert "Prose alone is non-binding" in playbook
+    assert "registered favor terms" in playbook
+
+
 @pytest.mark.asyncio
 async def test_policy_skips_tool_schema_serialization_when_briefing_disabled(monkeypatch):
     def fail_dumps(value):

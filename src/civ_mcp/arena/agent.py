@@ -6,6 +6,11 @@ from pathlib import Path
 
 from civ_mcp.arena.briefing import Briefing
 from civ_mcp.arena.budget import DEFAULT_N_CTX, resolve_n_ctx
+from civ_mcp.arena.channel_protocol import (
+    CHANNEL_ACTION_NAMES,
+    ChannelTurnContext,
+    channel_tool_schemas,
+)
 from civ_mcp.arena.config import CivOptions
 from civ_mcp.arena.prompt_context import maybe_build_briefing
 from civ_mcp.arena.prompting import build_opening_prompt
@@ -94,10 +99,13 @@ class LLMPolicy:
         *,
         memory_block: str = "",
         task_block: str = "",
+        channel_block: str = "",
+        master_block: str = "",
         digest_block: str = "",
         blocker_block: str = "",
         briefing: Briefing | None = None,
         caps: dict | None = None,
+        channel_context: ChannelTurnContext | None = None,
     ) -> dict:
         # Shared flags first (Task 4): a focused end-turn repair pass reuses
         # this same policy object, registry/tier, and capability snapshot --
@@ -118,6 +126,10 @@ class LLMPolicy:
         # gated tools silently callable. caps=None fails open to the full tier.
         visible_names = filter_tools(self._tool_names, caps)
         tools_schema = openai_tools(visible_names)
+        if channel_context is not None:
+            # Channel requests are bound to this player/turn context and never
+            # enter the generic game registry, tier, or capability filters.
+            tools_schema += channel_tool_schemas()
         briefing_was_supplied = briefing is not None
         if not repair_mode:
             if (
@@ -156,6 +168,8 @@ class LLMPolicy:
             briefing_text=briefing.text,
             memory_block=memory_block,
             task_block=task_block,
+            channel_block=channel_block,
+            master_block=master_block,
             digest_block=digest_block,
             blocker_block=blocker_block,
             include_standing_plan_instruction=include_standing_plan_instruction,
@@ -166,6 +180,8 @@ class LLMPolicy:
             "memory": bool(memory_block),
             "task_tracker": bool(task_block),
             "standing_plan_instruction": include_standing_plan_instruction,
+            "channels": channel_context is not None or bool(channel_block),
+            "master": bool(master_block),
             "digest": bool(digest_block),
             "attention_instruction": include_attention_instruction,
             "blocker_repair": repair_mode,
@@ -215,7 +231,27 @@ class LLMPolicy:
                               "function": {"name": tc["name"], "arguments": tc["arguments"]}}
                              for tc in reply.tool_calls]})
             for tc in reply.tool_calls:
-                if tc["name"] not in visible_names:
+                if (
+                    channel_context is not None
+                    and tc["name"] in CHANNEL_ACTION_NAMES
+                ):
+                    try:
+                        channel_args = json.loads(tc["arguments"] or "{}")
+                    except (json.JSONDecodeError, ValueError) as exc:
+                        invalid_tool_calls.append({
+                            "tool_name": tc["name"],
+                            "arguments": tc["arguments"],
+                            "reason": "bad_arguments",
+                        })
+                        result = f"ERROR: {exc!r}"
+                    else:
+                        try:
+                            result = channel_context.dispatch(
+                                tc["name"], channel_args
+                            )
+                        except Exception as e:
+                            result = f"ERROR: {e!r}"
+                elif tc["name"] not in visible_names:
                     if tc["name"] in self._tool_names:
                         reason = "gated"
                     elif tc["name"] in TOOL_REGISTRY:

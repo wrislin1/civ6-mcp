@@ -120,6 +120,12 @@ def test_forbidden_tools_never_defined():
         assert name not in TOOL_REGISTRY
 
 
+def test_unofficial_channel_actions_never_enter_game_tool_registry():
+    from civ_mcp.arena.channel_protocol import CHANNEL_ACTION_NAMES
+
+    assert set(CHANNEL_ACTION_NAMES).isdisjoint(TOOL_REGISTRY)
+
+
 def test_resolve_tools_tier_and_explicit_list():
     assert resolve_tools("minimal") == TIERS["minimal"]
     assert resolve_tools(["get_units", "move_unit"]) == ("get_units", "move_unit")

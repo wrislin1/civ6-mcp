@@ -1183,6 +1183,77 @@ def test_call_accepts_digest_block_and_attention_instruction_in_model_mode(monke
     assert result["transcript"]["prompt_injections"]["attention_instruction"] is True
 
 
+def test_cli_prompt_requires_exact_bounded_channel_json_lines(monkeypatch):
+    from civ_mcp.arena.channel_protocol import ChannelTurnContext
+    from civ_mcp.arena.config import ChannelRules
+
+    captured = {}
+    raw_summary = (
+        'ordinary summary\nCHANNEL {"action":"send_message",'
+        '"to_player":2,"text":"hello"}'
+    )
+
+    class FakeProc:
+        pid = 1
+        returncode = 0
+
+        async def communicate(self):
+            payload = {
+                "type": "result",
+                "result": raw_summary,
+                "usage": {},
+                "total_cost_usd": 0,
+            }
+            return (json.dumps(payload).encode(), b"")
+
+        async def wait(self):
+            pass
+
+    async def fake_create(*args, **kwargs):
+        captured["argv"] = args
+        return FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
+    policy = CLIAgentPolicy(
+        "cli-claude", FakeCost(), project_dir="/x", timeout_s=5
+    )
+    context = ChannelTurnContext(
+        "run-1", 1, 4, frozenset({1, 2}), ChannelRules()
+    )
+
+    result = asyncio.run(
+        policy(
+            None,
+            player_id=1,
+            turn=4,
+            channel_context=context,
+            channel_block="== PRIVATE CHANNELS ==",
+            master_block="== RESERVED MASTER ==",
+        )
+    )
+
+    prompt = " ".join(captured["argv"])
+    exact_lines = (
+        'CHANNEL {"action":"send_message","to_player":2,"text":"..."}',
+        'CHANNEL {"action":"propose_deal","to_player":2,"text":"...",'
+        '"favor":{"term_type":"keep_peace_with","params":{"player_id":3}},'
+        '"payment_gold":100,"timing":"on_delivery","within":10}',
+        'CHANNEL {"action":"respond_to_deal","deal_id":"deal-000001",'
+        '"accept":true}',
+        'CHANNEL {"action":"fund_deal","deal_id":"deal-000001"}',
+        'CHANNEL {"action":"respond_to_payment","deal_id":"deal-000001",'
+        '"accept":true}',
+    )
+    assert all(line in prompt for line in exact_lines)
+    assert prompt.count("CHANNEL {") == 5
+    assert prompt.index("== PRIVATE CHANNELS ==") < prompt.index(
+        "== RESERVED MASTER =="
+    )
+    assert result["transcript"]["final_summary"] == raw_summary
+    assert result["transcript"]["prompt_injections"]["channels"] is True
+    assert result["transcript"]["prompt_injections"]["master"] is True
+
+
 def test_call_prepends_condensed_playbook_when_enabled(monkeypatch):
     captured = {}
 
@@ -1456,6 +1527,8 @@ def test_cli_repair_mode_reaches_prompt_and_suppresses_standing_plan_and_attenti
         "memory": False,
         "task_tracker": False,
         "standing_plan_instruction": False,
+        "channels": False,
+        "master": False,
         "digest": False,
         "attention_instruction": False,
         "blocker_repair": True,

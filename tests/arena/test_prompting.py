@@ -76,6 +76,33 @@ def test_digest_block_ordered_after_task_block():
     assert out.index("T") < out.index("WHILE YOU SLEPT") < out.index("It is turn 5")
 
 
+def test_opening_prompt_has_channel_and_reserved_master_slots():
+    text = build_opening_prompt(
+        player_id=1,
+        turn=3,
+        briefing_text="BRIEF",
+        memory_block="MEM",
+        task_block="TASK",
+        channel_block="CHAN",
+        master_block="MASTER",
+        digest_block="DIGEST",
+        blocker_block="BLOCK",
+    )
+    markers = [
+        "BRIEF",
+        "MEM",
+        "TASK",
+        "CHAN",
+        "MASTER",
+        "DIGEST",
+        "BLOCK",
+        "It is turn",
+    ]
+    assert [text.index(marker) for marker in markers] == sorted(
+        text.index(marker) for marker in markers
+    )
+
+
 # ---------------------------------------------------------------------------
 # Task 4 — blocker_block (end-turn repair) ordering + zero-diff regression
 # ---------------------------------------------------------------------------
@@ -240,6 +267,8 @@ async def test_local_policy_transcript_carries_prompt_injections(monkeypatch):
         "memory": False,
         "task_tracker": False,
         "standing_plan_instruction": False,
+        "channels": False,
+        "master": False,
         "digest": False,
         "attention_instruction": False,
         "blocker_repair": False,
@@ -287,6 +316,8 @@ async def test_local_policy_repair_mode_reaches_first_message_and_suppresses_tai
         "memory": False,
         "task_tracker": False,
         "standing_plan_instruction": False,
+        "channels": False,
+        "master": False,
         "digest": False,
         "attention_instruction": False,
         "blocker_repair": True,

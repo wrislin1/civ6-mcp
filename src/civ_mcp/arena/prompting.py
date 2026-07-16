@@ -2,8 +2,9 @@
 
 Both `LLMPolicy` (agent.py) and `CLIAgentPolicy` (cli_agent.py) build a per-turn
 opening message out of the same ordered blocks: briefing text, standing-memory
-recap, task-tracker recap, wake digest, an end-turn repair block, the
-turn/player announcement, and (each independently gated) an instruction asking
+recap, task-tracker recap, private channels, a reserved game-master slot, wake
+digest, an end-turn repair block, the turn/player announcement, and (each
+independently gated) an instruction asking
 the model to end its response with a machine-parseable STANDING PLAN block
 and/or a SKIP/WAKE IF attention directive. Keeping the ordering and text in one
 place is what lets both puppet kinds carry standing memory / task tracking /
@@ -54,6 +55,8 @@ def build_opening_prompt(
     briefing_text: str = "",
     memory_block: str = "",
     task_block: str = "",
+    channel_block: str = "",
+    master_block: str = "",
     digest_block: str = "",
     blocker_block: str = "",
     include_standing_plan_instruction: bool = False,
@@ -62,10 +65,11 @@ def build_opening_prompt(
 ) -> str:
     """Assemble the opening user-turn message.
 
-    Ordering (fixed): briefing_text, memory_block, task_block, digest_block,
-    blocker_block, the turn/player announcement, then STANDING_PLAN_INSTRUCTION
-    and attention_instruction(attention_max_skip) (each independently gated)
-    when requested. Empty blocks are omitted with no extra blank lines.
+    Ordering (fixed): briefing_text, memory_block, task_block, channel_block,
+    master_block, digest_block, blocker_block, the turn/player announcement,
+    then STANDING_PLAN_INSTRUCTION and attention_instruction(attention_max_skip)
+    (each independently gated) when requested. Empty blocks are omitted with
+    no extra blank lines.
 
     blocker_block carries the focused end-turn repair text (built by
     seat0.build_blocker_block) when the coordinator invokes a policy a second
@@ -79,6 +83,10 @@ def build_opening_prompt(
         parts.append(memory_block)
     if task_block:
         parts.append(task_block)
+    if channel_block:
+        parts.append(channel_block)
+    if master_block:
+        parts.append(master_block)
     if digest_block:
         parts.append(digest_block)
     if blocker_block:
