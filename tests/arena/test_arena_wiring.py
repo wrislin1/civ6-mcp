@@ -737,6 +737,15 @@ def test_main_gate_passed_exits_zero(monkeypatch, capsys):
             {"live_gate": ["PRIVATE_GATE_VALUE"]},
             "coordinator returned an invalid live_gate summary",
         ),
+        (
+            {
+                "live_gate": {
+                    "run_id": "PRIVATE_UNTRUSTED_GATE_RUN_ID",
+                    "private_marker": "PRIVATE_GATE_MAPPING_VALUE",
+                }
+            },
+            "coordinator returned an invalid live_gate summary",
+        ),
     ],
 )
 def test_enabled_gate_malformed_coordinator_result_fails_closed(
@@ -777,8 +786,7 @@ def test_enabled_gate_malformed_coordinator_result_fails_closed(
         "run_id": "run-gate",
         "status": "failed",
     }
-    assert "PRIVATE_COORDINATOR_VALUE" not in output
-    assert "PRIVATE_GATE_VALUE" not in output
+    assert "PRIVATE_" not in output
 
 
 def test_main_non_mapping_gate_outcome_fails_closed(monkeypatch, capsys):
@@ -807,7 +815,10 @@ def test_main_non_mapping_gate_outcome_fails_closed(monkeypatch, capsys):
 
 def test_main_malformed_mapping_gate_outcome_fails_closed(monkeypatch, capsys):
     async def fake_run(args):
-        return {"private_marker": "PRIVATE_MAPPING_VALUE"}
+        return {
+            "run_id": "PRIVATE_UNTRUSTED_MAIN_RUN_ID",
+            "private_marker": "PRIVATE_MAPPING_VALUE",
+        }
 
     monkeypatch.setattr(arena_module, "_run", fake_run)
     monkeypatch.setattr(arena_module, "build_args", lambda argv=None: object())
@@ -826,7 +837,7 @@ def test_main_malformed_mapping_gate_outcome_fails_closed(monkeypatch, capsys):
         "run_id": "unknown",
         "status": "failed",
     }
-    assert "PRIVATE_MAPPING_VALUE" not in output
+    assert "PRIVATE_" not in output
 
 
 def test_main_without_gate_prints_no_gate_line(monkeypatch, capsys):

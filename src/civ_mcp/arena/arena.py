@@ -201,33 +201,25 @@ _GATE_SUMMARY_FIELDS = (
 
 
 def _normalize_gate_summary(value, *, run_id=None, reason):
-    failure_run_id = run_id
-    if failure_run_id is None and isinstance(value, Mapping):
-        try:
-            candidate_run_id = value.get("run_id")
-        except Exception:
-            candidate_run_id = None
-        if isinstance(candidate_run_id, str) and candidate_run_id:
-            failure_run_id = candidate_run_id
     if not isinstance(value, Mapping):
-        return _failed_gate_summary(failure_run_id, reason), False
+        return _failed_gate_summary(run_id, reason), False
     try:
         raw_summary = dict(value)
     except Exception:
-        return _failed_gate_summary(failure_run_id, reason), False
+        return _failed_gate_summary(run_id, reason), False
     if set(raw_summary) != set(_GATE_SUMMARY_FIELDS):
-        return _failed_gate_summary(failure_run_id, reason), False
+        return _failed_gate_summary(run_id, reason), False
     if not all(
         isinstance(raw_summary[field], str)
         for field in ("status", "phase", "reason")
     ):
-        return _failed_gate_summary(failure_run_id, reason), False
+        return _failed_gate_summary(run_id, reason), False
     restart_count = raw_summary["restart_count"]
     if type(restart_count) is not int or restart_count < 0:
-        return _failed_gate_summary(failure_run_id, reason), False
+        return _failed_gate_summary(run_id, reason), False
     summary_run_id = raw_summary["run_id"]
     if not isinstance(summary_run_id, str) or not summary_run_id:
-        return _failed_gate_summary(failure_run_id, reason), False
+        return _failed_gate_summary(run_id, reason), False
     summary = {field: raw_summary[field] for field in _GATE_SUMMARY_FIELDS}
     return summary, True
 
