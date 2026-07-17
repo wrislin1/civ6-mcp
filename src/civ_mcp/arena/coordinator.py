@@ -672,6 +672,16 @@ async def run_arena(
                     channel_runtime=channel_runtime,
                     run_dir=Path(config.transcript_dir) / run_id,
                 )
+                if live_gate_driver.pending_signal() is not None:
+                    return {
+                        "puppet_turns_played": 0,
+                        "turns_slept": 0,
+                        "seat0_turns_played": 0,
+                        "seat0_turns_failed": 0,
+                        "seat0_human_pending": 0,
+                        "log": log,
+                        **_gate_result_field(),
+                    }
             except Exception as e:
                 print(f"[arena] live gate attach failed: {e!r}", file=sys.stderr)
                 return {

@@ -6947,6 +6947,46 @@ async def test_live_gate_attach_failure_returns_failed_after_full_cleanup(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_live_gate_attach_persisted_failure_stops_before_hook_injection(tmp_path):
+    runtime = FakeChannelRuntime()
+    policy = ChannelRecordingPolicy(runtime)
+
+    class PersistedFailureDriver(CoordinatorGateDriver):
+        async def attach(self, **kwargs):
+            await super().attach(**kwargs)
+            self._signal = "failed"
+
+        def result_summary(self):
+            return {
+                "status": "failed",
+                "phase": "restart_verify",
+                "reason": "persisted restart fingerprint mismatch",
+                "restart_count": 1,
+                "run_id": "channels-run",
+            }
+
+    driver = PersistedFailureDriver(policy)
+    conn = FakeConn()
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy_for=driver.policy_for,
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    assert result["puppet_turns_played"] == 0
+    assert result["live_gate"] == driver.result_summary()
+    assert driver.admissions == []
+    assert driver.captures == []
+    assert not any("__pt_registered" in lua for lua in conn.read_calls)
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
 async def test_live_gate_missing_channel_runtime_fails_after_full_cleanup(tmp_path):
     policy = ScriptedPolicy()
     driver = CoordinatorGateDriver(policy)
