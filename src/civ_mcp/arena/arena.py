@@ -181,9 +181,15 @@ def resolve_config(args) -> ArenaConfig:
 async def _run(args):
     from pathlib import Path
     from civ_mcp.run_id import generate_run_id
+    from civ_mcp.arena.live_gate import resolve_live_gate_driver
     from civ_mcp.arena.transcript import TranscriptSink, NullSink
     cfg = resolve_config(args)
     specs = cfg.players
+    live_gate_driver = resolve_live_gate_driver(cfg)
+    if live_gate_driver is not None and args.no_transcript:
+        raise SystemExit("--no-transcript cannot be combined with an enabled live_gate")
+    if live_gate_driver is not None and args.dry_run:
+        raise SystemExit("--dry-run cannot be combined with an enabled live_gate")
     run_id = args.run_id or cfg.run_id or generate_run_id()
     # Validate at the single choke point so the CLI --run-id path gets the same
     # path-safety guard the YAML loader already applies (traversal-proof run_dir).
@@ -197,33 +203,55 @@ async def _run(args):
     cfg.cost_path = cost_path
     cfg.run_id = run_id
     cfg.transcript_dir = args.transcript_dir
-    policies, local_backends = build_policies(specs, cost, cfg)
-    if args.dry_run:
-        sp = ScriptedPolicy()
-        policy_for = lambda pid: sp
+    if live_gate_driver is not None:
+        # Gate mode uses deterministic driver-owned policies. The configured
+        # providers are validated path identities only: no ordinary backend or
+        # CLI policy/preflight is constructed for them.
+        policy_for = live_gate_driver.policy_for
     else:
-        for b in local_backends:                              # check EVERY local model
-            if not await b.reachable():
-                raise SystemExit(f"local backend not reachable at {b.base_url} (model {b.model})")
-        if any(s.driver_kind() == "cli" for s in specs):
-            for cmd in sorted({CLI_PROVIDER_COMMANDS[s.provider] for s in specs if s.driver_kind() == "cli"}):
-                if shutil.which(cmd) is None:
-                    raise SystemExit(f"cli provider requested but '{cmd}' not found on PATH")
-            # cli-claude relies on Claude's project .mcp.json auto-discovery from CWD
-            # (== project_dir). A missing config loads no civ6 server - a silent no-op.
-            # cli-codex uses inline MCP config and does not need this file.
-            if (
-                any(s.provider == "cli-claude" for s in specs)
-                and not os.path.isfile(os.path.join(os.getcwd(), ".mcp.json"))
-            ):
-                raise SystemExit(
-                    f"cli provider requested but .mcp.json not found in CWD ({os.getcwd()}); "
-                    "run the arena from the repo root")
-        policy_for = lambda pid: policies[pid]
+        policies, local_backends = build_policies(specs, cost, cfg)
+        if args.dry_run:
+            sp = ScriptedPolicy()
+            policy_for = lambda pid: sp
+        else:
+            for b in local_backends:                              # check EVERY local model
+                if not await b.reachable():
+                    raise SystemExit(f"local backend not reachable at {b.base_url} (model {b.model})")
+            if any(s.driver_kind() == "cli" for s in specs):
+                for cmd in sorted({CLI_PROVIDER_COMMANDS[s.provider] for s in specs if s.driver_kind() == "cli"}):
+                    if shutil.which(cmd) is None:
+                        raise SystemExit(f"cli provider requested but '{cmd}' not found on PATH")
+                # cli-claude relies on Claude's project .mcp.json auto-discovery from CWD
+                # (== project_dir). A missing config loads no civ6 server - a silent no-op.
+                # cli-codex uses inline MCP config and does not need this file.
+                if (
+                    any(s.provider == "cli-claude" for s in specs)
+                    and not os.path.isfile(os.path.join(os.getcwd(), ".mcp.json"))
+                ):
+                    raise SystemExit(
+                        f"cli provider requested but .mcp.json not found in CWD ({os.getcwd()}); "
+                        "run the arena from the repo root")
+            policy_for = lambda pid: policies[pid]
     conn = GameConnection(); await conn.connect()
     gs = GameState(conn)
-    result = await run_arena(conn, gs, cfg, policy_for=policy_for, transcript=transcript)
+    result = await run_arena(
+        conn,
+        gs,
+        cfg,
+        policy_for=policy_for,
+        transcript=transcript,
+        live_gate_driver=live_gate_driver,
+    )
     print(json.dumps({"result": result, "cost": cost.summary()}, indent=2))
+    return result.get("live_gate") if isinstance(result, dict) else None
 
 def main():
-    asyncio.run(_run(build_args()))
+    gate = asyncio.run(_run(build_args()))
+    if gate is None:
+        return
+    print("LIVE_GATE " + json.dumps(gate, sort_keys=True, separators=(",", ":")))
+    status = gate.get("status")
+    if status == "restart_required":
+        raise SystemExit(75)
+    if status != "passed":
+        raise SystemExit(1)

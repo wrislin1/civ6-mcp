@@ -1,21 +1,27 @@
 # tests/arena/test_arena_wiring.py
 import asyncio
+import json
 import os
 import os.path
 import shutil
 import pytest
 
+from civ_mcp.arena import arena as arena_module
+from civ_mcp.arena import live_gate as live_gate_module
 from civ_mcp.arena.arena import build_args, build_policies, resolve_config, _run
 from civ_mcp.arena.config import (
     PlayerSpec,
     ArenaConfig,
+    ChannelOptions,
     CivOptions,
     DEFAULT_GATEWAY_URL,
+    LiveGateOptions,
     parse_player_spec,
 )
 from civ_mcp.arena.agent import LLMPolicy
 from civ_mcp.arena.cli_agent import CLIAgentPolicy
 from civ_mcp.arena.cost import CostLog
+from civ_mcp.arena.transcript import NullSink
 
 class FakeCost:
     def record(self, **kw): pass
@@ -236,11 +242,14 @@ def test_run_uses_file_run_id_for_config(tmp_path, monkeypatch):
         captured["gs_conn"] = conn
         return {"conn": conn}
 
-    async def fake_run_arena(conn, gs, cfg, policy_for, transcript):
+    async def fake_run_arena(
+        conn, gs, cfg, policy_for, transcript, live_gate_driver=None
+    ):
         captured["conn"] = conn
         captured["gs"] = gs
         captured["cfg"] = cfg
         captured["transcript"] = transcript
+        captured["live_gate_driver"] = live_gate_driver
         captured["policy"] = policy_for(3)
         return {"ok": True}
 
@@ -257,6 +266,7 @@ def test_run_uses_file_run_id_for_config(tmp_path, monkeypatch):
     assert cfg.cost_path == str(run_root / "file-run" / "arena_cost.jsonl")
     assert cfg.transcript_dir == str(run_root)
     assert captured["transcript"].path == str(run_root / "file-run" / "transcript.jsonl")
+    assert captured["live_gate_driver"] is None
     assert os.path.isdir(run_root / "file-run")
 
 
@@ -441,3 +451,280 @@ def test_resolve_config_cli_player_shorthand_excludes_seat_zero_from_puppets():
     args = build_args(["--player", "0:local:m", "--player", "2:local:m"])
     cfg = resolve_config(args)
     assert cfg.puppet_ids == [2]
+
+
+class _StubDriver:
+    def __init__(self, config):
+        self.config = config
+
+    def policy_for(self, player_id):
+        async def policy(gs, pid, turn, **kwargs):
+            return {"summary": "stub"}
+
+        return policy
+
+
+def _gate_cfg(run_id="run-gate"):
+    def civ(pid, provider, model=""):
+        return PlayerSpec(
+            pid,
+            provider,
+            model,
+            options=CivOptions(channels=ChannelOptions(enabled=True)),
+        )
+
+    return ArenaConfig(
+        players=[
+            civ(1, "local", "m"),
+            civ(2, "cli-codex"),
+            civ(3, "scripted"),
+        ],
+        max_puppet_turns=36,
+        max_game_turns=36,
+        run_id=run_id,
+        live_gate=LiveGateOptions(
+            enabled=True,
+            scenario="stub_gate_v1",
+            roles=(("api_actor", 1), ("cli_actor", 2), ("privacy_observer", 3)),
+        ),
+    )
+
+
+@pytest.fixture
+def stub_gate(monkeypatch):
+    meta = live_gate_module.ScenarioMeta(
+        name="stub_gate_v1",
+        revision=1,
+        role_contracts=(
+            ("api_actor", "in_process"),
+            ("cli_actor", "cli"),
+            ("privacy_observer", "scripted"),
+        ),
+        minimum_captures=lambda config: 1,
+        create_driver=_StubDriver,
+    )
+    monkeypatch.setattr(live_gate_module, "_SCENARIOS", {meta.name: meta})
+    return meta
+
+
+def _fail_gate_side_effects(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("gate conflict must fail before arena side effects")
+
+    monkeypatch.setattr(arena_module, "GameConnection", fail)
+    monkeypatch.setattr(arena_module, "build_policies", fail)
+    monkeypatch.setattr(arena_module.shutil, "which", fail)
+    monkeypatch.setattr("civ_mcp.arena.backends.OpenAICompatBackend", fail)
+
+
+def test_gate_mode_skips_backend_and_cli_preflight(monkeypatch, tmp_path, stub_gate):
+    """Gate mode uses only driver-owned policies and still captures transcripts."""
+    seen = {}
+
+    async def fake_run_arena(
+        conn,
+        gs,
+        cfg,
+        policy_for=None,
+        transcript=None,
+        live_gate_driver=None,
+    ):
+        seen["driver"] = live_gate_driver
+        seen["policy_for"] = policy_for
+        seen["transcript"] = transcript
+        return {
+            "puppet_turns_played": 0,
+            "turns_slept": 0,
+            "seat0_turns_played": 0,
+            "seat0_turns_failed": 0,
+            "seat0_human_pending": 0,
+            "log": [],
+            "live_gate": {
+                "status": "passed",
+                "phase": "verify_terminal_gate",
+                "reason": "",
+                "restart_count": 1,
+                "run_id": cfg.run_id,
+            },
+        }
+
+    class FakeConn:
+        async def connect(self):
+            seen["connected"] = True
+
+    def fail_which(cmd):
+        raise AssertionError(f"CLI preflight must not run in gate mode: {cmd}")
+
+    def fail_policy_build(*args, **kwargs):
+        raise AssertionError("ordinary policies must not be built in gate mode")
+
+    def fail_backend(*args, **kwargs):
+        raise AssertionError("no local backend may be constructed in gate mode")
+
+    monkeypatch.setattr(arena_module, "run_arena", fake_run_arena)
+    monkeypatch.setattr(arena_module, "GameConnection", FakeConn)
+    monkeypatch.setattr(arena_module, "resolve_config", lambda args: _gate_cfg())
+    monkeypatch.setattr(arena_module, "build_policies", fail_policy_build)
+    monkeypatch.setattr("civ_mcp.arena.backends.OpenAICompatBackend", fail_backend)
+    monkeypatch.setattr(arena_module.shutil, "which", fail_which)
+
+    run_root = tmp_path / "runs"
+    args = arena_module.build_args(["--transcript-dir", str(run_root)])
+    gate = asyncio.run(arena_module._run(args))
+
+    assert gate == {
+        "status": "passed",
+        "phase": "verify_terminal_gate",
+        "reason": "",
+        "restart_count": 1,
+        "run_id": "run-gate",
+    }
+    assert seen["connected"] is True
+    assert isinstance(seen["driver"], _StubDriver)
+    assert seen["policy_for"] == seen["driver"].policy_for
+    assert seen["policy_for"](1) is not None
+    assert seen["transcript"].path == str(run_root / "run-gate" / "transcript.jsonl")
+
+
+def test_gate_mode_rejects_no_transcript_before_side_effects(
+    monkeypatch, tmp_path, stub_gate
+):
+    run_root = tmp_path / "runs"
+    monkeypatch.setattr(arena_module, "resolve_config", lambda args: _gate_cfg())
+    _fail_gate_side_effects(monkeypatch)
+
+    args = arena_module.build_args(
+        ["--transcript-dir", str(run_root), "--no-transcript"]
+    )
+    with pytest.raises(SystemExit, match="transcript"):
+        asyncio.run(arena_module._run(args))
+
+    assert not run_root.exists()
+
+
+def test_gate_mode_rejects_dry_run_before_side_effects(monkeypatch, tmp_path, stub_gate):
+    run_root = tmp_path / "runs"
+    monkeypatch.setattr(arena_module, "resolve_config", lambda args: _gate_cfg())
+    _fail_gate_side_effects(monkeypatch)
+
+    args = arena_module.build_args(
+        ["--transcript-dir", str(run_root), "--dry-run"]
+    )
+    with pytest.raises(SystemExit, match="dry-run"):
+        asyncio.run(arena_module._run(args))
+
+    assert not run_root.exists()
+
+
+def test_disabled_gate_preserves_no_transcript_behavior(monkeypatch, tmp_path):
+    seen = {}
+
+    async def fake_run_arena(
+        conn,
+        gs,
+        cfg,
+        policy_for=None,
+        transcript=None,
+        live_gate_driver=None,
+    ):
+        seen["transcript"] = transcript
+        seen["driver"] = live_gate_driver
+        return {"live_gate": None}
+
+    class FakeConn:
+        async def connect(self):
+            pass
+
+    monkeypatch.setattr(arena_module, "run_arena", fake_run_arena)
+    monkeypatch.setattr(arena_module, "GameConnection", FakeConn)
+
+    gate = asyncio.run(
+        arena_module._run(
+            arena_module.build_args(
+                [
+                    "--player",
+                    "1:local:m",
+                    "--dry-run",
+                    "--no-transcript",
+                    "--run-id",
+                    "ordinary-run",
+                    "--transcript-dir",
+                    str(tmp_path / "runs"),
+                ]
+            )
+        )
+    )
+
+    assert gate is None
+    assert seen["driver"] is None
+    assert isinstance(seen["transcript"], NullSink)
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [("restart_required", 75), ("failed", 1), ("active", 1)],
+)
+def test_main_exit_codes_for_gate_outcomes(monkeypatch, capsys, status, code):
+    gate = {
+        "status": status,
+        "phase": "p",
+        "reason": "r",
+        "restart_count": 1,
+        "run_id": "run-gate",
+    }
+
+    async def fake_run(args):
+        return gate
+
+    monkeypatch.setattr(arena_module, "_run", fake_run)
+    monkeypatch.setattr(arena_module, "build_args", lambda argv=None: object())
+
+    with pytest.raises(SystemExit) as exc_info:
+        arena_module.main()
+
+    assert exc_info.value.code == code
+    lines = [
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("LIVE_GATE ")
+    ]
+    assert len(lines) == 1
+    assert json.loads(lines[0][len("LIVE_GATE ") :]) == gate
+
+
+def test_main_gate_passed_exits_zero(monkeypatch, capsys):
+    gate = {
+        "status": "passed",
+        "phase": "verify_terminal_gate",
+        "reason": "",
+        "restart_count": 1,
+        "run_id": "run-gate",
+    }
+
+    async def fake_run(args):
+        return gate
+
+    monkeypatch.setattr(arena_module, "_run", fake_run)
+    monkeypatch.setattr(arena_module, "build_args", lambda argv=None: object())
+
+    arena_module.main()
+
+    lines = [
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("LIVE_GATE ")
+    ]
+    assert len(lines) == 1
+    assert json.loads(lines[0][len("LIVE_GATE ") :]) == gate
+
+
+def test_main_without_gate_prints_no_gate_line(monkeypatch, capsys):
+    async def fake_run(args):
+        return None
+
+    monkeypatch.setattr(arena_module, "_run", fake_run)
+    monkeypatch.setattr(arena_module, "build_args", lambda argv=None: object())
+
+    arena_module.main()
+
+    assert "LIVE_GATE" not in capsys.readouterr().out
