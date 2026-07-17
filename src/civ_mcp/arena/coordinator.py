@@ -367,6 +367,7 @@ async def run_arena(
     policy_for=None,
     transcript=None,
     channel_runtime=None,
+    live_gate_driver=None,
 ) -> dict:
     # Validate at entry so programmatic callers cannot bypass the YAML/CLI
     # boundary checks (seat 0 in puppet_ids, unknown/duplicate seats, seat-0
@@ -438,6 +439,15 @@ async def run_arena(
     seat0_channel_errors: dict[int, str] = {}
     channel_reconciled_key: tuple[int, int] | None = None
     channel_reconcile_error = ""
+
+    def _gate_result_field(*, status=None, reason=None) -> dict:
+        assert live_gate_driver is not None
+        summary = dict(live_gate_driver.result_summary())
+        if status is not None:
+            summary["status"] = status
+        if reason is not None and not summary.get("reason"):
+            summary["reason"] = reason
+        return {"live_gate": summary}
 
     def _puppet_capture_for(player_id: int, turn: int) -> dict | None:
         capture = puppet_channel_capture
@@ -648,6 +658,33 @@ async def run_arena(
         return seat0_channel_capture
 
     try:
+        # Attach inside the human-safety scope: a fingerprint/configuration
+        # failure must still restore player 0 and disable the puppet hook.
+        if live_gate_driver is not None:
+            try:
+                if channel_runtime is None:
+                    raise RuntimeError(
+                        "live gate requires the channel runtime: "
+                        + (channel_runtime_error or "no channel-enabled players")
+                    )
+                await live_gate_driver.attach(
+                    gs=gs,
+                    channel_runtime=channel_runtime,
+                    run_dir=Path(config.transcript_dir) / run_id,
+                )
+            except Exception as e:
+                print(f"[arena] live gate attach failed: {e!r}", file=sys.stderr)
+                return {
+                    "puppet_turns_played": 0,
+                    "turns_slept": 0,
+                    "seat0_turns_played": 0,
+                    "seat0_turns_failed": 0,
+                    "seat0_human_pending": 0,
+                    "log": log,
+                    **_gate_result_field(
+                        status="failed", reason="live gate attach failed"
+                    ),
+                }
         await hook.inject(conn, sorted(puppet_ids))
         hook_enabled = True  # flips to False once disable_hook_for_drain() fires
         remaining = config.max_puppet_turns
@@ -1484,6 +1521,10 @@ async def run_arena(
                             file=sys.stderr,
                         )
                     channel_fields_state["error"] = channel_error
+                if live_gate_driver is not None and not is_seat0:
+                    live_gate_driver.note_admission(
+                        st.local, st.turn, channel_admission, channel_error
+                    )
                 if not is_seat0 and channel_admission is not None:
                     if puppet_channel_capture is not None:
                         await _finish_puppet_channel_capture(
@@ -2179,6 +2220,14 @@ async def run_arena(
                     remaining -= 1
                     game_turns += 1
                     deadline_polls -= 1
+                    if live_gate_driver is not None:
+                        await live_gate_driver.after_seat_capture(
+                            player_id=st.local,
+                            turn=st.turn,
+                            channel_fields=_channel_fields(),
+                        )
+                        if live_gate_driver.pending_signal() is not None:
+                            break
                     continue
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)   # reclaim before we end the turn
@@ -2357,7 +2406,13 @@ async def run_arena(
                         record["attention"] = wake_attention_fields
                     if channel_turn_enabled:
                         record["channels"] = _channel_fields()
-                    transcript.write(record)
+                    write_record = True
+                    if live_gate_driver is not None:
+                        write_record = live_gate_driver.inspect_pending_transcript_record(
+                            st.local, st.turn, record
+                        )
+                    if write_record:
+                        transcript.write(record)
                 # End this puppet's turn and hand control back toward the human.
                 # DESIGN NOTE — the turn-end method is validated by the live dry-run gate (Task 9).
                 # Primary (verified in the feasibility spike): finish_units(K) + restore_local(0).
@@ -2375,6 +2430,14 @@ async def run_arena(
                     await disable_hook_for_drain()
                 await hook.restore_local(conn, 0)
                 played += 1
+                if live_gate_driver is not None:
+                    await live_gate_driver.after_seat_capture(
+                        player_id=st.local,
+                        turn=st.turn,
+                        channel_fields=_channel_fields(),
+                    )
+                    if live_gate_driver.pending_signal() is not None:
+                        break
             else:
                 if seat0_state.needs_drain:
                     # An in-flight seat-0 turn is draining (end request fired /
@@ -2550,6 +2613,11 @@ async def run_arena(
             "seat0_turns_failed": seat0_failed,
             "seat0_human_pending": seat0_pending,
             "log": log,
+            **(
+                {}
+                if live_gate_driver is None
+                else _gate_result_field()
+            ),
         }
     finally:
         # Human safety invariant: ALWAYS hand control back. Reclaim a released connection first,

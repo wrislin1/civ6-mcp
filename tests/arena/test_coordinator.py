@@ -6742,3 +6742,336 @@ async def test_seat0_outer_shutdown_finishes_capture_without_replay(
     assert runtime.calls.count("finish:0:7") == 1
     names = harness.names()
     assert names.index("finish:0:7") < names.index("restore_local")
+
+
+class CoordinatorGateDriver:
+    """Coordinator-facing live-gate protocol double."""
+
+    def __init__(
+        self,
+        policy,
+        *,
+        signal_after=None,
+        inspect_result=True,
+        transcript_path=None,
+        attach_error=None,
+    ):
+        self.policy = policy
+        self.signal_after = signal_after
+        self.inspect_result = inspect_result
+        self.transcript_path = transcript_path
+        self.attach_error = attach_error
+        self.attached = False
+        self.attach_kwargs = None
+        self.admissions = []
+        self.captures = []
+        self.inspected_records = []
+        self.inspected_serialized = []
+        self.transcript_existed_at_inspection = []
+        self._signal = None
+
+    async def attach(self, *, gs, channel_runtime, run_dir):
+        if self.attach_error is not None:
+            raise self.attach_error
+        self.attached = True
+        self.attach_kwargs = {
+            "gs": gs,
+            "channel_runtime": channel_runtime,
+            "run_dir": run_dir,
+        }
+
+    def policy_for(self, _player_id):
+        return self.policy
+
+    def note_admission(self, player_id, turn, admission, error):
+        self.admissions.append((player_id, turn, admission is not None, error))
+
+    def inspect_pending_transcript_record(self, player_id, turn, record):
+        from civ_mcp.arena.transcript import serialize_transcript_record
+
+        self.inspected_records.append((player_id, turn, record))
+        self.inspected_serialized.append(serialize_transcript_record(record))
+        self.transcript_existed_at_inspection.append(
+            self.transcript_path is not None and self.transcript_path.exists()
+        )
+        if not self.inspect_result:
+            self._signal = "failed"
+        return self.inspect_result
+
+    async def after_seat_capture(self, *, player_id, turn, channel_fields):
+        self.captures.append((player_id, turn, dict(channel_fields)))
+        if self.signal_after is not None and len(self.captures) >= self.signal_after:
+            self._signal = "restart_required"
+
+    def pending_signal(self):
+        return self._signal
+
+    def result_summary(self):
+        return {
+            "status": self._signal or "active",
+            "phase": "coordinator-test",
+            "reason": "",
+            "restart_count": 0,
+            "run_id": "channels-run",
+        }
+
+
+def _hook_was_disabled(conn):
+    return any("__pt_enabled = false" in lua for lua in conn.read_calls)
+
+
+def _observer_gate_config(tmp_path):
+    return ArenaConfig(
+        players=[
+            PlayerSpec(pid, "local", "m", options=_channel_options())
+            for pid in (1, 2, 3)
+        ],
+        max_puppet_turns=1,
+        idle_poll_limit=2,
+        puppet_ids=[3],
+        run_id="channels-run",
+        transcript_dir=str(tmp_path),
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_gate_attaches_and_receives_admission_and_capture(
+    tmp_path,
+):
+    runtime = FakeChannelRuntime()
+    policy = ChannelRecordingPolicy(runtime)
+    driver = CoordinatorGateDriver(policy)
+    conn, gs = FakeConn(), FakeGS()
+
+    result = await run_arena(
+        conn,
+        gs,
+        _channel_config(tmp_path),
+        policy_for=driver.policy_for,
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    assert driver.attached is True
+    assert driver.attach_kwargs == {
+        "gs": gs,
+        "channel_runtime": runtime,
+        "run_dir": tmp_path / "channels-run",
+    }
+    assert driver.admissions == [(1, 2, True, "")]
+    assert [(pid, turn) for pid, turn, _ in driver.captures] == [(1, 2)]
+    assert result["live_gate"]["status"] == "active"
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_live_gate_signal_breaks_before_next_puppet_admission(tmp_path):
+    runtime = FakeChannelRuntime()
+    policy = ChannelRecordingPolicy(runtime)
+    driver = CoordinatorGateDriver(policy, signal_after=1)
+    conn = FakeConn()
+    conn._polls = iter([
+        ["LOCAL|1", "TURN|2", "ACTIVE|true", "LAST|0"],
+        ["LOCAL|1", "TURN|3", "ACTIVE|true", "LAST|1"],
+    ])
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path, max_puppet_turns=2),
+        policy_for=driver.policy_for,
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    assert [(pid, turn) for pid, turn, _ in driver.captures] == [(1, 2)]
+    assert driver.admissions == [(1, 2, True, "")]
+    assert result["live_gate"]["status"] == "restart_required"
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_live_gate_failed_policy_still_reports_capture_and_cleans_up(tmp_path):
+    runtime = FakeChannelRuntime()
+
+    class FailingPolicy(ChannelRecordingPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            raise RuntimeError("deterministic gate turn failed")
+
+    driver = CoordinatorGateDriver(FailingPolicy(runtime), signal_after=1)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy_for=driver.policy_for,
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    assert runtime.calls[-1] == "finish:1:7"
+    assert [(pid, turn) for pid, turn, _ in driver.captures] == [(1, 7)]
+    assert result["puppet_turns_played"] == 0
+    assert result["live_gate"]["status"] == "restart_required"
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_live_gate_attach_failure_returns_failed_after_full_cleanup(tmp_path):
+    runtime = FakeChannelRuntime()
+    policy = ChannelRecordingPolicy(runtime)
+    driver = CoordinatorGateDriver(
+        policy, attach_error=RuntimeError("fingerprint mismatch")
+    )
+    conn = FakeConn()
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy_for=driver.policy_for,
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    assert result["live_gate"]["status"] == "failed"
+    assert result["puppet_turns_played"] == 0
+    assert driver.admissions == []
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_live_gate_missing_channel_runtime_fails_after_full_cleanup(tmp_path):
+    policy = ScriptedPolicy()
+    driver = CoordinatorGateDriver(policy)
+    conn = FakeConn()
+    config = ArenaConfig(
+        players=[PlayerSpec(1, "local", "m")],
+        max_puppet_turns=1,
+        puppet_ids=[1],
+        run_id="channels-run",
+        transcript_dir=str(tmp_path),
+    )
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        config,
+        policy_for=driver.policy_for,
+        live_gate_driver=driver,
+    )
+
+    assert result["live_gate"]["status"] == "failed"
+    assert result["puppet_turns_played"] == 0
+    assert driver.attached is False
+    assert driver.admissions == []
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_live_gate_rejects_tainted_pending_record_before_write_and_cleans_up(
+    tmp_path, capsys
+):
+    from civ_mcp.arena.transcript import TranscriptSink
+
+    secret = "participant-private-canary"
+    transcript_path = tmp_path / "transcript.jsonl"
+    runtime = FakeChannelRuntime(enabled_players=frozenset({1, 2, 3}))
+    policy = ChannelRecordingPolicy(runtime, final_summary=secret)
+    driver = CoordinatorGateDriver(
+        policy,
+        inspect_result=False,
+        transcript_path=transcript_path,
+    )
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|3", "TURN|2", "ACTIVE|true", "LAST|0"]])
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _observer_gate_config(tmp_path),
+        policy_for=driver.policy_for,
+        transcript=TranscriptSink(str(transcript_path)),
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    assert len(driver.inspected_records) == 1
+    inspected_player, inspected_turn, inspected_record = driver.inspected_records[0]
+    assert (inspected_player, inspected_turn) == (3, 2)
+    assert inspected_record["final_summary"] == secret
+    assert inspected_record["channels"] == {
+        "enabled": True,
+        "acknowledgements": 1,
+        "error": "",
+    }
+    assert secret in driver.inspected_serialized[0]
+    assert driver.transcript_existed_at_inspection == [False]
+    assert not transcript_path.exists()
+    assert secret not in json.dumps(result)
+    captured = capsys.readouterr()
+    assert secret not in captured.out
+    assert secret not in captured.err
+    assert result["live_gate"]["status"] == "failed"
+    assert [(pid, turn) for pid, turn, _ in driver.captures] == [(3, 2)]
+    assert any("FINISHED" in lua for lua in conn.read_calls)
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_live_gate_clean_pending_record_uses_exact_sink_serialization(tmp_path):
+    from civ_mcp.arena.transcript import TranscriptSink
+
+    transcript_path = tmp_path / "transcript.jsonl"
+    runtime = FakeChannelRuntime(enabled_players=frozenset({1, 2, 3}))
+    policy = ChannelRecordingPolicy(runtime, final_summary="observer-clean")
+    driver = CoordinatorGateDriver(policy, transcript_path=transcript_path)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|3", "TURN|2", "ACTIVE|true", "LAST|0"]])
+
+    await run_arena(
+        conn,
+        FakeGS(),
+        _observer_gate_config(tmp_path),
+        policy_for=driver.policy_for,
+        transcript=TranscriptSink(str(transcript_path)),
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    assert driver.transcript_existed_at_inspection == [False]
+    assert transcript_path.read_text() == driver.inspected_serialized[0] + "\n"
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_no_live_gate_driver_preserves_result_shape_and_artifacts(tmp_path):
+    config = ArenaConfig(
+        players=[PlayerSpec(1, "local", "m")],
+        max_puppet_turns=1,
+        dry_run=True,
+        puppet_ids=[1],
+        run_id="disabled-gate",
+        transcript_dir=str(tmp_path),
+    )
+
+    result = await run_arena(FakeConn(), FakeGS(), config, policy=ScriptedPolicy())
+
+    assert set(result) == {
+        "puppet_turns_played",
+        "turns_slept",
+        "seat0_turns_played",
+        "seat0_turns_failed",
+        "seat0_human_pending",
+        "log",
+    }
+    assert not (tmp_path / "disabled-gate" / "live_gate").exists()
