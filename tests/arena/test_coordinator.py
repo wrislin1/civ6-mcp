@@ -4074,6 +4074,13 @@ async def test_seat0_exclusive_repair_brackets_disconnect_reconnect(monkeypatch,
 # ---------------------------------------------------------------------------
 
 
+def test_scripted_policy_public_boundary_reexports_exact_class():
+    from civ_mcp.arena.coordinator import ScriptedPolicy as CoordinatorScriptedPolicy
+    from civ_mcp.arena.scripted_policy import ScriptedPolicy as PublicScriptedPolicy
+
+    assert CoordinatorScriptedPolicy is PublicScriptedPolicy
+
+
 class _ScriptedGS:
     """Records every GameState call ScriptedPolicy makes and serves canned
     tech/civic/city/production data. Any read/action can be made to raise by

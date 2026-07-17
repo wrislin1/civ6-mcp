@@ -1,0 +1,121 @@
+"""Shared fakes for live-gate tests: a typed game-state fake plus a
+coordinator-shaped harness that drives a scenario driver through
+admissions/finishes exactly the way run_arena does (admit -> note_admission
+-> gate policy -> finish_player -> after_seat_capture -> signal check)."""
+
+import dataclasses
+
+from civ_mcp.arena.channel_terms import ChannelObservation, ObservationFamily
+from civ_mcp.lua.channel_payments import ExactPaymentOffer
+
+
+def observation(player_id, turn, **changes):
+    base = ChannelObservation(
+        player_id=player_id,
+        turn=turn,
+        families_present=frozenset(ObservationFamily),
+        treasury_gold=500,
+    )
+    return dataclasses.replace(base, **changes)
+
+
+@dataclasses.dataclass(frozen=True)
+class PaymentStateView:
+    status: str
+    offer: ExactPaymentOffer | None = None
+
+
+class GateGameState:
+    """Complete observations + an exact-payment engine + the minimal
+    overview/units surface ScriptedPolicy needs. Result strings mirror the
+    live engine wrappers (channel_runtime._funding_succeeded /
+    _response_succeeded)."""
+
+    def __init__(self):
+        self.active_player = 0
+        self.treasury = {1: 500, 2: 500, 3: 500}
+        self.routes = {}
+        self.missing_families = {}
+        self.observation_errors = {}
+        self.pending = {}
+        self.skipped = 0
+
+    async def get_game_overview(self):
+        return "OV"
+
+    async def get_units(self):
+        return []
+
+    async def skip_unit(self, index):
+        self.skipped += 1
+        return "SKIP"
+
+    async def get_channel_observation(self, player_id, turn, request):
+        present = frozenset(ObservationFamily) - self.missing_families.get(
+            player_id, frozenset()
+        )
+        return observation(
+            player_id,
+            turn,
+            families_present=present,
+            treasury_gold=self.treasury.get(player_id, 500),
+            trade_routes=self.routes.get(player_id, ()),
+            errors=self.observation_errors.get(player_id, ()),
+        )
+
+    async def offer_channel_payment(self, payee, gold):
+        payer = self.active_player
+        if (payer, payee) in self.pending:
+            return "Error: CHANNEL_PAYMENT_PENDING_DEAL"
+        self.pending[(payer, payee)] = ExactPaymentOffer(payer, payee, gold)
+        return "CHANNEL_PAYMENT_PROPOSED"
+
+    async def get_channel_payment_state(self, payer, payee, gold):
+        pending = self.pending.get((payer, payee))
+        expected = ExactPaymentOffer(payer, payee, gold)
+        if pending is None:
+            return PaymentStateView("absent")
+        if pending == expected:
+            return PaymentStateView("exact", expected)
+        return PaymentStateView("conflicting")
+
+    async def respond_to_channel_payment(self, payer, gold, accept):
+        payee = self.active_player
+        expected = ExactPaymentOffer(payer, payee, gold)
+        if self.pending.get((payer, payee)) != expected:
+            return "Error: NO_EXACT_CHANNEL_PAYMENT"
+        del self.pending[(payer, payee)]
+        if accept:
+            self.treasury[payer] -= gold
+            self.treasury[payee] += gold
+            return "CHANNEL_PAYMENT_ACCEPTED"
+        return "CHANNEL_PAYMENT_REJECTED"
+
+
+async def run_gate_seat(driver, runtime, gs, pid, turn):
+    """One coordinator-shaped capture for one gate seat."""
+    gs.active_player = pid
+    admission = await runtime.admit_player(gs, pid, turn)
+    driver.note_admission(pid, turn, admission, "")
+    if driver.pending_signal() is not None:
+        return None
+    policy = driver.policy_for(pid)
+    result = await policy(gs, pid, turn)
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    await driver.after_seat_capture(
+        player_id=pid,
+        turn=turn,
+        channel_fields={
+            "enabled": True,
+            "acknowledgements": len(acknowledgements),
+            "error": "",
+        },
+    )
+    return result
+
+
+async def run_gate_round(driver, runtime, gs, turn, seats=(1, 2, 3)):
+    for pid in seats:
+        if driver.pending_signal() is not None:
+            return
+        await run_gate_seat(driver, runtime, gs, pid, turn)

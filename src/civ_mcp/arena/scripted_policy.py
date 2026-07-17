@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+from civ_mcp.arena.config import CivOptions
+
+
+# Deterministic production preference for the scripted repair pass, in priority
+# order after any repair. All are tile-free (no policy-chosen placement).
+_SCRIPTED_PREFERRED_PRODUCTION = (
+    "BUILDING_MONUMENT",
+    "BUILDING_GRANARY",
+    "UNIT_SCOUT",
+    "UNIT_WARRIOR",
+)
+
+
+
+class ScriptedPolicy:
+    """Deterministic no-LLM policy with two roles (Task 9).
+
+    * Every NORMAL call -- the global ``--dry-run`` compatibility mode AND each
+      seat-0 normal attempt (empty ``blocker_block``): observe overview/units,
+      skip unit 0, and deliberately choose NO research/production. Leaving the
+      probe blocker is what makes the mixed stage-1 gate exercise the
+      coordinator's real focused-repair path.
+    * The seat-0 REPAIR call (non-empty ``blocker_block``): make deterministic
+      research/civic/production choices for exactly the blocker types named in
+      the repair block, using GameState methods only. It never ends the turn
+      and never raises -- each read/action exception is folded into the
+      returned summary so the coordinator makes no fallback of its own.
+
+    ``provider``/``model`` are fixed identity for transcripts and fingerprints.
+    ``blocker_block`` is keyword-only, mirroring the real policies (Task 4); the
+    coordinator's signature gate then treats it exactly like ``caps`` et al.
+    """
+
+    provider = "scripted"
+    model = "seat0-smoke"
+
+    def __init__(self, options=None):
+        # The coordinator reads shared knobs (memory, task tracker, briefing,
+        # ...) via getattr(pol, "options", CivOptions()) -- a policy without
+        # the attribute silently drops every validated YAML knob.
+        self.options = options if options is not None else CivOptions()
+
+    async def __call__(
+        self, gs, player_id: int, turn: int, *, blocker_block: str = "", **kwargs
+    ) -> dict:
+        if blocker_block:
+            return await self._repair(gs, blocker_block)
+        # NORMAL / dry-run: observe, skip unit 0, choose nothing strategic.
+        await gs.get_game_overview()
+        await gs.get_units()
+        try:
+            await gs.skip_unit(0)
+        except Exception as e:
+            return {"summary": f"scripted: skip failed {e!r}", "actions": []}
+        return {"summary": "scripted: observed + skipped unit 0", "actions": [{"tool": "skip_unit"}]}
+
+    async def _repair(self, gs, blocker_block: str) -> dict:
+        """Resolve only the blocker types named in ``blocker_block``. Any type
+        without a scripted resolver (a governor/pantheon/etc. strategic choice)
+        is left untouched, so the coordinator reaches human_pending after this
+        single pass."""
+        actions: list[dict] = []
+        errors: list[str] = []
+        want_tech = "ENDTURN_BLOCKING_RESEARCH" in blocker_block
+        want_civic = "ENDTURN_BLOCKING_CIVIC" in blocker_block
+        want_production = "ENDTURN_BLOCKING_PRODUCTION" in blocker_block
+
+        if want_tech or want_civic:
+            research_actions, research_errors = await self._choose_research(
+                gs, tech=want_tech, civic=want_civic
+            )
+            actions.extend(research_actions)
+            errors.extend(research_errors)
+        if want_production:
+            prod_actions, prod_errors = await self._choose_production(gs)
+            actions.extend(prod_actions)
+            errors.extend(prod_errors)
+
+        if actions:
+            body = ", ".join(f"{a['tool']}={a['item']}" for a in actions)
+        else:
+            body = "no eligible scripted choices"
+        summary = f"scripted repair: {body}"
+        if errors:
+            summary += " | errors: " + "; ".join(errors)
+        return {"summary": summary, "actions": actions}
+
+    async def _choose_research(self, gs, *, tech: bool, civic: bool):
+        """Pick the available tech/civic with key ``(turns, type_name)`` from a
+        single ``get_tech_civics`` fetch."""
+        actions: list[dict] = []
+        errors: list[str] = []
+        try:
+            status = await gs.get_tech_civics()
+        except Exception as e:
+            return actions, [f"get_tech_civics failed {e!r}"]
+        if tech:
+            techs = list(status.available_techs or [])
+            if techs:
+                best = min(techs, key=lambda t: (t.turns, t.tech_type))
+                try:
+                    result = await gs.set_research(best.tech_type)
+                    actions.append(
+                        {"tool": "set_research", "item": best.tech_type, "result": result}
+                    )
+                except Exception as e:
+                    errors.append(f"set_research({best.tech_type}) failed {e!r}")
+            else:
+                errors.append("no available techs to choose")
+        if civic:
+            civics = list(status.available_civics or [])
+            if civics:
+                best = min(civics, key=lambda c: (c.turns, c.civic_type))
+                try:
+                    result = await gs.set_civic(best.civic_type)
+                    actions.append(
+                        {"tool": "set_civic", "item": best.civic_type, "result": result}
+                    )
+                except Exception as e:
+                    errors.append(f"set_civic({best.civic_type}) failed {e!r}")
+            else:
+                errors.append("no available civics to choose")
+        return actions, errors
+
+    async def _choose_production(self, gs):
+        """Set production for every empty-queue city, preferring repairs, then
+        the named tile-free items, then ``(turns, item_name)`` among UNIT/BUILDING
+        options. Never picks a new district/wonder needing a tile target."""
+        actions: list[dict] = []
+        errors: list[str] = []
+        try:
+            cities, _warnings = await gs.get_cities()
+        except Exception as e:
+            return actions, [f"get_cities failed {e!r}"]
+        for city in cities:
+            current = str(getattr(city, "currently_building", "NONE") or "NONE").upper()
+            if current not in ("", "NONE"):
+                continue  # queue is already set; nothing to repair here
+            try:
+                options = await gs.list_city_production(city.city_id)
+            except Exception as e:
+                errors.append(f"list_city_production({city.city_id}) failed {e!r}")
+                continue
+            picked = self._pick_production(options)
+            if picked is None:
+                continue
+            option, target_x, target_y = picked
+            try:
+                result = await gs.set_city_production(
+                    city.city_id, option.category, option.item_name, target_x, target_y
+                )
+                actions.append({
+                    "tool": "set_city_production",
+                    "item": option.item_name,
+                    "city_id": city.city_id,
+                    "result": result,
+                })
+            except Exception as e:
+                errors.append(
+                    f"set_city_production({city.city_id},{option.item_name}) failed {e!r}"
+                )
+        return actions, errors
+
+    @staticmethod
+    def _pick_production(options):
+        """Choose one tile-free production option (or None). Repairs carry their
+        own coords; new districts (needing a policy-chosen tile) and projects are
+        never selectable. Returns ``(option, target_x, target_y)``."""
+        # A repair carries its own coords; a new UNIT/BUILDING needs no tile. A
+        # non-repair DISTRICT needs a placement tile and a PROJECT is not a
+        # buildable item here -- both are excluded. Wonders surface as BUILDING
+        # with no distinguishing flag, but the named tile-free items below win
+        # first (always present for a fresh city); the fallback never passes a
+        # target, so a wonder that needs a plot simply fails to commit and the
+        # coordinator reaches human_pending -- never a policy-chosen tile.
+        candidates = [
+            o for o in options
+            if getattr(o, "is_repair", False) or o.category in ("UNIT", "BUILDING")
+        ]
+        if not candidates:
+            return None
+        # 1. Repairs first (deterministic by item name); pass their own coords.
+        repairs = sorted(
+            (o for o in candidates if getattr(o, "is_repair", False)),
+            key=lambda o: o.item_name,
+        )
+        if repairs:
+            best = repairs[0]
+            return best, best.repair_x, best.repair_y
+        # 2. Named tile-free items, in priority order.
+        by_name = {o.item_name: o for o in candidates}
+        for name in _SCRIPTED_PREFERRED_PRODUCTION:
+            if name in by_name:
+                return by_name[name], None, None
+        # 3. Fallback: (turns, item_name) among the remaining UNIT/BUILDING options.
+        best = min(candidates, key=lambda o: (o.turns, o.item_name))
+        return best, None, None
