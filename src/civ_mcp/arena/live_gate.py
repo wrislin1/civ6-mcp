@@ -81,7 +81,14 @@ class _FrozenList(tuple):
 
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+        frozen: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise GateStateError(
+                    f"unsupported gate mapping key type {type(key).__name__}"
+                )
+            frozen[key] = _freeze(item)
+        return MappingProxyType(frozen)
     if isinstance(value, _FrozenList):
         return _FrozenList(_freeze(item) for item in value)
     if isinstance(value, list):
@@ -90,9 +97,9 @@ def _freeze(value: Any) -> Any:
         return tuple(_freeze(item) for item in value)
     if isinstance(value, (set, frozenset)):
         return frozenset(_freeze(item) for item in value)
-    if isinstance(value, bytearray):
-        return bytes(value)
-    return value
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    raise GateStateError(f"unsupported gate value type {type(value).__name__}")
 
 
 def _thaw(value: Any) -> Any:
@@ -411,6 +418,75 @@ def _read_private_bytes(path: Path) -> bytes:
         os.close(directory_fd)
 
 
+def _private_regular_file_exists(path: Path) -> bool:
+    directory_fd = _open_directory_fd(path.parent)
+    descriptor = -1
+    try:
+        try:
+            descriptor = os.open(
+                path.name,
+                os.O_RDONLY | _CLOEXEC | _NOFOLLOW | _NONBLOCK,
+                dir_fd=directory_fd,
+            )
+        except FileNotFoundError:
+            return False
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise GateStateError(f"gate file {path} is not a regular file")
+        _same_regular_file(directory_fd, path.name, info)
+        return True
+    except GateStateError:
+        raise
+    except OSError as exc:
+        raise GateStateError(f"cannot inspect private gate file {path}: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(directory_fd)
+
+
+def _remove_matching_private_json(path: Path, expected: dict) -> bool:
+    directory_fd = _open_directory_fd(path.parent)
+    descriptor = -1
+    try:
+        try:
+            descriptor = os.open(
+                path.name,
+                os.O_RDONLY | _CLOEXEC | _NOFOLLOW | _NONBLOCK,
+                dir_fd=directory_fd,
+            )
+        except FileNotFoundError:
+            return False
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise GateStateError(f"gate file {path} is not a regular file")
+        _same_regular_file(directory_fd, path.name, info)
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        try:
+            actual = json.loads(b"".join(chunks).decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise GateStateError(f"invalid stale gate result: {exc}") from exc
+        if actual != expected:
+            raise GateStateError("active gate has an unrelated stale result.json")
+        _same_regular_file(directory_fd, path.name, info)
+        os.unlink(path.name, dir_fd=directory_fd)
+        os.fsync(directory_fd)
+        return True
+    except GateStateError:
+        raise
+    except OSError as exc:
+        raise GateStateError(f"cannot remove stale gate result {path}: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(directory_fd)
+
+
 def _append_private_bytes(path: Path, payload: bytes) -> None:
     directory_fd = _open_directory_fd(path.parent)
     descriptor = -1
@@ -558,6 +634,19 @@ def _state_to_dict(state: GateState) -> dict:
     }
 
 
+def _result_payload(state: GateState, *, status: str | None = None) -> dict:
+    return {
+        "schema_version": GATE_SCHEMA_VERSION,
+        "run_id": state.run_id,
+        "scenario": state.scenario,
+        "scenario_revision": state.scenario_revision,
+        "status": state.status if status is None else status,
+        "phase": state.phase,
+        "reason": state.reason,
+        "restart_count": state.restart_count,
+    }
+
+
 def _read_journal(path: Path) -> tuple[GateEvent, ...]:
     try:
         text = _read_private_bytes(path).decode("utf-8")
@@ -622,6 +711,10 @@ class LiveGateJournal:
         events = _read_journal(events_path)
 
         if not events:
+            if _private_regular_file_exists(result_path):
+                raise GateStateError(
+                    "result.json exists without an initialized gate journal"
+                )
             journal = cls.__new__(cls)
             journal.gate_dir = gate_dir
             journal.events_path = events_path
@@ -675,6 +768,7 @@ class LiveGateJournal:
 
         journal = cls(gate_dir, state)
         journal._write_snapshot()
+        journal._reconcile_active_result()
         return journal
 
     def append(self, kind: str, payload: dict) -> GateEvent:
@@ -697,12 +791,26 @@ class LiveGateJournal:
         _append_private_bytes(self.events_path, line + b"\n")
         self.state = new_state
         self._write_snapshot()
+        if kind == "restart_verified":
+            self._reconcile_active_result()
         return event
 
     def _write_snapshot(self) -> None:
         if self.state is None:
             raise GateStateError("cannot snapshot an uninitialized gate")
         _atomic_private_json(self.state_path, _state_to_dict(self.state))
+
+    def _reconcile_active_result(self) -> None:
+        if self.state.status != GATE_ACTIVE:
+            return
+        if self.state.restart_count != 1:
+            if _private_regular_file_exists(self.result_path):
+                raise GateStateError("active gate has an unexpected result.json")
+            return
+        _remove_matching_private_json(
+            self.result_path,
+            _result_payload(self.state, status=GATE_RESTART_REQUIRED),
+        )
 
     def write_result(self) -> None:
         if self.state is None or self.state.status not in _SIGNAL_STATUSES:
@@ -711,16 +819,4 @@ class LiveGateJournal:
                 f"result.json is written only for {sorted(_SIGNAL_STATUSES)}, "
                 f"not {status!r}"
             )
-        _atomic_private_json(
-            self.result_path,
-            {
-                "schema_version": GATE_SCHEMA_VERSION,
-                "run_id": self.state.run_id,
-                "scenario": self.state.scenario,
-                "scenario_revision": self.state.scenario_revision,
-                "status": self.state.status,
-                "phase": self.state.phase,
-                "reason": self.state.reason,
-                "restart_count": self.state.restart_count,
-            },
-        )
+        _atomic_private_json(self.result_path, _result_payload(self.state))

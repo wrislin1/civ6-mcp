@@ -1,6 +1,7 @@
 import json
 import os
 import stat
+from collections import deque
 
 import pytest
 
@@ -218,6 +219,80 @@ def test_result_written_only_for_signal_states(tmp_path):
     assert stat.S_IMODE(os.stat(journal.result_path).st_mode) == 0o600
 
 
+def test_restart_verified_removes_restart_result(tmp_path):
+    journal = open_journal(tmp_path)
+    journal.append("restart_required", {"turn": 6})
+    journal.write_result()
+    assert journal.result_path.exists()
+
+    journal.append("restart_verified", {"turn": 7})
+
+    assert journal.state.status == GATE_ACTIVE
+    assert not journal.result_path.exists()
+
+
+def test_reopen_active_crash_boundary_removes_matching_restart_result(tmp_path):
+    journal = open_journal(tmp_path)
+    journal.append("restart_required", {"turn": 6})
+    journal.write_result()
+    restart_verified = {
+        "schema_version": GATE_SCHEMA_VERSION,
+        "sequence": journal.state.last_event_sequence + 1,
+        "kind": "restart_verified",
+        "payload": {"turn": 7},
+    }
+    with journal.events_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(restart_verified, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+    reopened = open_journal(tmp_path)
+
+    assert reopened.state.status == GATE_ACTIVE
+    assert reopened.state.last_event_sequence == restart_verified["sequence"]
+    assert not reopened.result_path.exists()
+
+
+def test_fresh_active_journal_rejects_unrelated_stale_result(tmp_path):
+    gate_dir = tmp_path / "live_gate"
+    gate_dir.mkdir(mode=0o700)
+    (gate_dir / "result.json").write_text(
+        json.dumps({"status": GATE_RESTART_REQUIRED, "run_id": "unrelated"})
+    )
+
+    with pytest.raises(GateStateError, match="result.json"):
+        open_journal(tmp_path)
+
+
+def test_restart_result_cleanup_rejects_symlink_without_touching_target(tmp_path):
+    journal = open_journal(tmp_path)
+    journal.append("restart_required", {"turn": 6})
+    journal.write_result()
+    target = tmp_path / "outside-result.json"
+    target.write_text("outside")
+    journal.result_path.unlink()
+    journal.result_path.symlink_to(target)
+
+    with pytest.raises(GateStateError):
+        journal.append("restart_verified", {"turn": 7})
+
+    assert journal.result_path.is_symlink()
+    assert target.read_text() == "outside"
+
+
+def test_restart_result_cleanup_rejects_non_regular_path(tmp_path):
+    journal = open_journal(tmp_path)
+    journal.append("restart_required", {"turn": 6})
+    journal.write_result()
+    journal.result_path.unlink()
+    journal.result_path.mkdir()
+
+    with pytest.raises(GateStateError):
+        journal.append("restart_verified", {"turn": 7})
+
+    assert journal.result_path.is_dir()
+
+
 def test_unknown_event_kind_rejected(tmp_path):
     journal = open_journal(tmp_path)
     with pytest.raises(GateStateError):
@@ -263,6 +338,18 @@ def test_gate_event_constructor_deeply_freezes_payload():
     assert event.payload == {"nested": {"items": ["kept"]}}
     with pytest.raises(TypeError):
         event.payload["nested"]["extra"] = True
+
+
+def test_unsupported_mutable_nested_value_is_rejected(tmp_path):
+    journal = open_journal(tmp_path)
+    mutable = deque(["caller-owned"])
+
+    with pytest.raises(GateStateError, match="unsupported gate value type deque"):
+        journal.append("data_recorded", {"data": {"mutable": mutable}})
+
+    mutable.append("changed")
+    assert journal.state.data == {}
+    assert journal.state.last_event_sequence == 1
 
 
 @pytest.mark.parametrize("artifact_name", ["events.jsonl", "state.json", "result.json"])
