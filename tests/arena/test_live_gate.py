@@ -352,6 +352,88 @@ def test_unsupported_mutable_nested_value_is_rejected(tmp_path):
     assert journal.state.last_event_sequence == 1
 
 
+@pytest.mark.parametrize(
+    "value",
+    [{"alpha", "beta"}, frozenset({"alpha", "beta"})],
+    ids=["set", "frozenset"],
+)
+def test_set_like_values_are_rejected_before_state_or_persistence_mutation(
+    tmp_path, value
+):
+    journal = open_journal(tmp_path)
+    journal_before = journal.events_path.read_bytes()
+
+    with pytest.raises(GateStateError, match="unsupported gate value type"):
+        journal.append("data_recorded", {"data": {"value": value}})
+
+    assert journal.state.data == {}
+    assert journal.state.last_event_sequence == 1
+    assert journal.events_path.read_bytes() == journal_before
+
+
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_non_finite_floats_are_rejected_before_persistence(tmp_path, value):
+    journal = open_journal(tmp_path)
+    journal_before = journal.events_path.read_bytes()
+
+    with pytest.raises(GateStateError, match="non-finite float"):
+        journal.append("data_recorded", {"data": {"value": value}})
+
+    assert journal.state.data == {}
+    assert journal.state.last_event_sequence == 1
+    assert journal.events_path.read_bytes() == journal_before
+
+
+def test_public_tuples_normalize_to_reopen_safe_json_arrays(tmp_path):
+    fingerprint = {"rules": {"windows": (1, {"turns": (2, 3)})}}
+    expected_fingerprint = {"rules": {"windows": [1, {"turns": [2, 3]}]}}
+    journal = open_journal(tmp_path, config_fingerprint=fingerprint)
+
+    event = journal.append(
+        "data_recorded",
+        {"data": {"path": ("start", {"steps": ("middle", "end")})}},
+    )
+    expected_data = {"path": ["start", {"steps": ["middle", "end"]}]}
+
+    assert event.payload == {"data": expected_data}
+    assert journal.state.config_fingerprint == expected_fingerprint
+    assert journal.state.data == expected_data
+    assert type(journal.state.data["path"]) is type(event.payload["data"]["path"])
+
+    reopened = open_journal(tmp_path, config_fingerprint=expected_fingerprint)
+    assert reopened.state == journal.state
+    assert type(reopened.state.data["path"]) is type(journal.state.data["path"])
+    assert isinstance(reopened.state.pending_actions, tuple)
+    assert isinstance(reopened.state.verified_actions, tuple)
+
+
+def test_supported_nested_fingerprint_and_data_reopen_exactly(tmp_path):
+    fingerprint = {
+        "rules": {
+            "thresholds": [1, 2.5, None],
+            "flags": {"enabled": True, "strict": False},
+        }
+    }
+    data = {
+        "nested": [
+            {"name": "alpha", "values": [0, 3.25, False]},
+            {"name": "beta", "values": []},
+        ]
+    }
+    journal = open_journal(tmp_path, config_fingerprint=fingerprint)
+    journal.append("data_recorded", {"data": data})
+
+    reopened = open_journal(tmp_path, config_fingerprint=fingerprint)
+
+    assert reopened.state == journal.state
+    assert reopened.state.config_fingerprint == fingerprint
+    assert reopened.state.data == data
+
+
 @pytest.mark.parametrize("artifact_name", ["events.jsonl", "state.json", "result.json"])
 def test_symlinked_gate_artifacts_are_rejected(tmp_path, artifact_name):
     journal = open_journal(tmp_path)

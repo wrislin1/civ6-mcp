@@ -13,6 +13,7 @@ scenario details or Lua builders, and it never mutates canonical channel state.
 from __future__ import annotations
 
 import json
+import math
 import os
 import secrets
 import stat
@@ -94,10 +95,14 @@ def _freeze(value: Any) -> Any:
     if isinstance(value, list):
         return _FrozenList(_freeze(item) for item in value)
     if isinstance(value, tuple):
-        return tuple(_freeze(item) for item in value)
+        return _FrozenList(_freeze(item) for item in value)
     if isinstance(value, (set, frozenset)):
-        return frozenset(_freeze(item) for item in value)
-    if value is None or isinstance(value, (bool, int, float, str)):
+        raise GateStateError(f"unsupported gate value type {type(value).__name__}")
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise GateStateError(f"non-finite float is not supported: {value!r}")
+        return value
+    if value is None or isinstance(value, (bool, int, str)):
         return value
     raise GateStateError(f"unsupported gate value type {type(value).__name__}")
 
@@ -107,8 +112,6 @@ def _thaw(value: Any) -> Any:
         return {key: _thaw(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_thaw(item) for item in value]
-    if isinstance(value, (set, frozenset)):
-        return [_thaw(item) for item in sorted(value, key=repr)]
     return value
 
 
@@ -148,15 +151,19 @@ class GateState:
             "roles",
             tuple((str(name), int(player_id)) for name, player_id in self.roles),
         )
+        for name in ("config_fingerprint", "data"):
+            object.__setattr__(self, name, _freeze(getattr(self, name)))
         for name in (
-            "config_fingerprint",
             "pending_actions",
             "verified_actions",
             "observations",
             "privacy_assertions",
-            "data",
         ):
-            object.__setattr__(self, name, _freeze(getattr(self, name)))
+            object.__setattr__(
+                self,
+                name,
+                tuple(_freeze(item) for item in getattr(self, name)),
+            )
 
 
 def _normalized_roles(roles: Any) -> tuple[tuple[str, int], ...]:
