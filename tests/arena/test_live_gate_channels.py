@@ -663,6 +663,95 @@ async def test_pending_actions_fail_closed_if_source_identity_cannot_recur(
     assert resumed._journal.result_path.exists()
 
 
+@pytest.mark.asyncio
+async def test_recovery_reducer_error_is_durable_sanitized_failure(tmp_path):
+    """A GateStateError through the recovery reducer must not abort the run.
+
+    Seat 2 acts on the next turn while round 10 is still incomplete and the
+    process crashes after canonical apply but before its capture. On resume
+    the recovered started append violates round monotonicity; that reducer
+    raise must become a durable sanitized gate_failed + result.json instead
+    of escaping note_admission with no durable result.
+    """
+
+    cfg = gate_config()
+    driver, runtime, gs = await attached_driver(tmp_path, cfg=cfg)
+    await run_gate_seat(driver, runtime, gs, 1, 10)
+    assert driver._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT
+
+    gs.active_player = 2
+    admission = await runtime.admit_player(gs, 2, 11)
+    driver.note_admission(2, 11, admission, "")
+    result = await driver.policy_for(2)(gs, 2, 11)
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    assert [ack.status for ack in acknowledgements] == ["applied"]
+    assert len(driver._journal.state.pending_actions) == 1
+
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime, run_dir=driver._run_dir)
+    gs.active_player = 3
+    next_admission = await runtime.admit_player(gs, 3, 11)
+    resumed.note_admission(3, 11, next_admission, "")
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert resumed._journal.state.reason == "action_recovery_failed"
+    assert resumed._journal.result_path.exists()
+    result_payload = json.loads(resumed._journal.result_path.read_text())
+    assert result_payload["status"] == GATE_FAILED
+    assert "prior round completed" in private_failure_text(resumed)
+    assert "prior round completed" not in public_gate_text(resumed)
+
+
+@pytest.mark.asyncio
+async def test_recovered_capture_already_captured_cannot_dangle_marker(tmp_path):
+    """The recovered started/captured pair must be structurally inseparable.
+
+    The reducer permits a journal where a capture pair is durable while its
+    planned action is still pending (the verify-before-capture invariant
+    should make this unreachable in practice). Recovery over that shape must
+    not append a started marker without its captured partner, and must not
+    re-advance the phase for an already-captured seat.
+    """
+
+    cfg = gate_config()
+    driver, runtime, gs = await attached_driver(tmp_path, cfg=cfg)
+    await run_gate_seat(driver, runtime, gs, 1, 10)
+
+    gs.active_player = 2
+    admission = await runtime.admit_player(gs, 2, 10)
+    driver.note_admission(2, 10, admission, "")
+    result = await driver.policy_for(2)(gs, 2, 10)
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    assert [ack.status for ack in acknowledgements] == ["applied"]
+    assert len(driver._journal.state.pending_actions) == 1
+    driver._journal.append(
+        "seat_capture_started",
+        {
+            "turn": 10,
+            "player_id": 2,
+            "expected_player_ids": [1, 2, 3],
+            "phase": lgc.PHASE_ACCEPT_UPFRONT,
+        },
+    )
+    driver._journal.append(
+        "seat_captured",
+        {"turn": 10, "player_id": 2, "expected_player_ids": [1, 2, 3]},
+    )
+
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime, run_dir=driver._run_dir)
+    gs.active_player = 3
+    next_admission = await runtime.admit_player(gs, 3, 10)
+    resumed.note_admission(3, 10, next_admission, "")
+
+    assert resumed.pending_signal() is None
+    state = resumed._journal.state
+    assert state.pending_actions == ()
+    assert state.capture_started_turn is None
+    assert state.phase == lgc.PHASE_ACCEPT_UPFRONT
+    assert state.captured_players == (1, 2)
+
+
 async def drive_to_restart(tmp_path, gs=None):
     gs = gs or GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
@@ -813,6 +902,40 @@ async def test_corrupt_private_payment_checkpoint_becomes_durable_failure(tmp_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("hostile_value", ["NaN", "Infinity"])
+async def test_nan_parseable_payment_checkpoint_is_durable_failure(
+    tmp_path, hostile_value
+):
+    """A NaN/Infinity-parseable sidecar must fail closed, not raise past attach.
+
+    json.loads accepts NaN/Infinity, but _digest_mapping dumps with
+    allow_nan=False; the resulting ValueError must become a durable sanitized
+    payment_checkpoint_failed instead of escaping the reconciler on every
+    re-attach.
+    """
+
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    checkpoint_path = driver._journal.gate_dir / "payment_checkpoint.json"
+    checkpoint_path.write_text(
+        '{"recorded": {"payer": ' + hostile_value + ', "payee": 2, "gold": 1, '
+        '"duration": 0, "item_count": 1}}'
+    )
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert resumed._journal.state.reason == "payment_checkpoint_failed"
+    assert resumed._journal.result_path.exists()
+    result = json.loads(resumed._journal.result_path.read_text())
+    assert result["status"] == GATE_FAILED
+    assert "private_checkpoint_invalid" in private_failure_text(resumed)
+    assert "private_checkpoint_invalid" not in public_gate_text(resumed)
+
+
+@pytest.mark.asyncio
 async def test_partial_restart_round_survives_process_crash_and_restarts_once(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
     await run_gate_round(driver, runtime, gs, 10)
@@ -908,6 +1031,130 @@ async def test_started_capture_reconciles_transition_crash_and_restarts_once(
         for line in resumed._journal.events_path.read_text().splitlines()
     ]
     assert kinds.count("restart_required") == 1
+
+
+# The exact phase_advanced payload sequence of one successful scenario run.
+# restart_verified moves restart_required -> accept_upfront_payment without a
+# phase_advanced event, so it is deliberately absent from this list.
+GATE_PHASE_SEQUENCE = [
+    lgc.PHASE_CANARY_AND_UPFRONT_PROPOSAL,
+    lgc.PHASE_ACCEPT_UPFRONT,
+    lgc.PHASE_FUND_UPFRONT,
+    lgc.PHASE_RESTART_REQUIRED,
+    lgc.PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,
+    lgc.PHASE_VERIFY_UPFRONT_HONORED,
+    lgc.PHASE_PROPOSE_ON_DELIVERY,
+    lgc.PHASE_ACCEPT_ON_DELIVERY,
+    lgc.PHASE_AWAIT_ON_DELIVERY_FAVOR,
+    lgc.PHASE_WITHHOLD_ON_DELIVERY_FUNDING,
+    lgc.PHASE_VERIFY_FUNDING_BREACH,
+    lgc.PHASE_VERIFY_TERMINAL_GATE,
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("crash_boundary", ["between_hops", "after_second_hop"])
+@pytest.mark.parametrize(
+    "stop_round,crash_turn,intermediate_phase,final_phase",
+    [
+        (
+            4,
+            13,
+            lgc.PHASE_VERIFY_UPFRONT_HONORED,
+            lgc.PHASE_PROPOSE_ON_DELIVERY,
+        ),
+        (
+            9,
+            18,
+            lgc.PHASE_VERIFY_FUNDING_BREACH,
+            lgc.PHASE_VERIFY_TERMINAL_GATE,
+        ),
+    ],
+    ids=["deadline_satisfaction", "funding_breach"],
+)
+async def test_dual_advance_transition_crash_reconciles_and_converges(
+    tmp_path,
+    crash_boundary,
+    stop_round,
+    crash_turn,
+    intermediate_phase,
+    final_phase,
+):
+    """Crashes inside either dual-advance boundary must reconcile on attach.
+
+    Both dual advances (deadline satisfaction and funding breach) journal two
+    phase_advanced events for one capture. A crash between the two hops, or
+    after the second hop but before seat_captured, is a legitimate crash
+    state: attach must finish the capture at the chain's final phase and the
+    resumed run must converge to the uncrashed choreography (no spurious
+    privacy_assertion_failed, no started_capture_phase_mismatch hard fail).
+    """
+
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=stop_round)
+    assert driver.pending_signal() is None
+
+    journal = driver._journal
+    real_append = journal.append
+
+    def crashing_append(kind, payload):
+        event = real_append(kind, payload)
+        if kind == "phase_advanced":
+            if (
+                crash_boundary == "between_hops"
+                and payload["phase"] == intermediate_phase
+            ):
+                raise SimulatedCrash()
+            if (
+                crash_boundary == "after_second_hop"
+                and payload["phase"] == final_phase
+            ):
+                raise SimulatedCrash()
+        return event
+
+    journal.append = crashing_append
+    crashed_pid = None
+    with pytest.raises(SimulatedCrash):
+        for pid in (1, 2, 3):
+            crashed_pid = pid
+            await run_gate_seat(driver, runtime, gs, pid, crash_turn)
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(gs=gs, channel_runtime=runtime, run_dir=driver._run_dir)
+
+    assert resumed.pending_signal() in (None, GATE_PASSED)
+    state = resumed._journal.state
+    assert state.reason != "gate_invariant_failed"
+    assert state.phase == final_phase
+    assert state.capture_started_turn is None
+    assert crashed_pid in state.captured_players
+    assert state.capture_turn == crash_turn
+
+    for pid in (1, 2, 3):
+        if pid > crashed_pid and resumed.pending_signal() is None:
+            await run_gate_seat(resumed, runtime, gs, pid, crash_turn)
+    for turn in range(crash_turn + 1, 19):
+        if resumed.pending_signal() is not None:
+            break
+        await run_gate_round(resumed, runtime, gs, turn)
+
+    assert resumed.pending_signal() == GATE_PASSED
+    events = [
+        json.loads(line)
+        for line in resumed._journal.events_path.read_text().splitlines()
+    ]
+    advanced = [
+        event["payload"]["phase"]
+        for event in events
+        if event["kind"] == "phase_advanced"
+    ]
+    assert advanced == GATE_PHASE_SEQUENCE
+    assert sum(1 for event in events if event["kind"] == "restart_required") == 1
+    started = sum(1 for event in events if event["kind"] == "seat_capture_started")
+    captured = sum(1 for event in events if event["kind"] == "seat_captured")
+    assert started == captured == lgc.minimum_captures(gate_config())
 
 
 @pytest.mark.asyncio

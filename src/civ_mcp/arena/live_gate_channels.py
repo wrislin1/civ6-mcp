@@ -301,7 +301,24 @@ class ChannelsCoreDriver:
             player_id,
             turn,
         ) not in self._admissions:
-            self._recover_pending_actions(player_id, turn)
+            try:
+                self._recover_pending_actions(player_id, turn)
+            except Exception as exc:
+                # A reducer/journal invariant raised mid-recovery (e.g. round
+                # monotonicity on the recovered started append) must still
+                # honor the durable-failure contract: sanitized gate_failed +
+                # result.json, then the coordinator's pending_signal check
+                # performs the same safe deactivation as any admission
+                # failure.
+                self._fail(
+                    "action_recovery_failed",
+                    detail={
+                        "failure": "recovery_exception",
+                        "player_id": player_id,
+                        "turn": turn,
+                        "error": repr(exc),
+                    },
+                )
             if self._signal is not None:
                 return
         self._admissions[(player_id, turn)] = admission
@@ -701,7 +718,22 @@ class ChannelsCoreDriver:
         if recorded is None and public_digest is None:
             return True
         if recorded is not None and public_digest is not None:
-            if self._digest_mapping(recorded) != public_digest:
+            try:
+                # json.loads accepts NaN/Infinity, which the allow_nan=False
+                # digest dump then rejects; a hostile-but-parseable sidecar
+                # must fail closed here, not raise past the reconciler.
+                recorded_digest = self._digest_mapping(recorded)
+            except Exception as exc:
+                self._fail(
+                    "payment_checkpoint_failed",
+                    detail={
+                        "failure": "private_checkpoint_invalid",
+                        "checkpoint": checkpoint,
+                        "error": repr(exc),
+                    },
+                )
+                return False
+            if recorded_digest != public_digest:
                 self._fail(
                     "payment_checkpoint_failed",
                     detail={
@@ -1177,26 +1209,45 @@ class ChannelsCoreDriver:
         original_phase = state.capture_started_phase
         if turn is None or player_id is None:
             return
+        # Ordered phase_advanced chains one capture may journal from each
+        # started phase. Single-advance phases have one-element chains; the
+        # deadline-satisfaction and funding-breach boundaries are dual
+        # advances (_advance_after_capture recurses once), so every non-final
+        # chain element is a legitimate crash-between-hops state.
         successors = {
-            PHASE_CANARY_AND_UPFRONT_PROPOSAL: PHASE_ACCEPT_UPFRONT,
-            PHASE_ACCEPT_UPFRONT: PHASE_FUND_UPFRONT,
-            PHASE_FUND_UPFRONT: PHASE_RESTART_REQUIRED,
-            PHASE_ACCEPT_UPFRONT_PAYMENT: PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,
-            PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE: PHASE_VERIFY_UPFRONT_HONORED,
-            PHASE_VERIFY_UPFRONT_HONORED: PHASE_PROPOSE_ON_DELIVERY,
-            PHASE_PROPOSE_ON_DELIVERY: PHASE_ACCEPT_ON_DELIVERY,
-            PHASE_ACCEPT_ON_DELIVERY: PHASE_AWAIT_ON_DELIVERY_FAVOR,
-            PHASE_AWAIT_ON_DELIVERY_FAVOR: PHASE_WITHHOLD_ON_DELIVERY_FUNDING,
-            PHASE_WITHHOLD_ON_DELIVERY_FUNDING: PHASE_VERIFY_FUNDING_BREACH,
-            PHASE_VERIFY_FUNDING_BREACH: PHASE_VERIFY_TERMINAL_GATE,
+            PHASE_CANARY_AND_UPFRONT_PROPOSAL: (PHASE_ACCEPT_UPFRONT,),
+            PHASE_ACCEPT_UPFRONT: (PHASE_FUND_UPFRONT,),
+            PHASE_FUND_UPFRONT: (PHASE_RESTART_REQUIRED,),
+            PHASE_ACCEPT_UPFRONT_PAYMENT: (PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,),
+            PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE: (
+                PHASE_VERIFY_UPFRONT_HONORED,
+                PHASE_PROPOSE_ON_DELIVERY,
+            ),
+            PHASE_VERIFY_UPFRONT_HONORED: (PHASE_PROPOSE_ON_DELIVERY,),
+            PHASE_PROPOSE_ON_DELIVERY: (PHASE_ACCEPT_ON_DELIVERY,),
+            PHASE_ACCEPT_ON_DELIVERY: (PHASE_AWAIT_ON_DELIVERY_FAVOR,),
+            PHASE_AWAIT_ON_DELIVERY_FAVOR: (
+                PHASE_WITHHOLD_ON_DELIVERY_FUNDING,
+            ),
+            PHASE_WITHHOLD_ON_DELIVERY_FUNDING: (
+                PHASE_VERIFY_FUNDING_BREACH,
+                PHASE_VERIFY_TERMINAL_GATE,
+            ),
+            PHASE_VERIFY_FUNDING_BREACH: (PHASE_VERIFY_TERMINAL_GATE,),
         }
         current_phase = state.phase
-        successor = successors.get(original_phase)
-        if current_phase == original_phase:
+        chain = successors.get(original_phase, ())
+        if current_phase == original_phase or current_phase in chain[:-1]:
+            # Crash before the transition, or between the two hops of a dual
+            # advance: re-run the remaining verification from the current
+            # phase. This is read-only against the game — the advance
+            # branches only read canonical channel state and append journal
+            # events — and it re-journals exactly the phase_advanced events
+            # the uncrashed capture would have written.
             self._advance_after_capture(player_id, turn)
             if self._signal is not None:
                 return
-        elif current_phase != successor:
+        elif not chain or current_phase != chain[-1]:
             self._fail(
                 "gate_invariant_failed",
                 detail={
@@ -1959,6 +2010,15 @@ class ChannelsCoreDriver:
                     recovered_player, recovered_turn
                 ):
                     return
+                if (
+                    self._journal.state.capture_turn == recovered_turn
+                    and recovered_player in self._journal.state.captured_players
+                ):
+                    # Already durably captured (a capture implies its phase
+                    # work already ran): the started/captured pair must never
+                    # be split, so skip both instead of dangling a started
+                    # marker without its partner.
+                    continue
                 self._journal.append(
                     "seat_capture_started",
                     {
@@ -1971,21 +2031,17 @@ class ChannelsCoreDriver:
                 self._advance_after_capture(recovered_player, recovered_turn)
                 if self._signal is not None:
                     return
-                if not (
-                    self._journal.state.capture_turn == recovered_turn
-                    and recovered_player in self._journal.state.captured_players
-                ):
-                    self._journal.append(
-                        "seat_captured",
-                        {
-                            "turn": recovered_turn,
-                            "player_id": recovered_player,
-                            "expected_player_ids": sorted(self.gate_pids),
-                        },
-                    )
-                    self._captured_this_turn[recovered_turn] = set(
-                        self._journal.state.captured_players
-                    )
+                self._journal.append(
+                    "seat_captured",
+                    {
+                        "turn": recovered_turn,
+                        "player_id": recovered_player,
+                        "expected_player_ids": sorted(self.gate_pids),
+                    },
+                )
+                self._captured_this_turn[recovered_turn] = set(
+                    self._journal.state.captured_players
+                )
 
     async def _run_preflight(self, gs, turn) -> None:
         api = self.role_pid[ROLE_API]

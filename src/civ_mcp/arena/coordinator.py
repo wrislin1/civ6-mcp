@@ -445,6 +445,13 @@ async def run_arena(
     channel_reconciled_key: tuple[int, int] | None = None
     channel_reconcile_error = ""
 
+    # Gate-mode stderr/log privacy sweep — declared scope: the channel,
+    # runtime, policy, and pending-record exception families, which can carry
+    # channel-private values (canary, proposal text, payment fingerprints).
+    # Game/tool-layer exception families (promotion sweep, attention state
+    # saves, seat-0 mechanical/end-turn and seat-0 policy errors) still print
+    # raw reprs and are deliberately outside this sweep: they cannot carry
+    # channel-private values.
     def _public_channel_error(error: str) -> str:
         if live_gate_driver is not None and error:
             return "channel_operation_failed"
