@@ -2,9 +2,11 @@ import json
 import os
 import stat
 from collections import deque
+from types import SimpleNamespace
 
 import pytest
 
+from civ_mcp.arena import live_gate
 from civ_mcp.arena.live_gate import (
     GATE_ACTIVE,
     GATE_FAILED,
@@ -14,6 +16,10 @@ from civ_mcp.arena.live_gate import (
     GateEvent,
     GateStateError,
     LiveGateJournal,
+    ScenarioMeta,
+    register_scenario,
+    resolve_live_gate_driver,
+    resolve_scenario,
 )
 
 
@@ -469,3 +475,47 @@ def test_non_regular_gate_artifacts_are_rejected(tmp_path, artifact_name):
     else:
         with pytest.raises(GateStateError):
             open_journal(tmp_path)
+
+
+def fake_meta(name="fake_gate_v1", **overrides):
+    kwargs = dict(
+        name=name,
+        revision=1,
+        role_contracts=(("actor", "in_process"), ("observer", "scripted")),
+        minimum_captures=lambda config: 6,
+        create_driver=lambda config: SimpleNamespace(config=config, kind="fake-driver"),
+    )
+    kwargs.update(overrides)
+    return ScenarioMeta(**kwargs)
+
+
+def test_register_and_resolve_scenario(monkeypatch):
+    monkeypatch.setattr(live_gate, "_SCENARIOS", {})
+    meta = fake_meta()
+    register_scenario(meta)
+    assert resolve_scenario("fake_gate_v1") is meta
+    with pytest.raises(ValueError):
+        register_scenario(fake_meta())  # duplicate name
+
+
+def test_resolve_unknown_scenario_rejected(monkeypatch):
+    monkeypatch.setattr(live_gate, "_SCENARIOS", {})
+    with pytest.raises(ValueError, match="unknown live-gate scenario"):
+        resolve_scenario("nope_v1")
+
+
+def test_resolve_live_gate_driver_disabled_returns_none():
+    config = SimpleNamespace(live_gate=SimpleNamespace(enabled=False, scenario="", roles=()))
+    assert resolve_live_gate_driver(config) is None
+    assert resolve_live_gate_driver(SimpleNamespace()) is None  # attribute missing
+
+
+def test_resolve_live_gate_driver_enabled_creates_driver(monkeypatch):
+    monkeypatch.setattr(live_gate, "_SCENARIOS", {})
+    register_scenario(fake_meta())
+    config = SimpleNamespace(
+        live_gate=SimpleNamespace(enabled=True, scenario="fake_gate_v1", roles=(("actor", 1),))
+    )
+    driver = resolve_live_gate_driver(config)
+    assert driver.kind == "fake-driver"
+    assert driver.config is config

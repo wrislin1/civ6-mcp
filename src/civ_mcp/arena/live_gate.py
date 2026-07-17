@@ -12,6 +12,7 @@ scenario details or Lua builders, and it never mutates canonical channel state.
 
 from __future__ import annotations
 
+import importlib
 import json
 import math
 import os
@@ -21,7 +22,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Callable
 
 GATE_SCHEMA_VERSION = 1
 
@@ -827,3 +828,62 @@ class LiveGateJournal:
                 f"not {status!r}"
             )
         _atomic_private_json(self.result_path, _result_payload(self.state))
+
+
+# --- Scenario registry -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ScenarioMeta:
+    """Static scenario metadata used by configuration validation and driver
+    construction. role_contracts pairs each required role name with the
+    required PlayerSpec.driver_kind() ('in_process' | 'cli' | 'scripted').
+    minimum_captures computes the scenario's minimum seat-capture budget from
+    an ArenaConfig (so budget validation tracks channel-rule changes)."""
+
+    name: str
+    revision: int
+    role_contracts: tuple[tuple[str, str], ...]
+    minimum_captures: Callable[[Any], int]
+    create_driver: Callable[[Any], Any]
+
+
+_SCENARIOS: dict[str, ScenarioMeta] = {}
+
+# Modules imported lazily by resolve_scenario so configuration validation can
+# see built-in scenarios without arena.py having imported them first. Import
+# is idempotent (sys.modules cache); each module registers itself at import.
+_BUILTIN_SCENARIO_MODULES: tuple[str, ...] = ()
+
+
+def register_scenario(meta: ScenarioMeta) -> None:
+    if meta.name in _SCENARIOS:
+        raise ValueError(f"live-gate scenario {meta.name!r} is already registered")
+    _SCENARIOS[meta.name] = meta
+
+
+def _ensure_builtin_scenarios() -> None:
+    for module in _BUILTIN_SCENARIO_MODULES:
+        importlib.import_module(module)
+
+
+def resolve_scenario(name: str) -> ScenarioMeta:
+    _ensure_builtin_scenarios()
+    meta = _SCENARIOS.get(name)
+    if meta is None:
+        raise ValueError(
+            f"unknown live-gate scenario {name!r}; registered: {sorted(_SCENARIOS)}"
+        )
+    return meta
+
+
+def resolve_live_gate_driver(config: Any) -> Any | None:
+    """Return the configured scenario driver, or None when the gate is
+    disabled. This is the single disabled-path switch: a None return means
+    policy construction, preflight, capture, and transcript behavior all
+    follow the existing arena path untouched."""
+
+    gate = getattr(config, "live_gate", None)
+    if gate is None or not getattr(gate, "enabled", False):
+        return None
+    return resolve_scenario(gate.scenario).create_driver(config)
