@@ -57,6 +57,12 @@ from civ_mcp.arena.channels import (
 from civ_mcp.arena.config import ChannelRules
 
 
+_INCOMPLETE_ACCEPTANCE_CLEANUP = "reject_incomplete_acceptance"
+_INCOMPLETE_ACCEPTANCE_REASON = (
+    "payment acceptance observation baseline was incomplete"
+)
+
+
 class ChannelStateError(RuntimeError):
     """Canonical channel state cannot be opened safely."""
 
@@ -416,7 +422,7 @@ class ChannelRuntime:
             else common_fields | {"accept"}
         )
         allowed = required | (
-            {"success_deal", "observation_id"}
+            {"success_deal", "observation_id", "cleanup"}
             if kind == "payment_response_intent"
             else set()
         )
@@ -515,7 +521,14 @@ class ChannelRuntime:
         if kind == "payment_response_intent":
             if type(payload["accept"]) is not bool:
                 raise ValueError("payment response intent accept must be a boolean")
-            if payload["accept"] != ("success_deal" in payload):
+            cleanup = payload.get("cleanup")
+            if cleanup is not None and (
+                cleanup != _INCOMPLETE_ACCEPTANCE_CLEANUP
+                or payload["accept"] is not True
+                or "success_deal" in payload
+            ):
+                raise ValueError("payment response cleanup intent is invalid")
+            if cleanup is None and payload["accept"] != ("success_deal" in payload):
                 raise ValueError(
                     "accepted payment response requires exactly one success deal"
                 )
@@ -527,8 +540,68 @@ class ChannelRuntime:
             not isinstance(observation_id, str) or not observation_id
         ):
             raise ValueError("payment response observation_id must be a string")
-        if kind == "payment_response_intent" and payload["accept"]:
+        if kind == "payment_response_intent" and payload.get("cleanup") is not None:
+            cls._validate_incomplete_acceptance_cleanup(
+                state,
+                deal,
+                payload,
+            )
+        if (
+            kind == "payment_response_intent"
+            and payload["accept"]
+            and payload.get("cleanup") is None
+        ):
             cls._validated_success_deal(state, deal, payload)
+
+    @classmethod
+    def _validate_incomplete_acceptance_cleanup(
+        cls,
+        state: ChannelState,
+        deal: Deal,
+        intent: dict,
+    ) -> None:
+        spec = TERM_REGISTRY[deal.favor.term_type]
+        if deal.timing != "up_front" or spec.baseline_phase == "proposal":
+            raise ValueError("payment response cleanup is not phase-valid")
+        observation_id = intent.get("observation_id")
+        if observation_id is None:
+            observation = ChannelObservation(deal.counterparty, intent["turn"])
+        else:
+            payload = next(
+                (
+                    candidate
+                    for candidate in state.observations
+                    if candidate.get("id") == observation_id
+                ),
+                None,
+            )
+            if not isinstance(payload, dict):
+                raise ValueError("payment response cleanup observation is missing")
+            observation = cls._observation_from_payload(payload)
+            if (
+                observation.player_id != deal.counterparty
+                or observation.turn != intent["turn"]
+            ):
+                raise ValueError(
+                    "payment response cleanup observation is not actor-turn bound"
+                )
+        try:
+            baseline = capture_baseline(
+                {
+                    "term_type": deal.favor.term_type,
+                    "params": deal.favor.params,
+                },
+                observation,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "payment response cleanup observation is invalid"
+            ) from exc
+        if not any(
+            key.endswith("baseline_complete") and value is not True
+            for key, value in baseline.items()
+        ):
+            raise ValueError("payment response cleanup observation is complete")
 
     @classmethod
     def _validate_payment_lifecycle(
@@ -1156,9 +1229,23 @@ class ChannelRuntime:
                 raise ValueError("unknown funding recovery outcome")
         else:
             accept = intent["accept"]
+            cleanup = intent.get("cleanup")
+            engine_accept = False if cleanup is not None else accept
             if recovery in {None, "response_retried"}:
-                if cls._response_succeeded(engine_result, accept):
-                    if accept:
+                if cls._response_succeeded(engine_result, engine_accept):
+                    if cleanup is not None:
+                        observation_id = intent.get("observation_id")
+                        expected_deal = cls._unverifiable_deal_record(
+                            deal,
+                            turn=intent["turn"],
+                            reason=_INCOMPLETE_ACCEPTANCE_REASON,
+                            evidence_refs=(
+                                (observation_id,)
+                                if isinstance(observation_id, str)
+                                else ()
+                            ),
+                        )
+                    elif accept:
                         expected_deal = cls._validated_success_deal(
                             state, deal, intent
                         )
@@ -2074,6 +2161,8 @@ class ChannelRuntime:
                 "an unresolved payment intent requires reconciliation"
             )
         success_deal = None
+        cleanup_deal = None
+        cleanup = None
         if action.accept:
             try:
                 success_deal = self._accepted_payment_deal(
@@ -2083,24 +2172,14 @@ class ChannelRuntime:
                     observation_id=observation_id,
                 )
             except _IncompleteFavorObservation:
-                unverifiable = self._unverifiable_deal_record(
+                cleanup = _INCOMPLETE_ACCEPTANCE_CLEANUP
+                cleanup_deal = self._unverifiable_deal_record(
                     deal,
                     turn=turn,
-                    reason="payment acceptance observation baseline was incomplete",
+                    reason=_INCOMPLETE_ACCEPTANCE_REASON,
                     evidence_refs=(
                         (observation_id,) if observation_id is not None else ()
                     ),
-                )
-                return self._finish_source(
-                    staged,
-                    turn=turn,
-                    status="applied",
-                    message=f"payment acceptance became unverifiable for {deal.id}",
-                    deal_id=deal.id,
-                    effect={
-                        "kind": "deal_changed",
-                        "payload": self._deal_payload(unverifiable),
-                    },
                 )
         try:
             payment_state = await gs.get_channel_payment_state(
@@ -2123,6 +2202,7 @@ class ChannelRuntime:
             accept=action.accept,
             success_deal=success_deal,
             observation_id=observation_id,
+            cleanup=cleanup,
         )
         conflict = self._commit_payment_intent_for_action(
             "payment_response_intent",
@@ -2132,11 +2212,12 @@ class ChannelRuntime:
         )
         if conflict is not None:
             return conflict
+        engine_accept = False if cleanup is not None else action.accept
         try:
             engine_result = await gs.respond_to_channel_payment(
                 deal.proposer,
                 deal.payment_gold,
-                action.accept,
+                engine_accept,
             )
         except Exception as exc:
             await self.reconcile_payment_intents(
@@ -2170,7 +2251,7 @@ class ChannelRuntime:
                 "rejected",
                 "payment response returned no authoritative engine result",
             )
-        if not self._response_succeeded(engine_result, action.accept):
+        if not self._response_succeeded(engine_result, engine_accept):
             if not self._authoritative_payment_failure(engine_result):
                 return ChannelAcknowledgement(
                     staged.actor,
@@ -2187,6 +2268,16 @@ class ChannelRuntime:
                 deal=None,
                 grievance=None,
                 message=f"linked payment response failed: {engine_result}",
+            )
+        if cleanup_deal is not None:
+            return self._commit_payment_result(
+                "payment_response_result",
+                intent,
+                engine_result=engine_result,
+                recovery=None,
+                deal=cleanup_deal,
+                grievance=None,
+                message=f"payment acceptance became unverifiable for {deal.id}",
             )
         if action.accept:
             return self._commit_payment_result(
@@ -2329,6 +2420,7 @@ class ChannelRuntime:
         accept: bool | None = None,
         success_deal: Deal | None = None,
         observation_id: str | None = None,
+        cleanup: str | None = None,
     ) -> dict:
         payload = {
             "source_id": staged.source_id,
@@ -2351,6 +2443,8 @@ class ChannelRuntime:
             payload["success_deal"] = self._deal_payload(success_deal)
         if accept is not None and observation_id is not None:
             payload["observation_id"] = observation_id
+        if cleanup is not None:
+            payload["cleanup"] = cleanup
         return payload
 
     def _accepted_payment_deal(
@@ -2571,11 +2665,13 @@ class ChannelRuntime:
                 )
                 continue
             accept = intent["accept"]
+            cleanup = intent.get("cleanup")
+            engine_accept = False if cleanup is not None else accept
             try:
                 engine_result = await gs.respond_to_channel_payment(
                     intent["payer"],
                     intent["gold"],
-                    accept,
+                    engine_accept,
                 )
             except Exception as exc:
                 try:
@@ -2623,8 +2719,32 @@ class ChannelRuntime:
                     )
                     continue
                 engine_result = f"Error: {type(exc).__name__}"
-            if self._response_succeeded(engine_result, accept):
-                if accept:
+            if self._response_succeeded(engine_result, engine_accept):
+                if cleanup is not None:
+                    observation_id = intent.get("observation_id")
+                    unverifiable = self._unverifiable_deal_record(
+                        deal,
+                        turn=intent["turn"],
+                        reason=_INCOMPLETE_ACCEPTANCE_REASON,
+                        evidence_refs=(
+                            (observation_id,)
+                            if isinstance(observation_id, str)
+                            else ()
+                        ),
+                    )
+                    self._commit_payment_result(
+                        "payment_response_result",
+                        intent,
+                        engine_result=engine_result,
+                        recovery="response_retried",
+                        deal=unverifiable,
+                        grievance=None,
+                        message=(
+                            "recovered incomplete payment acceptance for "
+                            f"{deal.id}"
+                        ),
+                    )
+                elif accept:
                     success_payload = intent.get("success_deal")
                     accepted = (
                         self._deal_from_changed_payload(success_payload)

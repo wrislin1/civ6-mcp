@@ -2147,8 +2147,9 @@ async def test_up_front_payment_accept_safely_terminates_incomplete_observation(
     assert "unverifiable" in response.message
     assert rt.deal(deal.id).state is DealState.UNVERIFIABLE
     assert rt.state.grievances == ()
-    assert payment_gs.response_calls == []
-    assert journal_events(rt)[-1]["kind"] == "staged_action_applied"
+    assert payment_gs.response_calls == [False]
+    assert (deal.proposer, deal.counterparty) not in payment_gs.pending
+    assert journal_events(rt)[-1]["kind"] == "payment_response_result"
     assert retry == response
     assert rt.events_path.read_bytes() == before_retry_events
 
@@ -2162,7 +2163,7 @@ async def test_up_front_payment_accept_safely_terminates_incomplete_observation(
         ("acknowledgement", "player_id", True),
     ],
 )
-async def test_open_rejects_malformed_incomplete_observation_aggregate(
+async def test_open_rejects_malformed_incomplete_observation_payment_result(
     tmp_path,
     payment_gs,
     section,
@@ -2199,13 +2200,69 @@ async def test_open_rejects_malformed_incomplete_observation_aggregate(
         action_observation=ChannelObservation(deal.counterparty, 4),
     )
     events = journal_events(rt)
-    aggregate = events[-1]["payload"]
+    result = events[-1]["payload"]
     if section == "deal":
-        aggregate["effect"]["payload"]["terminal"][field] = value
+        result["deal"]["terminal"][field] = value
     else:
-        aggregate[section][field] = value
+        result[section][field] = value
     rt.events_path.write_text("".join(json.dumps(event) + "\n" for event in events))
     rt.state_path.write_text(before_response)
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_open_rejects_cleanup_intent_with_complete_acceptance_observation(
+    tmp_path,
+    payment_gs,
+):
+    rt = runtime(tmp_path)
+    payment_gs.runtime = rt
+    deal = await accepted_deal(
+        rt,
+        payment_gs,
+        favor={
+            "term_type": "maintain_gold_reserve",
+            "params": {"min_gold": 400},
+        },
+        timing="up_front",
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    complete = observation(deal.counterparty, 4)
+    observation_id = rt._ensure_observation_recorded(complete)
+    staged = stage(
+        "forged-incomplete-accept-cleanup",
+        deal.counterparty,
+        "respond_to_payment",
+        {"deal_id": deal.id, "accept": True},
+    )
+    success_deal = rt._accepted_payment_deal(
+        offered,
+        turn=4,
+        observation=complete,
+        observation_id=observation_id,
+    )
+    intent = rt._payment_intent_payload(
+        offered,
+        staged,
+        turn=4,
+        deadline=offered.payment_response_by_turn,
+        accept=True,
+        success_deal=success_deal,
+        observation_id=observation_id,
+    )
+    intent.pop("success_deal")
+    intent["cleanup"] = "reject_incomplete_acceptance"
+    append_complete_event(rt, "payment_response_intent", intent)
 
     with pytest.raises(ChannelStateError, match="invalid channel journal"):
         runtime(tmp_path)
@@ -2266,16 +2323,185 @@ async def test_incomplete_payment_accept_on_deadline_atomically_becomes_unverifi
         "payment acceptance observation baseline was incomplete"
     )
     assert rt.state.grievances == ()
-    assert payment_gs.response_calls == []
+    assert payment_gs.response_calls == [False]
     assert [event["kind"] for event in new_events] == [
         "observation_recorded",
-        "staged_action_applied",
+        "payment_response_intent",
+        "payment_response_result",
     ]
-    aggregate = new_events[-1]["payload"]
-    assert aggregate["effect"]["kind"] == "deal_changed"
-    assert aggregate["acknowledgement"]["source_id"] == (
+    intent = new_events[-2]["payload"]
+    assert intent["accept"] is True
+    assert intent["cleanup"] == "reject_incomplete_acceptance"
+    assert intent["fingerprint"] == ExactPaymentOffer(
+        deal.proposer,
+        deal.counterparty,
+        deal.payment_gold,
+    ).fingerprint()
+    result = new_events[-1]["payload"]
+    assert result["deal"]["state"] == "unverifiable"
+    assert result["acknowledgement"]["source_id"] == (
         acknowledgements[0].source_id
     )
+
+
+@pytest.mark.asyncio
+async def test_incomplete_up_front_accept_retries_cleanup_and_unblocks_pair(
+    tmp_path,
+    payment_gs,
+):
+    rt = runtime(tmp_path)
+    payment_gs.runtime = rt
+    first = await accepted_deal(
+        rt,
+        payment_gs,
+        favor={
+            "term_type": "maintain_gold_reserve",
+            "params": {"min_gold": 400},
+        },
+        timing="up_front",
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        first.proposer,
+        "fund_deal",
+        {"deal_id": first.id},
+        turn=3,
+    )
+    payment_gs.response_results.append("Error: CHANNEL_PAYMENT_ENGINE_FAILED")
+
+    failed = await apply_payment_action(
+        rt,
+        payment_gs,
+        first.counterparty,
+        "respond_to_payment",
+        {"deal_id": first.id, "accept": True},
+        turn=4,
+        source_id="incomplete-accept-cleanup-failed",
+        action_observation=ChannelObservation(first.counterparty, 4),
+    )
+
+    assert failed.status == "rejected"
+    assert rt.deal(first.id).state is DealState.ACTIVE
+    assert rt.deal(first.id).payment_status is PaymentStatus.OFFERED
+    assert payment_gs.response_calls == [False]
+    assert (first.proposer, first.counterparty) in payment_gs.pending
+
+    cleared = await apply_payment_action(
+        rt,
+        payment_gs,
+        first.counterparty,
+        "respond_to_payment",
+        {"deal_id": first.id, "accept": True},
+        turn=5,
+        source_id="incomplete-accept-cleanup-retry",
+        action_observation=ChannelObservation(first.counterparty, 5),
+    )
+
+    assert cleared.status == "applied"
+    assert rt.deal(first.id).state is DealState.UNVERIFIABLE
+    assert payment_gs.response_calls == [False, False]
+    assert (first.proposer, first.counterparty) not in payment_gs.pending
+
+    await rt.apply_staged(
+        payment_gs,
+        proposal(
+            "proposal-after-incomplete-cleanup",
+            timing="up_front",
+            text="clear a second camp",
+        ),
+        turn=6,
+        observation=observation(1, 6, camps=frozenset({(12, 7)})),
+    )
+    second = rt.state.deals[-1]
+    await rt.apply_staged(
+        payment_gs,
+        stage(
+            "accept-after-incomplete-cleanup",
+            second.counterparty,
+            "respond_to_deal",
+            {"deal_id": second.id, "accept": True},
+        ),
+        turn=7,
+        observation=observation(second.counterparty, 7),
+    )
+    funded = await apply_payment_action(
+        rt,
+        payment_gs,
+        second.proposer,
+        "fund_deal",
+        {"deal_id": second.id},
+        turn=8,
+        source_id="fund-after-incomplete-cleanup",
+    )
+
+    assert funded.status == "applied"
+    assert rt.deal(second.id).payment_status is PaymentStatus.OFFERED
+    assert payment_gs.offer_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_incomplete_accept_cleanup_intent_replays_exact_rejection_once(
+    tmp_path,
+    payment_gs,
+):
+    rt = runtime(tmp_path)
+    payment_gs.runtime = rt
+    deal = await accepted_deal(
+        rt,
+        payment_gs,
+        favor={
+            "term_type": "maintain_gold_reserve",
+            "params": {"min_gold": 400},
+        },
+        timing="up_front",
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    payment_gs.response_results.append(asyncio.CancelledError())
+
+    with pytest.raises(asyncio.CancelledError):
+        await apply_payment_action(
+            rt,
+            payment_gs,
+            deal.counterparty,
+            "respond_to_payment",
+            {"deal_id": deal.id, "accept": True},
+            turn=4,
+            source_id="incomplete-accept-cleanup-crash",
+            action_observation=ChannelObservation(deal.counterparty, 4),
+        )
+
+    assert payment_gs.response_calls == [False]
+    assert journal_events(rt)[-1]["kind"] == "payment_response_intent"
+    assert (deal.proposer, deal.counterparty) in payment_gs.pending
+
+    reopened = runtime(tmp_path)
+    payment_gs.runtime = reopened
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=4,
+        current_player_id=deal.counterparty,
+    )
+
+    assert payment_gs.response_calls == [False, False]
+    assert (deal.proposer, deal.counterparty) not in payment_gs.pending
+    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
+    assert reopened._unfinished_payment_intents() == ()
+    assert runtime(tmp_path).deal(deal.id) == reopened.deal(deal.id)
+
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=5,
+        current_player_id=deal.counterparty,
+    )
+    assert payment_gs.response_calls == [False, False]
 
 
 @pytest.mark.asyncio
