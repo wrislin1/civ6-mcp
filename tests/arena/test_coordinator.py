@@ -6816,6 +6816,31 @@ class CoordinatorGateDriver:
         }
 
 
+class ChannelFailureGateDriver(CoordinatorGateDriver):
+    """Fail closed on raw channel errors while retaining them for inspection."""
+
+    def note_admission(self, player_id, turn, admission, error):
+        super().note_admission(player_id, turn, admission, error)
+        if error:
+            self._signal = "failed"
+
+    async def after_seat_capture(self, *, player_id, turn, channel_fields):
+        await super().after_seat_capture(
+            player_id=player_id,
+            turn=turn,
+            channel_fields=channel_fields,
+        )
+        if channel_fields.get("error"):
+            self._signal = "failed"
+
+    def result_summary(self):
+        summary = super().result_summary()
+        if self._signal == "failed":
+            summary["phase"] = "channel_failure"
+            summary["reason"] = "channel_operation_failed"
+        return summary
+
+
 def _hook_was_disabled(conn):
     return any("__pt_enabled = false" in lua for lua in conn.read_calls)
 
@@ -7037,6 +7062,164 @@ async def test_live_gate_admission_signal_stops_before_policy_or_game_actions(tm
     assert runtime.calls == ["reconcile:1:7", "admit:1:7", "finish:1:7"]
     assert runtime.finish_results == [None]
     assert result["puppet_turns_played"] == 0
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_stage", ["admission", "reconciliation"])
+async def test_live_gate_channel_entry_exceptions_are_private(
+    tmp_path, capsys, failure_stage
+):
+    private_marker = f"PRIVATE_{failure_stage.upper()}_EXCEPTION"
+    runtime = FakeChannelRuntime(
+        admit_error=(
+            RuntimeError(private_marker) if failure_stage == "admission" else None
+        ),
+        reconcile_error=(
+            RuntimeError(private_marker)
+            if failure_stage == "reconciliation"
+            else None
+        ),
+    )
+    policy = ChannelRecordingPolicy(runtime)
+    driver = ChannelFailureGateDriver(policy)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy_for=driver.policy_for,
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    captured = capsys.readouterr()
+    public = json.dumps(result, sort_keys=True) + captured.out + captured.err
+    assert private_marker not in public
+    assert private_marker in driver.admissions[0][3]
+    assert result["live_gate"]["status"] == "failed"
+    assert result["live_gate"]["reason"] == "channel_operation_failed"
+    assert policy.calls == []
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_live_gate_channel_finish_exception_is_private(tmp_path, capsys):
+    private_marker = "PRIVATE_FINISH_EXCEPTION"
+    runtime = FakeChannelRuntime(finish_error=RuntimeError(private_marker))
+    policy = ChannelRecordingPolicy(runtime)
+    driver = ChannelFailureGateDriver(policy)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy_for=driver.policy_for,
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    captured = capsys.readouterr()
+    public = json.dumps(result, sort_keys=True) + captured.out + captured.err
+    assert private_marker not in public
+    assert private_marker in driver.captures[0][2]["error"]
+    assert result["live_gate"]["status"] == "failed"
+    assert runtime.calls.count("finish:1:7") == 1
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_stage", ["policy", "pending_record"])
+async def test_live_gate_policy_boundary_exceptions_are_private(
+    tmp_path, capsys, failure_stage
+):
+    from civ_mcp.arena.transcript import TranscriptSink
+
+    private_marker = f"PRIVATE_{failure_stage.upper()}_EXCEPTION"
+    runtime = FakeChannelRuntime(enabled_players=frozenset({1, 2, 3}))
+    inspection_attempts = []
+
+    class PrivateFailurePolicy(ChannelRecordingPolicy):
+        async def __call__(self, gs, player_id, turn, **kwargs):
+            if failure_stage == "policy":
+                raise RuntimeError(private_marker)
+            return await super().__call__(gs, player_id, turn, **kwargs)
+
+    class PrivateFailureDriver(CoordinatorGateDriver):
+        def inspect_pending_transcript_record(self, player_id, turn, record):
+            inspection_attempts.append((player_id, turn))
+            if failure_stage == "pending_record":
+                raise RuntimeError(private_marker)
+            return super().inspect_pending_transcript_record(
+                player_id, turn, record
+            )
+
+    policy = (
+        PrivateFailurePolicy(runtime, final_summary="observer-clean")
+        if failure_stage == "policy"
+        else ChannelRecordingPolicy(runtime, final_summary="observer-clean")
+    )
+    driver = PrivateFailureDriver(policy, signal_after=1)
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|3", "TURN|2", "ACTIVE|true", "LAST|0"]])
+
+    result = await run_arena(
+        conn,
+        FakeGS(),
+        _observer_gate_config(tmp_path),
+        policy_for=driver.policy_for,
+        transcript=TranscriptSink(str(tmp_path / "gate-exception-transcript.jsonl")),
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    captured = capsys.readouterr()
+    public = json.dumps(result, sort_keys=True) + captured.out + captured.err
+    assert private_marker not in public
+    assert result["live_gate"]["status"] == "restart_required"
+    assert runtime.calls.count("finish:3:2") == 1
+    assert [(pid, turn) for pid, turn, _ in driver.captures] == [(3, 2)]
+    if failure_stage == "pending_record":
+        assert inspection_attempts == [(3, 2)]
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
+async def test_live_gate_capture_is_durable_before_seat_release(tmp_path):
+    class SimulatedCrash(BaseException):
+        pass
+
+    class CrashOnFinishUnitsConn(FakeConn):
+        async def execute_read(self, lua, timeout=5.0):
+            if "FINISHED" in lua:
+                raise SimulatedCrash()
+            return await super().execute_read(lua, timeout=timeout)
+
+    runtime = FakeChannelRuntime()
+    driver = CoordinatorGateDriver(ChannelRecordingPolicy(runtime))
+    conn = CrashOnFinishUnitsConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    with pytest.raises(SimulatedCrash):
+        await run_arena(
+            conn,
+            FakeGS(),
+            _channel_config(tmp_path),
+            policy_for=driver.policy_for,
+            channel_runtime=runtime,
+            live_gate_driver=driver,
+        )
+
+    assert runtime.calls.count("finish:1:7") == 1
+    assert [(pid, turn) for pid, turn, _ in driver.captures] == [(1, 7)]
     assert conn.restored is True
     assert _hook_was_disabled(conn)
 

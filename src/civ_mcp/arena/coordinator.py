@@ -422,7 +422,12 @@ async def run_arena(
         except Exception as e:
             channel_runtime_error = repr(e)
             channel_runtime = None
-            print(f"[arena] channel runtime unavailable: {e!r}", file=sys.stderr)
+            detail = (
+                "channel_operation_failed"
+                if live_gate_driver is not None
+                else repr(e)
+            )
+            print(f"[arena] channel runtime unavailable: {detail}", file=sys.stderr)
     else:
         # Preserve the pre-channel path exactly when no seat opts in, including
         # ignoring an optional test/dependency injection that has no configured
@@ -439,6 +444,28 @@ async def run_arena(
     seat0_channel_errors: dict[int, str] = {}
     channel_reconciled_key: tuple[int, int] | None = None
     channel_reconcile_error = ""
+
+    def _public_channel_error(error: str) -> str:
+        if live_gate_driver is not None and error:
+            return "channel_operation_failed"
+        return error
+
+    def _public_channel_fields(fields: dict) -> dict:
+        if live_gate_driver is None:
+            # Preserve the legacy shared-reference behavior: seat-0 records
+            # are assembled before finish and observe the finish mutation.
+            return fields
+        public = dict(fields)
+        public["error"] = _public_channel_error(public.get("error", ""))
+        return public
+
+    def _print_private_error(prefix: str, exc: BaseException) -> None:
+        detail = (
+            "channel_operation_failed"
+            if live_gate_driver is not None
+            else repr(exc)
+        )
+        print(f"{prefix}: {detail}", file=sys.stderr)
 
     def _gate_result_field(*, status=None, reason=None) -> dict:
         assert live_gate_driver is not None
@@ -504,10 +531,10 @@ async def run_arena(
             error = repr(e)
             prior = capture["fields"]["error"]
             capture["fields"]["error"] = f"{prior}; {error}" if prior else error
-            print(
+            _print_private_error(
                 f"[arena] channel finish failed for seat "
-                f"{capture['player_id']} turn {capture['turn']}: {e!r}",
-                file=sys.stderr,
+                f"{capture['player_id']} turn {capture['turn']}",
+                e,
             )
         finally:
             puppet_channel_capture = None
@@ -558,10 +585,10 @@ async def run_arena(
             error = repr(e)
             prior = capture["fields"]["error"]
             capture["fields"]["error"] = f"{prior}; {error}" if prior else error
-            print(
+            _print_private_error(
                 f"[arena] channel finish failed for seat 0 turn "
-                f"{capture['turn']}: {e!r}",
-                file=sys.stderr,
+                f"{capture['turn']}",
+                e,
             )
         finally:
             seat0_channel_admission_attempts.discard(capture["turn"])
@@ -606,17 +633,17 @@ async def run_arena(
                 channel_reconciled_key = (turn, 0)
                 channel_reconcile_error = error
                 seat0_channel_errors[turn] = error
-                print(
+                _print_private_error(
                     f"[arena] channel payment reconciliation failed before "
-                    f"seat 0 turn {turn}: {e!r}",
-                    file=sys.stderr,
+                    f"seat 0 turn {turn}",
+                    e,
                 )
                 log.append({
                     "event": "channel_error",
                     "stage": "reconcile",
                     "turn": turn,
                     "player_id": 0,
-                    "error": error,
+                    "error": _public_channel_error(error),
                 })
                 return None
         seat0_channel_admission_attempts.add(turn)
@@ -625,10 +652,8 @@ async def run_arena(
         except Exception as e:
             error = repr(e)
             seat0_channel_errors[turn] = error
-            print(
-                f"[arena] channel admission failed for seat 0 turn "
-                f"{turn}: {e!r}",
-                file=sys.stderr,
+            _print_private_error(
+                f"[arena] channel admission failed for seat 0 turn {turn}", e
             )
             return None
         pol = policy_for(0)
@@ -683,7 +708,7 @@ async def run_arena(
                         **_gate_result_field(),
                     }
             except Exception as e:
-                print(f"[arena] live gate attach failed: {e!r}", file=sys.stderr)
+                _print_private_error("[arena] live gate attach failed", e)
                 return {
                     "puppet_turns_played": 0,
                     "turns_slept": 0,
@@ -1343,16 +1368,15 @@ async def run_arena(
                     poll_channel_error = repr(e)
                     channel_reconciled_key = (st.turn, st.local)
                     channel_reconcile_error = poll_channel_error
-                    print(
-                        f"[arena] channel payment reconciliation failed: {e!r}",
-                        file=sys.stderr,
+                    _print_private_error(
+                        "[arena] channel payment reconciliation failed", e
                     )
                     log.append({
                         "event": "channel_error",
                         "stage": "reconcile",
                         "turn": st.turn,
                         "player_id": st.local,
-                        "error": poll_channel_error,
+                        "error": _public_channel_error(poll_channel_error),
                     })
             # First observe/finalize an in-flight seat-0 turn (the turn number
             # must move strictly forward to signal advance), then give an
@@ -1525,10 +1549,10 @@ async def run_arena(
                         )
                     except Exception as e:
                         channel_error = repr(e)
-                        print(
+                        _print_private_error(
                             f"[arena] channel admission failed for seat "
-                            f"{st.local} turn {st.turn}: {e!r}",
-                            file=sys.stderr,
+                            f"{st.local} turn {st.turn}",
+                            e,
                         )
                     channel_fields_state["error"] = channel_error
                 if not is_seat0 and channel_admission is not None:
@@ -1586,14 +1610,17 @@ async def run_arena(
                             f"{channel_error}; {error}" if channel_error else error
                         )
                         channel_fields_state["error"] = channel_error
-                        print(
+                        _print_private_error(
                             f"[arena] channel finish failed for seat "
-                            f"{st.local} turn {st.turn}: {e!r}",
-                            file=sys.stderr,
+                            f"{st.local} turn {st.turn}",
+                            e,
                         )
 
                 def _channel_fields() -> dict:
-                    return channel_fields_state
+                    return _public_channel_fields(channel_fields_state)
+
+                def _private_channel_fields() -> dict:
+                    return dict(channel_fields_state)
 
                 # --- Attention skip-evaluation (spec §2-4): once per captured puppet
                 # turn, decide whether this civ can sleep through it. Every failure
@@ -2207,13 +2234,26 @@ async def run_arena(
                     # back to the human, consume the puppet-turn budget, and continue.
                     # Exception (not BaseException) so a CancelledError/Ctrl-C still unwinds
                     # to the finally's guarded handback.
+                    raw_policy_error = repr(e)
+                    if live_gate_driver is not None:
+                        prior_error = channel_fields_state["error"]
+                        channel_fields_state["error"] = (
+                            f"{prior_error}; {raw_policy_error}"
+                            if prior_error
+                            else raw_policy_error
+                        )
+                    policy_detail = (
+                        "live_gate_policy_failed"
+                        if live_gate_driver is not None
+                        else raw_policy_error
+                    )
                     print(f"[arena] puppet turn seat {st.local} turn {st.turn} failed, "
-                          f"skipping: {e!r}", file=sys.stderr)
+                          f"skipping: {policy_detail}", file=sys.stderr)
                     failed_entry = {
                         "turn": st.turn,
                         "player_id": st.local,
                         "skipped": True,
-                        "error": repr(e),
+                        "error": policy_detail,
                     }
                     log.append(failed_entry)
                     if attention_on and att_state is not None and att_state.skips_remaining > 0:
@@ -2234,19 +2274,23 @@ async def run_arena(
                     await _finish_channel_turn(None)
                     if channel_turn_enabled:
                         failed_entry["channels"] = _channel_fields()
+                    gate_signal_after_capture = False
+                    if live_gate_driver is not None:
+                        await live_gate_driver.after_seat_capture(
+                            player_id=st.local,
+                            turn=st.turn,
+                            channel_fields=_private_channel_fields(),
+                        )
+                        gate_signal_after_capture = (
+                            live_gate_driver.pending_signal() is not None
+                        )
                     await hook.finish_units(conn, st.local)
                     await hook.restore_local(conn, 0)
                     remaining -= 1
                     game_turns += 1
                     deadline_polls -= 1
-                    if live_gate_driver is not None:
-                        await live_gate_driver.after_seat_capture(
-                            player_id=st.local,
-                            turn=st.turn,
-                            channel_fields=_channel_fields(),
-                        )
-                        if live_gate_driver.pending_signal() is not None:
-                            break
+                    if gate_signal_after_capture:
+                        break
                     continue
                 if exclusive and not conn.is_connected:
                     await _reconnect_with_retry(conn)   # reclaim before we end the turn
@@ -2427,11 +2471,35 @@ async def run_arena(
                         record["channels"] = _channel_fields()
                     write_record = True
                     if live_gate_driver is not None:
-                        write_record = live_gate_driver.inspect_pending_transcript_record(
-                            st.local, st.turn, record
-                        )
+                        try:
+                            write_record = live_gate_driver.inspect_pending_transcript_record(
+                                st.local, st.turn, record
+                            )
+                        except Exception as exc:
+                            raw_inspection_error = repr(exc)
+                            prior_error = channel_fields_state["error"]
+                            channel_fields_state["error"] = (
+                                f"{prior_error}; {raw_inspection_error}"
+                                if prior_error
+                                else raw_inspection_error
+                            )
+                            _print_private_error(
+                                "[arena] live gate pending-record inspection failed",
+                                exc,
+                            )
+                            write_record = False
                     if write_record:
                         transcript.write(record)
+                gate_signal_after_capture = False
+                if live_gate_driver is not None:
+                    await live_gate_driver.after_seat_capture(
+                        player_id=st.local,
+                        turn=st.turn,
+                        channel_fields=_private_channel_fields(),
+                    )
+                    gate_signal_after_capture = (
+                        live_gate_driver.pending_signal() is not None
+                    )
                 # End this puppet's turn and hand control back toward the human.
                 # DESIGN NOTE — the turn-end method is validated by the live dry-run gate (Task 9).
                 # Primary (verified in the feasibility spike): finish_units(K) + restore_local(0).
@@ -2449,14 +2517,8 @@ async def run_arena(
                     await disable_hook_for_drain()
                 await hook.restore_local(conn, 0)
                 played += 1
-                if live_gate_driver is not None:
-                    await live_gate_driver.after_seat_capture(
-                        player_id=st.local,
-                        turn=st.turn,
-                        channel_fields=_channel_fields(),
-                    )
-                    if live_gate_driver.pending_signal() is not None:
-                        break
+                if gate_signal_after_capture:
+                    break
             else:
                 if seat0_state.needs_drain:
                     # An in-flight seat-0 turn is draining (end request fired /
@@ -2578,16 +2640,15 @@ async def run_arena(
                         )
                     except Exception as e:
                         error = repr(e)
-                        print(
-                            f"[arena] channel unseated poll failed: {e!r}",
-                            file=sys.stderr,
+                        _print_private_error(
+                            "[arena] channel unseated poll failed", e
                         )
                         log.append({
                             "event": "channel_error",
                             "stage": "poll_unseated",
                             "turn": st.turn,
                             "player_id": st.local,
-                            "error": error,
+                            "error": _public_channel_error(error),
                         })
                 # Human seat is idle. Do NOT auto-clear VIEW-level diplomacy here:
                 # _clear_blocking_diplomacy cannot distinguish an orphaned first-meet
@@ -2670,10 +2731,9 @@ async def run_arena(
             except BaseException as e:
                 if not isinstance(e, Exception):
                     channel_interrupt = e
-                print(
-                    f"[arena] WARNING: puppet channel finish failed in cleanup: "
-                    f"{e!r}",
-                    file=sys.stderr,
+                _print_private_error(
+                    "[arena] WARNING: puppet channel finish failed in cleanup",
+                    e,
                 )
         if seat0_channel_capture is not None:
             try:
@@ -2681,10 +2741,9 @@ async def run_arena(
             except BaseException as e:
                 if not isinstance(e, Exception) and channel_interrupt is None:
                     channel_interrupt = e
-                print(
-                    f"[arena] WARNING: seat-0 channel finish failed in cleanup: "
-                    f"{e!r}",
-                    file=sys.stderr,
+                _print_private_error(
+                    "[arena] WARNING: seat-0 channel finish failed in cleanup",
+                    e,
                 )
         record_interrupt = None
         if seat0_state.record is not None and not seat0_state.record_written:

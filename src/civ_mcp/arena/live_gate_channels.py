@@ -93,6 +93,7 @@ _PUBLIC_FAILURE_CODES = frozenset(
         "channel_finish_failed",
         "gate_invariant_failed",
         "observer_capture_failed",
+        "payment_checkpoint_failed",
         "payment_state_failed",
         "preflight_failed",
         "privacy_assertion_failed",
@@ -266,19 +267,15 @@ class ChannelsCoreDriver:
             self._captured_this_turn[state.capture_turn] = set(
                 state.captured_players
             )
-        checkpoint = self._journal.read_private_json(
-            "payment_checkpoint.json", required=False
-        )
-        if checkpoint is not None:
-            recorded = checkpoint.get("recorded")
-            if not isinstance(recorded, Mapping):
-                raise RuntimeError("private payment checkpoint is invalid")
-            digest = self._digest_mapping(recorded)
-            if state.data.get("payment_checkpoint_digest") != digest:
-                raise RuntimeError("private payment checkpoint digest mismatch")
-            self._payment_fingerprint = dict(recorded)
         if state.status in (GATE_FAILED, GATE_PASSED):
             raise RuntimeError(f"gate already terminal: {state.status} ({state.reason})")
+        if not await self._reconcile_payment_checkpoint():
+            return
+        if self._journal.state.capture_started_turn is not None:
+            await self._reconcile_started_capture()
+            if self._signal is not None:
+                return
+        state = self._journal.state
         if state.status == GATE_RESTART_REQUIRED:
             await self._verify_restart()
         elif state.phase == PHASE_RESTART_REQUIRED:
@@ -668,6 +665,94 @@ class ChannelsCoreDriver:
         recorded = checkpoint.get("recorded")
         if isinstance(recorded, Mapping):
             self._payment_fingerprint = dict(recorded)
+
+    async def _reconcile_payment_checkpoint(self) -> bool:
+        """Repair either half of the private/public payment checkpoint pair."""
+
+        journal = self._journal
+        assert journal is not None
+        state = journal.state
+        public_digest = state.data.get("payment_checkpoint_digest")
+        try:
+            checkpoint = journal.read_private_json(
+                "payment_checkpoint.json", required=False
+            )
+        except Exception as exc:
+            self._fail(
+                "payment_checkpoint_failed",
+                detail={"failure": "private_checkpoint_unreadable", "error": repr(exc)},
+            )
+            return False
+        recorded = None if checkpoint is None else checkpoint.get("recorded")
+        if checkpoint is not None and not isinstance(recorded, Mapping):
+            self._fail(
+                "payment_checkpoint_failed",
+                detail={"failure": "private_checkpoint_invalid", "checkpoint": checkpoint},
+            )
+            return False
+        if public_digest is not None and (
+            not isinstance(public_digest, str) or len(public_digest) != 16
+        ):
+            self._fail(
+                "payment_checkpoint_failed",
+                detail={"failure": "public_digest_invalid", "digest": public_digest},
+            )
+            return False
+        if recorded is None and public_digest is None:
+            return True
+        if recorded is not None and public_digest is not None:
+            if self._digest_mapping(recorded) != public_digest:
+                self._fail(
+                    "payment_checkpoint_failed",
+                    detail={
+                        "failure": "checkpoint_pair_mismatch",
+                        "recorded": recorded,
+                        "digest": public_digest,
+                    },
+                )
+                return False
+            self._payment_fingerprint = dict(recorded)
+            return True
+
+        live = await self._live_offer_fingerprint(
+            self.role_pid[ROLE_API],
+            self.role_pid[ROLE_CLI],
+            failure_code="payment_checkpoint_failed",
+        )
+        if live is None:
+            return False
+        live_digest = self._digest_mapping(live)
+        if recorded is not None:
+            if dict(recorded) != live:
+                self._fail(
+                    "payment_checkpoint_failed",
+                    detail={
+                        "failure": "private_checkpoint_live_mismatch",
+                        "recorded": recorded,
+                        "live": live,
+                    },
+                )
+                return False
+            journal.append(
+                "data_recorded",
+                {"data": {"payment_checkpoint_digest": live_digest}},
+            )
+        else:
+            if public_digest != live_digest:
+                self._fail(
+                    "payment_checkpoint_failed",
+                    detail={
+                        "failure": "public_checkpoint_live_mismatch",
+                        "digest": public_digest,
+                        "live": live,
+                    },
+                )
+                return False
+            journal.write_private_json(
+                "payment_checkpoint.json", {"recorded": live}
+            )
+        self._payment_fingerprint = dict(live)
+        return True
 
     def _fail(self, reason_code: str, *, detail=None) -> None:
         if self._signal == GATE_FAILED:
@@ -1068,20 +1153,73 @@ class ChannelsCoreDriver:
             return
         if not self._check_no_unexpected_acknowledgements(player_id, turn):
             return
-        self._advance_after_capture(player_id, turn)
-        if self._signal is None:
-            self._journal.append(
-                "seat_captured",
-                {
-                    "turn": turn,
-                    "player_id": player_id,
-                    "expected_player_ids": sorted(self.gate_pids),
+        journal = self._journal
+        assert journal is not None
+        journal.append(
+            "seat_capture_started",
+            {
+                "turn": turn,
+                "player_id": player_id,
+                "expected_player_ids": sorted(self.gate_pids),
+                "phase": journal.state.phase,
+            },
+        )
+        await self._reconcile_started_capture()
+
+    async def _reconcile_started_capture(self) -> None:
+        """Finish a write-ahead seat capture after a process crash."""
+
+        journal = self._journal
+        assert journal is not None
+        state = journal.state
+        turn = state.capture_started_turn
+        player_id = state.capture_started_player
+        original_phase = state.capture_started_phase
+        if turn is None or player_id is None:
+            return
+        successors = {
+            PHASE_CANARY_AND_UPFRONT_PROPOSAL: PHASE_ACCEPT_UPFRONT,
+            PHASE_ACCEPT_UPFRONT: PHASE_FUND_UPFRONT,
+            PHASE_FUND_UPFRONT: PHASE_RESTART_REQUIRED,
+            PHASE_ACCEPT_UPFRONT_PAYMENT: PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,
+            PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE: PHASE_VERIFY_UPFRONT_HONORED,
+            PHASE_VERIFY_UPFRONT_HONORED: PHASE_PROPOSE_ON_DELIVERY,
+            PHASE_PROPOSE_ON_DELIVERY: PHASE_ACCEPT_ON_DELIVERY,
+            PHASE_ACCEPT_ON_DELIVERY: PHASE_AWAIT_ON_DELIVERY_FAVOR,
+            PHASE_AWAIT_ON_DELIVERY_FAVOR: PHASE_WITHHOLD_ON_DELIVERY_FUNDING,
+            PHASE_WITHHOLD_ON_DELIVERY_FUNDING: PHASE_VERIFY_FUNDING_BREACH,
+            PHASE_VERIFY_FUNDING_BREACH: PHASE_VERIFY_TERMINAL_GATE,
+        }
+        current_phase = state.phase
+        successor = successors.get(original_phase)
+        if current_phase == original_phase:
+            self._advance_after_capture(player_id, turn)
+            if self._signal is not None:
+                return
+        elif current_phase != successor:
+            self._fail(
+                "gate_invariant_failed",
+                detail={
+                    "failure": "started_capture_phase_mismatch",
+                    "started_phase": original_phase,
+                    "current_phase": current_phase,
                 },
             )
-            self._captured_this_turn[turn] = set(
-                self._journal.state.captured_players
-            )
-            await self._maybe_finish_round(turn)
+            return
+        journal.append(
+            "seat_captured",
+            {
+                "turn": turn,
+                "player_id": player_id,
+                "expected_player_ids": list(
+                    state.capture_started_expected_players
+                ),
+            },
+        )
+        self._captured_this_turn[turn] = set(
+            journal.state.captured_players
+        )
+        await self._maybe_finish_round(turn)
 
     def _verify_planned_actions(self, player_id, turn) -> bool:
         pending = [
@@ -1821,6 +1959,15 @@ class ChannelsCoreDriver:
                     recovered_player, recovered_turn
                 ):
                     return
+                self._journal.append(
+                    "seat_capture_started",
+                    {
+                        "turn": recovered_turn,
+                        "player_id": recovered_player,
+                        "expected_player_ids": sorted(self.gate_pids),
+                        "phase": self._journal.state.phase,
+                    },
+                )
                 self._advance_after_capture(recovered_player, recovered_turn)
                 if self._signal is not None:
                     return

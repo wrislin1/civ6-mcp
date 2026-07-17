@@ -198,6 +198,48 @@ def test_seat_capture_round_is_durable_deeply_immutable_and_exact_once(tmp_path)
         )
 
 
+def test_seat_capture_started_is_durable_exact_and_deeply_immutable(tmp_path):
+    journal = open_journal(tmp_path)
+    expected = [1, 2, 3]
+    journal.append(
+        "seat_capture_started",
+        {
+            "turn": 10,
+            "player_id": 1,
+            "expected_player_ids": expected,
+            "phase": "preflight",
+        },
+    )
+    expected.append(9)
+
+    reopened = open_journal(tmp_path)
+    assert reopened.state.capture_started_turn == 10
+    assert reopened.state.capture_started_player == 1
+    assert reopened.state.capture_started_expected_players == (1, 2, 3)
+    assert reopened.state.capture_started_phase == "preflight"
+    with pytest.raises((AttributeError, TypeError)):
+        setattr(reopened.state, "capture_started_phase", "changed")
+
+
+def test_seat_captured_must_match_durable_started_identity(tmp_path):
+    journal = open_journal(tmp_path)
+    journal.append(
+        "seat_capture_started",
+        {
+            "turn": 10,
+            "player_id": 1,
+            "expected_player_ids": [1, 2, 3],
+            "phase": "preflight",
+        },
+    )
+
+    with pytest.raises(GateStateError, match="started"):
+        journal.append(
+            "seat_captured",
+            {"turn": 10, "player_id": 2, "expected_player_ids": [1, 2, 3]},
+        )
+
+
 def test_seat_capture_rejects_turn_change_before_round_complete(tmp_path):
     journal = open_journal(tmp_path)
     journal.append(

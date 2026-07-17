@@ -671,6 +671,21 @@ async def drive_to_restart(tmp_path, gs=None):
     return driver, runtime, gs
 
 
+async def drive_to_funding_offer_without_gate_capture(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    assert driver._journal.state.phase == lgc.PHASE_FUND_UPFRONT
+
+    gs.active_player = 1
+    admission = await runtime.admit_player(gs, 1, 11)
+    driver.note_admission(1, 11, admission, "")
+    result = await driver.policy_for(1)(gs, 1, 11)
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    assert [ack.status for ack in acknowledgements] == ["applied"]
+    assert await gs.get_channel_payment_state(1, 2, 1)
+    return driver, runtime, gs
+
+
 def public_gate_text(driver):
     paths = (
         driver._journal.events_path,
@@ -727,6 +742,77 @@ async def test_restart_checkpoint_persists_fingerprint_and_result(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("ahead_half", ["private_sidecar", "public_digest"])
+async def test_payment_checkpoint_half_ahead_reconciles_on_attach(
+    tmp_path, ahead_half
+):
+    driver, runtime, gs = await drive_to_funding_offer_without_gate_capture(tmp_path)
+    fingerprint = exact_payment_fingerprint()
+    digest = driver._digest_mapping(fingerprint)
+    if ahead_half == "private_sidecar":
+        driver._journal.write_private_json(
+            "payment_checkpoint.json", {"recorded": fingerprint}
+        )
+    else:
+        driver._journal.append(
+            "data_recorded", {"data": {"payment_checkpoint_digest": digest}}
+        )
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() is None
+    assert resumed._journal.state.data["payment_checkpoint_digest"] == digest
+    checkpoint = resumed._journal.read_private_json("payment_checkpoint.json")
+    assert checkpoint == {"recorded": fingerprint}
+    assert resumed._payment_fingerprint == fingerprint
+
+
+@pytest.mark.asyncio
+async def test_payment_checkpoint_half_ahead_mismatch_is_durable_and_private(
+    tmp_path,
+):
+    private_marker = "PRIVATE_PAYMENT_CHECKPOINT_MISMATCH"
+    driver, runtime, gs = await drive_to_funding_offer_without_gate_capture(tmp_path)
+    mismatched = {**exact_payment_fingerprint(), "private": private_marker}
+    driver._journal.write_private_json(
+        "payment_checkpoint.json", {"recorded": mismatched}
+    )
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert resumed._journal.state.reason == "payment_checkpoint_failed"
+    assert resumed._journal.result_path.exists()
+    assert private_marker not in public_gate_text(resumed)
+    assert private_marker in private_failure_text(resumed)
+
+
+@pytest.mark.asyncio
+async def test_corrupt_private_payment_checkpoint_becomes_durable_failure(tmp_path):
+    private_marker = "PRIVATE_CORRUPT_CHECKPOINT"
+    driver, runtime, gs = await drive_to_funding_offer_without_gate_capture(tmp_path)
+    checkpoint_path = driver._journal.gate_dir / "payment_checkpoint.json"
+    checkpoint_path.write_text("{" + private_marker)
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert resumed._journal.state.reason == "payment_checkpoint_failed"
+    assert resumed._journal.result_path.exists()
+    assert private_marker not in public_gate_text(resumed)
+    assert "invalid private gate JSON" in private_failure_text(resumed)
+
+
+@pytest.mark.asyncio
 async def test_partial_restart_round_survives_process_crash_and_restarts_once(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
     await run_gate_round(driver, runtime, gs, 10)
@@ -746,6 +832,81 @@ async def test_partial_restart_round_survives_process_crash_and_restarts_once(tm
     assert resumed.pending_signal() == GATE_RESTART_REQUIRED
     assert resumed._journal.state.restart_count == 1
     kinds = [json.loads(line)["kind"] for line in resumed._journal.events_path.read_text().splitlines()]
+    assert kinds.count("restart_required") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("crash_boundary", ["before_transition", "after_transition"])
+async def test_started_capture_reconciles_transition_crash_and_restarts_once(
+    tmp_path, crash_boundary
+):
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await attached_driver(tmp_path)
+    gs.active_player = 1
+    admission = await runtime.admit_player(gs, 1, 10)
+    driver.note_admission(1, 10, admission, "")
+    result = await driver.policy_for(1)(gs, 1, 10)
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+
+    journal = driver._journal
+    real_append = journal.append
+    capture_started = False
+
+    def crashing_append(kind, payload):
+        nonlocal capture_started
+        if kind == "seat_capture_started":
+            event = real_append(kind, payload)
+            capture_started = True
+            return event
+        if (
+            capture_started
+            and crash_boundary == "before_transition"
+            and kind == "data_recorded"
+        ):
+            raise SimulatedCrash()
+        event = real_append(kind, payload)
+        if (
+            capture_started
+            and crash_boundary == "after_transition"
+            and kind == "phase_advanced"
+            and payload.get("phase") == lgc.PHASE_ACCEPT_UPFRONT
+        ):
+            raise SimulatedCrash()
+        return event
+
+    journal.append = crashing_append
+    with pytest.raises(SimulatedCrash):
+        await driver.after_seat_capture(
+            player_id=1,
+            turn=10,
+            channel_fields={
+                "enabled": True,
+                "acknowledgements": len(acknowledgements),
+                "error": "",
+            },
+        )
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() is None
+    assert resumed._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT
+    assert resumed._journal.state.captured_players == (1,)
+    assert resumed._journal.state.capture_started_turn is None
+    await run_gate_seat(resumed, runtime, gs, 2, 10)
+    await run_gate_seat(resumed, runtime, gs, 3, 10)
+    await run_gate_round(resumed, runtime, gs, 11)
+
+    assert resumed.pending_signal() == GATE_RESTART_REQUIRED
+    assert resumed._journal.state.restart_count == 1
+    kinds = [
+        json.loads(line)["kind"]
+        for line in resumed._journal.events_path.read_text().splitlines()
+    ]
     assert kinds.count("restart_required") == 1
 
 

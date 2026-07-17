@@ -198,6 +198,7 @@ _GATE_SUMMARY_FIELDS = (
     "restart_count",
     "run_id",
 )
+_GATE_STATUSES = frozenset({"active", "failed", "passed", "restart_required"})
 
 
 def _normalize_gate_summary(value, *, run_id=None, reason):
@@ -214,6 +215,8 @@ def _normalize_gate_summary(value, *, run_id=None, reason):
         for field in ("status", "phase", "reason")
     ):
         return _failed_gate_summary(run_id, reason), False
+    if raw_summary["status"] not in _GATE_STATUSES:
+        return _failed_gate_summary(run_id, reason), False
     restart_count = raw_summary["restart_count"]
     if type(restart_count) is not int or restart_count < 0:
         return _failed_gate_summary(run_id, reason), False
@@ -224,7 +227,7 @@ def _normalize_gate_summary(value, *, run_id=None, reason):
     return summary, True
 
 
-def _enabled_gate_result(result, run_id):
+def _enabled_gate_result(result, run_id, trusted_gate):
     if not isinstance(result, Mapping):
         gate = _failed_gate_summary(
             run_id,
@@ -259,9 +262,15 @@ def _enabled_gate_result(result, run_id):
             "coordinator returned a live_gate summary for another run",
         )
         return gate, {"live_gate": gate}
-    if output_result.get("live_gate") is not gate:
-        output_result = dict(output_result)
-        output_result["live_gate"] = gate
+    if gate != trusted_gate:
+        gate = _failed_gate_summary(
+            run_id,
+            "coordinator live_gate summary did not match driver state",
+        )
+        return gate, {"live_gate": gate}
+    gate = dict(trusted_gate)
+    output_result = dict(output_result)
+    output_result["live_gate"] = gate
     try:
         json.dumps(
             output_result,
@@ -352,7 +361,25 @@ async def _run(args):
         gate = None
         output_result = result
     else:
-        gate, output_result = _enabled_gate_result(result, cfg.run_id)
+        try:
+            trusted_raw_gate = live_gate_driver.result_summary()
+        except Exception:
+            trusted_raw_gate = None
+        trusted_gate, trusted_valid = _normalize_gate_summary(
+            trusted_raw_gate,
+            run_id=cfg.run_id,
+            reason="live_gate driver returned an invalid summary",
+        )
+        if not trusted_valid or trusted_gate["run_id"] != cfg.run_id:
+            gate = _failed_gate_summary(
+                cfg.run_id,
+                "live_gate driver returned an invalid summary",
+            )
+            output_result = {"live_gate": gate}
+        else:
+            gate, output_result = _enabled_gate_result(
+                result, cfg.run_id, trusted_gate
+            )
     print(json.dumps({"result": output_result, "cost": cost.summary()}, indent=2))
     return gate
 

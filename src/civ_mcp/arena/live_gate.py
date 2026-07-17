@@ -45,6 +45,7 @@ GATE_EVENT_KINDS = frozenset(
         "action_planned",
         "action_verified",
         "privacy_asserted",
+        "seat_capture_started",
         "seat_captured",
         "restart_required",
         "restart_verified",
@@ -146,6 +147,10 @@ class GateState:
     verified_actions: tuple[dict, ...] = ()
     observations: tuple[dict, ...] = ()
     privacy_assertions: tuple[dict, ...] = ()
+    capture_started_turn: int | None = None
+    capture_started_player: int | None = None
+    capture_started_phase: str = ""
+    capture_started_expected_players: tuple[int, ...] = ()
     capture_turn: int | None = None
     capture_expected_players: tuple[int, ...] = ()
     captured_players: tuple[int, ...] = ()
@@ -345,33 +350,58 @@ def reduce_gate_event(state: GateState | None, event: GateEvent) -> GateState:
         if payload["result"] not in ("PASS", "FAIL"):
             raise GateStateError("privacy result must be PASS or FAIL")
         changes["privacy_assertions"] = state.privacy_assertions + (payload,)
-    elif kind == "seat_captured":
-        if set(payload) != {"turn", "player_id", "expected_player_ids"}:
-            raise GateStateError("seat_captured requires an exact payload schema")
+    elif kind in ("seat_capture_started", "seat_captured"):
+        required = {"turn", "player_id", "expected_player_ids"}
+        if kind == "seat_capture_started":
+            required.add("phase")
+        if set(payload) != required:
+            raise GateStateError(f"{kind} requires an exact payload schema")
         turn = payload["turn"]
         player_id = payload["player_id"]
         expected_raw = payload["expected_player_ids"]
         if type(turn) is not int or turn < 0:
-            raise GateStateError("seat_captured turn must be a nonnegative integer")
+            raise GateStateError(f"{kind} turn must be a nonnegative integer")
         if type(player_id) is not int or player_id < 0:
             raise GateStateError(
-                "seat_captured player_id must be a nonnegative integer"
+                f"{kind} player_id must be a nonnegative integer"
             )
         if not isinstance(expected_raw, (tuple, list)) or not expected_raw:
             raise GateStateError(
-                "seat_captured expected_player_ids must be a nonempty sequence"
+                f"{kind} expected_player_ids must be a nonempty sequence"
             )
         if any(type(pid) is not int or pid < 0 for pid in expected_raw):
             raise GateStateError(
-                "seat_captured expected_player_ids must contain nonnegative integers"
+                f"{kind} expected_player_ids must contain nonnegative integers"
             )
         expected = tuple(expected_raw)
         if expected != tuple(sorted(set(expected))):
             raise GateStateError(
-                "seat_captured expected_player_ids must be unique and sorted"
+                f"{kind} expected_player_ids must be unique and sorted"
             )
         if player_id not in expected:
-            raise GateStateError("seat_captured player_id is not expected")
+            raise GateStateError(f"{kind} player_id is not expected")
+        started_phase = ""
+        if kind == "seat_capture_started":
+            started_phase = payload["phase"]
+            if not isinstance(started_phase, str) or not started_phase:
+                raise GateStateError(
+                    "seat_capture_started phase must be a nonempty string"
+                )
+            if started_phase != state.phase:
+                raise GateStateError(
+                    "seat_capture_started phase does not match current phase"
+                )
+            if state.capture_started_turn is not None:
+                raise GateStateError("a seat capture is already started")
+        elif state.capture_started_turn is not None:
+            if (
+                turn != state.capture_started_turn
+                or player_id != state.capture_started_player
+                or expected != state.capture_started_expected_players
+            ):
+                raise GateStateError(
+                    "seat_captured does not match the durable started identity"
+                )
         if state.capture_turn is None:
             captured: tuple[int, ...] = ()
         elif turn == state.capture_turn:
@@ -386,8 +416,18 @@ def reduce_gate_event(state: GateState | None, event: GateEvent) -> GateState:
                     "seat capture turn changed before the prior round completed"
                 )
             captured = ()
+        if kind == "seat_capture_started":
+            changes["capture_started_turn"] = turn
+            changes["capture_started_player"] = player_id
+            changes["capture_started_phase"] = started_phase
+            changes["capture_started_expected_players"] = expected
+            return replace(state, **changes)
         if player_id in captured:
             raise GateStateError("duplicate seat capture in one round")
+        changes["capture_started_turn"] = None
+        changes["capture_started_player"] = None
+        changes["capture_started_phase"] = ""
+        changes["capture_started_expected_players"] = ()
         changes["capture_turn"] = turn
         changes["capture_expected_players"] = expected
         changes["captured_players"] = tuple(sorted((*captured, player_id)))
@@ -774,6 +814,12 @@ def _state_to_dict(state: GateState) -> dict:
         "verified_actions": _thaw(state.verified_actions),
         "observations": _thaw(state.observations),
         "privacy_assertions": _thaw(state.privacy_assertions),
+        "capture_started_turn": state.capture_started_turn,
+        "capture_started_player": state.capture_started_player,
+        "capture_started_phase": state.capture_started_phase,
+        "capture_started_expected_players": _thaw(
+            state.capture_started_expected_players
+        ),
         "capture_turn": state.capture_turn,
         "capture_expected_players": _thaw(state.capture_expected_players),
         "captured_players": _thaw(state.captured_players),
