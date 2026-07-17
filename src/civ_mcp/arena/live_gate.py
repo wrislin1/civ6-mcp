@@ -853,7 +853,7 @@ _SCENARIOS: dict[str, ScenarioMeta] = {}
 # Modules imported lazily by resolve_scenario so configuration validation can
 # see built-in scenarios without arena.py having imported them first. Import
 # is idempotent (sys.modules cache); each module registers itself at import.
-_BUILTIN_SCENARIO_MODULES: tuple[str, ...] = ()
+_BUILTIN_SCENARIO_MODULES: tuple[str, ...] = ("civ_mcp.arena.live_gate_channels",)
 
 
 def register_scenario(meta: ScenarioMeta) -> None:
