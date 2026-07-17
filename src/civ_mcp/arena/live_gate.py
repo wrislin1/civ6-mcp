@@ -61,6 +61,7 @@ _ACTION_PLANNED_FIELDS = (
     "payload_digest",
 )
 _PRIVACY_FIELDS = ("turn", "player_id", "artifact_kind", "input_digest", "result")
+_MAX_PRIVACY_ARTIFACT_KINDS = 64
 _CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _NONBLOCK = getattr(os, "O_NONBLOCK", 0)
@@ -176,6 +177,41 @@ def _normalized_roles(roles: Any) -> tuple[tuple[str, int], ...]:
         raise GateStateError(f"invalid gate roles {roles!r}") from exc
 
 
+def _privacy_declaration(payload: Mapping[str, Any]) -> tuple[str, ...] | None:
+    """Validate a generic finite privacy-capture declaration.
+
+    A missing declaration remains valid solely for schema-v1 journal
+    compatibility. New scenario events declare the complete finite capture.
+    """
+
+    artifact_kind = payload.get("artifact_kind")
+    if not isinstance(artifact_kind, str) or not artifact_kind:
+        raise GateStateError("privacy artifact_kind must be a nonempty string")
+    if "capture_artifact_kinds" not in payload:
+        return None
+    declaration = payload["capture_artifact_kinds"]
+    if not isinstance(declaration, (tuple, list)):
+        raise GateStateError(
+            "privacy capture_artifact_kinds must be a finite sequence"
+        )
+    if not 1 <= len(declaration) <= _MAX_PRIVACY_ARTIFACT_KINDS:
+        raise GateStateError(
+            "privacy capture_artifact_kinds must be nonempty and bounded"
+        )
+    if any(not isinstance(kind, str) or not kind for kind in declaration):
+        raise GateStateError(
+            "privacy capture_artifact_kinds entries must be nonempty strings"
+        )
+    if len(set(declaration)) != len(declaration):
+        raise GateStateError("privacy capture_artifact_kinds must be unique")
+    normalized = tuple(declaration)
+    if artifact_kind not in normalized:
+        raise GateStateError(
+            "privacy artifact_kind is not declared in capture_artifact_kinds"
+        )
+    return normalized
+
+
 def reduce_gate_event(state: GateState | None, event: GateEvent) -> GateState:
     if event.schema_version != GATE_SCHEMA_VERSION:
         raise GateStateError(f"unknown gate event schema {event.schema_version!r}")
@@ -213,6 +249,27 @@ def reduce_gate_event(state: GateState | None, event: GateEvent) -> GateState:
         )
     if state.status in _TERMINAL_STATUSES:
         raise GateStateError(f"gate is terminal ({state.status}); no further events")
+
+    incoming_privacy_declaration: tuple[str, ...] | None = None
+    if event.kind == "privacy_asserted":
+        incoming_privacy_declaration = _privacy_declaration(payload)
+        same_capture = [
+            assertion
+            for assertion in state.privacy_assertions
+            if assertion.get("turn") == payload.get("turn")
+            and assertion.get("player_id") == payload.get("player_id")
+        ]
+        if any(
+            assertion.get("artifact_kind") == payload.get("artifact_kind")
+            for assertion in same_capture
+        ):
+            raise GateStateError("duplicate privacy artifact for one capture")
+        for assertion in same_capture:
+            if _privacy_declaration(assertion) != incoming_privacy_declaration:
+                raise GateStateError(
+                    "privacy capture declaration changed within one capture"
+                )
+
     privacy_failed = any(
         assertion.get("result") == "FAIL" for assertion in state.privacy_assertions
     )
@@ -222,17 +279,13 @@ def reduce_gate_event(state: GateState | None, event: GateEvent) -> GateState:
             for assertion in reversed(state.privacy_assertions)
             if assertion.get("result") == "FAIL"
         )
+        failed_declaration = _privacy_declaration(failed)
         same_capture_assertion = (
             event.kind == "privacy_asserted"
+            and failed_declaration is not None
             and payload.get("turn") == failed.get("turn")
             and payload.get("player_id") == failed.get("player_id")
-            and payload.get("artifact_kind")
-            not in {
-                assertion.get("artifact_kind")
-                for assertion in state.privacy_assertions
-                if assertion.get("turn") == failed.get("turn")
-                and assertion.get("player_id") == failed.get("player_id")
-            }
+            and incoming_privacy_declaration == failed_declaration
         )
         if not same_capture_assertion:
             raise GateStateError(

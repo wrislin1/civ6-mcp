@@ -1285,6 +1285,163 @@ async def test_pending_transcript_reordered_payment_fingerprint_fails(tmp_path):
     assert driver.pending_signal() == GATE_FAILED
 
 
+async def ready_for_fingerprint_observer(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+    fingerprint = dict(driver._journal.state.data["upfront_payment_fingerprint"])
+    return driver, runtime, gs, fingerprint
+
+
+def observer_records(driver):
+    path = driver._run_dir / "transcript.jsonl"
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text().splitlines()
+        if json.loads(line).get("player_id") == 3
+    ]
+
+
+@pytest.mark.asyncio
+async def test_flattened_outer_pending_payment_fingerprint_fails_closed(tmp_path):
+    driver, runtime, gs, fingerprint = await ready_for_fingerprint_observer(tmp_path)
+
+    await run_gate_seat(
+        driver,
+        runtime,
+        gs,
+        3,
+        11,
+        pending_record_overrides=fingerprint,
+    )
+
+    pending = next(
+        assertion
+        for assertion in reversed(privacy_assertions(driver))
+        if assertion["artifact_kind"] == "pending_transcript_record"
+    )
+    assert pending["result"] == "FAIL"
+    assert driver.pending_signal() == GATE_FAILED
+    assert all(record.get("turn") != 11 for record in observer_records(driver))
+    assert driver.canary not in driver._journal.state.reason
+    assert json.dumps(fingerprint, sort_keys=True) not in driver._journal.state.reason
+    assert (
+        json.dumps(fingerprint, sort_keys=True)
+        not in driver._journal.result_path.read_text()
+    )
+    assert list(driver._journal.gate_dir.glob("privacy_fail_11_*.json"))
+
+
+@pytest.mark.asyncio
+async def test_nested_payment_fingerprint_with_extra_key_fails(tmp_path):
+    driver, runtime, gs, fingerprint = await ready_for_fingerprint_observer(tmp_path)
+    with_extra = {**fingerprint, "zz_public_extra": "allowed-surrounding-field"}
+
+    await run_gate_seat(
+        driver,
+        runtime,
+        gs,
+        3,
+        11,
+        pending_record_overrides={"nested": with_extra},
+    )
+
+    pending = next(
+        assertion
+        for assertion in reversed(privacy_assertions(driver))
+        if assertion["artifact_kind"] == "pending_transcript_record"
+    )
+    assert pending["result"] == "FAIL"
+    assert all(record.get("turn") != 11 for record in observer_records(driver))
+
+
+@pytest.mark.asyncio
+async def test_pretty_reordered_json_fingerprint_in_raw_observer_text_fails(
+    tmp_path, monkeypatch
+):
+    driver, runtime, gs, fingerprint = await ready_for_fingerprint_observer(tmp_path)
+    reordered = {key: fingerprint[key] for key in reversed(sorted(fingerprint))}
+    planted = json.dumps(reordered, indent=2)
+    original = runtime.admit_player
+
+    async def tainted(gs_arg, player_id, turn):
+        admission = await original(gs_arg, player_id, turn)
+        if player_id == 3:
+            return dataclasses.replace(
+                admission,
+                block=admission.block + "\nPRIVATE JSON\n" + planted,
+            )
+        return admission
+
+    monkeypatch.setattr(runtime, "admit_player", tainted)
+    await run_gate_seat(driver, runtime, gs, 3, 11)
+
+    failures = {
+        assertion["artifact_kind"]
+        for assertion in privacy_assertions(driver)
+        if assertion["turn"] == 11 and assertion["result"] == "FAIL"
+    }
+    assert {"channel_block", "opening_prompt"} <= failures
+    assert driver.pending_signal() == GATE_FAILED
+    assert all(record.get("turn") != 11 for record in observer_records(driver))
+
+
+@pytest.mark.asyncio
+async def test_json_string_leaf_payment_fingerprint_fails(tmp_path):
+    driver, runtime, gs, fingerprint = await ready_for_fingerprint_observer(tmp_path)
+    stringified = json.dumps(fingerprint, indent=2)
+
+    await run_gate_seat(
+        driver,
+        runtime,
+        gs,
+        3,
+        11,
+        pending_record_overrides={"string_leaf": stringified},
+    )
+
+    pending = next(
+        assertion
+        for assertion in reversed(privacy_assertions(driver))
+        if assertion["artifact_kind"] == "pending_transcript_record"
+    )
+    assert pending["result"] == "FAIL"
+
+
+@pytest.mark.asyncio
+async def test_payment_fingerprint_near_match_and_type_mismatch_are_not_leaks(tmp_path):
+    driver, runtime, gs, fingerprint = await ready_for_fingerprint_observer(tmp_path)
+    missing_key = dict(fingerprint)
+    missing_key.pop("item_count")
+    type_mismatch = dict(fingerprint)
+    type_mismatch["payer"] = str(type_mismatch["payer"])
+
+    await run_gate_seat(
+        driver,
+        runtime,
+        gs,
+        3,
+        11,
+        pending_record_overrides={
+            "near_match": missing_key,
+            "type_mismatch": type_mismatch,
+        },
+    )
+
+    turn_assertions = [
+        assertion
+        for assertion in privacy_assertions(driver)
+        if assertion["turn"] == 11
+    ]
+    assert {assertion["artifact_kind"] for assertion in turn_assertions} == PRIVACY_KINDS
+    assert all(assertion["result"] == "PASS" for assertion in turn_assertions)
+    assert driver.pending_signal() == GATE_RESTART_REQUIRED
+    assert any(record.get("turn") == 11 for record in observer_records(driver))
+
+
 @pytest.mark.asyncio
 async def test_planted_canary_in_observer_view_fails_all_tainted_artifacts(
     tmp_path, monkeypatch

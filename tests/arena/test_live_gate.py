@@ -179,6 +179,7 @@ def test_privacy_failure_allows_only_remaining_assertions_for_same_capture(tmp_p
         "player_id": 2,
         "input_digest": "a" * 16,
         "forbidden_digests": [],
+        "capture_artifact_kinds": ("projection", "channel_block"),
     }
     journal.append(
         "privacy_asserted",
@@ -200,6 +201,136 @@ def test_privacy_failure_allows_only_remaining_assertions_for_same_capture(tmp_p
             },
         )
 
+    journal.append("gate_failed", {"reason": "privacy"})
+    assert journal.state.status == GATE_FAILED
+
+
+def declared_privacy_payload(
+    artifact_kind="projection",
+    *,
+    declaration=("projection", "channel_block"),
+    result="PASS",
+    turn=5,
+):
+    return {
+        "turn": turn,
+        "player_id": 2,
+        "artifact_kind": artifact_kind,
+        "capture_artifact_kinds": declaration,
+        "input_digest": "a" * 16,
+        "forbidden_digests": [],
+        "result": result,
+    }
+
+
+@pytest.mark.parametrize("artifact_kind", [None, "", [], {}])
+def test_privacy_artifact_kind_must_be_nonempty_string(tmp_path, artifact_kind):
+    journal = open_journal(tmp_path)
+
+    with pytest.raises(GateStateError, match="artifact_kind"):
+        journal.append(
+            "privacy_asserted",
+            declared_privacy_payload(artifact_kind),
+        )
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        None,
+        {},
+        "projection",
+        (),
+        ("projection", "projection"),
+        ("projection", ""),
+        ("projection", []),
+        tuple(f"kind-{index}" for index in range(65)),
+    ],
+)
+def test_privacy_declaration_must_be_bounded_unique_string_sequence(
+    tmp_path, declaration
+):
+    journal = open_journal(tmp_path)
+
+    with pytest.raises(GateStateError, match="capture_artifact_kinds"):
+        journal.append(
+            "privacy_asserted",
+            declared_privacy_payload(declaration=declaration),
+        )
+
+
+def test_privacy_declaration_must_contain_current_kind(tmp_path):
+    journal = open_journal(tmp_path)
+
+    with pytest.raises(GateStateError, match="artifact_kind"):
+        journal.append(
+            "privacy_asserted",
+            declared_privacy_payload(
+                "eighth_unknown",
+                declaration=("projection", "channel_block"),
+            ),
+        )
+
+
+def test_privacy_capture_rejects_duplicate_kind_and_declaration_mismatch(tmp_path):
+    journal = open_journal(tmp_path)
+    journal.append("privacy_asserted", declared_privacy_payload())
+
+    with pytest.raises(GateStateError, match="duplicate privacy artifact"):
+        journal.append("privacy_asserted", declared_privacy_payload())
+    with pytest.raises(GateStateError, match="declaration"):
+        journal.append(
+            "privacy_asserted",
+            declared_privacy_payload(
+                "channel_block",
+                declaration=("channel_block", "projection"),
+            ),
+        )
+
+
+def test_failed_privacy_batch_is_finite_then_allows_gate_failed(tmp_path):
+    journal = open_journal(tmp_path)
+    declaration = ("projection", "channel_block")
+    journal.append(
+        "privacy_asserted",
+        declared_privacy_payload(
+            "projection", declaration=declaration, result="FAIL"
+        ),
+    )
+    journal.append(
+        "privacy_asserted",
+        declared_privacy_payload("channel_block", declaration=declaration),
+    )
+
+    with pytest.raises(GateStateError):
+        journal.append(
+            "privacy_asserted",
+            declared_privacy_payload("channel_block", declaration=declaration),
+        )
+    with pytest.raises(GateStateError):
+        journal.append(
+            "privacy_asserted",
+            declared_privacy_payload(
+                "eighth_unknown",
+                declaration=("projection", "channel_block", "eighth_unknown"),
+            ),
+        )
+
+    journal.append("gate_failed", {"reason": "privacy"})
+    assert journal.state.status == GATE_FAILED
+
+
+def test_legacy_privacy_fail_without_declaration_allows_only_gate_failed(tmp_path):
+    journal = open_journal(tmp_path)
+    legacy = declared_privacy_payload(result="FAIL")
+    legacy.pop("capture_artifact_kinds")
+    journal.append("privacy_asserted", legacy)
+
+    with pytest.raises(GateStateError):
+        journal.append(
+            "privacy_asserted",
+            declared_privacy_payload("channel_block"),
+        )
     journal.append("gate_failed", {"reason": "privacy"})
     assert journal.state.status == GATE_FAILED
 

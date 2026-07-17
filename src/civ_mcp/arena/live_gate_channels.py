@@ -72,6 +72,16 @@ PHASE_WITHHOLD_ON_DELIVERY_FUNDING = "withhold_on_delivery_funding"
 PHASE_VERIFY_FUNDING_BREACH = "verify_funding_breach"
 PHASE_VERIFY_TERMINAL_GATE = "verify_terminal_gate"
 
+PRIVACY_ARTIFACT_KINDS = (
+    "projection",
+    "channel_block",
+    "opening_prompt",
+    "acknowledgements",
+    "policy_result",
+    "pending_transcript_record",
+    "transcript_records",
+)
+
 
 def minimum_captures(config) -> int:
     """Seat captures for the expected deterministic path.
@@ -335,17 +345,78 @@ class ChannelsCoreDriver:
         return tuple(dict.fromkeys(value for value in values if value))
 
     @classmethod
+    def _mapping_is_typed_subset(cls, candidate: Mapping, target: Mapping) -> bool:
+        """Return whether ``target`` appears in ``candidate`` without type coercion."""
+
+        for target_key, target_value in target.items():
+            for candidate_key in candidate:
+                if (
+                    type(candidate_key) is type(target_key)
+                    and candidate_key == target_key
+                ):
+                    break
+            else:
+                return False
+            if not cls._typed_value_matches(candidate[candidate_key], target_value):
+                return False
+        return True
+
+    @classmethod
+    def _typed_value_matches(cls, candidate, target) -> bool:
+        if isinstance(target, Mapping):
+            return isinstance(candidate, Mapping) and cls._mapping_is_typed_subset(
+                candidate, target
+            )
+        if isinstance(target, (tuple, list)):
+            return (
+                isinstance(candidate, (tuple, list))
+                and len(candidate) == len(target)
+                and all(
+                    cls._typed_value_matches(candidate_item, target_item)
+                    for candidate_item, target_item in zip(candidate, target)
+                )
+            )
+        return type(candidate) is type(target) and candidate == target
+
+    @classmethod
+    def _embedded_json_values(cls, text: str):
+        """Yield mapping/list values safely decoded from arbitrary observer text."""
+
+        decoder = json.JSONDecoder()
+        index = 0
+        while index < len(text):
+            mapping_start = text.find("{", index)
+            sequence_start = text.find("[", index)
+            starts = tuple(
+                start for start in (mapping_start, sequence_start) if start >= 0
+            )
+            if not starts:
+                return
+            start = min(starts)
+            try:
+                value, end = decoder.raw_decode(text, start)
+            except json.JSONDecodeError:
+                index = start + 1
+                continue
+            if isinstance(value, (Mapping, list)):
+                yield value
+            index = max(end, start + 1)
+
+    @classmethod
     def _contains_mapping(cls, value, target: Mapping) -> bool:
         if dataclasses.is_dataclass(value) and not isinstance(value, type):
             value = cls._jsonable(value)
         if isinstance(value, Mapping):
-            if cls._json_text(value, compact=True) == cls._json_text(
-                target, compact=True
-            ):
+            if cls._mapping_is_typed_subset(value, target):
                 return True
             return any(cls._contains_mapping(item, target) for item in value.values())
         if isinstance(value, (tuple, list, frozenset, set)):
             return any(cls._contains_mapping(item, target) for item in value)
+        if isinstance(value, str):
+            return any(
+                cls._contains_mapping(item, target)
+                for item in cls._embedded_json_values(value)
+            )
         return False
 
     def _player3_transcript_artifact(self) -> tuple[str, tuple[dict, ...]]:
@@ -427,8 +498,13 @@ class ChannelsCoreDriver:
             leaked = tuple(value for value in forbidden if value in text)
             fingerprint_leaked = bool(
                 isinstance(fingerprint, Mapping)
-                and structured is not None
-                and self._contains_mapping(structured, fingerprint)
+                and (
+                    (
+                        structured is not None
+                        and self._contains_mapping(structured, fingerprint)
+                    )
+                    or self._contains_mapping(text, fingerprint)
+                )
             )
             structure_ok = (
                 projection_ok
@@ -445,6 +521,7 @@ class ChannelsCoreDriver:
                     "turn": turn,
                     "player_id": observer,
                     "artifact_kind": kind,
+                    "capture_artifact_kinds": PRIVACY_ARTIFACT_KINDS,
                     "input_digest": hashlib.sha256(
                         text.encode("utf-8", errors="surrogatepass")
                     ).hexdigest()[:16],
@@ -1353,15 +1430,7 @@ class ChannelsCoreDriver:
                     "the canary was not actually exercised"
                 )
                 return
-        expected_kinds = {
-            "projection",
-            "channel_block",
-            "opening_prompt",
-            "acknowledgements",
-            "policy_result",
-            "pending_transcript_record",
-            "transcript_records",
-        }
+        expected_kinds = set(PRIVACY_ARTIFACT_KINDS)
         observer = self.role_pid[ROLE_OBSERVER]
         by_capture: dict[tuple[int, int], list[Mapping]] = {}
         invalid_capture_identity = False
