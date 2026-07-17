@@ -1110,13 +1110,38 @@ def test_loads_seat0_llm_smoke_artifact():
     assert cfg.puppet_ids == [1, 2]
 
 
-def test_channels_core_smoke_budget_can_cover_its_twenty_turn_gate():
+def test_checked_in_channels_core_gate_experiment_validates():
     cfg = load_experiment(CHANNELS_CORE_SMOKE)
 
-    assert cfg.max_game_turns == 20
-    assert cfg.max_puppet_turns == cfg.max_game_turns
-    assert [player.player_id for player in cfg.players] == [1, 2]
-    assert all(player.options.channels.enabled for player in cfg.players)
+    assert cfg.run_id == "arena-channels-core-gate-v1"
+    assert cfg.live_gate.enabled is True
+    assert cfg.live_gate.scenario == "unofficial_channels_core_v1"
+    assert cfg.live_gate.roles == (
+        ("api_actor", 1),
+        ("cli_actor", 2),
+        ("privacy_observer", 3),
+    )
+    assert cfg.max_puppet_turns == 36
+    assert cfg.max_game_turns == 36
+    assert (
+        cfg.channel_rules.acceptance_turns,
+        cfg.channel_rules.funding_turns,
+        cfg.channel_rules.payment_response_turns,
+    ) == (3, 2, 2)
+
+    players = {spec.player_id: spec for spec in cfg.players}
+    assert {
+        player_id: (spec.provider, spec.model, spec.gateway)
+        for player_id, spec in players.items()
+    } == {
+        1: ("local", "gemma4-26b", "http://192.168.20.196:11440/v1"),
+        2: ("cli-codex", "gpt-5.5", ""),
+        3: ("scripted", "", ""),
+    }
+    assert players[1].options.tools == "full"
+    assert cfg.puppet_ids == [1, 2, 3]
+    assert all(spec.options.channels.enabled for spec in cfg.players)
+    assert all(spec.options.attention.mode == "off" for spec in cfg.players)
 
 
 def test_seat0_poll_limit_knobs_default_and_parse(tmp_path):

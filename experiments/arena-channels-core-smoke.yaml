@@ -1,10 +1,24 @@
-run_id: arena-channels-core-smoke
-max_puppet_turns: 20
-max_game_turns: 20
+# Deterministic unofficial-channels live gate (spec 2026-07-17).
+# The prior failed two-seat run directory cannot be reused: adding the privacy
+# observer changes the canonical enabled-player identity, so the new run_id
+# prevents accidental continuation of incompatible channel state.
+run_id: arena-channels-core-gate-v1
+# 27 captures expected on the nine-round path; 36 leaves room for watcher
+# handoff and deterministic blocker cleanup. Validation recomputes the
+# scenario minimum from channel_rules rather than trusting this number.
+max_puppet_turns: 36
+max_game_turns: 36
 channel_rules:
   acceptance_turns: 3
   funding_turns: 2
   payment_response_turns: 2
+live_gate:
+  enabled: true
+  scenario: unofficial_channels_core_v1
+  roles:
+    api_actor: 1
+    cli_actor: 2
+    privacy_observer: 3
 civs:
   - player: 1
     provider: local
@@ -15,4 +29,7 @@ civs:
   - player: 2
     provider: cli-codex
     model: gpt-5.5
+    channels: {enabled: true}
+  - player: 3
+    provider: scripted
     channels: {enabled: true}
