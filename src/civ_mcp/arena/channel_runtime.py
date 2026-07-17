@@ -1040,6 +1040,19 @@ class ChannelRuntime:
             )
         return left == right
 
+    @staticmethod
+    def _json_native(value: Any) -> Any:
+        """Canonicalize a payment payload exactly as journal JSON does."""
+
+        return json.loads(
+            json.dumps(
+                value,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        )
+
     @classmethod
     def _reduce_payment_result(
         cls,
@@ -1342,7 +1355,7 @@ class ChannelRuntime:
             cls._deal_payload(expected_deal) if expected_deal is not None else None
         )
         if not cls._exactly_equal(
-            deal_payload, expected_payload
+            cls._json_native(deal_payload), cls._json_native(expected_payload)
         ) or not cls._exactly_equal(payload["grievance"], expected_grievance):
             raise ValueError("payment result effects do not match the engine outcome")
 
@@ -1360,7 +1373,9 @@ class ChannelRuntime:
         settled = replace(deal, payment_status=PaymentStatus.SETTLED)
         if deal.timing == "on_delivery":
             expected = cls._honor_settled_deal(settled)
-            if not cls._exactly_equal(payload, cls._deal_payload(expected)):
+            if not cls._exactly_equal(
+                payload, cls._json_native(cls._deal_payload(expected))
+            ):
                 raise ValueError("payment success deal is not the canonical settlement")
             return expected
 
@@ -1377,7 +1392,9 @@ class ChannelRuntime:
                 favor_status=FavorStatus.DUE,
                 favor_due_turn=intent["turn"] + deal.completion_window_turns,
             )
-            if not cls._exactly_equal(payload, cls._deal_payload(expected)):
+            if not cls._exactly_equal(
+                payload, cls._json_native(cls._deal_payload(expected))
+            ):
                 raise ValueError("proposal baseline was not preserved at payment acceptance")
             return expected
 
@@ -1430,7 +1447,9 @@ class ChannelRuntime:
             or changed.favor.term_type != deal.favor.term_type
             or changed.favor.params != deal.favor.params
             or changed.favor.monitor
-            or not cls._exactly_equal(payload, cls._deal_payload(expected))
+            or not cls._exactly_equal(
+                payload, cls._json_native(cls._deal_payload(expected))
+            )
         ):
             raise ValueError("favor-start payment success deal is not canonical")
         return expected
@@ -2453,7 +2472,7 @@ class ChannelRuntime:
             payload["observation_id"] = observation_id
         if cleanup is not None:
             payload["cleanup"] = cleanup
-        return payload
+        return self._json_native(payload)
 
     def _accepted_payment_deal(
         self,

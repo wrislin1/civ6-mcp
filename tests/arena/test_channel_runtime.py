@@ -2098,6 +2098,71 @@ async def test_up_front_payment_accept_collects_complete_favor_start_baseline(
 
 
 @pytest.mark.asyncio
+async def test_post_restart_trade_route_payment_intent_is_json_canonical(
+    tmp_path,
+    payment_gs,
+):
+    rt = ChannelRuntime.open(
+        tmp_path,
+        "run-a",
+        frozenset({1, 2, 3}),
+        ChannelRules(),
+    )
+    payment_gs.runtime = rt
+    deal = await accepted_deal(
+        rt,
+        payment_gs,
+        favor={
+            "term_type": "dont_trade_with",
+            "params": {
+                "target_player": 3,
+                "trade_kinds": ["trade_route"],
+            },
+        },
+        timing="up_front",
+        within=1,
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+
+    resumed = ChannelRuntime.open(
+        tmp_path,
+        "run-a",
+        frozenset({1, 2, 3}),
+        ChannelRules(),
+    )
+    payment_gs.runtime = resumed
+    response = await apply_payment_action(
+        resumed,
+        payment_gs,
+        deal.counterparty,
+        "respond_to_payment",
+        {"deal_id": deal.id, "accept": True},
+        turn=4,
+        action_observation=observation(deal.counterparty, 4),
+    )
+
+    settled = resumed.deal(deal.id)
+    assert response.status == "applied"
+    assert settled.payment_status is PaymentStatus.SETTLED
+    assert settled.favor.baseline["route_ids"] == ()
+    assert settled.favor.baseline["action_ids"] == ()
+    verified = ChannelRuntime.open(
+        tmp_path,
+        "run-a",
+        frozenset({1, 2, 3}),
+        ChannelRules(),
+    )
+    assert verified.deal(deal.id).payment_status is PaymentStatus.SETTLED
+
+
+@pytest.mark.asyncio
 async def test_up_front_payment_accept_safely_terminates_incomplete_observation(
     tmp_path,
     payment_gs,

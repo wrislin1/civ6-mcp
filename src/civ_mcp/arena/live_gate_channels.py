@@ -257,7 +257,53 @@ class ChannelsCoreDriver:
             self._journal.write_result()
 
     async def _verify_restart(self) -> None:
-        raise NotImplementedError("Task 8")
+        """Reconcile the persisted restart checkpoint with live state.
+
+        ChannelRuntime.open has already replayed its journal before attach()
+        reaches this method.  Only an unchanged exact official offer and an
+        otherwise untouched payment response boundary may reactivate the gate.
+        """
+
+        state = self._journal.state
+        if state.restart_count != 1:
+            self._fail(
+                f"restart count {state.restart_count} at resume; expected exactly 1"
+            )
+            return
+        recorded = state.data.get("upfront_payment_fingerprint")
+        live = await self._live_offer_fingerprint(
+            self.role_pid[ROLE_API], self.role_pid[ROLE_CLI]
+        )
+        if live is None:
+            return
+        if live != recorded:
+            self._fail(
+                f"resumed offer fingerprint {live} does not equal the recorded "
+                f"pre-restart fingerprint {recorded}"
+            )
+            return
+        response_acks = [
+            acknowledgement
+            for acknowledgement in self._runtime.state.acknowledgements
+            if acknowledgement.deal_id == state.data.get("upfront_deal_id")
+            and acknowledgement.player_id == self.role_pid[ROLE_CLI]
+            and acknowledgement.turn > state.data.get("restart_turn", -1)
+        ]
+        if response_acks:
+            self._fail(
+                "a payment-response acknowledgement already exists at resume"
+            )
+            return
+        self._journal.append(
+            "restart_verified", {"turn": state.data.get("restart_turn")}
+        )
+        self._journal.append(
+            "phase_advanced",
+            {
+                "phase": PHASE_ACCEPT_UPFRONT_PAYMENT,
+                "turn": state.data.get("restart_turn"),
+            },
+        )
 
     async def seat_turn(self, gs, player_id, turn, base_result) -> dict:
         try:
@@ -670,8 +716,74 @@ class ChannelsCoreDriver:
                 {"phase": PHASE_RESTART_REQUIRED, "turn": turn},
             )
 
-    async def _maybe_finish_round(self, turn) -> None:
-        del turn
+    def _round_complete(self, turn: int) -> bool:
+        return self._captured_this_turn.get(turn, set()) >= self.gate_pids
+
+    async def _maybe_finish_round(self, turn: int) -> None:
+        """Run restart work only after every gate seat finished the round."""
+
+        if not self._round_complete(turn):
+            return
+        if (
+            self._restart_armed
+            and self._journal.state.phase == PHASE_RESTART_REQUIRED
+        ):
+            await self._request_restart(turn)
+
+    async def _request_restart(self, turn: int) -> None:
+        api = self.role_pid[ROLE_API]
+        cli = self.role_pid[ROLE_CLI]
+        recorded = self._journal.state.data.get("upfront_payment_fingerprint")
+        if not recorded:
+            self._fail(
+                "restart requested without a recorded payment fingerprint"
+            )
+            return
+        live = await self._live_offer_fingerprint(api, cli)
+        if live is None:
+            return
+        if live != recorded:
+            self._fail(
+                f"live pending trade fingerprint {live} does not equal the "
+                f"recorded canonical fingerprint {recorded}"
+            )
+            return
+        channel_state = self._runtime.state
+        self._journal.append(
+            "data_recorded",
+            {
+                "data": {
+                    "restart_channel_sequence": channel_state.last_event_sequence,
+                    "restart_turn": turn,
+                }
+            },
+        )
+        self._journal.append("restart_required", {"turn": turn})
+        self._journal.write_result()
+        self._restart_armed = False
+        self._signal = GATE_RESTART_REQUIRED
+
+    async def _live_offer_fingerprint(
+        self, payer: int, payee: int
+    ) -> dict | None:
+        payment_state = await self._gs.get_channel_payment_state(
+            payer, payee, PAYMENT_GOLD
+        )
+        status = getattr(payment_state, "status", None)
+        status = getattr(status, "value", status)
+        if status != "exact":
+            self._fail(
+                f"official pending trade for ({payer},{payee}) is {status!r}; "
+                "expected exactly one exact offer"
+            )
+            return None
+        offer = getattr(payment_state, "offer", None)
+        try:
+            fingerprint = offer.fingerprint()
+        except Exception as exc:
+            self._fail(f"live offer fingerprint unavailable: {exc!r}")
+            return None
+        return fingerprint
 
     def _recover_pending_actions(self, player_id: int, current_turn: int) -> None:
         """Reconcile durable plans with canonical acknowledgements on resume."""

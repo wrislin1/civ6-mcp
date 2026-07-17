@@ -15,7 +15,12 @@ from civ_mcp.arena.config import (
     PlayerSpec,
     validate_arena_config,
 )
-from civ_mcp.arena.live_gate import GATE_FAILED, resolve_scenario
+from civ_mcp.arena.live_gate import (
+    GATE_ACTIVE,
+    GATE_FAILED,
+    GATE_RESTART_REQUIRED,
+    resolve_scenario,
+)
 from civ_mcp.arena import live_gate_channels as lgc
 from .live_gate_fakes import GateGameState, run_gate_round, run_gate_seat
 
@@ -595,3 +600,173 @@ async def test_pending_actions_fail_closed_if_source_identity_cannot_recur(
     assert resumed.pending_signal() == GATE_FAILED
     assert "cannot be reissued" in resumed._journal.state.reason
     assert resumed._journal.result_path.exists()
+
+
+async def drive_to_restart(tmp_path, gs=None):
+    gs = gs or GateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_round(driver, runtime, gs, 11)
+    return driver, runtime, gs
+
+
+@pytest.mark.asyncio
+async def test_restart_defers_to_round_boundary(tmp_path):
+    gs = GateGameState()
+    driver, runtime, _ = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    assert driver.pending_signal() is None
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+    assert driver.pending_signal() is None
+    await run_gate_seat(driver, runtime, gs, 3, 11)
+    assert driver.pending_signal() == GATE_RESTART_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_restart_checkpoint_persists_fingerprint_and_result(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+
+    state = driver._journal.state
+    assert state.status == GATE_RESTART_REQUIRED
+    assert state.restart_count == 1
+    assert state.data["upfront_payment_fingerprint"]["gold"] == 1
+    result = json.loads(driver._journal.result_path.read_text())
+    assert result["status"] == GATE_RESTART_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_restart_live_fingerprint_mismatch_fails(tmp_path):
+    gs = GateGameState()
+    driver, runtime, _ = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    gs.pending.clear()
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+    await run_gate_seat(driver, runtime, gs, 3, 11)
+
+    assert driver.pending_signal() == GATE_FAILED
+    assert (
+        "pending" in driver._journal.state.reason
+        or "fingerprint" in driver._journal.state.reason
+    )
+
+
+@pytest.mark.asyncio
+async def test_resume_verifies_offer_and_continues(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    driver2 = lgc.ChannelsCoreDriver(cfg)
+    await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+
+    assert driver2.pending_signal() is None
+    state = driver2._journal.state
+    assert state.status == GATE_ACTIVE
+    assert state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+    assert state.restart_count == 1
+
+    await run_gate_round(driver2, runtime2, gs, 12)
+    deal = deals(runtime2)[state.data["upfront_deal_id"]]
+    assert deal.payment_status is PaymentStatus.SETTLED
+    assert (1, 2) not in gs.pending
+    assert gs.treasury[2] == 501
+
+
+@pytest.mark.asyncio
+async def test_resume_with_changed_offer_fails(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    from civ_mcp.lua.channel_payments import ExactPaymentOffer
+
+    gs.pending[(1, 2)] = ExactPaymentOffer(1, 2, 5)
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    driver2 = lgc.ChannelsCoreDriver(cfg)
+    await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+
+    assert driver2.pending_signal() == GATE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_resume_with_absent_offer_fails(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+
+    gs.pending.clear()
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    driver2 = lgc.ChannelsCoreDriver(cfg)
+    await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+
+    assert driver2.pending_signal() == GATE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_premature_payment_response_acknowledgement(
+    tmp_path,
+):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    deal_id = driver._journal.state.data["upfront_deal_id"]
+
+    gs.active_player = 2
+    admission = await runtime2.admit_player(gs, 2, 12)
+    acknowledgements = await runtime2.finish_player(
+        gs,
+        admission,
+        {
+            "transcript": {
+                "steps": [],
+                "final_summary": (
+                    'CHANNEL {"action":"respond_to_payment",'
+                    f'"deal_id":"{deal_id}","accept":true}}'
+                ),
+            }
+        },
+    )
+    assert len(acknowledgements) == 1
+    assert acknowledgements[0].status == "applied"
+
+    from civ_mcp.lua.channel_payments import ExactPaymentOffer
+
+    gs.pending[(1, 2)] = ExactPaymentOffer(1, 2, 1)
+    runtime3 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime3, run_dir=run_dir)
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert "payment-response acknowledgement" in resumed._journal.state.reason
+
+
+@pytest.mark.asyncio
+async def test_resume_config_fingerprint_mismatch_fails(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config(channel_rules=ChannelRules(funding_turns=3))
+    run_dir = Path(tmp_path) / gate_config().run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir,
+        cfg.run_id,
+        frozenset({1, 2, 3}),
+        gate_config().channel_rules,
+    )
+    driver2 = lgc.ChannelsCoreDriver(cfg)
+
+    with pytest.raises(Exception, match="fingerprint"):
+        await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
