@@ -615,6 +615,9 @@ class ChannelsCoreDriver:
                 {
                     "source_id": entry["source_id"],
                     "turn": turn,
+                    "player_id": entry["player_id"],
+                    "phase": entry["phase"],
+                    "name": entry["name"],
                     "deal_id": acknowledgement.deal_id,
                 },
             )
@@ -773,23 +776,48 @@ class ChannelsCoreDriver:
             if deal is None:
                 return
             due = state.data.get("upfront_favor_due_turn")
+            actual = (deal.state, deal.favor_status, deal.payment_status)
+            pending = (
+                DealState.ACTIVE,
+                FavorStatus.DUE,
+                PaymentStatus.SETTLED,
+            )
+            completed = (
+                DealState.HONORED,
+                FavorStatus.SATISFIED,
+                PaymentStatus.SETTLED,
+            )
             if turn < due:
-                if deal.is_terminal:
+                if actual != pending:
                     self._fail(
-                        f"up-front deal terminal ({deal.state}) before its "
-                        f"inclusive deadline turn {due}"
+                        f"up-front deal state/status drift {actual} before its "
+                        f"inclusive deadline turn {due}; expected {pending}"
                     )
                 return
-            if deal.state is DealState.HONORED:
+            if turn > due:
+                self._fail(
+                    f"up-front deal is {actual} after its inclusive deadline "
+                    f"turn {due}; expected {completed}"
+                )
+                return
+            if actual == completed:
                 self._journal.append(
                     "phase_advanced",
                     {"phase": PHASE_VERIFY_UPFRONT_HONORED, "turn": turn},
                 )
                 self._advance_after_capture(player_id, turn)
-            elif turn > due or deal.is_terminal:
+                return
+            if actual != pending:
                 self._fail(
-                    f"up-front deal is {deal.state}/{deal.favor_status} after "
-                    f"its inclusive deadline turn {due}"
+                    f"up-front deal invalid at inclusive deadline turn {due}: "
+                    f"{actual}; expected {pending} or {completed}"
+                )
+                return
+            if player_id == deal.counterparty:
+                self._fail(
+                    f"up-front deal missed its inclusive deadline turn {due} "
+                    f"after responsible player {deal.counterparty} capture; "
+                    f"expected {completed}, got {actual}"
                 )
         elif phase == PHASE_VERIFY_UPFRONT_HONORED:
             deal = self._deal(state.data["upfront_deal_id"])
@@ -813,22 +841,34 @@ class ChannelsCoreDriver:
                 acknowledgement.source_id: acknowledgement
                 for acknowledgement in self._runtime.state.acknowledgements
             }
-            new_ids = [
-                acknowledgements[entry["source_id"]].deal_id
+            source_prefix = (
+                f"cli:{self.config.run_id}:{player_id}:{turn}:"
+            )
+            current = [
+                acknowledgements[entry["source_id"]]
                 for entry in state.verified_actions
-                if entry["source_id"].startswith("cli:")
+                if entry["source_id"].startswith(source_prefix)
+                and entry.get("player_id") == player_id
+                and entry.get("turn") == turn
+                and entry.get("phase") == phase
+                and entry.get("name") == "propose_deal"
+                and entry["source_id"] in acknowledgements
+                and acknowledgements[entry["source_id"]].player_id == player_id
+                and acknowledgements[entry["source_id"]].turn == turn
+                and acknowledgements[entry["source_id"]].status == "applied"
                 and acknowledgements[entry["source_id"]].deal_id
                 and acknowledgements[entry["source_id"]].deal_id
                 != state.data["upfront_deal_id"]
             ]
-            if len(new_ids) != 1:
+            if len(current) != 1:
                 self._fail(
-                    "expected exactly one captured on-delivery deal id, got "
-                    f"{new_ids}"
+                    "expected exactly one applied current-capture on-delivery "
+                    f"deal acknowledgement, got {len(current)}"
                 )
                 return
+            deal_id = current[0].deal_id
             self._journal.append(
-                "data_recorded", {"data": {"on_delivery_deal_id": new_ids[0]}}
+                "data_recorded", {"data": {"on_delivery_deal_id": deal_id}}
             )
             self._journal.append(
                 "phase_advanced",
@@ -865,16 +905,31 @@ class ChannelsCoreDriver:
             if deal is None:
                 return
             due = state.data.get("on_delivery_favor_due_turn")
+            actual = (deal.state, deal.favor_status, deal.payment_status)
+            pending = (
+                DealState.ACTIVE,
+                FavorStatus.DUE,
+                PaymentStatus.NOT_DUE,
+            )
+            completed = (
+                DealState.ACTIVE,
+                FavorStatus.SATISFIED,
+                PaymentStatus.DUE,
+            )
             if turn < due:
-                if deal.is_terminal:
+                if actual != pending:
                     self._fail(
-                        f"on-delivery deal terminal early: {deal.state}"
+                        f"on-delivery deal state/status drift {actual} before "
+                        f"its inclusive deadline turn {due}; expected {pending}"
                     )
                 return
-            if (
-                deal.favor_status is FavorStatus.SATISFIED
-                and deal.payment_status is PaymentStatus.DUE
-            ):
+            if turn > due:
+                self._fail(
+                    f"on-delivery deal is {actual} after its inclusive "
+                    f"deadline turn {due}; expected {completed}"
+                )
+                return
+            if actual == completed:
                 self._journal.append(
                     "data_recorded",
                     {"data": {"on_delivery_fund_by_turn": deal.fund_by_turn}},
@@ -886,35 +941,68 @@ class ChannelsCoreDriver:
                         "turn": turn,
                     },
                 )
-            elif turn > due or deal.is_terminal:
+                return
+            if actual != pending:
                 self._fail(
-                    f"on-delivery favor is {deal.favor_status} after its "
-                    f"inclusive deadline turn {due}"
+                    f"on-delivery deal invalid at inclusive deadline turn "
+                    f"{due}: {actual}; expected {pending} or {completed}"
+                )
+                return
+            if player_id == deal.counterparty:
+                self._fail(
+                    f"on-delivery favor missed its inclusive deadline turn "
+                    f"{due} after responsible player {deal.counterparty} "
+                    f"capture; expected {completed}, got {actual}"
                 )
         elif phase == PHASE_WITHHOLD_ON_DELIVERY_FUNDING:
             deal = self._deal(state.data["on_delivery_deal_id"])
             if deal is None:
                 return
             fund_by = state.data.get("on_delivery_fund_by_turn")
+            actual = (deal.state, deal.favor_status, deal.payment_status)
+            pending = (
+                DealState.ACTIVE,
+                FavorStatus.SATISFIED,
+                PaymentStatus.DUE,
+            )
+            completed = (
+                DealState.BROKEN,
+                FavorStatus.SATISFIED,
+                PaymentStatus.FAILED,
+            )
             if turn < fund_by:
-                if deal.is_terminal:
+                if actual != pending:
                     self._fail(
-                        f"on-delivery deal terminal ({deal.state}) before the "
-                        f"inclusive funding deadline turn {fund_by}"
+                        f"on-delivery funding state/status drift {actual} "
+                        f"before the inclusive funding deadline turn "
+                        f"{fund_by}; expected {pending}"
                     )
                 return
-            if role != ROLE_CLI and deal.state is DealState.ACTIVE:
+            if turn > fund_by:
+                self._fail(
+                    f"on-delivery deal is {actual} after its inclusive funding "
+                    f"deadline turn {fund_by}; expected {completed}"
+                )
                 return
-            if deal.state is DealState.BROKEN:
+            if actual == completed:
                 self._journal.append(
                     "phase_advanced",
                     {"phase": PHASE_VERIFY_FUNDING_BREACH, "turn": turn},
                 )
                 self._advance_after_capture(player_id, turn)
-            elif turn > fund_by:
+                return
+            if actual != pending:
                 self._fail(
-                    f"on-delivery deal is {deal.state} after its inclusive "
-                    f"funding deadline turn {fund_by}"
+                    f"on-delivery deal invalid at inclusive funding deadline "
+                    f"turn {fund_by}: {actual}; expected {pending} or "
+                    f"{completed}"
+                )
+                return
+            if player_id == deal.proposer:
+                self._fail(
+                    f"on-delivery funding missed its inclusive deadline turn "
+                    f"{fund_by} after responsible player {deal.proposer} "
+                    f"capture; expected {completed}, got {actual}"
                 )
         elif phase == PHASE_VERIFY_FUNDING_BREACH:
             deal = self._deal(state.data["on_delivery_deal_id"])
@@ -1121,6 +1209,9 @@ class ChannelsCoreDriver:
                 {
                     "source_id": entry["source_id"],
                     "turn": entry["turn"],
+                    "player_id": entry["player_id"],
+                    "phase": entry["phase"],
+                    "name": entry["name"],
                     "deal_id": acknowledgement.deal_id,
                     "recovered": True,
                 },

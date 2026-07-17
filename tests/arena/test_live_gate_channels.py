@@ -976,3 +976,202 @@ async def test_premature_terminal_state_fails_gate(tmp_path):
     )
     await run_gate_round(driver2, runtime2, gs, 13)
     assert driver2.pending_signal() == GATE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_upfront_responsible_capture_requires_deadline_transition(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=3)
+    await run_gate_seat(driver, runtime, gs, 1, 12)
+    await run_gate_seat(driver, runtime, gs, 2, 12)
+    deal = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
+    assert deal.counterparty == 2
+    assert deal.state is DealState.ACTIVE
+    assert deal.favor_status is FavorStatus.DUE
+    assert deal.payment_status is PaymentStatus.SETTLED
+
+    # The gate's persisted deadline is deliberately earlier than the runtime's
+    # canonical deadline. At that persisted boundary the responsible actor's
+    # real capture leaves the exact pending tuple in place, so the driver must
+    # fail immediately instead of waiting for a later round.
+    driver._journal.append(
+        "data_recorded", {"data": {"upfront_favor_due_turn": 12}}
+    )
+    await run_gate_seat(driver, runtime, gs, deal.counterparty, 12)
+
+    assert driver.pending_signal() == GATE_FAILED
+    assert "deadline" in driver._journal.state.reason
+
+
+@pytest.mark.asyncio
+async def test_on_delivery_responsible_capture_requires_deadline_transition(
+    tmp_path,
+):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=7)
+    deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
+    assert deal.counterparty == 1
+    assert deal.state is DealState.ACTIVE
+    assert deal.favor_status is FavorStatus.DUE
+    assert deal.payment_status is PaymentStatus.NOT_DUE
+
+    driver._journal.append(
+        "data_recorded", {"data": {"on_delivery_favor_due_turn": 15}}
+    )
+    await run_gate_seat(driver, runtime, gs, deal.counterparty, 15)
+
+    assert driver.pending_signal() == GATE_FAILED
+    assert "deadline" in driver._journal.state.reason
+
+
+@pytest.mark.asyncio
+async def test_funding_responsible_capture_requires_deadline_transition(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=8)
+    deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
+    assert deal.proposer == 2
+    assert deal.state is DealState.ACTIVE
+    assert deal.favor_status is FavorStatus.SATISFIED
+    assert deal.payment_status is PaymentStatus.DUE
+
+    driver._journal.append(
+        "data_recorded", {"data": {"on_delivery_fund_by_turn": 17}}
+    )
+    await run_gate_seat(driver, runtime, gs, deal.proposer, 17)
+
+    assert driver.pending_signal() == GATE_FAILED
+    assert "deadline" in driver._journal.state.reason
+
+
+@pytest.mark.asyncio
+async def test_upfront_completed_transition_after_deadline_fails(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=4)
+    deal = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
+    driver._journal.append(
+        "data_recorded", {"data": {"upfront_favor_due_turn": 12}}
+    )
+
+    await run_gate_seat(driver, runtime, gs, deal.counterparty, 13)
+
+    changed = deals(runtime)[deal.id]
+    assert changed.state is DealState.HONORED
+    assert driver.pending_signal() == GATE_FAILED
+    assert "after" in driver._journal.state.reason
+
+
+@pytest.mark.asyncio
+async def test_on_delivery_completed_transition_after_deadline_fails(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=7)
+    deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
+    driver._journal.append(
+        "data_recorded", {"data": {"on_delivery_favor_due_turn": 15}}
+    )
+
+    await run_gate_seat(driver, runtime, gs, deal.counterparty, 16)
+
+    changed = deals(runtime)[deal.id]
+    assert changed.favor_status is FavorStatus.SATISFIED
+    assert changed.payment_status is PaymentStatus.DUE
+    assert driver.pending_signal() == GATE_FAILED
+    assert "after" in driver._journal.state.reason
+
+
+@pytest.mark.asyncio
+async def test_funding_completed_transition_after_deadline_fails(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=8)
+    deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
+    driver._journal.append(
+        "data_recorded", {"data": {"on_delivery_fund_by_turn": 17}}
+    )
+
+    await run_gate_seat(driver, runtime, gs, deal.proposer, 18)
+
+    changed = deals(runtime)[deal.id]
+    assert changed.state is DealState.BROKEN
+    assert changed.payment_status is PaymentStatus.FAILED
+    assert driver.pending_signal() == GATE_FAILED
+    assert "after" in driver._journal.state.reason
+
+
+@pytest.mark.asyncio
+async def test_on_delivery_premature_nonterminal_success_fails(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=7)
+    deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
+    assert deal.favor_due_turn == 16
+    driver._journal.append(
+        "data_recorded", {"data": {"on_delivery_favor_due_turn": 17}}
+    )
+
+    await run_gate_seat(driver, runtime, gs, deal.counterparty, 16)
+    changed = deals(runtime)[deal.id]
+    assert changed.state is DealState.ACTIVE
+    assert changed.favor_status is FavorStatus.SATISFIED
+    assert changed.payment_status is PaymentStatus.DUE
+    assert driver.pending_signal() == GATE_FAILED
+    assert "before" in driver._journal.state.reason
+
+
+@pytest.mark.asyncio
+async def test_on_delivery_id_is_bound_to_current_cli_capture(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=5)
+    assert driver._journal.state.phase == lgc.PHASE_PROPOSE_ON_DELIVERY
+
+    stale_payload = {
+        "action": "propose_deal",
+        "to_player": 1,
+        "text": "Historical verified CLI deal",
+        "favor": {
+            "term_type": "maintain_gold_reserve",
+            "params": {"min_gold": 0},
+        },
+        "payment_gold": 1,
+        "timing": "on_delivery",
+        "within": 1,
+    }
+    stale_line = "CHANNEL " + json.dumps(
+        stale_payload, sort_keys=True, separators=(",", ":")
+    )
+    gs.active_player = 2
+    stale_admission = await runtime.admit_player(gs, 2, 13)
+    stale_acknowledgements = await runtime.finish_player(
+        gs,
+        stale_admission,
+        {"transcript": {"steps": [], "final_summary": stale_line}},
+    )
+    assert len(stale_acknowledgements) == 1
+    stale_ack = stale_acknowledgements[0]
+    assert stale_ack.status == "applied"
+    assert stale_ack.deal_id
+    stale_digest = stale_ack.source_id.rsplit(":", 1)[1]
+    driver._journal.append(
+        "action_planned",
+        {
+            "turn": 13,
+            "player_id": 2,
+            "phase": lgc.PHASE_PROPOSE_ON_DELIVERY,
+            "name": "propose_deal",
+            "source_id": stale_ack.source_id,
+            "payload_digest": stale_digest,
+            "line_index": 0,
+        },
+    )
+    driver._journal.append(
+        "action_verified",
+        {
+            "source_id": stale_ack.source_id,
+            "turn": 13,
+            "deal_id": stale_ack.deal_id,
+        },
+    )
+
+    await run_gate_round(driver, runtime, gs, 14)
+
+    current = [
+        acknowledgement
+        for acknowledgement in runtime.state.acknowledgements
+        if acknowledgement.player_id == 2
+        and acknowledgement.turn == 14
+        and acknowledgement.status == "applied"
+        and acknowledgement.deal_id
+    ]
+    assert len(current) == 1
+    assert current[0].deal_id != stale_ack.deal_id
+    assert driver.pending_signal() is None
+    assert driver._journal.state.data["on_delivery_deal_id"] == current[0].deal_id
