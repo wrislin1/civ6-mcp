@@ -27,6 +27,12 @@ from civ_mcp.arena.task_tracker import (
     SKIPPED_NO_MOVES,
     UNITS_FETCH_FAILED,
 )
+from civ_mcp.arena.channels import (
+    DealState,
+    PaymentStatus,
+    effective_magnitude,
+    state_from_dict,
+)
 from civ_mcp.arena.vocab import MCP_CIV6_PREFIX, LOCAL_TOOL_VERBS
 
 
@@ -800,6 +806,160 @@ def _rubric_for_model(records: list[dict]) -> dict:
 # Main analyze function
 # ---------------------------------------------------------------------------
 
+_TERMINAL_OUTCOMES = tuple(
+    state.value
+    for state in DealState
+    if state not in (DealState.PROPOSED, DealState.ACTIVE)
+)
+_PAYMENT_STATUSES = tuple(status.value for status in PaymentStatus)
+
+
+def _zero_counts(labels: tuple[str, ...]) -> dict[str, int]:
+    return {label: 0 for label in labels}
+
+
+def _new_grievance_summary() -> dict:
+    return {
+        "count": 0,
+        "raw_magnitude": 0.0,
+        "effective_magnitude": 0.0,
+    }
+
+
+def _new_player_summary() -> dict:
+    return {
+        "messages": 0,
+        "sent_messages": 0,
+        "received_messages": 0,
+        "deals": 0,
+        "payments": _zero_counts(_PAYMENT_STATUSES),
+        "outcomes": _zero_counts(_TERMINAL_OUTCOMES),
+        "grievances": _new_grievance_summary(),
+    }
+
+
+def _new_pair_summary() -> dict:
+    return {
+        "messages": 0,
+        "deals": 0,
+        "payments": _zero_counts(_PAYMENT_STATUSES),
+        "outcomes": _zero_counts(_TERMINAL_OUTCOMES),
+        "grievances": {
+            **_new_grievance_summary(),
+            "by_source": {},
+        },
+    }
+
+
+def _add_grievance_magnitude(summary: dict, raw: float, effective: float) -> None:
+    summary["count"] += 1
+    summary["raw_magnitude"] += raw
+    summary["effective_magnitude"] += effective
+
+
+def analyze_channels(state_payload: dict, current_turn: int) -> dict:
+    """Validate and aggregate one schema-1 unofficial-channel snapshot."""
+    if type(current_turn) is not int or current_turn < 0:
+        raise ValueError("current_turn must be a non-negative integer")
+    state = state_from_dict(state_payload)
+    players = {
+        str(player_id): _new_player_summary()
+        for player_id in sorted(state.enabled_players)
+    }
+    messages_by_player = {
+        str(player_id): 0 for player_id in sorted(state.enabled_players)
+    }
+    pairs: dict[str, dict] = {}
+    payments = _zero_counts(_PAYMENT_STATUSES)
+    outcomes = _zero_counts(_TERMINAL_OUTCOMES)
+    adjudication_sources: dict[str, int] = {}
+    grievances = _new_grievance_summary()
+
+    def player_summary(player_id: int) -> dict:
+        return players.setdefault(str(player_id), _new_player_summary())
+
+    def pair_summary(first: int, second: int) -> dict:
+        return pairs.setdefault(f"{first}->{second}", _new_pair_summary())
+
+    for message in state.messages:
+        pair_summary(message.from_player, message.to_player)["messages"] += 1
+        sender = player_summary(message.from_player)
+        recipient = player_summary(message.to_player)
+        sender["messages"] += 1
+        sender["sent_messages"] += 1
+        recipient["messages"] += 1
+        recipient["received_messages"] += 1
+        messages_by_player[str(message.from_player)] = (
+            messages_by_player.get(str(message.from_player), 0) + 1
+        )
+        messages_by_player[str(message.to_player)] = (
+            messages_by_player.get(str(message.to_player), 0) + 1
+        )
+
+    for deal in state.deals:
+        pair = pair_summary(deal.proposer, deal.counterparty)
+        pair["deals"] += 1
+        payment_status = deal.payment_status.value
+        payments[payment_status] += 1
+        pair["payments"][payment_status] += 1
+        for player_id in (deal.proposer, deal.counterparty):
+            player = player_summary(player_id)
+            player["deals"] += 1
+            player["payments"][payment_status] += 1
+        if deal.is_terminal:
+            outcome = deal.state.value
+            outcomes[outcome] += 1
+            pair["outcomes"][outcome] += 1
+            for player_id in (deal.proposer, deal.counterparty):
+                player_summary(player_id)["outcomes"][outcome] += 1
+            source = (deal.terminal or {}).get("adjudication_source")
+            if isinstance(source, str) and source:
+                adjudication_sources[source] = adjudication_sources.get(source, 0) + 1
+
+    for grievance in state.grievances:
+        raw = float(grievance.base_magnitude)
+        effective = effective_magnitude(
+            grievance.base_magnitude,
+            grievance.turn,
+            current_turn,
+            grievance.half_life_turns,
+        )
+        _add_grievance_magnitude(grievances, raw, effective)
+        source = grievance.adjudication_source
+        source_summary = grievances.setdefault(source, _new_grievance_summary())
+        _add_grievance_magnitude(source_summary, raw, effective)
+
+        pair_grievances = pair_summary(
+            grievance.wronged,
+            grievance.offender,
+        )["grievances"]
+        _add_grievance_magnitude(pair_grievances, raw, effective)
+        pair_source = pair_grievances["by_source"].setdefault(
+            source,
+            _new_grievance_summary(),
+        )
+        _add_grievance_magnitude(pair_source, raw, effective)
+        for player_id in (grievance.wronged, grievance.offender):
+            _add_grievance_magnitude(
+                player_summary(player_id)["grievances"],
+                raw,
+                effective,
+            )
+
+    return {
+        "schema_version": state.schema_version,
+        "current_turn": current_turn,
+        "messages": len(state.messages),
+        "deals": len(state.deals),
+        "messages_by_player": messages_by_player,
+        "players": players,
+        "pairs": pairs,
+        "payments": payments,
+        "outcomes": outcomes,
+        "grievances": grievances,
+        "adjudication_sources": adjudication_sources,
+    }
+
 def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  # noqa: ARG001
     """Analyze transcript and cost records.
 
@@ -1210,8 +1370,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "run_path",
+        nargs="?",
+        help=(
+            "Run directory path (alternative to --run-id/--runs-dir; used by "
+            "the attended-gate command)."
+        ),
+    )
+    parser.add_argument(
         "--run-id",
-        required=True,
+        default=None,
         help="Run ID (the directory name under --runs-dir).",
     )
     parser.add_argument(
@@ -1232,8 +1400,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    runs_dir = Path(args.runs_dir)
-    run_dir = runs_dir / args.run_id
+    if args.run_path is not None:
+        if args.run_id is not None or args.runs_dir != "arena_runs":
+            parser.error("run_path cannot be combined with --run-id or --runs-dir")
+        run_dir = Path(args.run_path)
+    else:
+        if args.run_id is None:
+            parser.error("either run_path or --run-id is required")
+        runs_dir = Path(args.runs_dir)
+        run_dir = runs_dir / args.run_id
 
     output_md = Path(args.output_md) if args.output_md else run_dir / "report.md"
     output_json = Path(args.output_json) if args.output_json else run_dir / "report.json"
@@ -1245,6 +1420,23 @@ def main() -> None:
     cost_records = load_records(cost_path)
 
     report = analyze(transcript_records, cost_records)
+    channel_state_path = run_dir / "channels" / "state.json"
+    if channel_state_path.exists():
+        channel_state_payload = json.loads(
+            channel_state_path.read_text(encoding="utf-8")
+        )
+        current_turn = max(
+            (
+                turn
+                for record in transcript_records
+                if type((turn := record.get("turn"))) is int
+            ),
+            default=0,
+        )
+        report["channels"] = analyze_channels(
+            channel_state_payload,
+            current_turn=current_turn,
+        )
 
     # Write JSON
     output_json.parent.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,18 @@
+run_id: arena-channels-core-smoke
+max_puppet_turns: 2
+max_game_turns: 20
+channel_rules:
+  acceptance_turns: 3
+  funding_turns: 2
+  payment_response_turns: 2
+civs:
+  - player: 1
+    provider: local
+    model: gemma4-26b
+    gateway: http://192.168.20.196:11440/v1
+    tools: full
+    channels: {enabled: true}
+  - player: 2
+    provider: cli-codex
+    model: gpt-5.5
+    channels: {enabled: true}

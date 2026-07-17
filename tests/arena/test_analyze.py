@@ -54,6 +54,107 @@ def _config_rec(pid: int, steps: int, invalid: int, brief: int, score: int) -> d
     }
 
 
+def channel_state_fixture() -> dict:
+    """Return one schema-1 ledger with both terminal outcomes and a grievance."""
+    from civ_mcp.arena.channels import (
+        ChannelState,
+        Deal,
+        DealState,
+        FavorStatus,
+        FavorTerm,
+        Grievance,
+        Message,
+        PaymentStatus,
+        state_to_dict,
+    )
+    from civ_mcp.arena.config import ChannelRules
+
+    honored = Deal(
+        id="deal-000001",
+        proposer=1,
+        counterparty=2,
+        created_turn=10,
+        accepted_turn=11,
+        accept_by_turn=13,
+        completion_window_turns=5,
+        favor=FavorTerm(
+            "maintain_gold_reserve",
+            {"min_gold": 100},
+        ),
+        payment_gold=100,
+        timing="up_front",
+        state=DealState.HONORED,
+        favor_status=FavorStatus.SATISFIED,
+        payment_status=PaymentStatus.SETTLED,
+        fund_by_turn=13,
+        payment_response_by_turn=15,
+        favor_due_turn=16,
+        terminal={
+            "turn": 16,
+            "reason": "favor satisfied and payment settled",
+            "adjudication_source": "deterministic",
+        },
+    )
+    broken = Deal(
+        id="deal-000002",
+        proposer=2,
+        counterparty=1,
+        created_turn=20,
+        accepted_turn=21,
+        accept_by_turn=23,
+        completion_window_turns=5,
+        favor=FavorTerm(
+            "maintain_gold_reserve",
+            {"min_gold": 400},
+        ),
+        payment_gold=200,
+        timing="on_delivery",
+        state=DealState.BROKEN,
+        favor_status=FavorStatus.FAILED,
+        payment_status=PaymentStatus.WAIVED,
+        fund_by_turn=None,
+        payment_response_by_turn=None,
+        favor_due_turn=26,
+        terminal={
+            "turn": 30,
+            "wronged": 1,
+            "offender": 2,
+            "reason": "gold reserve breached",
+            "adjudication_source": "deterministic",
+        },
+    )
+    state = ChannelState(
+        schema_version=1,
+        run_id="channel-analysis",
+        enabled_players=frozenset({1, 2}),
+        rules_fingerprint=ChannelRules().fingerprint(),
+        messages=(
+            Message("msg-000001", 1, 2, 10, "offer", honored.id),
+            Message("msg-000002", 2, 1, 11, "accepted", honored.id),
+        ),
+        deals=(honored, broken),
+        grievances=(
+            Grievance(
+                id="grv-000001",
+                wronged=1,
+                offender=2,
+                deal_id=broken.id,
+                turn=30,
+                reason="gold reserve breached",
+                payment_gold=200,
+                base_magnitude=2.0,
+                half_life_turns=30,
+                adjudication_source="deterministic",
+                adjudication_metadata=None,
+            ),
+        ),
+        next_message=3,
+        next_deal=3,
+        next_grievance=2,
+    )
+    return state_to_dict(state)
+
+
 @pytest.fixture()
 def run_dir(tmp_path: Path) -> Path:
     """Create a synthetic arena run with 2 models."""
@@ -242,6 +343,30 @@ def run_dir(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+def test_channel_analysis_groups_pairs_payments_outcomes_and_sources() -> None:
+    from civ_mcp.arena.analyze import analyze_channels
+
+    report = analyze_channels(channel_state_fixture(), current_turn=60)
+
+    assert report["messages_by_player"]["1"] == 2
+    assert report["players"]["2"]["deals"] == 2
+    assert report["pairs"]["1->2"]["payments"]["settled"] == 1
+    assert report["outcomes"]["honored"] == 1
+    assert report["outcomes"]["broken"] == 1
+    assert report["grievances"]["raw_magnitude"] == pytest.approx(2.0)
+    assert report["grievances"]["effective_magnitude"] == pytest.approx(1.0)
+    assert report["grievances"]["deterministic"]["count"] == 1
+
+
+def test_channel_analysis_rejects_non_schema_one_state() -> None:
+    from civ_mcp.arena.analyze import analyze_channels
+
+    payload = channel_state_fixture()
+    payload["schema_version"] = 2
+
+    with pytest.raises(ValueError, match="unsupported channel schema"):
+        analyze_channels(payload, current_turn=60)
 
 def test_load_records(run_dir: Path) -> None:
     from civ_mcp.arena.analyze import load_records
@@ -724,6 +849,46 @@ def test_default_output_paths(tmp_path: Path) -> None:
     assert (run_dir_path / "report.json").exists()
 
 
+def test_main_adds_channels_report_but_keeps_older_runs_compatible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from civ_mcp.arena.analyze import main
+
+    runs_dir = tmp_path / "arena_runs"
+    current = runs_dir / "current"
+    legacy = runs_dir / "legacy"
+    (current / "channels").mkdir(parents=True)
+    legacy.mkdir(parents=True)
+    for run_dir_path in (current, legacy):
+        _write_jsonl(
+            run_dir_path / "transcript.jsonl",
+            [{"turn": 60, "player_id": 1, "model": "m", "steps": []}],
+        )
+        _write_jsonl(run_dir_path / "arena_cost.jsonl", [])
+    (current / "channels" / "state.json").write_text(
+        json.dumps(channel_state_fixture())
+    )
+
+    for run_id in ("current", "legacy"):
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "civ-arena-analyze",
+                "--run-id",
+                run_id,
+                "--runs-dir",
+                str(runs_dir),
+            ],
+        )
+        main()
+
+    current_report = json.loads((current / "report.json").read_text())
+    legacy_report = json.loads((legacy / "report.json").read_text())
+    assert current_report["channels"]["outcomes"]["honored"] == 1
+    assert "channels" not in legacy_report
+
+
 def test_custom_output_paths(tmp_path: Path) -> None:
     """Custom --output-md / --output-json paths are honoured."""
     from civ_mcp.arena.analyze import main
@@ -750,6 +915,27 @@ def test_custom_output_paths(tmp_path: Path) -> None:
 
     assert custom_md.exists()
     assert custom_json.exists()
+
+
+def test_positional_run_path_matches_attended_gate_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from civ_mcp.arena.analyze import main
+
+    run_dir_path = tmp_path / "arena_runs" / "positional"
+    run_dir_path.mkdir(parents=True)
+    _write_jsonl(run_dir_path / "transcript.jsonl", [])
+    _write_jsonl(run_dir_path / "arena_cost.jsonl", [])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["civ-arena-analyze", str(run_dir_path)],
+    )
+
+    main()
+
+    assert (run_dir_path / "report.md").exists()
+    assert (run_dir_path / "report.json").exists()
 
 
 def test_render_markdown_non_empty_contains_model_names(run_dir: Path) -> None:

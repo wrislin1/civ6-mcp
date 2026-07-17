@@ -19,6 +19,7 @@ from civ_mcp.arena.channels import (
     ChannelAcknowledgement,
     DealState,
     FavorStatus,
+    Message,
     PaymentStatus,
 )
 from civ_mcp.arena.channel_terms import (
@@ -45,6 +46,16 @@ class ObservingGameState:
         assert result.player_id == player_id
         assert result.turn == turn
         return result
+
+
+class CountingObservationGS:
+    def __init__(self) -> None:
+        self.observation_calls = 0
+
+    async def get_channel_observation(self, player_id, turn, request):
+        del request
+        self.observation_calls += 1
+        return observation(player_id, turn)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -296,6 +307,44 @@ def append_complete_deal_changes(rt: ChannelRuntime, deals: list) -> None:
         )
     with rt.events_path.open("a", encoding="utf-8") as stream:
         stream.writelines(json.dumps(event) + "\n" for event in events)
+
+
+def seed_maximum_legal_state(rt: ChannelRuntime, player_id: int = 4) -> None:
+    """Fill every ordered message pair involving one seat to its schema-1 cap."""
+    messages = []
+    next_message = 1
+    max_per_pair = rt.rules.max_messages_per_pair
+    for counterpart in sorted(rt.state.enabled_players - {player_id}):
+        for direction in ((player_id, counterpart), (counterpart, player_id)):
+            for index in range(max_per_pair):
+                messages.append(
+                    Message(
+                        id=f"msg-{next_message:06d}",
+                        from_player=direction[0],
+                        to_player=direction[1],
+                        turn=index + 1,
+                        text=f"private-{direction[0]}-{direction[1]}-{index}",
+                        deal_id=None,
+                    )
+                )
+                next_message += 1
+    rt.state = dataclasses.replace(
+        rt.state,
+        messages=tuple(messages),
+        next_message=next_message,
+    )
+
+
+def messages_grouped_by_counterpart(projection) -> tuple[tuple[Message, ...], ...]:
+    groups = {}
+    for message in projection.messages:
+        counterpart = (
+            message.to_player
+            if message.from_player == projection.player_id
+            else message.from_player
+        )
+        groups.setdefault(counterpart, []).append(message)
+    return tuple(tuple(group) for group in groups.values())
 
 
 def raw_proposal_payload(
@@ -836,6 +885,34 @@ async def test_admission_and_finish_make_two_union_observations_and_apply_contex
     assert "favor due" in admission.wake_reasons
     assert acknowledgements[0].status == "applied"
     assert rt.state.messages[-1].text == "working on it"
+
+
+@pytest.mark.asyncio
+async def test_eight_player_shape_has_bounded_projection_and_two_queries_per_turn(
+    tmp_path,
+):
+    gs = CountingObservationGS()
+    rt = ChannelRuntime.open(
+        tmp_path,
+        "r",
+        frozenset(range(8)),
+        ChannelRules(),
+    )
+    seed_maximum_legal_state(rt)
+
+    admission = await rt.admit_player(gs, 4, 90)
+    await rt.finish_player(
+        gs,
+        admission,
+        {"transcript": {"steps": [], "final_summary": ""}},
+    )
+
+    assert gs.observation_calls == 2
+    assert len(admission.projection.messages) == 7 * 10
+    assert all(
+        len(group) <= 10
+        for group in messages_grouped_by_counterpart(admission.projection)
+    )
 
 
 @pytest.mark.asyncio
