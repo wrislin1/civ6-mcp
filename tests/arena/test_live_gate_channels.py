@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from civ_mcp.arena.channel_runtime import ChannelRuntime
-from civ_mcp.arena.channels import DealState, PaymentStatus
+from civ_mcp.arena.channels import DealState, FavorStatus, PaymentStatus
 from civ_mcp.arena.config import (
     ArenaConfig,
     AttentionOptions,
@@ -18,6 +18,7 @@ from civ_mcp.arena.config import (
 from civ_mcp.arena.live_gate import (
     GATE_ACTIVE,
     GATE_FAILED,
+    GATE_PASSED,
     GATE_RESTART_REQUIRED,
     resolve_scenario,
 )
@@ -817,3 +818,161 @@ async def test_resume_config_fingerprint_mismatch_fails(tmp_path):
 
     with pytest.raises(Exception, match="fingerprint"):
         await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+
+
+async def full_run(tmp_path, *, stop_before_round=None):
+    """Drive both invocations of the expected nine-round gate path."""
+
+    gs = GateGameState()
+    driver, runtime, _ = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)  # R1
+    await run_gate_round(driver, runtime, gs, 11)  # R2 -> restart
+    assert driver.pending_signal() == GATE_RESTART_REQUIRED
+
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    driver2 = lgc.ChannelsCoreDriver(cfg)
+    await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+    for offset, turn in enumerate(range(12, 19), start=3):  # R3..R9
+        if stop_before_round is not None and offset >= stop_before_round:
+            break
+        await run_gate_round(driver2, runtime2, gs, turn)
+        if driver2.pending_signal() is not None:
+            break
+    return driver2, runtime2, gs
+
+
+@pytest.mark.asyncio
+async def test_upfront_deal_honored_on_inclusive_deadline(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=5)
+    # R3 settled at turn 12; favor due turn 13 (R4) — honored there, not earlier.
+    deal = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
+    assert deal.state is DealState.HONORED
+    assert deal.favor_status is FavorStatus.SATISFIED
+    assert deal.favor_due_turn == 13
+    assert deal.favor.baseline
+    assert all(
+        value is True
+        for key, value in deal.favor.baseline.items()
+        if key.endswith("baseline_complete")
+    )
+
+
+@pytest.mark.asyncio
+async def test_upfront_not_terminal_before_deadline(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=4)
+    # After R3 (turn 12) the deal must be nonterminal: favor window still open.
+    deal = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
+    assert deal.state is DealState.ACTIVE
+    assert driver.pending_signal() is None
+
+
+@pytest.mark.asyncio
+async def test_existing_routes_are_baseline_exempt(tmp_path):
+    from civ_mcp.arena.channel_terms import ObservedRoute
+
+    gs = GateGameState()
+    # This route predates payment settlement, so the settlement baseline exempts it.
+    gs.routes[2] = (
+        ObservedRoute(
+            owner_id=2,
+            trader_unit_id=77,
+            destination_player=3,
+            destination_is_city_state=False,
+        ),
+    )
+    driver, runtime, _ = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_round(driver, runtime, gs, 11)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    driver2 = lgc.ChannelsCoreDriver(cfg)
+    await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+    await run_gate_round(driver2, runtime2, gs, 12)
+    await run_gate_round(driver2, runtime2, gs, 13)
+    deal = deals(runtime2)[driver2._journal.state.data["upfront_deal_id"]]
+    assert deal.state is DealState.HONORED
+
+
+@pytest.mark.asyncio
+async def test_on_delivery_proposed_accepted_and_treasury_satisfied(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=8)
+    # R5 (turn 14) CLI proposes; R6 (turn 15) API accepts; R7 (turn 16) favor due.
+    deal_id = driver._journal.state.data["on_delivery_deal_id"]
+    deal = deals(runtime)[deal_id]
+    assert deal.proposer == 2 and deal.counterparty == 1
+    assert deal.timing == "on_delivery"
+    assert deal.favor.term_type == "maintain_gold_reserve"
+    assert deal.favor_status is FavorStatus.SATISFIED
+    assert deal.payment_status is PaymentStatus.DUE
+    assert deal.fund_by_turn == 18
+
+
+@pytest.mark.asyncio
+async def test_withholding_does_not_breach_early(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=9)
+    # After R8 (turn 17), before fund_by (18), the deal remains nonterminal.
+    deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
+    assert deal.state is DealState.ACTIVE
+    assert driver.pending_signal() is None
+
+
+@pytest.mark.asyncio
+async def test_full_run_breaches_grieves_and_passes(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path)
+    assert driver.pending_signal() == GATE_PASSED
+
+    state = runtime.state
+    on_delivery = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
+    assert on_delivery.state is DealState.BROKEN
+    assert on_delivery.payment_status is PaymentStatus.FAILED
+
+    assert len(state.grievances) == 1
+    grievance = state.grievances[0]
+    assert grievance.offender == 2
+    assert grievance.wronged == 1
+    assert grievance.deal_id == on_delivery.id
+
+    upfront = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
+    assert upfront.state is DealState.HONORED
+    assert upfront.payment_status is PaymentStatus.SETTLED
+
+    gate_state = driver._journal.state
+    assert gate_state.status == GATE_PASSED
+    result = json.loads(driver._journal.result_path.read_text())
+    assert result["status"] == GATE_PASSED
+
+
+@pytest.mark.asyncio
+async def test_premature_terminal_state_fails_gate(tmp_path):
+    gs = GateGameState()
+    driver, runtime, _ = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_round(driver, runtime, gs, 11)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    driver2 = lgc.ChannelsCoreDriver(cfg)
+    await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+    await run_gate_round(driver2, runtime2, gs, 12)
+    # A new route after settlement violates the continuous term on the due turn.
+    from civ_mcp.arena.channel_terms import ObservedRoute
+
+    gs.routes[2] = (
+        ObservedRoute(
+            owner_id=2,
+            trader_unit_id=99,
+            destination_player=3,
+            destination_is_city_state=False,
+        ),
+    )
+    await run_gate_round(driver2, runtime2, gs, 13)
+    assert driver2.pending_signal() == GATE_FAILED

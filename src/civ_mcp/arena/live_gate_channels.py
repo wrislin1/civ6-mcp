@@ -647,7 +647,7 @@ class ChannelsCoreDriver:
         return None
 
     def _advance_after_capture(self, player_id, turn) -> None:
-        from civ_mcp.arena.channels import DealState, PaymentStatus
+        from civ_mcp.arena.channels import DealState, FavorStatus, PaymentStatus
 
         state = self._journal.state
         phase = state.phase
@@ -741,12 +741,226 @@ class ChannelsCoreDriver:
                 "phase_advanced",
                 {"phase": PHASE_RESTART_REQUIRED, "turn": turn},
             )
+        elif phase == PHASE_ACCEPT_UPFRONT_PAYMENT and role == ROLE_CLI:
+            deal = self._deal(state.data["upfront_deal_id"])
+            if deal is None:
+                return
+            if deal.payment_status is not PaymentStatus.SETTLED:
+                self._fail(
+                    f"up-front payment not settled: {deal.payment_status}"
+                )
+                return
+            baseline = deal.favor.baseline
+            if not baseline or any(
+                key.endswith("baseline_complete") and value is not True
+                for key, value in baseline.items()
+            ):
+                self._fail("up-front favor baseline is missing or incomplete")
+                return
+            self._journal.append(
+                "data_recorded",
+                {"data": {"upfront_favor_due_turn": deal.favor_due_turn}},
+            )
+            self._journal.append(
+                "phase_advanced",
+                {
+                    "phase": PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,
+                    "turn": turn,
+                },
+            )
+        elif phase == PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE:
+            deal = self._deal(state.data["upfront_deal_id"])
+            if deal is None:
+                return
+            due = state.data.get("upfront_favor_due_turn")
+            if turn < due:
+                if deal.is_terminal:
+                    self._fail(
+                        f"up-front deal terminal ({deal.state}) before its "
+                        f"inclusive deadline turn {due}"
+                    )
+                return
+            if deal.state is DealState.HONORED:
+                self._journal.append(
+                    "phase_advanced",
+                    {"phase": PHASE_VERIFY_UPFRONT_HONORED, "turn": turn},
+                )
+                self._advance_after_capture(player_id, turn)
+            elif turn > due or deal.is_terminal:
+                self._fail(
+                    f"up-front deal is {deal.state}/{deal.favor_status} after "
+                    f"its inclusive deadline turn {due}"
+                )
+        elif phase == PHASE_VERIFY_UPFRONT_HONORED:
+            deal = self._deal(state.data["upfront_deal_id"])
+            if deal is None:
+                return
+            if (
+                deal.state is not DealState.HONORED
+                or deal.favor_status is not FavorStatus.SATISFIED
+            ):
+                self._fail(
+                    f"up-front deal not honored: "
+                    f"{deal.state}/{deal.favor_status}"
+                )
+                return
+            self._journal.append(
+                "phase_advanced",
+                {"phase": PHASE_PROPOSE_ON_DELIVERY, "turn": turn},
+            )
+        elif phase == PHASE_PROPOSE_ON_DELIVERY and role == ROLE_CLI:
+            acknowledgements = {
+                acknowledgement.source_id: acknowledgement
+                for acknowledgement in self._runtime.state.acknowledgements
+            }
+            new_ids = [
+                acknowledgements[entry["source_id"]].deal_id
+                for entry in state.verified_actions
+                if entry["source_id"].startswith("cli:")
+                and acknowledgements[entry["source_id"]].deal_id
+                and acknowledgements[entry["source_id"]].deal_id
+                != state.data["upfront_deal_id"]
+            ]
+            if len(new_ids) != 1:
+                self._fail(
+                    "expected exactly one captured on-delivery deal id, got "
+                    f"{new_ids}"
+                )
+                return
+            self._journal.append(
+                "data_recorded", {"data": {"on_delivery_deal_id": new_ids[0]}}
+            )
+            self._journal.append(
+                "phase_advanced",
+                {"phase": PHASE_ACCEPT_ON_DELIVERY, "turn": turn},
+            )
+        elif phase == PHASE_ACCEPT_ON_DELIVERY and role == ROLE_API:
+            deal = self._deal(state.data["on_delivery_deal_id"])
+            if deal is None:
+                return
+            if deal.state is not DealState.ACTIVE:
+                self._fail(
+                    f"on-delivery deal not active after acceptance: {deal.state}"
+                )
+                return
+            baseline = deal.favor.baseline
+            if not baseline or any(
+                key.endswith("baseline_complete") and value is not True
+                for key, value in baseline.items()
+            ):
+                self._fail(
+                    "on-delivery treasury baseline is missing or incomplete"
+                )
+                return
+            self._journal.append(
+                "data_recorded",
+                {"data": {"on_delivery_favor_due_turn": deal.favor_due_turn}},
+            )
+            self._journal.append(
+                "phase_advanced",
+                {"phase": PHASE_AWAIT_ON_DELIVERY_FAVOR, "turn": turn},
+            )
+        elif phase == PHASE_AWAIT_ON_DELIVERY_FAVOR:
+            deal = self._deal(state.data["on_delivery_deal_id"])
+            if deal is None:
+                return
+            due = state.data.get("on_delivery_favor_due_turn")
+            if turn < due:
+                if deal.is_terminal:
+                    self._fail(
+                        f"on-delivery deal terminal early: {deal.state}"
+                    )
+                return
+            if (
+                deal.favor_status is FavorStatus.SATISFIED
+                and deal.payment_status is PaymentStatus.DUE
+            ):
+                self._journal.append(
+                    "data_recorded",
+                    {"data": {"on_delivery_fund_by_turn": deal.fund_by_turn}},
+                )
+                self._journal.append(
+                    "phase_advanced",
+                    {
+                        "phase": PHASE_WITHHOLD_ON_DELIVERY_FUNDING,
+                        "turn": turn,
+                    },
+                )
+            elif turn > due or deal.is_terminal:
+                self._fail(
+                    f"on-delivery favor is {deal.favor_status} after its "
+                    f"inclusive deadline turn {due}"
+                )
+        elif phase == PHASE_WITHHOLD_ON_DELIVERY_FUNDING:
+            deal = self._deal(state.data["on_delivery_deal_id"])
+            if deal is None:
+                return
+            fund_by = state.data.get("on_delivery_fund_by_turn")
+            if turn < fund_by:
+                if deal.is_terminal:
+                    self._fail(
+                        f"on-delivery deal terminal ({deal.state}) before the "
+                        f"inclusive funding deadline turn {fund_by}"
+                    )
+                return
+            if role != ROLE_CLI and deal.state is DealState.ACTIVE:
+                return
+            if deal.state is DealState.BROKEN:
+                self._journal.append(
+                    "phase_advanced",
+                    {"phase": PHASE_VERIFY_FUNDING_BREACH, "turn": turn},
+                )
+                self._advance_after_capture(player_id, turn)
+            elif turn > fund_by:
+                self._fail(
+                    f"on-delivery deal is {deal.state} after its inclusive "
+                    f"funding deadline turn {fund_by}"
+                )
+        elif phase == PHASE_VERIFY_FUNDING_BREACH:
+            deal = self._deal(state.data["on_delivery_deal_id"])
+            if deal is None:
+                return
+            if (
+                deal.state is not DealState.BROKEN
+                or deal.payment_status is not PaymentStatus.FAILED
+            ):
+                self._fail(
+                    f"breach not canonical: {deal.state}/{deal.payment_status}"
+                )
+                return
+            grievances = [
+                grievance
+                for grievance in self._runtime.state.grievances
+                if grievance.deal_id == deal.id
+            ]
+            if len(grievances) != 1:
+                self._fail(
+                    "expected exactly one deterministic grievance, got "
+                    f"{len(grievances)}"
+                )
+                return
+            grievance = grievances[0]
+            if (
+                grievance.offender != deal.proposer
+                or grievance.wronged != deal.counterparty
+            ):
+                self._fail(
+                    f"grievance mapping wrong: offender {grievance.offender} "
+                    f"wronged {grievance.wronged}; expected proposer "
+                    f"{deal.proposer} offender / counterparty "
+                    f"{deal.counterparty} wronged"
+                )
+                return
+            self._journal.append(
+                "phase_advanced",
+                {"phase": PHASE_VERIFY_TERMINAL_GATE, "turn": turn},
+            )
 
     def _round_complete(self, turn: int) -> bool:
         return self._captured_this_turn.get(turn, set()) >= self.gate_pids
 
     async def _maybe_finish_round(self, turn: int) -> None:
-        """Run restart work only after every gate seat finished the round."""
+        """Run round-boundary restart or terminal verification work."""
 
         if not self._round_complete(turn):
             return
@@ -755,6 +969,69 @@ class ChannelsCoreDriver:
             and self._journal.state.phase == PHASE_RESTART_REQUIRED
         ):
             await self._request_restart(turn)
+        if self._journal.state.phase == PHASE_VERIFY_TERMINAL_GATE:
+            self._verify_terminal_evidence(turn)
+
+    def _verify_terminal_evidence(self, turn: int) -> None:
+        from civ_mcp.arena.channels import DealState, PaymentStatus
+
+        state = self._journal.state
+        channel_state = self._runtime.state
+        by_id = {deal.id: deal for deal in channel_state.deals}
+        upfront = by_id.get(state.data.get("upfront_deal_id"))
+        broken = by_id.get(state.data.get("on_delivery_deal_id"))
+        checks = (
+            (
+                upfront is not None and upfront.state is DealState.HONORED,
+                "an honored deal",
+            ),
+            (
+                upfront is not None
+                and upfront.payment_status is PaymentStatus.SETTLED,
+                "a settled payment",
+            ),
+            (
+                broken is not None and broken.state is DealState.BROKEN,
+                "a broken deal",
+            ),
+            (bool(channel_state.grievances), "a deterministic grievance"),
+        )
+        for ok, label in checks:
+            if not ok:
+                self._fail(f"terminal evidence missing: {label}")
+                return
+        if upfront is None or broken is None:
+            self._fail("terminal evidence deal lookup failed")
+            return
+        for pid in (self.role_pid[ROLE_API], self.role_pid[ROLE_CLI]):
+            projection = self._runtime.project_for_player(pid, turn)
+            if not any(
+                message.text == self.canary for message in projection.messages
+            ):
+                self._fail(
+                    f"canary absent from authorized player {pid} projection — "
+                    "the canary was not actually exercised"
+                )
+                return
+        if any(
+            assertion.get("result") == "FAIL"
+            for assertion in state.privacy_assertions
+        ):
+            self._fail("a privacy assertion failed")
+            return
+        self._journal.append(
+            "gate_passed",
+            {
+                "evidence": {
+                    "honored_deal": upfront.id,
+                    "broken_deal": broken.id,
+                    "grievances": len(channel_state.grievances),
+                    "privacy_assertions": len(state.privacy_assertions),
+                }
+            },
+        )
+        self._journal.write_result()
+        self._signal = GATE_PASSED
 
     async def _request_restart(self, turn: int) -> None:
         api = self.role_pid[ROLE_API]
