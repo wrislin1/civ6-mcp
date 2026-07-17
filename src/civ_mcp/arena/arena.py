@@ -1,6 +1,7 @@
 # src/civ_mcp/arena/arena.py
 from __future__ import annotations
 import argparse, asyncio, json, os, shutil
+from collections.abc import Mapping
 from dataclasses import replace
 from civ_mcp.connection import GameConnection
 from civ_mcp.game_state import GameState
@@ -178,6 +179,113 @@ def resolve_config(args) -> ArenaConfig:
     validate_arena_config(cfg)
     return cfg
 
+
+def _failed_gate_summary(run_id, reason):
+    safe_run_id = run_id if isinstance(run_id, str) and run_id else "unknown"
+    return {
+        "status": "failed",
+        "phase": "arena_result_validation",
+        "reason": reason,
+        "restart_count": 0,
+        "run_id": safe_run_id,
+    }
+
+
+_GATE_SUMMARY_FIELDS = (
+    "status",
+    "phase",
+    "reason",
+    "restart_count",
+    "run_id",
+)
+
+
+def _normalize_gate_summary(value, *, run_id=None, reason):
+    failure_run_id = run_id
+    if failure_run_id is None and isinstance(value, Mapping):
+        try:
+            candidate_run_id = value.get("run_id")
+        except Exception:
+            candidate_run_id = None
+        if isinstance(candidate_run_id, str) and candidate_run_id:
+            failure_run_id = candidate_run_id
+    if not isinstance(value, Mapping):
+        return _failed_gate_summary(failure_run_id, reason), False
+    try:
+        raw_summary = dict(value)
+    except Exception:
+        return _failed_gate_summary(failure_run_id, reason), False
+    if set(raw_summary) != set(_GATE_SUMMARY_FIELDS):
+        return _failed_gate_summary(failure_run_id, reason), False
+    if not all(
+        isinstance(raw_summary[field], str)
+        for field in ("status", "phase", "reason")
+    ):
+        return _failed_gate_summary(failure_run_id, reason), False
+    restart_count = raw_summary["restart_count"]
+    if type(restart_count) is not int or restart_count < 0:
+        return _failed_gate_summary(failure_run_id, reason), False
+    summary_run_id = raw_summary["run_id"]
+    if not isinstance(summary_run_id, str) or not summary_run_id:
+        return _failed_gate_summary(failure_run_id, reason), False
+    summary = {field: raw_summary[field] for field in _GATE_SUMMARY_FIELDS}
+    return summary, True
+
+
+def _enabled_gate_result(result, run_id):
+    if not isinstance(result, Mapping):
+        gate = _failed_gate_summary(
+            run_id,
+            "coordinator returned a non-mapping result for enabled live_gate",
+        )
+        return gate, {"live_gate": gate}
+    try:
+        if "live_gate" not in result:
+            gate = _failed_gate_summary(
+                run_id,
+                "coordinator result omitted live_gate summary",
+            )
+            return gate, {"live_gate": gate}
+        raw_gate = result["live_gate"]
+        output_result = result if isinstance(result, dict) else dict(result)
+    except Exception:
+        gate = _failed_gate_summary(
+            run_id,
+            "coordinator returned an invalid live_gate summary",
+        )
+        return gate, {"live_gate": gate}
+    gate, valid = _normalize_gate_summary(
+        raw_gate,
+        run_id=run_id,
+        reason="coordinator returned an invalid live_gate summary",
+    )
+    if not valid:
+        return gate, {"live_gate": gate}
+    if output_result.get("live_gate") is not gate:
+        output_result = dict(output_result)
+        output_result["live_gate"] = gate
+    try:
+        json.dumps(
+            output_result,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError, OverflowError):
+        gate = _failed_gate_summary(
+            run_id,
+            "coordinator returned a non-JSON result for enabled live_gate",
+        )
+        return gate, {"live_gate": gate}
+    except Exception:
+        gate = _failed_gate_summary(
+            run_id,
+            "coordinator returned a non-JSON result for enabled live_gate",
+        )
+        return gate, {"live_gate": gate}
+    return gate, output_result
+
+
 async def _run(args):
     from pathlib import Path
     from civ_mcp.run_id import generate_run_id
@@ -242,13 +350,22 @@ async def _run(args):
         transcript=transcript,
         live_gate_driver=live_gate_driver,
     )
-    print(json.dumps({"result": result, "cost": cost.summary()}, indent=2))
-    return result.get("live_gate") if isinstance(result, dict) else None
+    if live_gate_driver is None:
+        gate = None
+        output_result = result
+    else:
+        gate, output_result = _enabled_gate_result(result, cfg.run_id)
+    print(json.dumps({"result": output_result, "cost": cost.summary()}, indent=2))
+    return gate
 
 def main():
     gate = asyncio.run(_run(build_args()))
     if gate is None:
         return
+    gate, _valid = _normalize_gate_summary(
+        gate,
+        reason="arena returned an invalid live_gate summary",
+    )
     print("LIVE_GATE " + json.dumps(gate, sort_keys=True, separators=(",", ":")))
     status = gate.get("status")
     if status == "restart_required":

@@ -718,6 +718,117 @@ def test_main_gate_passed_exits_zero(monkeypatch, capsys):
     assert json.loads(lines[0][len("LIVE_GATE ") :]) == gate
 
 
+@pytest.mark.parametrize(
+    ("coordinator_result", "expected_reason"),
+    [
+        (
+            "PRIVATE_COORDINATOR_VALUE",
+            "coordinator returned a non-mapping result for enabled live_gate",
+        ),
+        (
+            {"log": []},
+            "coordinator result omitted live_gate summary",
+        ),
+        (
+            {"live_gate": None},
+            "coordinator returned an invalid live_gate summary",
+        ),
+        (
+            {"live_gate": ["PRIVATE_GATE_VALUE"]},
+            "coordinator returned an invalid live_gate summary",
+        ),
+    ],
+)
+def test_enabled_gate_malformed_coordinator_result_fails_closed(
+    monkeypatch,
+    tmp_path,
+    stub_gate,
+    capsys,
+    coordinator_result,
+    expected_reason,
+):
+    async def fake_run_arena(*args, **kwargs):
+        return coordinator_result
+
+    class FakeConn:
+        async def connect(self):
+            pass
+
+    args = arena_module.build_args(
+        ["--transcript-dir", str(tmp_path / "runs")]
+    )
+    monkeypatch.setattr(arena_module, "run_arena", fake_run_arena)
+    monkeypatch.setattr(arena_module, "GameConnection", FakeConn)
+    monkeypatch.setattr(arena_module, "resolve_config", lambda parsed: _gate_cfg())
+    monkeypatch.setattr(arena_module, "build_args", lambda argv=None: args)
+
+    with pytest.raises(SystemExit) as exc_info:
+        arena_module.main()
+
+    assert exc_info.value.code == 1
+    output = capsys.readouterr().out
+    lines = [line for line in output.splitlines() if line.startswith("LIVE_GATE ")]
+    assert len(lines) == 1
+    summary = json.loads(lines[0][len("LIVE_GATE ") :])
+    assert summary == {
+        "phase": "arena_result_validation",
+        "reason": expected_reason,
+        "restart_count": 0,
+        "run_id": "run-gate",
+        "status": "failed",
+    }
+    assert "PRIVATE_COORDINATOR_VALUE" not in output
+    assert "PRIVATE_GATE_VALUE" not in output
+
+
+def test_main_non_mapping_gate_outcome_fails_closed(monkeypatch, capsys):
+    async def fake_run(args):
+        return ["PRIVATE_MAIN_VALUE"]
+
+    monkeypatch.setattr(arena_module, "_run", fake_run)
+    monkeypatch.setattr(arena_module, "build_args", lambda argv=None: object())
+
+    with pytest.raises(SystemExit) as exc_info:
+        arena_module.main()
+
+    assert exc_info.value.code == 1
+    output = capsys.readouterr().out
+    lines = [line for line in output.splitlines() if line.startswith("LIVE_GATE ")]
+    assert len(lines) == 1
+    assert json.loads(lines[0][len("LIVE_GATE ") :]) == {
+        "phase": "arena_result_validation",
+        "reason": "arena returned an invalid live_gate summary",
+        "restart_count": 0,
+        "run_id": "unknown",
+        "status": "failed",
+    }
+    assert "PRIVATE_MAIN_VALUE" not in output
+
+
+def test_main_malformed_mapping_gate_outcome_fails_closed(monkeypatch, capsys):
+    async def fake_run(args):
+        return {"private_marker": "PRIVATE_MAPPING_VALUE"}
+
+    monkeypatch.setattr(arena_module, "_run", fake_run)
+    monkeypatch.setattr(arena_module, "build_args", lambda argv=None: object())
+
+    with pytest.raises(SystemExit) as exc_info:
+        arena_module.main()
+
+    assert exc_info.value.code == 1
+    output = capsys.readouterr().out
+    lines = [line for line in output.splitlines() if line.startswith("LIVE_GATE ")]
+    assert len(lines) == 1
+    assert json.loads(lines[0][len("LIVE_GATE ") :]) == {
+        "phase": "arena_result_validation",
+        "reason": "arena returned an invalid live_gate summary",
+        "restart_count": 0,
+        "run_id": "unknown",
+        "status": "failed",
+    }
+    assert "PRIVATE_MAPPING_VALUE" not in output
+
+
 def test_main_without_gate_prints_no_gate_line(monkeypatch, capsys):
     async def fake_run(args):
         return None
