@@ -537,6 +537,41 @@ async def test_pending_applied_acknowledgements_recover_and_advance(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_recovery_rejects_unexpected_ack_after_expected_actions_applied(
+    tmp_path,
+):
+    cfg = gate_config()
+    driver, runtime, gs = await attached_driver(tmp_path, cfg=cfg)
+    gs.active_player = 1
+    admission = await runtime.admit_player(gs, 1, 10)
+    driver.note_admission(1, 10, admission, "")
+    result = await driver.policy_for(1)(gs, 1, 10)
+    admission.context.dispatch(
+        "send_message", {"to_player": 3, "text": "rogue recovery action"}
+    )
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    assert [acknowledgement.status for acknowledgement in acknowledgements] == [
+        "applied",
+        "applied",
+        "applied",
+    ]
+    rogue = acknowledgements[-1]
+    assert rogue.source_id.startswith(f"api:{cfg.run_id}:1:10:2:")
+    assert len(driver._journal.state.pending_actions) == 2
+
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime, run_dir=driver._run_dir)
+    gs.active_player = 2
+    next_admission = await runtime.admit_player(gs, 2, 10)
+    resumed.note_admission(2, 10, next_admission, "")
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert "unexpected" in resumed._journal.state.reason
+    assert rogue.source_id in resumed._journal.state.reason
+    assert resumed._journal.result_path.exists()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("resume_player,resume_turn", [(1, 11), (2, 10)])
 async def test_pending_actions_fail_closed_if_source_identity_cannot_recur(
     tmp_path, resume_player, resume_turn

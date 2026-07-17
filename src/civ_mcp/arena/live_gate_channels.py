@@ -723,6 +723,10 @@ class ChannelsCoreDriver:
                 return
         if not missing:
             for recovered_player, recovered_turn in sorted(recovered_captures):
+                if not self._check_no_unexpected_acknowledgements(
+                    recovered_player, recovered_turn
+                ):
+                    return
                 self._advance_after_capture(recovered_player, recovered_turn)
                 if self._signal is not None:
                     return
