@@ -2,8 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from civ_mcp.arena.config import ChannelRules, CivOptions, MemoryOptions, TaskTrackerOptions
+from civ_mcp.arena import live_gate as live_gate_module
+from civ_mcp.arena.config import (
+    ChannelRules,
+    CivOptions,
+    LiveGateOptions,
+    MemoryOptions,
+    TaskTrackerOptions,
+)
 from civ_mcp.arena.experiment import load_experiment
+from civ_mcp.arena.live_gate import ScenarioMeta
 from civ_mcp.arena.registry import resolve_tools
 
 
@@ -1206,4 +1214,133 @@ def test_rejects_channel_grievance_threshold_outside_supported_bound(tmp_path, v
         "civs:\n  - {player: 1, provider: local, model: m}\n"
     )
     with pytest.raises(ValueError, match="prompt_grievance_threshold"):
+        load_experiment(path)
+
+
+GATE_CIVS = """
+civs:
+  - player: 1
+    provider: local
+    model: m
+    channels: {enabled: true}
+  - player: 2
+    provider: cli-codex
+    channels: {enabled: true}
+  - player: 3
+    provider: scripted
+    channels: {enabled: true}
+"""
+
+
+def _write_gate_yaml(tmp_path, live_gate_block, *, run_id="run-gate"):
+    text = (
+        f"run_id: {run_id}\n"
+        "max_puppet_turns: 36\n"
+        "max_game_turns: 36\n"
+        f"{live_gate_block}\n"
+        f"{GATE_CIVS}"
+    )
+    path = tmp_path / "gate.yaml"
+    path.write_text(text)
+    return path
+
+
+@pytest.fixture
+def registered_gate(monkeypatch):
+    meta = ScenarioMeta(
+        name="fake_gate_v1",
+        revision=1,
+        role_contracts=(
+            ("api_actor", "in_process"),
+            ("cli_actor", "cli"),
+            ("privacy_observer", "scripted"),
+        ),
+        minimum_captures=lambda config: 27,
+        create_driver=lambda config: object(),
+    )
+    monkeypatch.setattr(live_gate_module, "_SCENARIOS", {meta.name: meta})
+    return meta
+
+
+def test_live_gate_block_parses_and_validates(tmp_path, registered_gate):
+    path = _write_gate_yaml(tmp_path, (
+        "live_gate:\n"
+        "  enabled: true\n"
+        "  scenario: fake_gate_v1\n"
+        "  roles:\n"
+        "    api_actor: 1\n"
+        "    cli_actor: 2\n"
+        "    privacy_observer: 3\n"
+    ))
+    cfg = load_experiment(path)
+    assert cfg.live_gate == LiveGateOptions(
+        enabled=True,
+        scenario="fake_gate_v1",
+        roles=(("api_actor", 1), ("cli_actor", 2), ("privacy_observer", 3)),
+    )
+
+
+def test_live_gate_absent_defaults_disabled(tmp_path):
+    path = _write_gate_yaml(tmp_path, "")
+    cfg = load_experiment(path)
+    assert cfg.live_gate == LiveGateOptions()
+
+
+def test_live_gate_requires_exact_boolean_enabled(tmp_path):
+    path = _write_gate_yaml(tmp_path, "live_gate:\n  enabled: yes\n")
+    with pytest.raises(ValueError, match="enabled must be a boolean"):
+        load_experiment(path)
+    path = _write_gate_yaml(tmp_path, "live_gate:\n  scenario: fake_gate_v1\n")
+    with pytest.raises(ValueError, match="enabled is required"):
+        load_experiment(path)
+
+
+def test_live_gate_disabled_cannot_carry_scenario_or_roles(tmp_path):
+    path = _write_gate_yaml(tmp_path, (
+        "live_gate:\n"
+        "  enabled: false\n"
+        "  scenario: fake_gate_v1\n"
+    ))
+    with pytest.raises(ValueError, match="disabled live_gate"):
+        load_experiment(path)
+
+
+def test_live_gate_unknown_key_rejected(tmp_path):
+    path = _write_gate_yaml(tmp_path, (
+        "live_gate:\n"
+        "  enabled: true\n"
+        "  scenario: fake_gate_v1\n"
+        "  roles: {api_actor: 1, cli_actor: 2, privacy_observer: 3}\n"
+        "  surprise: 1\n"
+    ))
+    with pytest.raises(ValueError, match="unknown key"):
+        load_experiment(path)
+
+
+def test_live_gate_roles_must_be_string_to_int_mapping(tmp_path, registered_gate):
+    path = _write_gate_yaml(tmp_path, (
+        "live_gate:\n"
+        "  enabled: true\n"
+        "  scenario: fake_gate_v1\n"
+        "  roles: {api_actor: one, cli_actor: 2, privacy_observer: 3}\n"
+    ))
+    with pytest.raises(ValueError, match="must be an integer"):
+        load_experiment(path)
+    path = _write_gate_yaml(tmp_path, (
+        "live_gate:\n"
+        "  enabled: true\n"
+        "  scenario: fake_gate_v1\n"
+        "  roles: {}\n"
+    ))
+    with pytest.raises(ValueError, match="non-empty mapping"):
+        load_experiment(path)
+
+
+def test_live_gate_enabled_requires_scenario(tmp_path):
+    path = _write_gate_yaml(tmp_path, (
+        "live_gate:\n"
+        "  enabled: true\n"
+        "  roles: {api_actor: 1, cli_actor: 2, privacy_observer: 3}\n"
+    ))
+    with pytest.raises(ValueError, match="requires a scenario"):
         load_experiment(path)

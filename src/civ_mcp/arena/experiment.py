@@ -17,6 +17,7 @@ from civ_mcp.arena.config import (
     ChannelOptions,
     ChannelRules,
     CivOptions,
+    LiveGateOptions,
     MemoryOptions,
     PlayerSpec,
     TaskTrackerOptions,
@@ -44,7 +45,7 @@ _CIV_KEYS = {"player", "provider", "model", "gateway", *_LOCAL_KNOBS, *_SHARED_K
 _TOP_KEYS = {
     "run_id", "max_puppet_turns", "idle_poll_limit", "gateway_url",
     "max_game_turns", "seat0_drain_poll_limit",
-    "seat0_human_pending_poll_limit", "channel_rules", "civs",
+    "seat0_human_pending_poll_limit", "channel_rules", "live_gate", "civs",
 }
 _BRIEFING_DEFAULTS = BriefingOptions()
 _MEMORY_DEFAULTS = MemoryOptions()
@@ -52,6 +53,7 @@ _TASK_TRACKER_DEFAULTS = TaskTrackerOptions()
 _ATTENTION_DEFAULTS = AttentionOptions()
 _CHANNEL_DEFAULTS = ChannelOptions()
 _CHANNEL_RULE_DEFAULTS = ChannelRules()
+_LIVE_GATE_DEFAULTS = LiveGateOptions()
 _CIV_DEFAULTS = CivOptions()
 _ARENA_DEFAULTS = ArenaConfig(players=[])
 
@@ -312,6 +314,33 @@ def _parse_channel_rules(raw: object) -> ChannelRules:
     return ChannelRules(**values)
 
 
+def _parse_live_gate(raw: object) -> LiveGateOptions:
+    if not isinstance(raw, dict):
+        raise _err("live_gate", f"must be a mapping, got {raw!r}")
+    _validate_mapping_keys("live_gate", raw, {"enabled", "scenario", "roles"})
+    if "enabled" not in raw:
+        raise _err("live_gate", "enabled is required")
+    enabled = raw["enabled"]
+    if not isinstance(enabled, bool):
+        raise _err("live_gate", f"enabled must be a boolean, got {enabled!r}")
+    if not enabled:
+        if "scenario" in raw or "roles" in raw:
+            raise _err("live_gate", "disabled live_gate cannot carry scenario or roles")
+        return LiveGateOptions()
+    if "scenario" not in raw:
+        raise _err("live_gate", "enabled live_gate requires a scenario")
+    scenario = _non_blank_string("live_gate", "scenario", raw["scenario"])
+    roles_raw = raw.get("roles")
+    if not isinstance(roles_raw, dict) or not roles_raw:
+        raise _err("live_gate", f"roles must be a non-empty mapping, got {roles_raw!r}")
+    roles: list[tuple[str, int]] = []
+    for name, pid in roles_raw.items():
+        if not isinstance(name, str) or not name.strip():
+            raise _err("live_gate", f"role names must be non-empty strings, got {name!r}")
+        roles.append((name, _int("live_gate", f"roles.{name}", pid)))
+    return LiveGateOptions(enabled=True, scenario=scenario, roles=tuple(sorted(roles)))
+
+
 def _parse_tools(civ_label: str, raw: object) -> str | tuple[str, ...]:
     if isinstance(raw, str):
         selector: str | tuple[str, ...] = raw
@@ -457,6 +486,11 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
             arena_defaults.channel_rules
             if "channel_rules" not in data
             else _parse_channel_rules(data["channel_rules"])
+        ),
+        live_gate=(
+            _LIVE_GATE_DEFAULTS
+            if "live_gate" not in data
+            else _parse_live_gate(data["live_gate"])
         ),
         max_puppet_turns=_top_int(
             config_path,
