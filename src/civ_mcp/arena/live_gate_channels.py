@@ -11,10 +11,13 @@ ledger, and never injects evidence.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
+from civ_mcp.arena.channel_runtime import ChannelAdmission
 from civ_mcp.arena.channel_terms import ObservationFamily, ObservationRequest
 from civ_mcp.arena.live_gate import (
     GATE_FAILED,
@@ -24,7 +27,9 @@ from civ_mcp.arena.live_gate import (
     ScenarioMeta,
     register_scenario,
 )
+from civ_mcp.arena.prompting import build_opening_prompt
 from civ_mcp.arena.scripted_policy import ScriptedPolicy
+from civ_mcp.arena.transcript import serialize_transcript_record
 
 SCENARIO_NAME = "unofficial_channels_core_v1"
 SCENARIO_REVISION = 1
@@ -179,8 +184,9 @@ class ChannelsCoreDriver:
             for spec in config.players
             if spec.player_id in self.gate_pids
         }
-        self._admissions: dict[tuple[int, int], object] = {}
+        self._admissions: dict[tuple[int, int], ChannelAdmission] = {}
         self._captured_this_turn: dict[int, set[int]] = {}
+        self._observer_captures: dict[int, tuple[ChannelAdmission, dict]] = {}
         self._restart_armed = False
 
     async def attach(self, *, gs, channel_runtime, run_dir) -> None:
@@ -244,6 +250,230 @@ class ChannelsCoreDriver:
             "restart_count": state.restart_count,
             "run_id": state.run_id,
         }
+
+    def inspect_pending_transcript_record(
+        self, player_id: int, turn: int, record: dict
+    ) -> bool:
+        """Inspect the exact observer record immediately before persistence.
+
+        The coordinator calls this hook with the same record object it will
+        pass to ``TranscriptSink.write``. A false result means the write must
+        be skipped.
+        """
+
+        if self._signal is not None:
+            return False
+        if player_id != self.role_pid[ROLE_OBSERVER]:
+            return True
+        capture = self._observer_captures.pop(turn, None)
+        if capture is None:
+            self._fail(
+                f"observer pending transcript hook lacked capture at turn {turn}"
+            )
+            return False
+        if record.get("player_id") != player_id or record.get("turn") != turn:
+            self._fail(f"observer pending transcript identity mismatch at turn {turn}")
+            return False
+        admission, policy_result = capture
+        try:
+            self._observer_assertions(admission, policy_result, record, turn)
+        except Exception:
+            self._fail(f"observer privacy inspection failed at turn {turn}")
+        return self._signal is None
+
+    @staticmethod
+    def _jsonable(value):
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            return {
+                field.name: ChannelsCoreDriver._jsonable(getattr(value, field.name))
+                for field in dataclasses.fields(value)
+            }
+        if isinstance(value, Mapping):
+            return {
+                str(key): ChannelsCoreDriver._jsonable(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (tuple, list)):
+            return [ChannelsCoreDriver._jsonable(item) for item in value]
+        if isinstance(value, (frozenset, set)):
+            return sorted(
+                (ChannelsCoreDriver._jsonable(item) for item in value), key=str
+            )
+        return str(value)
+
+    @classmethod
+    def _json_text(cls, value, *, compact: bool = False) -> str:
+        kwargs = {"sort_keys": True, "default": cls._jsonable}
+        if compact:
+            kwargs["separators"] = (",", ":")
+        return json.dumps(value, **kwargs)
+
+    def _forbidden_values(self) -> tuple[str, ...]:
+        """Private raw-text values forbidden from every observer artifact."""
+
+        journal = self._journal
+        assert journal is not None
+        data = journal.state.data
+        values = [
+            self.canary,
+            self.canary.removeprefix("GATE-CANARY-"),
+            UPFRONT_PROPOSAL_TEXT,
+            ON_DELIVERY_PROPOSAL_TEXT,
+            f"api:{self.config.run_id}:{self.role_pid[ROLE_API]}:",
+            f"cli:{self.config.run_id}:{self.role_pid[ROLE_CLI]}:",
+        ]
+        fingerprint = data.get("upfront_payment_fingerprint")
+        if fingerprint:
+            values.extend(
+                (
+                    self._json_text(fingerprint),
+                    self._json_text(fingerprint, compact=True),
+                )
+            )
+        return tuple(dict.fromkeys(value for value in values if value))
+
+    @classmethod
+    def _contains_mapping(cls, value, target: Mapping) -> bool:
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            value = cls._jsonable(value)
+        if isinstance(value, Mapping):
+            if cls._json_text(value, compact=True) == cls._json_text(
+                target, compact=True
+            ):
+                return True
+            return any(cls._contains_mapping(item, target) for item in value.values())
+        if isinstance(value, (tuple, list, frozenset, set)):
+            return any(cls._contains_mapping(item, target) for item in value)
+        return False
+
+    def _player3_transcript_artifact(self) -> tuple[str, tuple[dict, ...]]:
+        run_dir = self._run_dir
+        assert run_dir is not None
+        path = run_dir / "transcript.jsonl"
+        if not path.exists():
+            return "", ()
+        observer = self.role_pid[ROLE_OBSERVER]
+        lines = []
+        records = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError("invalid persisted transcript JSONL") from exc
+            if isinstance(record, dict) and record.get("player_id") == observer:
+                lines.append(line)
+                records.append(record)
+        return "\n".join(lines), tuple(records)
+
+    def _observer_assertions(
+        self, admission, policy_result: dict, pending_record: dict, turn: int
+    ) -> None:
+        observer = self.role_pid[ROLE_OBSERVER]
+        projection = admission.projection
+        pending_text = serialize_transcript_record(pending_record)
+        journal = self._journal
+        assert journal is not None
+        transcript_text, transcript_records = self._player3_transcript_artifact()
+        artifacts = (
+            ("projection", self._json_text(projection), projection),
+            ("channel_block", admission.block, None),
+            (
+                "opening_prompt",
+                build_opening_prompt(
+                    player_id=observer,
+                    turn=turn,
+                    channel_block=admission.block,
+                ),
+                None,
+            ),
+            (
+                "acknowledgements",
+                self._json_text(projection.acknowledgements),
+                projection.acknowledgements,
+            ),
+            ("policy_result", self._json_text(policy_result), policy_result),
+            ("pending_transcript_record", pending_text, pending_record),
+            ("transcript_records", transcript_text, transcript_records),
+        )
+        participants = {self.role_pid[ROLE_API], self.role_pid[ROLE_CLI]}
+        projection_ok = (
+            projection.player_id == observer
+            and not any(
+                message.from_player in participants
+                or message.to_player in participants
+                for message in projection.messages
+            )
+            and not any(
+                deal.proposer in participants or deal.counterparty in participants
+                for deal in projection.deals
+            )
+            and not any(
+                grievance.offender in participants
+                or grievance.wronged in participants
+                for grievance in projection.grievances
+            )
+        )
+        acknowledgements_ok = not projection.acknowledgements
+        forbidden = self._forbidden_values()
+        forbidden_digests = [
+            hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+            for value in forbidden
+        ]
+        fingerprint = journal.state.data.get("upfront_payment_fingerprint")
+        results = []
+        for kind, text, structured in artifacts:
+            leaked = tuple(value for value in forbidden if value in text)
+            fingerprint_leaked = bool(
+                isinstance(fingerprint, Mapping)
+                and structured is not None
+                and self._contains_mapping(structured, fingerprint)
+            )
+            structure_ok = (
+                projection_ok
+                if kind == "projection"
+                else acknowledgements_ok
+                if kind == "acknowledgements"
+                else True
+            )
+            failed = bool(leaked) or fingerprint_leaked or not structure_ok
+            results.append((kind, text, leaked, failed))
+            journal.append(
+                "privacy_asserted",
+                {
+                    "turn": turn,
+                    "player_id": observer,
+                    "artifact_kind": kind,
+                    "input_digest": hashlib.sha256(
+                        text.encode("utf-8", errors="surrogatepass")
+                    ).hexdigest()[:16],
+                    "forbidden_digests": forbidden_digests,
+                    "result": "FAIL" if failed else "PASS",
+                },
+            )
+
+        failures = [item for item in results if item[3]]
+        if not failures:
+            return
+        for kind, text, leaked, _failed in failures:
+            journal.write_private_json(
+                f"privacy_fail_{turn}_{kind}.json",
+                {
+                    "turn": turn,
+                    "player_id": observer,
+                    "artifact_kind": kind,
+                    "input": text,
+                    "leaked_digests": [
+                        hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+                        for value in leaked
+                    ],
+                },
+            )
+        self._fail(
+            f"privacy assertion failed at observer turn {turn} "
+            "(private forensic input preserved)"
+        )
 
     def _fail(self, reason: str) -> None:
         if self._signal == GATE_FAILED:
@@ -351,7 +581,26 @@ class ChannelsCoreDriver:
                 return base_result
         role = self.pid_role[player_id]
         if role == ROLE_OBSERVER:
-            return base_result
+            opening_prompt = build_opening_prompt(
+                player_id=player_id,
+                turn=turn,
+                channel_block=admission.block,
+            )
+            result = {
+                "summary": (
+                    base_result.get("summary", "live-gate observer capture")
+                    if isinstance(base_result, dict)
+                    else "live-gate observer capture"
+                ),
+                "actions": (
+                    base_result.get("actions", [])
+                    if isinstance(base_result, dict)
+                    else []
+                ),
+                "transcript": {"steps": [], "final_summary": opening_prompt},
+            }
+            self._observer_captures[turn] = (admission, result)
+            return result
         phase = self._journal.state.phase
         plans = self._planned_channel_input(role, phase, turn)
         if not plans:
@@ -1063,8 +1312,11 @@ class ChannelsCoreDriver:
     def _verify_terminal_evidence(self, turn: int) -> None:
         from civ_mcp.arena.channels import DealState, PaymentStatus
 
-        state = self._journal.state
-        channel_state = self._runtime.state
+        journal = self._journal
+        runtime = self._runtime
+        assert journal is not None and runtime is not None
+        state = journal.state
+        channel_state = runtime.state
         by_id = {deal.id: deal for deal in channel_state.deals}
         upfront = by_id.get(state.data.get("upfront_deal_id"))
         broken = by_id.get(state.data.get("on_delivery_deal_id"))
@@ -1092,7 +1344,7 @@ class ChannelsCoreDriver:
             self._fail("terminal evidence deal lookup failed")
             return
         for pid in (self.role_pid[ROLE_API], self.role_pid[ROLE_CLI]):
-            projection = self._runtime.project_for_player(pid, turn)
+            projection = runtime.project_for_player(pid, turn)
             if not any(
                 message.text == self.canary for message in projection.messages
             ):
@@ -1101,13 +1353,50 @@ class ChannelsCoreDriver:
                     "the canary was not actually exercised"
                 )
                 return
-        if any(
-            assertion.get("result") == "FAIL"
-            for assertion in state.privacy_assertions
-        ):
-            self._fail("a privacy assertion failed")
+        expected_kinds = {
+            "projection",
+            "channel_block",
+            "opening_prompt",
+            "acknowledgements",
+            "policy_result",
+            "pending_transcript_record",
+            "transcript_records",
+        }
+        observer = self.role_pid[ROLE_OBSERVER]
+        by_capture: dict[tuple[int, int], list[Mapping]] = {}
+        invalid_capture_identity = False
+        for assertion in state.privacy_assertions:
+            asserted_player = assertion.get("player_id")
+            asserted_turn = assertion.get("turn")
+            if not isinstance(asserted_player, int) or not isinstance(
+                asserted_turn, int
+            ):
+                invalid_capture_identity = True
+                continue
+            key = (asserted_player, asserted_turn)
+            by_capture.setdefault(key, []).append(assertion)
+        expected_captures = minimum_captures(self.config) // len(self.gate_pids)
+        complete = (
+            not invalid_capture_identity
+            and len(by_capture) == expected_captures
+            and all(player_id == observer for player_id, _turn in by_capture)
+            and all(
+                len(assertions) == len(expected_kinds)
+                and {
+                    assertion.get("artifact_kind") for assertion in assertions
+                }
+                == expected_kinds
+                and all(
+                    assertion.get("result") == "PASS"
+                    for assertion in assertions
+                )
+                for assertions in by_capture.values()
+            )
+        )
+        if not complete:
+            self._fail("terminal evidence missing: complete observer privacy coverage")
             return
-        self._journal.append(
+        journal.append(
             "gate_passed",
             {
                 "evidence": {
@@ -1118,7 +1407,7 @@ class ChannelsCoreDriver:
                 }
             },
         )
-        self._journal.write_result()
+        journal.write_result()
         self._signal = GATE_PASSED
 
     async def _request_restart(self, turn: int) -> None:

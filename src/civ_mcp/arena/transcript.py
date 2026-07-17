@@ -1,10 +1,18 @@
 from __future__ import annotations
 import json, os
+
+
+def serialize_transcript_record(record: dict) -> str:
+    """Return the exact JSON text appended for one transcript record."""
+
+    return json.dumps(record)
+
+
 class TranscriptSink:
     enabled = True
     def __init__(self, path: str): self.path = path
     def write(self, record: dict) -> None:
-        with open(self.path, "a") as f: f.write(json.dumps(record) + "\n")
+        with open(self.path, "a") as f: f.write(serialize_transcript_record(record) + "\n")
     @classmethod
     def for_run(cls, run_id: str, base: str = "arena_runs") -> "TranscriptSink":
         d = os.path.join(base, run_id); os.makedirs(d, exist_ok=True)

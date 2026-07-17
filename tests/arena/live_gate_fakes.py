@@ -1,11 +1,13 @@
 """Shared fakes for live-gate tests: a typed game-state fake plus a
 coordinator-shaped harness that drives a scenario driver through
 admissions/finishes exactly the way run_arena does (admit -> note_admission
--> gate policy -> finish_player -> after_seat_capture -> signal check)."""
+-> gate policy -> finish_player -> pending-transcript privacy hook ->
+transcript write -> after_seat_capture -> signal check)."""
 
 import dataclasses
 
 from civ_mcp.arena.channel_terms import ChannelObservation, ObservationFamily
+from civ_mcp.arena.transcript import TranscriptSink
 from civ_mcp.lua.channel_payments import ExactPaymentOffer
 
 
@@ -92,7 +94,9 @@ class GateGameState:
         return "CHANNEL_PAYMENT_REJECTED"
 
 
-async def run_gate_seat(driver, runtime, gs, pid, turn):
+async def run_gate_seat(
+    driver, runtime, gs, pid, turn, *, pending_record_overrides=None
+):
     """One coordinator-shaped capture for one gate seat."""
     gs.active_player = pid
     admission = await runtime.admit_player(gs, pid, turn)
@@ -102,6 +106,25 @@ async def run_gate_seat(driver, runtime, gs, pid, turn):
     policy = driver.policy_for(pid)
     result = await policy(gs, pid, turn)
     acknowledgements = await runtime.finish_player(gs, admission, result)
+    transcript_payload = result.get("transcript") if isinstance(result, dict) else None
+    if isinstance(transcript_payload, dict):
+        record = {
+            **transcript_payload,
+            "schema_version": 1,
+            "run_id": driver.config.run_id,
+            "player_id": pid,
+            "turn": turn,
+            "provider": getattr(policy, "provider", "scripted"),
+            "model": "",
+            "driver": "scripted",
+            "step_count": len(transcript_payload.get("steps", [])),
+            "usd": 0.0,
+            "turn_kind": "played",
+        }
+        if pending_record_overrides:
+            record.update(pending_record_overrides)
+        if driver.inspect_pending_transcript_record(pid, turn, record):
+            TranscriptSink(str(driver._run_dir / "transcript.jsonl")).write(record)
     await driver.after_seat_capture(
         player_id=pid,
         turn=turn,

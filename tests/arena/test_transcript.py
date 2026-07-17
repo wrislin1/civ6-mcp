@@ -4,7 +4,11 @@ import os
 
 import pytest
 
-from civ_mcp.arena.transcript import TranscriptSink, NullSink
+from civ_mcp.arena.transcript import (
+    NullSink,
+    TranscriptSink,
+    serialize_transcript_record,
+)
 
 def test_write_appends_jsonl(tmp_path):
     """Test that write() appends valid JSONL records."""
@@ -21,6 +25,20 @@ def test_write_appends_jsonl(tmp_path):
     assert len(lines) == 2
     assert json.loads(lines[0]) == record1
     assert json.loads(lines[1]) == record2
+
+
+def test_public_serializer_is_byte_for_byte_sink_compatible(tmp_path):
+    path = tmp_path / "transcript.jsonl"
+    record = {
+        "turn": 7,
+        "summary": "café",
+        "nested": {"z": 2, "a": [True, None]},
+    }
+    expected = json.dumps(record)
+
+    assert serialize_transcript_record(record) == expected
+    TranscriptSink(str(path)).write(record)
+    assert path.read_bytes() == (expected + "\n").encode("utf-8")
 
 def test_for_run_makes_dir_and_returns_sink(tmp_path):
     """Test that for_run() creates the directory and returns a sink with correct path."""

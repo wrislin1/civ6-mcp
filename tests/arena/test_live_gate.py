@@ -172,6 +172,38 @@ def test_privacy_fail_permits_only_gate_failed(tmp_path):
     assert journal.state.status == GATE_FAILED
 
 
+def test_privacy_failure_allows_only_remaining_assertions_for_same_capture(tmp_path):
+    journal = open_journal(tmp_path)
+    common = {
+        "turn": 5,
+        "player_id": 2,
+        "input_digest": "a" * 16,
+        "forbidden_digests": [],
+    }
+    journal.append(
+        "privacy_asserted",
+        {**common, "artifact_kind": "projection", "result": "FAIL"},
+    )
+
+    journal.append(
+        "privacy_asserted",
+        {**common, "artifact_kind": "channel_block", "result": "PASS"},
+    )
+    with pytest.raises(GateStateError):
+        journal.append(
+            "privacy_asserted",
+            {
+                **common,
+                "turn": 6,
+                "artifact_kind": "opening_prompt",
+                "result": "PASS",
+            },
+        )
+
+    journal.append("gate_failed", {"reason": "privacy"})
+    assert journal.state.status == GATE_FAILED
+
+
 def test_gate_passed_requires_active_status(tmp_path):
     journal = open_journal(tmp_path)
     journal.append("restart_required", {"turn": 6})
@@ -475,6 +507,53 @@ def test_non_regular_gate_artifacts_are_rejected(tmp_path, artifact_name):
     else:
         with pytest.raises(GateStateError):
             open_journal(tmp_path)
+
+
+def test_private_json_helper_writes_mode_0600(tmp_path):
+    journal = open_journal(tmp_path)
+
+    path = journal.write_private_json(
+        "privacy_fail_10_projection.json", {"input": "private", "turn": 10}
+    )
+
+    assert json.loads(path.read_text()) == {"input": "private", "turn": 10}
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+
+
+@pytest.mark.parametrize(
+    "basename",
+    ["", ".", "..", "../escape.json", "nested/file.json", "nested\\file.json", "state.json"],
+)
+def test_private_json_helper_rejects_unsafe_basename(tmp_path, basename):
+    journal = open_journal(tmp_path)
+
+    with pytest.raises(GateStateError, match="basename"):
+        journal.write_private_json(basename, {"private": True})
+
+
+def test_private_json_helper_refuses_symlink_without_clobbering_target(tmp_path):
+    journal = open_journal(tmp_path)
+    target = tmp_path / "outside-private.json"
+    target.write_text("outside")
+    artifact = journal.gate_dir / "privacy_fail_10_projection.json"
+    artifact.symlink_to(target)
+
+    with pytest.raises(GateStateError):
+        journal.write_private_json(artifact.name, {"input": "secret"})
+
+    assert artifact.is_symlink()
+    assert target.read_text() == "outside"
+
+
+def test_private_json_helper_refuses_non_regular_destination(tmp_path):
+    journal = open_journal(tmp_path)
+    artifact = journal.gate_dir / "privacy_fail_10_projection.json"
+    artifact.mkdir()
+
+    with pytest.raises(GateStateError):
+        journal.write_private_json(artifact.name, {"input": "secret"})
+
+    assert artifact.is_dir()
 
 
 def fake_meta(name="fake_gate_v1", **overrides):

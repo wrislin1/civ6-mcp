@@ -1,10 +1,17 @@
+import dataclasses
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
 from civ_mcp.arena.channel_runtime import ChannelRuntime
-from civ_mcp.arena.channels import DealState, FavorStatus, PaymentStatus
+from civ_mcp.arena.channels import (
+    ChannelAcknowledgement,
+    DealState,
+    FavorStatus,
+    PaymentStatus,
+)
 from civ_mcp.arena.config import (
     ArenaConfig,
     AttentionOptions,
@@ -23,6 +30,7 @@ from civ_mcp.arena.live_gate import (
     resolve_scenario,
 )
 from civ_mcp.arena import live_gate_channels as lgc
+from civ_mcp.arena.transcript import TranscriptSink, serialize_transcript_record
 from .live_gate_fakes import GateGameState, run_gate_round, run_gate_seat
 
 
@@ -1175,3 +1183,267 @@ async def test_on_delivery_id_is_bound_to_current_cli_capture(tmp_path):
     assert current[0].deal_id != stale_ack.deal_id
     assert driver.pending_signal() is None
     assert driver._journal.state.data["on_delivery_deal_id"] == current[0].deal_id
+
+
+PRIVACY_KINDS = {
+    "projection",
+    "channel_block",
+    "opening_prompt",
+    "acknowledgements",
+    "policy_result",
+    "pending_transcript_record",
+    "transcript_records",
+}
+
+
+def privacy_assertions(driver):
+    return driver._journal.state.privacy_assertions
+
+
+@pytest.mark.asyncio
+async def test_observer_assertions_cover_all_artifacts_every_admission(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+
+    await run_gate_round(driver, runtime, gs, 10)
+    first = privacy_assertions(driver)
+    assert {item["artifact_kind"] for item in first} == PRIVACY_KINDS
+    assert all(item["result"] == "PASS" for item in first)
+
+    await run_gate_round(driver, runtime, gs, 11)
+    second = privacy_assertions(driver)[len(first) :]
+    assert {item["artifact_kind"] for item in second} == PRIVACY_KINDS
+    assert all(item["result"] == "PASS" for item in second)
+
+
+@pytest.mark.asyncio
+async def test_observer_projection_is_empty_of_participants(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+
+    await run_gate_round(driver, runtime, gs, 10)
+
+    projection = runtime.project_for_player(3, 10)
+    assert projection.messages == ()
+    assert projection.deals == ()
+    assert projection.grievances == ()
+    assert projection.acknowledgements == ()
+    assert driver.canary not in str(projection)
+
+
+@pytest.mark.asyncio
+async def test_pending_transcript_leak_fails_before_fake_persists(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_seat(driver, runtime, gs, 1, 10)
+    await run_gate_seat(driver, runtime, gs, 2, 10)
+
+    await run_gate_seat(
+        driver,
+        runtime,
+        gs,
+        3,
+        10,
+        pending_record_overrides={"planted": driver.canary},
+    )
+
+    assert driver.pending_signal() == GATE_FAILED
+    assertions = privacy_assertions(driver)
+    assert {item["artifact_kind"] for item in assertions} == PRIVACY_KINDS
+    pending = next(
+        item for item in assertions if item["artifact_kind"] == "pending_transcript_record"
+    )
+    assert pending["result"] == "FAIL"
+    transcript_path = driver._run_dir / "transcript.jsonl"
+    assert not transcript_path.exists() or driver.canary not in transcript_path.read_text()
+    assert driver.canary not in driver._journal.state.reason
+    assert driver.canary not in driver._journal.result_path.read_text()
+    assert driver.canary not in json.dumps(driver.result_summary())
+
+
+@pytest.mark.asyncio
+async def test_pending_transcript_reordered_payment_fingerprint_fails(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+    fingerprint = dict(driver._journal.state.data["upfront_payment_fingerprint"])
+    reordered = {key: fingerprint[key] for key in reversed(sorted(fingerprint))}
+
+    await run_gate_seat(
+        driver,
+        runtime,
+        gs,
+        3,
+        11,
+        pending_record_overrides={"planted_fingerprint": reordered},
+    )
+
+    pending = next(
+        assertion
+        for assertion in reversed(privacy_assertions(driver))
+        if assertion["artifact_kind"] == "pending_transcript_record"
+    )
+    assert pending["result"] == "FAIL"
+    assert driver.pending_signal() == GATE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_planted_canary_in_observer_view_fails_all_tainted_artifacts(
+    tmp_path, monkeypatch
+):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_seat(driver, runtime, gs, 1, 10)
+    await run_gate_seat(driver, runtime, gs, 2, 10)
+    original = runtime.admit_player
+
+    async def tainted(gs_arg, player_id, turn):
+        admission = await original(gs_arg, player_id, turn)
+        if player_id == 3:
+            return dataclasses.replace(
+                admission, block=admission.block + "\n" + driver.canary
+            )
+        return admission
+
+    monkeypatch.setattr(runtime, "admit_player", tainted)
+    await run_gate_seat(driver, runtime, gs, 3, 10)
+
+    assert driver.pending_signal() == GATE_FAILED
+    assertions = privacy_assertions(driver)
+    assert {item["artifact_kind"] for item in assertions} == PRIVACY_KINDS
+    failed = {item["artifact_kind"] for item in assertions if item["result"] == "FAIL"}
+    assert {
+        "channel_block",
+        "opening_prompt",
+        "policy_result",
+        "pending_transcript_record",
+    } <= failed
+    forensic = list(driver._journal.gate_dir.glob("privacy_fail_10_*.json"))
+    assert forensic
+    assert any(driver.canary in path.read_text() for path in forensic)
+    assert all((path.stat().st_mode & 0o777) == 0o600 for path in forensic)
+    assert driver.canary not in driver._journal.state.reason
+    assert driver.canary not in driver._journal.result_path.read_text()
+    transcript_path = driver._run_dir / "transcript.jsonl"
+    assert not transcript_path.exists() or driver.canary not in transcript_path.read_text()
+
+
+@pytest.mark.asyncio
+async def test_structured_acknowledgement_has_its_own_privacy_failure(
+    tmp_path, monkeypatch
+):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_seat(driver, runtime, gs, 1, 10)
+    await run_gate_seat(driver, runtime, gs, 2, 10)
+    original = runtime.admit_player
+
+    async def tainted(gs_arg, player_id, turn):
+        admission = await original(gs_arg, player_id, turn)
+        if player_id != 3:
+            return admission
+        acknowledgement = ChannelAcknowledgement(
+            player_id=1,
+            turn=turn,
+            source_id="observer-safe-source",
+            status="applied",
+            message="observer-safe-message",
+        )
+        projection = dataclasses.replace(
+            admission.projection, acknowledgements=(acknowledgement,)
+        )
+        return dataclasses.replace(admission, projection=projection)
+
+    monkeypatch.setattr(runtime, "admit_player", tainted)
+    await run_gate_seat(driver, runtime, gs, 3, 10)
+
+    by_kind = {item["artifact_kind"]: item for item in privacy_assertions(driver)}
+    assert by_kind["acknowledgements"]["result"] == "FAIL"
+    assert driver.pending_signal() == GATE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_deal_id_text_alone_is_not_a_privacy_failure(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    upfront_id = driver._journal.state.data["upfront_deal_id"]
+    assert upfront_id not in driver._forbidden_values()
+    assert all(item["result"] == "PASS" for item in privacy_assertions(driver))
+
+
+@pytest.mark.asyncio
+async def test_pending_transcript_digest_uses_public_serializer(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    transcript_path = driver._run_dir / "transcript.jsonl"
+    observer_line = next(
+        line
+        for line in transcript_path.read_text().splitlines()
+        if json.loads(line).get("player_id") == 3
+    )
+    record = json.loads(observer_line)
+    expected_digest = hashlib.sha256(
+        serialize_transcript_record(record).encode("utf-8")
+    ).hexdigest()[:16]
+    pending = next(
+        item
+        for item in privacy_assertions(driver)
+        if item["artifact_kind"] == "pending_transcript_record"
+    )
+    assert pending["input_digest"] == expected_digest
+
+
+@pytest.mark.asyncio
+async def test_persisted_observer_transcript_leak_fails_next_capture(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    transcript_path = driver._run_dir / "transcript.jsonl"
+    TranscriptSink(str(transcript_path)).write(
+        {"player_id": 3, "turn": 10, "planted": driver.canary}
+    )
+
+    await run_gate_round(driver, runtime, gs, 11)
+
+    failures = [
+        assertion
+        for assertion in privacy_assertions(driver)
+        if assertion["result"] == "FAIL"
+    ]
+    assert failures
+    assert failures[0]["artifact_kind"] == "transcript_records"
+    assert driver.pending_signal() == GATE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_terminal_pass_requires_full_privacy_coverage_for_every_turn(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path)
+
+    assert driver.pending_signal() == GATE_PASSED
+    per_turn = {}
+    for assertion in privacy_assertions(driver):
+        per_turn.setdefault(assertion["turn"], set()).add(assertion["artifact_kind"])
+        assert assertion["result"] == "PASS"
+    assert set(per_turn) == set(range(10, 19))
+    assert all(kinds == PRIVACY_KINDS for kinds in per_turn.values())
+
+
+@pytest.mark.asyncio
+async def test_terminal_gate_fails_if_pending_transcript_hook_was_skipped(tmp_path):
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=9)
+    await run_gate_seat(driver, runtime, gs, 1, 18)
+    await run_gate_seat(driver, runtime, gs, 2, 18)
+
+    gs.active_player = 3
+    admission = await runtime.admit_player(gs, 3, 18)
+    driver.note_admission(3, 18, admission, "")
+    result = await driver.policy_for(3)(gs, 3, 18)
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    await driver.after_seat_capture(
+        player_id=3,
+        turn=18,
+        channel_fields={
+            "enabled": True,
+            "acknowledgements": len(acknowledgements),
+            "error": "",
+        },
+    )
+
+    assert driver.pending_signal() == GATE_FAILED
+    assert "privacy" in driver._journal.state.reason

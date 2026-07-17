@@ -217,7 +217,28 @@ def reduce_gate_event(state: GateState | None, event: GateEvent) -> GateState:
         assertion.get("result") == "FAIL" for assertion in state.privacy_assertions
     )
     if privacy_failed and event.kind != "gate_failed":
-        raise GateStateError("a failed privacy assertion permits only gate_failed")
+        failed = next(
+            assertion
+            for assertion in reversed(state.privacy_assertions)
+            if assertion.get("result") == "FAIL"
+        )
+        same_capture_assertion = (
+            event.kind == "privacy_asserted"
+            and payload.get("turn") == failed.get("turn")
+            and payload.get("player_id") == failed.get("player_id")
+            and payload.get("artifact_kind")
+            not in {
+                assertion.get("artifact_kind")
+                for assertion in state.privacy_assertions
+                if assertion.get("turn") == failed.get("turn")
+                and assertion.get("player_id") == failed.get("player_id")
+            }
+        )
+        if not same_capture_assertion:
+            raise GateStateError(
+                "a failed privacy assertion permits only remaining assertions "
+                "for the same capture or gate_failed"
+            )
 
     changes: dict[str, Any] = {"last_event_sequence": event.sequence}
     kind = event.kind
@@ -781,6 +802,29 @@ class LiveGateJournal:
 
     def append(self, kind: str, payload: dict) -> GateEvent:
         return self._append_event(kind, payload)
+
+    def write_private_json(self, basename: str, payload: Mapping[str, Any]) -> Path:
+        """Atomically write private scenario evidence inside ``gate_dir``.
+
+        Only a single safe basename is accepted. Core journal filenames are
+        reserved so scenario evidence cannot corrupt the authoritative state.
+        """
+
+        reserved = {"events.jsonl", "state.json", "result.json"}
+        if (
+            not isinstance(basename, str)
+            or not basename
+            or basename in {".", ".."}
+            or basename in reserved
+            or "/" in basename
+            or "\\" in basename
+            or "\x00" in basename
+            or Path(basename).name != basename
+        ):
+            raise GateStateError(f"unsafe private JSON basename {basename!r}")
+        destination = self.gate_dir / basename
+        _atomic_private_json(destination, dict(payload))
+        return destination
 
     def _append_event(self, kind: str, payload: dict) -> GateEvent:
         sequence = 1 if self.state is None else self.state.last_event_sequence + 1
