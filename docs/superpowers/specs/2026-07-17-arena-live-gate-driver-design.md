@@ -1,7 +1,7 @@
 # Arena Reusable Live-Gate Driver — Unofficial Channels Scenario (Design)
 
 **Date:** 2026-07-17
-**Status:** Design approved by riz; written-spec review pending
+**Status:** Design approved by riz; written-spec review applied 2026-07-17
 **Target branch:** `arena-unofficial-channels-core`
 **Predecessor:** `2026-07-09-arena-unofficial-channels-design.md`
 **Live evidence:** `../plans/2026-07-16-arena-unofficial-channels-core-live-gate.md`
@@ -73,7 +73,10 @@ scenario and the separate raw FireTuner-probe scenario pass.
 8. A validated experiment block is the sole activation switch. The same command
    and run ID must resume a restart checkpoint without another flag.
 9. The watcher exits cleanly at the restart boundary with exit code 75 and a
-   persisted, machine-readable `restart_required` state.
+   persisted, machine-readable `restart_required` state. The persisted state
+   and the printed restart line are the authoritative operator signals; the
+   live wrapper launches the watcher detached (`setsid … &`), so the exit code
+   is observable only to foreground and test invocations.
 10. The successful up-front deal uses a continuously monitored trade-route
     restriction chosen against authoritative route observations.
 11. The broken on-delivery deal first satisfies a safe authoritative treasury
@@ -91,9 +94,9 @@ channel reducer:
 |---|---|
 | `src/civ_mcp/arena/live_gate.py` | Generic options, driver protocol, immutable state/events, strict reducer, persistence, registry, restart/failure signals |
 | `src/civ_mcp/arena/live_gate_channels.py` | `unofficial_channels_core_v1` phase planner, action construction, canonical assertions, privacy checks, terminal evidence |
-| `src/civ_mcp/arena/config.py` | Disabled-by-default `LiveGateOptions` on `ArenaConfig` and cross-field validation |
+| `src/civ_mcp/arena/config.py` | Disabled-by-default `LiveGateOptions` on `ArenaConfig` and cross-field validation; update the `scripted` provider's test-only comment to name the live-gate observer as its second sanctioned use |
 | `src/civ_mcp/arena/experiment.py` | Strict parsing of the top-level `live_gate` experiment block |
-| `src/civ_mcp/arena/arena.py` | Resolve the registered driver before ordinary policy construction; gate mode creates no model-backed policies |
+| `src/civ_mcp/arena/arena.py` | Resolve the registered driver before ordinary policy construction; gate mode creates no model-backed policies; translate the driver's restart/terminal signal into the machine-readable result line and the process exit status |
 | `src/civ_mcp/arena/coordinator.py` | Narrow admission/capture hooks that ask the driver for deterministic turn input and report persisted results back |
 | `experiments/arena-channels-core-smoke.yaml` | Explicit scenario enablement, semantic roles, passive player 3, and sufficient capture budgets |
 | `tests/arena/test_live_gate.py` | Generic reducer, persistence, replay, restart, failure, and registry tests |
@@ -170,6 +173,10 @@ Validation requires:
 - `cli_actor.driver_kind()` is `cli`;
 - the observer is the deterministic scripted provider;
 - every role is channel-enabled;
+- `attention.mode` is `off` for every gate civ — turn skipping would starve
+  the phase machine of admissions;
+- no player-0 (seat-zero piloting) entry is combined with the gate — the gate
+  relies on the human owning seat 0 across the restart boundary;
 - `run_id` is explicit and safe;
 - both turn budgets meet the scenario-reported minimum; and
 - the run directory is new on first initialization or contains a matching gate
@@ -278,12 +285,15 @@ observer's authorized empty/private view plus non-private gate metadata.
 
 ## Authoritative Preflight and Term Selection
 
-Before the first proposal, the scenario performs read-only targeted channel
-observations through the typed game-state wrapper:
+Before the first proposal, the scenario performs read-only queries through the
+typed game-state wrapper:
 
-- player 1 treasury;
-- player 2 treasury and active trade routes; and
-- the exact pending-trade state for the ordered payment pair.
+- player 1 treasury (`treasury` observation family);
+- player 2 treasury and active trade routes (`treasury` and `trade_routes`
+  observation families); and
+- the exact pending-trade state for the ordered payment pair, via the
+  payment-state query (`get_channel_payment_state`) — pending trades are a
+  payment-runtime query, not an `ObservationFamily`.
 
 Every requested family must be present and carry no parser/engine error. Player
 1 must be able to fund the fixed one-gold official payment, and no conflicting
@@ -334,7 +344,7 @@ assertion runs on every observer admission, not only at the end.
 | `canary_and_upfront_proposal` | API actor dispatches `send_message` then `propose_deal` | Exactly two expected `api:` acknowledgements; captured canary message and up-front deal IDs |
 | `accept_upfront` | CLI actor emits `respond_to_deal(accept=true)` | Expected `cli:` acknowledgement; deal active, payment due, canonical trade-route baseline attached |
 | `fund_upfront` | API actor dispatches `fund_deal` | Expected `api:` acknowledgement; payment offered; exact official fingerprint recorded by channel runtime |
-| `restart_required` | No further action | Live pending trade matches the canonical fingerprint; gate snapshot and result persisted; watcher exits 75 |
+| `restart_required` | Deterministic no-action turns for the round's remaining gate seats | Live pending trade matches the canonical fingerprint; gate snapshot and result persisted; the round completes with no gate seat released to the game AI; watcher exits 75 |
 | `restart_verify` | Reopen and reconcile only | Same configuration/channel identity; exactly one restart; exact live pending fingerprint equals the pre-restart fingerprint |
 | `accept_upfront_payment` | CLI actor emits `respond_to_payment(accept=true)` | Expected `cli:` acknowledgement; payment settled; official offer consumed |
 | `await_upfront_favor_deadline` | Deterministic no-action turns | No premature terminal state; complete route observations on each obligated admission |
@@ -352,7 +362,14 @@ persisted. The driver never assumes `deal-000001` or another sequence number.
 ## Restart Handshake
 
 After successful funding, the driver completes the current channel finish before
-requesting a restart. It then:
+requesting a restart. The restart takes effect only at the round boundary:
+every remaining gate seat in the current game turn first completes its
+deterministic no-action capture, including the observer's privacy assertion.
+This ordering is load-bearing — coordinator shutdown always restores the human
+seat and disables the puppet hook, so exiting mid-round would release the
+unplayed gate seats to the game AI, and player 2's engine AI could respond to
+the pending official payment before the resumed gate does. At the round
+boundary the driver then:
 
 1. reads the canonical recorded offer fingerprint;
 2. queries the live official pending trade and canonicalizes its fingerprint;
@@ -362,10 +379,13 @@ requesting a restart. It then:
 6. asks the coordinator to deactivate safely; and
 7. prints a machine-readable restart line and returns exit code 75.
 
-The live watcher wrapper performs its normal ownership cleanup. The operator
-reruns the same experiment and run ID. On resume, the channel runtime performs
-its existing journal replay and payment-intent reconciliation before the gate
-may act. The driver then requires:
+The coordinator's shutdown path performs its normal handback (restore the
+human seat, disable the hook). The operator follows the `civ6-arena-live`
+ownership workflow and reruns the same experiment and run ID — and must not
+end the human turn in the restart gap, because with the hook disabled an
+ended turn hands every gate seat to the game AI. On resume, the channel
+runtime performs its existing journal replay and payment-intent
+reconciliation before the gate may act. The driver then requires:
 
 - the gate and channel identities match the checkpoint;
 - the gate has exactly one prior restart request;
@@ -495,6 +515,8 @@ tests prove:
 - omission before the funding deadline does not breach early;
 - omission on the responsible player's inclusive deadline produces the expected
   broken deal and deterministic grievance;
+- the restart request defers until every remaining gate seat in the round has
+  completed its deterministic capture;
 - every named fail-closed mismatch terminates without another action; and
 - player 3 never receives the canary or participant-private data in any inspected
   artifact.
@@ -509,6 +531,8 @@ Existing coordinator/config/experiment suites gain regressions proving:
 - ordinary policies are not called in gate mode;
 - each semantic role receives only its planned deterministic input;
 - `ChannelRuntime.finish_player` remains the shared authoritative finish path;
+- gate configurations with attention enabled or a seat-zero (player 0) entry
+  are rejected at configuration load;
 - exit 75 occurs only after the persisted restart checkpoint;
 - terminal failure and PASS return human control cleanly; and
 - insufficient capture budgets fail at configuration load.
@@ -528,7 +552,8 @@ The operator follows the `civ6-arena-live` ownership workflow and invokes the
 same checked-in experiment twice:
 
 1. First invocation reaches `restart_required`, exits 75, and leaves a pending
-   exact official offer with its fingerprint recorded.
+   exact official offer with its fingerprint recorded. The human turn is not
+   ended again until the second watcher is armed.
 2. Second invocation uses the same run ID, verifies the same offer, completes
    payment, honors the up-front deal, breaks the on-delivery deal at its funding
    deadline, records a grievance, and exits 0 with terminal PASS.
