@@ -631,7 +631,10 @@ async def test_restart_checkpoint_persists_fingerprint_and_result(tmp_path):
     state = driver._journal.state
     assert state.status == GATE_RESTART_REQUIRED
     assert state.restart_count == 1
-    assert state.data["upfront_payment_fingerprint"]["gold"] == 1
+    canonical = dict(state.data["upfront_payment_fingerprint"])
+    assert canonical["gold"] == 1
+    assert dict(state.data["restart_offer_fingerprint_before"]) == canonical
+    assert "restart_offer_fingerprint_after" not in state.data
     result = json.loads(driver._journal.result_path.read_text())
     assert result["status"] == GATE_RESTART_REQUIRED
 
@@ -671,6 +674,9 @@ async def test_resume_verifies_offer_and_continues(tmp_path):
     assert state.status == GATE_ACTIVE
     assert state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
     assert state.restart_count == 1
+    canonical = dict(state.data["upfront_payment_fingerprint"])
+    assert dict(state.data["restart_offer_fingerprint_before"]) == canonical
+    assert dict(state.data["restart_offer_fingerprint_after"]) == canonical
 
     await run_gate_round(driver2, runtime2, gs, 12)
     deal = deals(runtime2)[state.data["upfront_deal_id"]]
@@ -713,7 +719,47 @@ async def test_resume_with_absent_offer_fails(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_resume_rejects_premature_payment_response_acknowledgement(
+async def test_resume_fails_if_same_turn_channel_sequence_changed(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    checkpoint_sequence = driver._journal.state.data[
+        "restart_channel_sequence"
+    ]
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+
+    gs.active_player = 1
+    admission = await runtime2.admit_player(gs, 1, 11)
+    admission.context.dispatch(
+        "send_message",
+        {"to_player": 3, "text": "same-turn restart-gap event"},
+    )
+    acknowledgements = await runtime2.finish_player(
+        gs,
+        admission,
+        {"transcript": {"steps": [], "final_summary": ""}},
+    )
+    assert len(acknowledgements) == 1
+    assert acknowledgements[0].status == "applied"
+    assert runtime2.state.last_event_sequence > checkpoint_sequence
+    payment_state = await gs.get_channel_payment_state(1, 2, 1)
+    assert payment_state.status == "exact"
+
+    runtime3 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime3, run_dir=run_dir)
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert "sequence" in resumed._journal.state.reason
+    assert resumed._journal.result_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_same_turn_payment_response_acknowledgement(
     tmp_path,
 ):
     driver, runtime, gs = await drive_to_restart(tmp_path)
@@ -725,7 +771,7 @@ async def test_resume_rejects_premature_payment_response_acknowledgement(
     deal_id = driver._journal.state.data["upfront_deal_id"]
 
     gs.active_player = 2
-    admission = await runtime2.admit_player(gs, 2, 12)
+    admission = await runtime2.admit_player(gs, 2, 11)
     acknowledgements = await runtime2.finish_player(
         gs,
         admission,
@@ -752,7 +798,8 @@ async def test_resume_rejects_premature_payment_response_acknowledgement(
     await resumed.attach(gs=gs, channel_runtime=runtime3, run_dir=run_dir)
 
     assert resumed.pending_signal() == GATE_FAILED
-    assert "payment-response acknowledgement" in resumed._journal.state.reason
+    assert "sequence" in resumed._journal.state.reason
+    assert runtime3.deal(deal_id).payment_status is PaymentStatus.SETTLED
 
 
 @pytest.mark.asyncio

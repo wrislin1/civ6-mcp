@@ -276,10 +276,36 @@ class ChannelsCoreDriver:
         )
         if live is None:
             return
+        self._journal.append(
+            "data_recorded",
+            {"data": {"restart_offer_fingerprint_after": live}},
+        )
         if live != recorded:
             self._fail(
                 f"resumed offer fingerprint {live} does not equal the recorded "
                 f"pre-restart fingerprint {recorded}"
+            )
+            return
+        checkpoint_sequence = state.data.get("restart_channel_sequence")
+        live_sequence = self._runtime.state.last_event_sequence
+        if (
+            type(checkpoint_sequence) is not int
+            or live_sequence != checkpoint_sequence
+        ):
+            self._fail(
+                f"resumed channel sequence {live_sequence} does not equal the "
+                f"restart checkpoint sequence {checkpoint_sequence!r}"
+            )
+            return
+        from civ_mcp.arena.channels import PaymentStatus
+
+        deal = self._deal(state.data.get("upfront_deal_id"))
+        if deal is None:
+            return
+        if deal.payment_status is not PaymentStatus.OFFERED:
+            self._fail(
+                "up-front deal payment state changed across restart: "
+                f"{deal.payment_status}"
             )
             return
         response_acks = [
@@ -754,6 +780,7 @@ class ChannelsCoreDriver:
             {
                 "data": {
                     "restart_channel_sequence": channel_state.last_event_sequence,
+                    "restart_offer_fingerprint_before": live,
                     "restart_turn": turn,
                 }
             },
