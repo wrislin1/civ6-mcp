@@ -94,10 +94,11 @@ The initial maps showed only the Windows `127.0.0.1:4318` listener, with no
    `PuppetState(local=0, turn=315, active=False, last=0, seat0_active=True)`.
    The final owner map showed no watcher, Codex, MCP, or connected 4318 socket.
 
-The checked-in reproducibility config now sets `max_puppet_turns: 2`, so a
-future invocation can cover both configured puppet seats before exiting. This
-post-run correction was not exercised live and is not evidence of a passing
-gate.
+The checked-in reproducibility config now sets `max_puppet_turns: 20`, matching
+the `max_game_turns: 20` captured-turn budget so a future invocation can remain
+armed for the entire planned lifecycle instead of exiting after the first
+configured seat cycle. This post-run correction was not exercised live and is
+not evidence of a passing gate.
 
 ## Puppet-turn evidence
 

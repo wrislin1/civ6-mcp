@@ -12,6 +12,7 @@ SLICE1_GEMMA_STRATEGY_AB = REPO_ROOT / "experiments" / "gemma-strategy-ab-slice1
 SLICE3_BEHAVIOR_3LLM = REPO_ROOT / "experiments" / "arena-behavior-3llm-slice3.yaml"
 SEAT0_SCRIPTED_SMOKE = REPO_ROOT / "experiments" / "arena-seat0-scripted-smoke.yaml"
 SEAT0_LLM_SMOKE = REPO_ROOT / "experiments" / "arena-seat0-llm-smoke.yaml"
+CHANNELS_CORE_SMOKE = REPO_ROOT / "experiments" / "arena-channels-core-smoke.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -1099,6 +1100,15 @@ def test_loads_seat0_llm_smoke_artifact():
         assert p.gateway == "http://192.168.20.196:11440/v1"
         assert p.options.max_steps == 8
     assert cfg.puppet_ids == [1, 2]
+
+
+def test_channels_core_smoke_budget_can_cover_its_twenty_turn_gate():
+    cfg = load_experiment(CHANNELS_CORE_SMOKE)
+
+    assert cfg.max_game_turns == 20
+    assert cfg.max_puppet_turns == cfg.max_game_turns
+    assert [player.player_id for player in cfg.players] == [1, 2]
+    assert all(player.options.channels.enabled for player in cfg.players)
 
 
 def test_seat0_poll_limit_knobs_default_and_parse(tmp_path):

@@ -368,6 +368,48 @@ def test_channel_analysis_rejects_non_schema_one_state() -> None:
     with pytest.raises(ValueError, match="unsupported channel schema"):
         analyze_channels(payload, current_turn=60)
 
+
+def test_render_markdown_includes_channels_for_an_ordinary_run() -> None:
+    from civ_mcp.arena.analyze import analyze, analyze_channels, render_markdown
+
+    report = analyze([_config_rec(1, 2, 0, 0, 1)], [])
+    report["channels"] = analyze_channels(channel_state_fixture(), current_turn=60)
+
+    markdown = render_markdown(report)
+
+    assert "## Unofficial Channels" in markdown
+    assert "| honored | 1 |" in markdown
+    assert "| settled | 1 |" in markdown
+    assert "| deterministic | 1 | 2.000 | 1.000 |" in markdown
+
+
+def test_latest_channel_turn_uses_canonical_event_turns_not_future_deadlines() -> None:
+    from civ_mcp.arena.analyze import _latest_channel_turn, _latest_run_turn
+    from civ_mcp.arena.channels import state_from_dict
+
+    payload = channel_state_fixture()
+    assert _latest_channel_turn(state_from_dict(payload)) == 30
+
+    payload["grievances"] = []
+    payload["next_grievance"] = 1
+    for deal in payload["deals"]:
+        deal["terminal"].pop("turn", None)
+    payload["messages"].append(
+        {
+            "id": "msg-000003",
+            "from_player": 1,
+            "to_player": 2,
+            "turn": 22,
+            "text": "later unlinked message",
+            "deal_id": None,
+        }
+    )
+    payload["next_message"] = 4
+    state = state_from_dict(payload)
+    assert _latest_channel_turn(state) == 22
+    assert _latest_run_turn([{"turn": 23}], state) == 23
+
+
 def test_load_records(run_dir: Path) -> None:
     from civ_mcp.arena.analyze import load_records
 
@@ -887,6 +929,54 @@ def test_main_adds_channels_report_but_keeps_older_runs_compatible(
     legacy_report = json.loads((legacy / "report.json").read_text())
     assert current_report["channels"]["outcomes"]["honored"] == 1
     assert "channels" not in legacy_report
+
+
+def test_main_channel_only_run_uses_canonical_turn_and_renders_markdown(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from civ_mcp.arena.analyze import main
+
+    run_dir_path = tmp_path / "arena_runs" / "channel-only"
+    (run_dir_path / "channels").mkdir(parents=True)
+    _write_jsonl(run_dir_path / "transcript.jsonl", [])
+    _write_jsonl(run_dir_path / "arena_cost.jsonl", [])
+    payload = channel_state_fixture()
+    payload["observations"] = [
+        {
+            "id": "obs-000001",
+            "player_id": 1,
+            "turn": 90,
+            "families_present": [],
+            "units": [],
+            "cities": [],
+            "camps": [],
+            "territory": [],
+            "wars": [],
+            "treasury_gold": 0,
+            "trade_routes": [],
+            "action_audit": [],
+            "unit_distances": [],
+            "zone_distances": [],
+            "errors": [],
+        }
+    ]
+    payload["next_observation"] = 2
+    (run_dir_path / "channels" / "state.json").write_text(json.dumps(payload))
+    monkeypatch.setattr("sys.argv", ["civ-arena-analyze", str(run_dir_path)])
+
+    main()
+
+    report = json.loads((run_dir_path / "report.json").read_text())
+    markdown = (run_dir_path / "report.md").read_text()
+    assert report["by_player"] == {}
+    assert report["channels"]["current_turn"] == 90
+    assert report["channels"]["grievances"]["effective_magnitude"] == pytest.approx(
+        0.5
+    )
+    assert "_No players found in this run._" in markdown
+    assert "## Unofficial Channels" in markdown
+    assert "| deterministic | 1 | 2.000 | 0.500 |" in markdown
 
 
 def test_custom_output_paths(tmp_path: Path) -> None:

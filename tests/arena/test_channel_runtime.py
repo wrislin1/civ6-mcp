@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+from collections import Counter
 
 import pytest
 
@@ -17,10 +18,14 @@ from civ_mcp.arena.channel_runtime import (
 from civ_mcp.arena.config import ChannelRules
 from civ_mcp.arena.channels import (
     ChannelAcknowledgement,
+    ChannelEvent,
     DealState,
     FavorStatus,
     Message,
     PaymentStatus,
+    event_to_dict,
+    state_from_dict,
+    state_to_dict,
 )
 from civ_mcp.arena.channel_terms import (
     ChannelObservation,
@@ -309,29 +314,160 @@ def append_complete_deal_changes(rt: ChannelRuntime, deals: list) -> None:
         stream.writelines(json.dumps(event) + "\n" for event in events)
 
 
-def seed_maximum_legal_state(rt: ChannelRuntime, player_id: int = 4) -> None:
-    """Fill every ordered message pair involving one seat to its schema-1 cap."""
-    messages = []
-    next_message = 1
-    max_per_pair = rt.rules.max_messages_per_pair
-    for counterpart in sorted(rt.state.enabled_players - {player_id}):
-        for direction in ((player_id, counterpart), (counterpart, player_id)):
-            for index in range(max_per_pair):
-                messages.append(
-                    Message(
-                        id=f"msg-{next_message:06d}",
-                        from_player=direction[0],
-                        to_player=direction[1],
-                        turn=index + 1,
-                        text=f"private-{direction[0]}-{direction[1]}-{index}",
-                        deal_id=None,
-                    )
+def seed_maximum_legal_state(
+    rt: ChannelRuntime,
+    player_id: int = 4,
+) -> ChannelRuntime:
+    """Build, persist, and reopen the maximum schema-1 eight-seat shape."""
+    state = rt.state
+    events: list[ChannelEvent] = []
+
+    def commit(kind: str, payload: dict) -> None:
+        nonlocal state
+        sequence = state.next_event
+        event = ChannelEvent(
+            1,
+            f"evt-{sequence:06d}",
+            sequence,
+            kind,
+            payload,
+        )
+        state = ChannelRuntime._reduce_persisted_event(state, event)
+        events.append(event)
+
+    def propose(proposer: int, counterparty: int, turn: int, payment: int = 100):
+        deal_id = f"deal-{state.next_deal:06d}"
+        commit(
+            "deal_proposed",
+            {
+                "deal": {
+                    "id": deal_id,
+                    "proposer": proposer,
+                    "counterparty": counterparty,
+                    "created_turn": turn,
+                    "accepted_turn": None,
+                    "accept_by_turn": turn + rt.rules.acceptance_turns,
+                    "completion_window_turns": 3,
+                    "favor": {
+                        "term_type": "maintain_gold_reserve",
+                        "params": {"min_gold": 100},
+                        "baseline": {},
+                        "monitor": {},
+                    },
+                    "payment_gold": payment,
+                    "timing": "up_front",
+                    "state": "proposed",
+                    "favor_status": "not_due",
+                    "payment_status": "not_due",
+                    "fund_by_turn": None,
+                    "payment_response_by_turn": None,
+                    "favor_due_turn": None,
+                    "terminal": None,
+                },
+                "message": {
+                    "id": f"msg-{state.next_message:06d}",
+                    "from_player": proposer,
+                    "to_player": counterparty,
+                    "turn": turn,
+                    "text": f"maximum-shape proposal {deal_id}",
+                    "deal_id": deal_id,
+                },
+            },
+        )
+        return next(deal for deal in state.deals if deal.id == deal_id)
+
+    def activate(deal, accepted_turn: int):
+        active = dataclasses.replace(
+            deal,
+            accepted_turn=accepted_turn,
+            state=DealState.ACTIVE,
+            payment_status=PaymentStatus.DUE,
+            fund_by_turn=accepted_turn + rt.rules.funding_turns,
+        )
+        commit("deal_changed", ChannelRuntime._deal_payload(active))
+        return active
+
+    # Seven terminal records exceed the recent-terminal projection cap. Five
+    # old low-magnitude grievances decay below the threshold; two remain.
+    for break_turn in (2, 2, 2, 2, 2, 89, 90):
+        accepted_turn = break_turn - rt.rules.funding_turns
+        active = activate(
+            propose(player_id, 0, accepted_turn, payment=1),
+            accepted_turn,
+        )
+        broken, grievance = ChannelRuntime._canonical_breach_records(
+            state,
+            active,
+            turn=break_turn,
+            breach="funding",
+            reason="promised payment was not funded by the deadline",
+        )
+        commit(
+            "deal_broken",
+            {
+                "deal": ChannelRuntime._deal_payload(broken),
+                "grievance": grievance,
+            },
+        )
+
+    # Every ordered pair reaches the maximum unresolved-deal count; terminal
+    # deals above no longer consume that pair's active cap.
+    for proposer in sorted(state.enabled_players):
+        for counterparty in sorted(state.enabled_players - {proposer}):
+            for _ in range(rt.rules.max_active_deals_per_pair):
+                activate(propose(proposer, counterparty, 80), 80)
+
+    # Proposal messages count toward the same ordered-pair maximum. Fill all
+    # 56 legal directed pairs exactly to the persisted cap.
+    pair_counts = Counter(
+        (message.from_player, message.to_player) for message in state.messages
+    )
+    for sender in sorted(state.enabled_players):
+        for recipient in sorted(state.enabled_players - {sender}):
+            for index in range(
+                pair_counts[(sender, recipient)],
+                rt.rules.max_messages_per_pair,
+            ):
+                commit(
+                    "message_sent",
+                    {
+                        "id": f"msg-{state.next_message:06d}",
+                        "from_player": sender,
+                        "to_player": recipient,
+                        "turn": min(index, 90),
+                        "text": f"private-{sender}-{recipient}-{index}",
+                        "deal_id": None,
+                    },
                 )
-                next_message += 1
-    rt.state = dataclasses.replace(
-        rt.state,
-        messages=tuple(messages),
-        next_message=next_message,
+
+    for index in range(25):
+        commit(
+            "acknowledged",
+            {
+                "player_id": player_id,
+                "turn": 90,
+                "source_id": f"maximum-source-{index}",
+                "status": "rejected",
+                "message": f"maximum acknowledgement {index}",
+                "deal_id": None,
+            },
+        )
+
+    snapshot_payload = state_to_dict(state)
+    assert state_from_dict(snapshot_payload) == state
+    rt.events_path.write_text(
+        "".join(
+            json.dumps(event_to_dict(event), sort_keys=True) + "\n"
+            for event in events
+        ),
+        encoding="utf-8",
+    )
+    rt.state_path.write_text(json.dumps(snapshot_payload), encoding="utf-8")
+    return ChannelRuntime.open(
+        rt.channels_dir.parent,
+        state.run_id,
+        state.enabled_players,
+        rt.rules,
     )
 
 
@@ -898,7 +1034,28 @@ async def test_eight_player_shape_has_bounded_projection_and_two_queries_per_tur
         frozenset(range(8)),
         ChannelRules(),
     )
-    seed_maximum_legal_state(rt)
+    rt = seed_maximum_legal_state(rt)
+
+    ordered_message_counts = Counter(
+        (message.from_player, message.to_player) for message in rt.state.messages
+    )
+    expected_ordered_pairs = {
+        (sender, recipient)
+        for sender in range(8)
+        for recipient in range(8)
+        if sender != recipient
+    }
+    assert set(ordered_message_counts) == expected_ordered_pairs
+    assert set(ordered_message_counts.values()) == {rt.rules.max_messages_per_pair}
+    active_deal_counts = Counter(
+        (deal.proposer, deal.counterparty)
+        for deal in rt.state.deals
+        if not deal.is_terminal
+    )
+    assert set(active_deal_counts) == expected_ordered_pairs
+    assert set(active_deal_counts.values()) == {
+        rt.rules.max_active_deals_per_pair
+    }
 
     admission = await rt.admit_player(gs, 4, 90)
     await rt.finish_player(
@@ -913,6 +1070,14 @@ async def test_eight_player_shape_has_bounded_projection_and_two_queries_per_tur
         len(group) <= 10
         for group in messages_grouped_by_counterpart(admission.projection)
     )
+    assert sum(not deal.is_terminal for deal in admission.projection.deals) == (
+        7 * 2 * rt.rules.max_active_deals_per_pair
+    )
+    assert sum(deal.is_terminal for deal in admission.projection.deals) == (
+        rt.rules.recent_terminal_deals
+    )
+    assert len(admission.projection.grievances) == 2
+    assert len(admission.projection.acknowledgements) == 20
 
 
 @pytest.mark.asyncio

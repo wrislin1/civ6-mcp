@@ -28,6 +28,7 @@ from civ_mcp.arena.task_tracker import (
     UNITS_FETCH_FAILED,
 )
 from civ_mcp.arena.channels import (
+    ChannelState,
     DealState,
     PaymentStatus,
     effective_magnitude,
@@ -857,11 +858,76 @@ def _add_grievance_magnitude(summary: dict, raw: float, effective: float) -> Non
     summary["effective_magnitude"] += effective
 
 
-def analyze_channels(state_payload: dict, current_turn: int) -> dict:
-    """Validate and aggregate one schema-1 unofficial-channel snapshot."""
+def _require_channel_turn(value: object, label: str) -> int:
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return value
+
+
+def _latest_channel_turn(state: ChannelState) -> int:
+    """Return the latest turn represented by one validated channel state."""
+    turns: list[int] = []
+    for index, message in enumerate(state.messages):
+        turns.append(_require_channel_turn(message.turn, f"message {index} turn"))
+    for index, deal in enumerate(state.deals):
+        for field_name in (
+            "created_turn",
+            "accepted_turn",
+        ):
+            value = getattr(deal, field_name)
+            if value is not None:
+                turns.append(
+                    _require_channel_turn(value, f"deal {index} {field_name}")
+                )
+        if deal.terminal is not None and not isinstance(deal.terminal, dict):
+            raise ValueError(f"deal {index} terminal must be an object")
+        if deal.terminal is not None and deal.terminal.get("turn") is not None:
+            turns.append(
+                _require_channel_turn(
+                    deal.terminal["turn"],
+                    f"deal {index} terminal turn",
+                )
+            )
+    for index, grievance in enumerate(state.grievances):
+        turns.append(
+            _require_channel_turn(grievance.turn, f"grievance {index} turn")
+        )
+    for index, acknowledgement in enumerate(state.acknowledgements):
+        turns.append(
+            _require_channel_turn(
+                acknowledgement.turn,
+                f"acknowledgement {index} turn",
+            )
+        )
+    for index, observation in enumerate(state.observations):
+        if not isinstance(observation, dict):
+            raise ValueError(f"observation {index} must be an object")
+        if observation.get("turn") is not None:
+            turns.append(
+                _require_channel_turn(
+                    observation["turn"],
+                    f"observation {index} turn",
+                )
+            )
+    return max(turns, default=0)
+
+
+def _latest_run_turn(
+    transcript_records: list[dict],
+    channel_state: ChannelState,
+) -> int:
+    turns = [
+        _require_channel_turn(record["turn"], "transcript turn")
+        for record in transcript_records
+        if record.get("turn") is not None
+    ]
+    turns.append(_latest_channel_turn(channel_state))
+    return max(turns, default=0)
+
+
+def _analyze_channel_state(state: ChannelState, current_turn: int) -> dict:
     if type(current_turn) is not int or current_turn < 0:
         raise ValueError("current_turn must be a non-negative integer")
-    state = state_from_dict(state_payload)
     players = {
         str(player_id): _new_player_summary()
         for player_id in sorted(state.enabled_players)
@@ -959,6 +1025,12 @@ def analyze_channels(state_payload: dict, current_turn: int) -> dict:
         "grievances": grievances,
         "adjudication_sources": adjudication_sources,
     }
+
+
+def analyze_channels(state_payload: dict, current_turn: int) -> dict:
+    """Validate and aggregate one schema-1 unofficial-channel snapshot."""
+    return _analyze_channel_state(state_from_dict(state_payload), current_turn)
+
 
 def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  # noqa: ARG001
     """Analyze transcript and cost records.
@@ -1183,7 +1255,6 @@ def render_markdown(report: dict) -> str:
     by_player: dict = report.get("by_player", {})
     if not by_player:
         lines.append("_No players found in this run._\n")
-        return "\n".join(lines)
 
     config: dict = report.get("config_summary", {})
     if config:
@@ -1290,6 +1361,58 @@ def render_markdown(report: dict) -> str:
                 f"{skip_rate:.1%} | {top_causes} | ${est_usd:.4f} | {fq_rate:.1%} |"
             )
         lines.append("")
+
+    channels: dict = report.get("channels", {})
+    if channels:
+        lines.append("## Unofficial Channels\n")
+        lines.append(f"- **Current turn**: {channels.get('current_turn', 0)}")
+        lines.append(f"- **Messages**: {channels.get('messages', 0)}")
+        lines.append(f"- **Deals**: {channels.get('deals', 0)}\n")
+
+        lines.append("### Outcomes\n")
+        lines.append("| outcome | count |")
+        lines.append("|---------|-------|")
+        for outcome, count in channels.get("outcomes", {}).items():
+            lines.append(f"| {outcome} | {count} |")
+        lines.append("")
+
+        lines.append("### Payments\n")
+        lines.append("| status | count |")
+        lines.append("|--------|-------|")
+        for status, count in channels.get("payments", {}).items():
+            lines.append(f"| {status} | {count} |")
+        lines.append("")
+
+        grievance_summary = channels.get("grievances", {})
+        source_rows = [
+            (source, summary)
+            for source, summary in grievance_summary.items()
+            if isinstance(summary, dict)
+        ]
+        lines.append("### Grievances by adjudication source\n")
+        lines.append("| source | count | raw magnitude | effective magnitude |")
+        lines.append("|--------|-------|---------------|---------------------|")
+        for source, summary in source_rows:
+            lines.append(
+                f"| {source} | {summary.get('count', 0)} | "
+                f"{summary.get('raw_magnitude', 0.0):.3f} | "
+                f"{summary.get('effective_magnitude', 0.0):.3f} |"
+            )
+        if not source_rows:
+            lines.append("| none | 0 | 0.000 | 0.000 |")
+        lines.append("")
+
+        pairs = channels.get("pairs", {})
+        if pairs:
+            lines.append("### Ordered pairs\n")
+            lines.append("| pair | messages | deals |")
+            lines.append("|------|----------|-------|")
+            for pair, summary in pairs.items():
+                lines.append(
+                    f"| {pair} | {summary.get('messages', 0)} | "
+                    f"{summary.get('deals', 0)} |"
+                )
+            lines.append("")
 
     for _seat, data in by_player.items():
         pid = data.get("player_id")
@@ -1425,17 +1548,10 @@ def main() -> None:
         channel_state_payload = json.loads(
             channel_state_path.read_text(encoding="utf-8")
         )
-        current_turn = max(
-            (
-                turn
-                for record in transcript_records
-                if type((turn := record.get("turn"))) is int
-            ),
-            default=0,
-        )
-        report["channels"] = analyze_channels(
-            channel_state_payload,
-            current_turn=current_turn,
+        channel_state = state_from_dict(channel_state_payload)
+        report["channels"] = _analyze_channel_state(
+            channel_state,
+            current_turn=_latest_run_turn(transcript_records, channel_state),
         )
 
     # Write JSON
