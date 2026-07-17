@@ -81,6 +81,35 @@ PRIVACY_ARTIFACT_KINDS = (
     "pending_transcript_record",
     "transcript_records",
 )
+_PRIVACY_SCAN_MAX_DEPTH = 8
+_PRIVACY_SCAN_MAX_CHARS = 1_000_000
+_PRIVACY_SCAN_MAX_JSON_ATTEMPTS = 256
+
+
+class _PrivacyScanLimitExceeded(RuntimeError):
+    """Raised when observer privacy inspection cannot finish within bounds."""
+
+
+class _PrivacyScanBudget:
+    """One shared recursive JSON-scan budget for a single privacy artifact."""
+
+    def __init__(self) -> None:
+        self.remaining_chars = _PRIVACY_SCAN_MAX_CHARS
+        self.remaining_attempts = _PRIVACY_SCAN_MAX_JSON_ATTEMPTS
+
+    def check_depth(self, depth: int) -> None:
+        if depth > _PRIVACY_SCAN_MAX_DEPTH:
+            raise _PrivacyScanLimitExceeded("privacy scan depth limit exceeded")
+
+    def consume_text(self, text: str) -> None:
+        if len(text) > self.remaining_chars:
+            raise _PrivacyScanLimitExceeded("privacy scan character limit exceeded")
+        self.remaining_chars -= len(text)
+
+    def consume_json_attempt(self) -> None:
+        if self.remaining_attempts <= 0:
+            raise _PrivacyScanLimitExceeded("privacy JSON attempt limit exceeded")
+        self.remaining_attempts -= 1
 
 
 def minimum_captures(config) -> int:
@@ -379,43 +408,62 @@ class ChannelsCoreDriver:
         return type(candidate) is type(target) and candidate == target
 
     @classmethod
-    def _embedded_json_values(cls, text: str):
-        """Yield mapping/list values safely decoded from arbitrary observer text."""
+    def _embedded_json_values(cls, text: str, budget: _PrivacyScanBudget):
+        """Yield containers/strings safely decoded from arbitrary observer text."""
 
         decoder = json.JSONDecoder()
         index = 0
         while index < len(text):
             mapping_start = text.find("{", index)
             sequence_start = text.find("[", index)
+            string_start = text.find('"', index)
             starts = tuple(
-                start for start in (mapping_start, sequence_start) if start >= 0
+                start
+                for start in (mapping_start, sequence_start, string_start)
+                if start >= 0
             )
             if not starts:
                 return
             start = min(starts)
+            budget.consume_json_attempt()
             try:
                 value, end = decoder.raw_decode(text, start)
             except json.JSONDecodeError:
                 index = start + 1
                 continue
-            if isinstance(value, (Mapping, list)):
+            if isinstance(value, (Mapping, list, str)):
                 yield value
             index = max(end, start + 1)
 
     @classmethod
-    def _contains_mapping(cls, value, target: Mapping) -> bool:
+    def _contains_mapping(
+        cls,
+        value,
+        target: Mapping,
+        budget: _PrivacyScanBudget,
+        *,
+        depth: int = 0,
+    ) -> bool:
+        budget.check_depth(depth)
         if dataclasses.is_dataclass(value) and not isinstance(value, type):
             value = cls._jsonable(value)
         if isinstance(value, Mapping):
             if cls._mapping_is_typed_subset(value, target):
                 return True
-            return any(cls._contains_mapping(item, target) for item in value.values())
-        if isinstance(value, (tuple, list, frozenset, set)):
-            return any(cls._contains_mapping(item, target) for item in value)
-        if isinstance(value, str):
             return any(
-                cls._contains_mapping(item, target)
-                for item in cls._embedded_json_values(value)
+                cls._contains_mapping(item, target, budget, depth=depth + 1)
+                for item in value.values()
+            )
+        if isinstance(value, (tuple, list, frozenset, set)):
+            return any(
+                cls._contains_mapping(item, target, budget, depth=depth + 1)
+                for item in value
+            )
+        if isinstance(value, str):
+            budget.consume_text(value)
+            return any(
+                cls._contains_mapping(item, target, budget, depth=depth + 1)
+                for item in cls._embedded_json_values(value, budget)
             )
         return False
 
@@ -496,16 +544,15 @@ class ChannelsCoreDriver:
         results = []
         for kind, text, structured in artifacts:
             leaked = tuple(value for value in forbidden if value in text)
-            fingerprint_leaked = bool(
-                isinstance(fingerprint, Mapping)
-                and (
-                    (
-                        structured is not None
-                        and self._contains_mapping(structured, fingerprint)
+            fingerprint_leaked = False
+            if isinstance(fingerprint, Mapping):
+                scan_budget = _PrivacyScanBudget()
+                fingerprint_leaked = (
+                    structured is not None
+                    and self._contains_mapping(
+                        structured, fingerprint, scan_budget
                     )
-                    or self._contains_mapping(text, fingerprint)
-                )
-            )
+                ) or self._contains_mapping(text, fingerprint, scan_budget)
             structure_ok = (
                 projection_ok
                 if kind == "projection"

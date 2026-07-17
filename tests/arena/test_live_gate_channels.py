@@ -1412,6 +1412,104 @@ async def test_json_string_leaf_payment_fingerprint_fails(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_double_encoded_json_string_leaf_payment_fingerprint_fails(tmp_path):
+    driver, runtime, gs, fingerprint = await ready_for_fingerprint_observer(tmp_path)
+    double_encoded = json.dumps(json.dumps(fingerprint))
+
+    await run_gate_seat(
+        driver,
+        runtime,
+        gs,
+        3,
+        11,
+        pending_record_overrides={"double_encoded": double_encoded},
+    )
+
+    pending = next(
+        assertion
+        for assertion in reversed(privacy_assertions(driver))
+        if assertion["artifact_kind"] == "pending_transcript_record"
+    )
+    assert pending["result"] == "FAIL"
+    assert driver.pending_signal() == GATE_FAILED
+    assert all(record.get("turn") != 11 for record in observer_records(driver))
+    journal = driver._journal
+    assert journal is not None
+    forensic = journal.gate_dir / "privacy_fail_11_pending_transcript_record.json"
+    preserved_record = json.loads(json.loads(forensic.read_text())["input"])
+    assert preserved_record["double_encoded"] == double_encoded
+
+
+@pytest.mark.asyncio
+async def test_double_encoded_json_fingerprint_in_raw_observer_text_fails(
+    tmp_path, monkeypatch
+):
+    driver, runtime, gs, fingerprint = await ready_for_fingerprint_observer(tmp_path)
+    planted = json.dumps(json.dumps(fingerprint))
+    original = runtime.admit_player
+
+    async def tainted(gs_arg, player_id, turn):
+        admission = await original(gs_arg, player_id, turn)
+        if player_id == 3:
+            return dataclasses.replace(
+                admission,
+                block=admission.block + "\nPRIVATE DOUBLE JSON\n" + planted,
+            )
+        return admission
+
+    monkeypatch.setattr(runtime, "admit_player", tainted)
+    await run_gate_seat(driver, runtime, gs, 3, 11)
+
+    failures = {
+        assertion["artifact_kind"]
+        for assertion in privacy_assertions(driver)
+        if assertion["turn"] == 11 and assertion["result"] == "FAIL"
+    }
+    assert {"channel_block", "opening_prompt"} <= failures
+    assert driver.pending_signal() == GATE_FAILED
+    assert all(record.get("turn") != 11 for record in observer_records(driver))
+    journal = driver._journal
+    assert journal is not None
+    for kind in ("channel_block", "opening_prompt"):
+        forensic = journal.gate_dir / f"privacy_fail_11_{kind}.json"
+        assert planted in json.loads(forensic.read_text())["input"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("budget_case", ["characters", "attempts", "depth"])
+async def test_privacy_scan_budget_exhaustion_fails_closed(
+    tmp_path, budget_case
+):
+    driver, runtime, gs, _fingerprint = await ready_for_fingerprint_observer(tmp_path)
+    marker = f"PRIVATE-SCAN-BUDGET-{budget_case}"
+    if budget_case == "characters":
+        planted = marker + ("x" * 1_000_001)
+    elif budget_case == "attempts":
+        planted = marker + ("{" * 257)
+    else:
+        planted = marker
+        for _ in range(10):
+            planted = [planted]
+
+    await run_gate_seat(
+        driver,
+        runtime,
+        gs,
+        3,
+        11,
+        pending_record_overrides={"scan_budget": planted},
+    )
+
+    assert driver.pending_signal() == GATE_FAILED
+    journal = driver._journal
+    assert journal is not None
+    assert journal.state.reason == "observer privacy inspection failed at turn 11"
+    assert marker not in journal.result_path.read_text()
+    assert marker not in json.dumps(driver.result_summary())
+    assert all(record.get("turn") != 11 for record in observer_records(driver))
+
+
+@pytest.mark.asyncio
 async def test_payment_fingerprint_near_match_and_type_mismatch_are_not_leaks(tmp_path):
     driver, runtime, gs, fingerprint = await ready_for_fingerprint_observer(tmp_path)
     missing_key = dict(fingerprint)
