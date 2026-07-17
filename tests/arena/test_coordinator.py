@@ -6987,6 +6987,61 @@ async def test_live_gate_attach_persisted_failure_stops_before_hook_injection(tm
 
 
 @pytest.mark.asyncio
+async def test_live_gate_admission_signal_stops_before_policy_or_game_actions(tmp_path):
+    runtime = FakeChannelRuntime()
+
+    class FailStopPolicy(ChannelRecordingPolicy):
+        async def __call__(self, *args, **kwargs):
+            raise AssertionError("policy must not run after admission failure signal")
+
+    policy = FailStopPolicy(runtime)
+
+    class AdmissionFailureDriver(CoordinatorGateDriver):
+        def note_admission(self, player_id, turn, admission, error):
+            super().note_admission(player_id, turn, admission, error)
+            self._signal = "failed"
+
+        def result_summary(self):
+            return {
+                "status": "failed",
+                "phase": "admission",
+                "reason": "admission_failed",
+                "restart_count": 0,
+                "run_id": "channels-run",
+            }
+
+    driver = AdmissionFailureDriver(policy)
+    conn = FakeConn()
+    conn._polls = iter(
+        [
+            ["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"],
+            ["LOCAL|2", "TURN|7", "ACTIVE|true", "LAST|1"],
+        ]
+    )
+    gs = FakeGS()
+
+    result = await run_arena(
+        conn,
+        gs,
+        _channel_config(tmp_path, max_puppet_turns=2, puppet_ids=[1, 2]),
+        policy_for=driver.policy_for,
+        channel_runtime=runtime,
+        live_gate_driver=driver,
+    )
+
+    assert result["live_gate"]["status"] == "failed"
+    assert driver.admissions == [(1, 7, True, "")]
+    assert driver.captures == []
+    assert policy.calls == []
+    assert gs.ran == 0
+    assert runtime.calls == ["reconcile:1:7", "admit:1:7", "finish:1:7"]
+    assert runtime.finish_results == [None]
+    assert result["puppet_turns_played"] == 0
+    assert conn.restored is True
+    assert _hook_was_disabled(conn)
+
+
+@pytest.mark.asyncio
 async def test_live_gate_missing_channel_runtime_fails_after_full_cleanup(tmp_path):
     policy = ScriptedPolicy()
     driver = CoordinatorGateDriver(policy)

@@ -126,8 +126,9 @@ def test_second_restart_required_rejected(tmp_path):
     journal.append("restart_required", {"turn": 6})
     assert journal.state.status == GATE_RESTART_REQUIRED
     assert journal.state.restart_count == 1
-    journal.append("restart_verified", {"turn": 7})
+    journal.append("restart_verified", {"turn": 7, "next_phase": "after_restart"})
     assert journal.state.status == GATE_ACTIVE
+    assert journal.state.phase == "after_restart"
     with pytest.raises(GateStateError):
         journal.append("restart_required", {"turn": 8})
 
@@ -135,7 +136,100 @@ def test_second_restart_required_rejected(tmp_path):
 def test_restart_verified_only_from_restart_required(tmp_path):
     journal = open_journal(tmp_path)
     with pytest.raises(GateStateError):
-        journal.append("restart_verified", {"turn": 6})
+        journal.append(
+            "restart_verified", {"turn": 6, "next_phase": "after_restart"}
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"turn": 7},
+        {"turn": 7, "next_phase": ""},
+        {"turn": 7, "next_phase": 3},
+        {"turn": True, "next_phase": "after_restart"},
+        {"turn": 7, "next_phase": "after_restart", "extra": "no"},
+    ],
+)
+def test_restart_verified_requires_exact_atomic_phase_schema(tmp_path, payload):
+    journal = open_journal(tmp_path)
+    journal.append("restart_required", {"turn": 6})
+
+    with pytest.raises(GateStateError):
+        journal.append("restart_verified", payload)
+
+    assert journal.state.status == GATE_RESTART_REQUIRED
+    assert journal.state.phase == "preflight"
+
+
+def test_restart_verified_replay_never_exposes_active_old_phase(tmp_path):
+    journal = open_journal(tmp_path)
+    journal.append("restart_required", {"turn": 6})
+    journal.write_result()
+    journal.append(
+        "restart_verified", {"turn": 7, "next_phase": "after_restart"}
+    )
+
+    reopened = open_journal(tmp_path)
+    assert reopened.state.status == GATE_ACTIVE
+    assert reopened.state.phase == "after_restart"
+    assert not reopened.result_path.exists()
+
+
+def test_seat_capture_round_is_durable_deeply_immutable_and_exact_once(tmp_path):
+    journal = open_journal(tmp_path)
+    expected = [1, 2, 3]
+    journal.append(
+        "seat_captured",
+        {"turn": 10, "player_id": 1, "expected_player_ids": expected},
+    )
+    expected.append(9)
+
+    reopened = open_journal(tmp_path)
+    assert reopened.state.capture_turn == 10
+    assert reopened.state.capture_expected_players == (1, 2, 3)
+    assert reopened.state.captured_players == (1,)
+    with pytest.raises((AttributeError, TypeError)):
+        setattr(reopened.state, "captured_players", (1, 2))
+    with pytest.raises(GateStateError):
+        reopened.append(
+            "seat_captured",
+            {"turn": 10, "player_id": 1, "expected_player_ids": [1, 2, 3]},
+        )
+
+
+def test_seat_capture_rejects_turn_change_before_round_complete(tmp_path):
+    journal = open_journal(tmp_path)
+    journal.append(
+        "seat_captured",
+        {"turn": 10, "player_id": 1, "expected_player_ids": [1, 2, 3]},
+    )
+
+    with pytest.raises(GateStateError):
+        journal.append(
+            "seat_captured",
+            {"turn": 11, "player_id": 1, "expected_player_ids": [1, 2, 3]},
+        )
+
+
+def test_seat_capture_starts_next_round_only_after_completed_round(tmp_path):
+    journal = open_journal(tmp_path)
+    for player_id in (1, 2, 3):
+        journal.append(
+            "seat_captured",
+            {
+                "turn": 10,
+                "player_id": player_id,
+                "expected_player_ids": [1, 2, 3],
+            },
+        )
+    journal.append(
+        "seat_captured",
+        {"turn": 11, "player_id": 1, "expected_player_ids": [1, 2, 3]},
+    )
+
+    assert journal.state.capture_turn == 11
+    assert journal.state.captured_players == (1,)
 
 
 def test_terminal_states_reject_further_events(tmp_path):
@@ -394,7 +488,9 @@ def test_restart_verified_removes_restart_result(tmp_path):
     journal.write_result()
     assert journal.result_path.exists()
 
-    journal.append("restart_verified", {"turn": 7})
+    journal.append(
+        "restart_verified", {"turn": 7, "next_phase": "after_restart"}
+    )
 
     assert journal.state.status == GATE_ACTIVE
     assert not journal.result_path.exists()
@@ -408,7 +504,7 @@ def test_reopen_active_crash_boundary_removes_matching_restart_result(tmp_path):
         "schema_version": GATE_SCHEMA_VERSION,
         "sequence": journal.state.last_event_sequence + 1,
         "kind": "restart_verified",
-        "payload": {"turn": 7},
+        "payload": {"turn": 7, "next_phase": "after_restart"},
     }
     with journal.events_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(restart_verified, sort_keys=True) + "\n")
@@ -433,6 +529,40 @@ def test_fresh_active_journal_rejects_unrelated_stale_result(tmp_path):
         open_journal(tmp_path)
 
 
+def test_empty_authoritative_journal_rejects_stale_snapshot(tmp_path):
+    gate_dir = tmp_path / "live_gate"
+    gate_dir.mkdir(mode=0o700)
+    (gate_dir / "events.jsonl").write_text("")
+    (gate_dir / "state.json").write_text(json.dumps({"stale": True}))
+
+    with pytest.raises(GateStateError, match="state.json"):
+        open_journal(tmp_path)
+
+    assert (gate_dir / "events.jsonl").read_text() == ""
+
+
+@pytest.mark.parametrize("artifact_kind", ["symlink", "directory"])
+def test_empty_authoritative_journal_rejects_unsafe_snapshot_path(
+    tmp_path, artifact_kind
+):
+    gate_dir = tmp_path / "live_gate"
+    gate_dir.mkdir(mode=0o700)
+    (gate_dir / "events.jsonl").write_text("")
+    state_path = gate_dir / "state.json"
+    outside = tmp_path / "outside-state.json"
+    if artifact_kind == "symlink":
+        outside.write_text("outside")
+        state_path.symlink_to(outside)
+    else:
+        state_path.mkdir()
+
+    with pytest.raises(GateStateError, match="state.json"):
+        open_journal(tmp_path)
+
+    if artifact_kind == "symlink":
+        assert outside.read_text() == "outside"
+
+
 def test_restart_result_cleanup_rejects_symlink_without_touching_target(tmp_path):
     journal = open_journal(tmp_path)
     journal.append("restart_required", {"turn": 6})
@@ -443,7 +573,9 @@ def test_restart_result_cleanup_rejects_symlink_without_touching_target(tmp_path
     journal.result_path.symlink_to(target)
 
     with pytest.raises(GateStateError):
-        journal.append("restart_verified", {"turn": 7})
+        journal.append(
+            "restart_verified", {"turn": 7, "next_phase": "after_restart"}
+        )
 
     assert journal.result_path.is_symlink()
     assert target.read_text() == "outside"
@@ -457,7 +589,9 @@ def test_restart_result_cleanup_rejects_non_regular_path(tmp_path):
     journal.result_path.mkdir()
 
     with pytest.raises(GateStateError):
-        journal.append("restart_verified", {"turn": 7})
+        journal.append(
+            "restart_verified", {"turn": 7, "next_phase": "after_restart"}
+        )
 
     assert journal.result_path.is_dir()
 

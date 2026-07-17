@@ -68,6 +68,16 @@ def gate_config(**overrides):
     return ArenaConfig(**kwargs)
 
 
+def exact_payment_fingerprint():
+    return {
+        "payer": 1,
+        "payee": 2,
+        "gold": 1,
+        "duration": 0,
+        "item_count": 1,
+    }
+
+
 def test_scenario_registered_with_contracts():
     meta = resolve_scenario("unofficial_channels_core_v1")
     assert meta.revision == lgc.SCENARIO_REVISION
@@ -198,7 +208,9 @@ async def test_preflight_missing_family_fails_closed(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_seat(driver, runtime, gs, 1, 10)
     assert driver.pending_signal() == GATE_FAILED
-    assert "trade_routes" in driver._journal.state.reason
+    assert driver._journal.state.reason == "preflight_failed"
+    assert "trade_routes" not in public_gate_text(driver)
+    assert "trade_routes" in private_failure_text(driver)
     assert driver._journal.result_path.exists()
 
 
@@ -214,11 +226,48 @@ async def test_preflight_observation_error_fails_closed(tmp_path):
 @pytest.mark.asyncio
 async def test_preflight_insufficient_gold_fails_closed(tmp_path):
     gs = GateGameState()
-    gs.treasury[1] = 0
+    private_balance = -987654321
+    gs.treasury[1] = private_balance
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_seat(driver, runtime, gs, 1, 10)
     assert driver.pending_signal() == GATE_FAILED
-    assert "gold" in driver._journal.state.reason
+    assert driver._journal.state.reason == "preflight_failed"
+    assert str(private_balance) not in public_gate_text(driver)
+    assert str(private_balance) in private_failure_text(driver)
+
+
+@pytest.mark.asyncio
+async def test_forensic_write_failure_still_persists_sanitized_failure(tmp_path):
+    private_balance = -246813579
+    gs = GateGameState()
+    gs.treasury[1] = private_balance
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+
+    def fail_forensic_write(*args, **kwargs):
+        raise OSError(f"PRIVATE_FORENSIC_WRITE_ERROR_{private_balance}")
+
+    driver._journal.write_private_json = fail_forensic_write
+    await run_gate_seat(driver, runtime, gs, 1, 10)
+
+    assert driver.pending_signal() == GATE_FAILED
+    assert driver._journal.state.reason == "preflight_failed"
+    assert driver._journal.result_path.exists()
+    public = public_gate_text(driver)
+    assert str(private_balance) not in public
+    assert "PRIVATE_FORENSIC_WRITE_ERROR" not in public
+
+
+@pytest.mark.asyncio
+async def test_failure_reason_allowlist_blocks_code_shaped_private_text(tmp_path):
+    driver, _runtime, _gs = await attached_driver(tmp_path)
+    private_reason = "private_secret_marker_987654"
+
+    driver._fail(private_reason)
+
+    assert driver.pending_signal() == GATE_FAILED
+    assert driver._journal.state.reason == "gate_invariant_failed"
+    assert private_reason not in public_gate_text(driver)
+    assert private_reason in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -230,7 +279,8 @@ async def test_preflight_conflicting_pending_trade_fails_closed(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_seat(driver, runtime, gs, 1, 10)
     assert driver.pending_signal() == GATE_FAILED
-    assert "pending" in driver._journal.state.reason
+    assert driver._journal.state.reason == "preflight_failed"
+    assert "ambiguous_pending_payment" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -327,14 +377,10 @@ async def test_round2_funding_offers_exact_payment(tmp_path):
     deal_id = driver._journal.state.data["upfront_deal_id"]
     deal = deals(runtime)[deal_id]
     assert deal.payment_status is PaymentStatus.OFFERED
-    fingerprint = driver._journal.state.data["upfront_payment_fingerprint"]
-    assert fingerprint == {
-        "payer": 1,
-        "payee": 2,
-        "gold": 1,
-        "duration": 0,
-        "item_count": 1,
-    }
+    assert driver._payment_fingerprint == exact_payment_fingerprint()
+    public = public_gate_text(driver)
+    assert "upfront_payment_fingerprint" not in public
+    assert json.dumps(exact_payment_fingerprint(), sort_keys=True) not in public
     from civ_mcp.lua.channel_payments import ExactPaymentOffer
 
     assert gs.pending[(1, 2)] == ExactPaymentOffer(1, 2, 1)
@@ -406,8 +452,12 @@ async def test_rejected_acknowledgement_fails_closed_and_persists_result(tmp_pat
     assert len(planned_rejections) == 1
     assert planned_rejections[0].status == "rejected"
     assert driver.pending_signal() == GATE_FAILED
-    assert "rejected" in driver._journal.state.reason
+    assert driver._journal.state.reason == "acknowledgement_rejected"
     assert driver._journal.result_path.exists()
+    private_message = planned_rejections[0].message
+    assert private_message
+    assert private_message not in public_gate_text(driver)
+    assert private_message in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -442,8 +492,8 @@ async def test_recovery_fails_closed_on_rejected_canonical_acknowledgement(tmp_p
     resumed.note_admission(2, 10, next_admission, "")
 
     assert resumed.pending_signal() == GATE_FAILED
-    assert "recovered acknowledgement" in resumed._journal.state.reason
-    assert "rejected" in resumed._journal.state.reason
+    assert resumed._journal.state.reason == "acknowledgement_rejected"
+    assert "rejected" in private_failure_text(resumed)
     assert resumed._journal.result_path.exists()
 
 
@@ -580,8 +630,9 @@ async def test_recovery_rejects_unexpected_ack_after_expected_actions_applied(
     resumed.note_admission(2, 10, next_admission, "")
 
     assert resumed.pending_signal() == GATE_FAILED
-    assert "unexpected" in resumed._journal.state.reason
-    assert rogue.source_id in resumed._journal.state.reason
+    assert resumed._journal.state.reason == "unexpected_acknowledgement"
+    assert rogue.source_id not in public_gate_text(resumed)
+    assert rogue.source_id in private_failure_text(resumed)
     assert resumed._journal.result_path.exists()
 
 
@@ -607,7 +658,8 @@ async def test_pending_actions_fail_closed_if_source_identity_cannot_recur(
     )
 
     assert resumed.pending_signal() == GATE_FAILED
-    assert "cannot be reissued" in resumed._journal.state.reason
+    assert resumed._journal.state.reason == "action_recovery_failed"
+    assert "source_identity_cannot_recur" in private_failure_text(resumed)
     assert resumed._journal.result_path.exists()
 
 
@@ -617,6 +669,24 @@ async def drive_to_restart(tmp_path, gs=None):
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_round(driver, runtime, gs, 11)
     return driver, runtime, gs
+
+
+def public_gate_text(driver):
+    paths = (
+        driver._journal.events_path,
+        driver._journal.state_path,
+        driver._journal.result_path,
+    )
+    return "\n".join(
+        path.read_text() for path in paths if path.exists()
+    ) + "\n" + json.dumps(driver.result_summary(), sort_keys=True)
+
+
+def private_failure_text(driver):
+    return "\n".join(
+        path.read_text()
+        for path in sorted(driver._journal.gate_dir.glob("failure_*.json"))
+    )
 
 
 @pytest.mark.asyncio
@@ -640,12 +710,115 @@ async def test_restart_checkpoint_persists_fingerprint_and_result(tmp_path):
     state = driver._journal.state
     assert state.status == GATE_RESTART_REQUIRED
     assert state.restart_count == 1
-    canonical = dict(state.data["upfront_payment_fingerprint"])
-    assert canonical["gold"] == 1
-    assert dict(state.data["restart_offer_fingerprint_before"]) == canonical
-    assert "restart_offer_fingerprint_after" not in state.data
+    assert isinstance(state.data["payment_checkpoint_digest"], str)
+    assert len(state.data["payment_checkpoint_digest"]) == 16
+    public = public_gate_text(driver)
+    assert "upfront_payment_fingerprint" not in public
+    assert "restart_offer_fingerprint_before" not in public
+    assert "restart_offer_fingerprint_after" not in public
+    assert json.dumps(exact_payment_fingerprint(), sort_keys=True) not in public
+    checkpoint = json.loads(
+        (driver._journal.gate_dir / "payment_checkpoint.json").read_text()
+    )
+    assert checkpoint["recorded"] == exact_payment_fingerprint()
+    assert checkpoint["before"] == exact_payment_fingerprint()
     result = json.loads(driver._journal.result_path.read_text())
     assert result["status"] == GATE_RESTART_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_partial_restart_round_survives_process_crash_and_restarts_once(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    assert driver._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert driver.pending_signal() is None
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+    assert resumed.pending_signal() is None
+    await run_gate_seat(resumed, runtime, gs, 2, 11)
+    assert resumed.pending_signal() is None
+    await run_gate_seat(resumed, runtime, gs, 3, 11)
+
+    assert resumed.pending_signal() == GATE_RESTART_REQUIRED
+    assert resumed._journal.state.restart_count == 1
+    kinds = [json.loads(line)["kind"] for line in resumed._journal.events_path.read_text().splitlines()]
+    assert kinds.count("restart_required") == 1
+
+
+@pytest.mark.asyncio
+async def test_completed_restart_round_crash_requests_restart_on_attach(tmp_path):
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    async def crash_before_restart_event(turn):
+        raise SimulatedCrash()
+
+    driver._request_restart = crash_before_restart_event
+    with pytest.raises(SimulatedCrash):
+        await run_gate_seat(driver, runtime, gs, 3, 11)
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() == GATE_RESTART_REQUIRED
+    assert resumed._journal.state.restart_count == 1
+
+
+@pytest.mark.asyncio
+async def test_restart_verification_crash_replays_atomic_next_phase(tmp_path):
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    runtime2 = ChannelRuntime.open(
+        driver._run_dir,
+        driver.config.run_id,
+        frozenset({1, 2, 3}),
+        driver.config.channel_rules,
+    )
+    crashing = lgc.ChannelsCoreDriver(gate_config())
+    real_append = driver._journal.__class__.append
+    original_open = lgc.LiveGateJournal.open
+
+    def open_with_crashing_append(*args, **kwargs):
+        journal = original_open(*args, **kwargs)
+
+        def append(kind, payload):
+            event = real_append(journal, kind, payload)
+            if kind == "restart_verified":
+                raise SimulatedCrash()
+            return event
+
+        journal.append = append
+        return journal
+
+    from unittest.mock import patch
+
+    with patch.object(lgc.LiveGateJournal, "open", side_effect=open_with_crashing_append):
+        with pytest.raises(SimulatedCrash):
+            await crashing.attach(
+                gs=gs, channel_runtime=runtime2, run_dir=driver._run_dir
+            )
+
+    replayed = lgc.ChannelsCoreDriver(gate_config())
+    await replayed.attach(
+        gs=gs, channel_runtime=runtime2, run_dir=driver._run_dir
+    )
+    assert replayed.pending_signal() is None
+    assert replayed._journal.state.status == GATE_ACTIVE
+    assert replayed._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+    assert not replayed._journal.result_path.exists()
 
 
 @pytest.mark.asyncio
@@ -660,10 +833,7 @@ async def test_restart_live_fingerprint_mismatch_fails(tmp_path):
     await run_gate_seat(driver, runtime, gs, 3, 11)
 
     assert driver.pending_signal() == GATE_FAILED
-    assert (
-        "pending" in driver._journal.state.reason
-        or "fingerprint" in driver._journal.state.reason
-    )
+    assert driver._journal.state.reason == "restart_checkpoint_failed"
 
 
 @pytest.mark.asyncio
@@ -683,9 +853,12 @@ async def test_resume_verifies_offer_and_continues(tmp_path):
     assert state.status == GATE_ACTIVE
     assert state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
     assert state.restart_count == 1
-    canonical = dict(state.data["upfront_payment_fingerprint"])
-    assert dict(state.data["restart_offer_fingerprint_before"]) == canonical
-    assert dict(state.data["restart_offer_fingerprint_after"]) == canonical
+    checkpoint = json.loads(
+        (driver2._journal.gate_dir / "payment_checkpoint.json").read_text()
+    )
+    assert checkpoint["recorded"] == exact_payment_fingerprint()
+    assert checkpoint["before"] == exact_payment_fingerprint()
+    assert checkpoint["after"] == exact_payment_fingerprint()
 
     await run_gate_round(driver2, runtime2, gs, 12)
     deal = deals(runtime2)[state.data["upfront_deal_id"]]
@@ -709,6 +882,46 @@ async def test_resume_with_changed_offer_fails(tmp_path):
     await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
 
     assert driver2.pending_signal() == GATE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_restart_fingerprint_mismatch_is_forensic_only(tmp_path):
+    private_value = "PRIVATE_RESTART_FINGERPRINT_VALUE"
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+
+    class PrivateOffer:
+        def fingerprint(self):
+            return {
+                "payer": 1,
+                "payee": 2,
+                "gold": 1,
+                "duration": 0,
+                "item_count": 1,
+                "private": private_value,
+            }
+
+    class ExactPrivateState:
+        status = "exact"
+        offer = PrivateOffer()
+
+    async def private_state(payer, payee, gold):
+        return ExactPrivateState()
+
+    gs.get_channel_payment_state = private_state
+    runtime2 = ChannelRuntime.open(
+        driver._run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime2, run_dir=driver._run_dir)
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert resumed._journal.state.reason == "restart_verification_failed"
+    public = public_gate_text(resumed)
+    assert private_value not in public
+    assert "restart_offer_fingerprint_after" not in public
+    assert "upfront_payment_fingerprint" not in public
+    assert private_value in private_failure_text(resumed)
 
 
 @pytest.mark.asyncio
@@ -763,7 +976,8 @@ async def test_resume_fails_if_same_turn_channel_sequence_changed(tmp_path):
     await resumed.attach(gs=gs, channel_runtime=runtime3, run_dir=run_dir)
 
     assert resumed.pending_signal() == GATE_FAILED
-    assert "sequence" in resumed._journal.state.reason
+    assert resumed._journal.state.reason == "restart_verification_failed"
+    assert "channel_sequence_mismatch" in private_failure_text(resumed)
     assert resumed._journal.result_path.exists()
 
 
@@ -807,7 +1021,8 @@ async def test_resume_rejects_same_turn_payment_response_acknowledgement(
     await resumed.attach(gs=gs, channel_runtime=runtime3, run_dir=run_dir)
 
     assert resumed.pending_signal() == GATE_FAILED
-    assert "sequence" in resumed._journal.state.reason
+    assert resumed._journal.state.reason == "restart_verification_failed"
+    assert "channel_sequence_mismatch" in private_failure_text(resumed)
     assert runtime3.deal(deal_id).payment_status is PaymentStatus.SETTLED
 
 
@@ -1007,7 +1222,8 @@ async def test_upfront_responsible_capture_requires_deadline_transition(tmp_path
     await run_gate_seat(driver, runtime, gs, deal.counterparty, 12)
 
     assert driver.pending_signal() == GATE_FAILED
-    assert "deadline" in driver._journal.state.reason
+    assert driver._journal.state.reason == "gate_invariant_failed"
+    assert "deadline" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -1027,7 +1243,8 @@ async def test_on_delivery_responsible_capture_requires_deadline_transition(
     await run_gate_seat(driver, runtime, gs, deal.counterparty, 15)
 
     assert driver.pending_signal() == GATE_FAILED
-    assert "deadline" in driver._journal.state.reason
+    assert driver._journal.state.reason == "gate_invariant_failed"
+    assert "deadline" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -1045,7 +1262,8 @@ async def test_funding_responsible_capture_requires_deadline_transition(tmp_path
     await run_gate_seat(driver, runtime, gs, deal.proposer, 17)
 
     assert driver.pending_signal() == GATE_FAILED
-    assert "deadline" in driver._journal.state.reason
+    assert driver._journal.state.reason == "gate_invariant_failed"
+    assert "deadline" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -1061,7 +1279,8 @@ async def test_upfront_completed_transition_after_deadline_fails(tmp_path):
     changed = deals(runtime)[deal.id]
     assert changed.state is DealState.HONORED
     assert driver.pending_signal() == GATE_FAILED
-    assert "after" in driver._journal.state.reason
+    assert driver._journal.state.reason == "gate_invariant_failed"
+    assert "after" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -1078,7 +1297,8 @@ async def test_on_delivery_completed_transition_after_deadline_fails(tmp_path):
     assert changed.favor_status is FavorStatus.SATISFIED
     assert changed.payment_status is PaymentStatus.DUE
     assert driver.pending_signal() == GATE_FAILED
-    assert "after" in driver._journal.state.reason
+    assert driver._journal.state.reason == "gate_invariant_failed"
+    assert "after" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -1095,7 +1315,8 @@ async def test_funding_completed_transition_after_deadline_fails(tmp_path):
     assert changed.state is DealState.BROKEN
     assert changed.payment_status is PaymentStatus.FAILED
     assert driver.pending_signal() == GATE_FAILED
-    assert "after" in driver._journal.state.reason
+    assert driver._journal.state.reason == "gate_invariant_failed"
+    assert "after" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -1113,7 +1334,8 @@ async def test_on_delivery_premature_nonterminal_success_fails(tmp_path):
     assert changed.favor_status is FavorStatus.SATISFIED
     assert changed.payment_status is PaymentStatus.DUE
     assert driver.pending_signal() == GATE_FAILED
-    assert "before" in driver._journal.state.reason
+    assert driver._journal.state.reason == "gate_invariant_failed"
+    assert "before" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -1264,7 +1486,7 @@ async def test_pending_transcript_reordered_payment_fingerprint_fails(tmp_path):
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_seat(driver, runtime, gs, 1, 11)
     await run_gate_seat(driver, runtime, gs, 2, 11)
-    fingerprint = dict(driver._journal.state.data["upfront_payment_fingerprint"])
+    fingerprint = exact_payment_fingerprint()
     reordered = {key: fingerprint[key] for key in reversed(sorted(fingerprint))}
 
     await run_gate_seat(
@@ -1290,7 +1512,7 @@ async def ready_for_fingerprint_observer(tmp_path):
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_seat(driver, runtime, gs, 1, 11)
     await run_gate_seat(driver, runtime, gs, 2, 11)
-    fingerprint = dict(driver._journal.state.data["upfront_payment_fingerprint"])
+    fingerprint = exact_payment_fingerprint()
     return driver, runtime, gs, fingerprint
 
 
@@ -1503,7 +1725,7 @@ async def test_privacy_scan_budget_exhaustion_fails_closed(
     assert driver.pending_signal() == GATE_FAILED
     journal = driver._journal
     assert journal is not None
-    assert journal.state.reason == "observer privacy inspection failed at turn 11"
+    assert journal.state.reason == "privacy_assertion_failed"
     assert marker not in journal.result_path.read_text()
     assert marker not in json.dumps(driver.result_summary())
     assert all(record.get("turn") != 11 for record in observer_records(driver))
@@ -1701,4 +1923,4 @@ async def test_terminal_gate_fails_if_pending_transcript_hook_was_skipped(tmp_pa
     )
 
     assert driver.pending_signal() == GATE_FAILED
-    assert "privacy" in driver._journal.state.reason
+    assert driver._journal.state.reason == "privacy_assertion_failed"

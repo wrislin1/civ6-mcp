@@ -1531,10 +1531,6 @@ async def run_arena(
                             file=sys.stderr,
                         )
                     channel_fields_state["error"] = channel_error
-                if live_gate_driver is not None and not is_seat0:
-                    live_gate_driver.note_admission(
-                        st.local, st.turn, channel_admission, channel_error
-                    )
                 if not is_seat0 and channel_admission is not None:
                     if puppet_channel_capture is not None:
                         await _finish_puppet_channel_capture(
@@ -1548,6 +1544,19 @@ async def run_arena(
                         "fields": channel_fields_state,
                         "finished": False,
                     }
+                if live_gate_driver is not None and not is_seat0:
+                    live_gate_driver.note_admission(
+                        st.local, st.turn, channel_admission, channel_error
+                    )
+                    if live_gate_driver.pending_signal() is not None:
+                        # Admission is the fail-stop boundary. Close the exact
+                        # canonical capture we already own, but do not invoke
+                        # any driver/ordinary policy or game action afterward.
+                        # Human restore here plus the run-scope finally's
+                        # disable leaves no later seat available for admission.
+                        await _finish_puppet_channel_capture(None)
+                        await hook.restore_local(conn, 0)
+                        break
 
                 async def _finish_channel_turn(policy_result) -> None:
                     nonlocal channel_acknowledgements, channel_error, channel_finished

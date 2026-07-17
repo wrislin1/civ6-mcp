@@ -789,6 +789,49 @@ def test_enabled_gate_malformed_coordinator_result_fails_closed(
     assert "PRIVATE_" not in output
 
 
+def test_enabled_gate_exact_summary_with_wrong_run_id_fails_closed(
+    monkeypatch, tmp_path, stub_gate, capsys
+):
+    private_run_id = "PRIVATE_WRONG_BUT_SCHEMA_VALID_RUN_ID"
+
+    async def fake_run_arena(*args, **kwargs):
+        return {
+            "live_gate": {
+                "status": "passed",
+                "phase": "verify_terminal_gate",
+                "reason": "",
+                "restart_count": 1,
+                "run_id": private_run_id,
+            }
+        }
+
+    class FakeConn:
+        async def connect(self):
+            pass
+
+    args = arena_module.build_args(["--transcript-dir", str(tmp_path / "runs")])
+    monkeypatch.setattr(arena_module, "run_arena", fake_run_arena)
+    monkeypatch.setattr(arena_module, "GameConnection", FakeConn)
+    monkeypatch.setattr(arena_module, "resolve_config", lambda parsed: _gate_cfg())
+    monkeypatch.setattr(arena_module, "build_args", lambda argv=None: args)
+
+    with pytest.raises(SystemExit) as exc_info:
+        arena_module.main()
+
+    assert exc_info.value.code == 1
+    output = capsys.readouterr().out
+    lines = [line for line in output.splitlines() if line.startswith("LIVE_GATE ")]
+    assert len(lines) == 1
+    assert json.loads(lines[0][len("LIVE_GATE ") :]) == {
+        "phase": "arena_result_validation",
+        "reason": "coordinator returned a live_gate summary for another run",
+        "restart_count": 0,
+        "run_id": "run-gate",
+        "status": "failed",
+    }
+    assert private_run_id not in output
+
+
 def test_main_non_mapping_gate_outcome_fails_closed(monkeypatch, capsys):
     async def fake_run(args):
         return ["PRIVATE_MAIN_VALUE"]

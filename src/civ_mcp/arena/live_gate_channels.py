@@ -84,6 +84,23 @@ PRIVACY_ARTIFACT_KINDS = (
 _PRIVACY_SCAN_MAX_DEPTH = 8
 _PRIVACY_SCAN_MAX_CHARS = 1_000_000
 _PRIVACY_SCAN_MAX_JSON_ATTEMPTS = 256
+_PUBLIC_FAILURE_CODES = frozenset(
+    {
+        "acknowledgement_missing",
+        "acknowledgement_rejected",
+        "action_recovery_failed",
+        "admission_failed",
+        "channel_finish_failed",
+        "gate_invariant_failed",
+        "observer_capture_failed",
+        "payment_state_failed",
+        "preflight_failed",
+        "privacy_assertion_failed",
+        "restart_checkpoint_failed",
+        "restart_verification_failed",
+        "unexpected_acknowledgement",
+    }
+)
 
 
 class _PrivacyScanLimitExceeded(RuntimeError):
@@ -227,6 +244,7 @@ class ChannelsCoreDriver:
         self._captured_this_turn: dict[int, set[int]] = {}
         self._observer_captures: dict[int, tuple[ChannelAdmission, dict]] = {}
         self._restart_armed = False
+        self._payment_fingerprint: dict | None = None
 
     async def attach(self, *, gs, channel_runtime, run_dir) -> None:
         if channel_runtime is None:
@@ -244,10 +262,31 @@ class ChannelsCoreDriver:
             initial_phase=PHASE_PREFLIGHT,
         )
         state = self._journal.state
+        if state.capture_turn is not None:
+            self._captured_this_turn[state.capture_turn] = set(
+                state.captured_players
+            )
+        checkpoint = self._journal.read_private_json(
+            "payment_checkpoint.json", required=False
+        )
+        if checkpoint is not None:
+            recorded = checkpoint.get("recorded")
+            if not isinstance(recorded, Mapping):
+                raise RuntimeError("private payment checkpoint is invalid")
+            digest = self._digest_mapping(recorded)
+            if state.data.get("payment_checkpoint_digest") != digest:
+                raise RuntimeError("private payment checkpoint digest mismatch")
+            self._payment_fingerprint = dict(recorded)
         if state.status in (GATE_FAILED, GATE_PASSED):
             raise RuntimeError(f"gate already terminal: {state.status} ({state.reason})")
         if state.status == GATE_RESTART_REQUIRED:
             await self._verify_restart()
+        elif state.phase == PHASE_RESTART_REQUIRED:
+            self._restart_armed = self._payment_fingerprint is not None
+            if state.capture_turn is not None and self._round_complete(
+                state.capture_turn
+            ):
+                await self._request_restart(state.capture_turn)
 
     def policy_for(self, player_id: int) -> _GateSeatPolicy:
         return self._policies[player_id]
@@ -257,7 +296,8 @@ class ChannelsCoreDriver:
             return
         if admission is None:
             self._fail(
-                f"gate seat {player_id} turn {turn} has no channel admission: {error}"
+                "admission_failed",
+                detail={"player_id": player_id, "turn": turn, "error": error},
             )
             return
         if self._journal.state.pending_actions and (
@@ -278,7 +318,7 @@ class ChannelsCoreDriver:
             return {
                 "status": GATE_FAILED,
                 "phase": "",
-                "reason": "gate never attached",
+                "reason": "gate_not_attached",
                 "restart_count": 0,
                 "run_id": self.config.run_id,
             }
@@ -307,17 +347,30 @@ class ChannelsCoreDriver:
         capture = self._observer_captures.pop(turn, None)
         if capture is None:
             self._fail(
-                f"observer pending transcript hook lacked capture at turn {turn}"
+                "observer_capture_failed",
+                detail={"turn": turn, "failure": "missing_pending_capture"},
             )
             return False
         if record.get("player_id") != player_id or record.get("turn") != turn:
-            self._fail(f"observer pending transcript identity mismatch at turn {turn}")
+            self._fail(
+                "observer_capture_failed",
+                detail={
+                    "turn": turn,
+                    "failure": "pending_identity_mismatch",
+                    "player_id": player_id,
+                    "record_player_id": record.get("player_id"),
+                    "record_turn": record.get("turn"),
+                },
+            )
             return False
         admission, policy_result = capture
         try:
             self._observer_assertions(admission, policy_result, record, turn)
-        except Exception:
-            self._fail(f"observer privacy inspection failed at turn {turn}")
+        except Exception as exc:
+            self._fail(
+                "privacy_assertion_failed",
+                detail={"turn": turn, "failure": "inspection_error", "error": repr(exc)},
+            )
         return self._signal is None
 
     @staticmethod
@@ -363,7 +416,7 @@ class ChannelsCoreDriver:
             f"api:{self.config.run_id}:{self.role_pid[ROLE_API]}:",
             f"cli:{self.config.run_id}:{self.role_pid[ROLE_CLI]}:",
         ]
-        fingerprint = data.get("upfront_payment_fingerprint")
+        fingerprint = self._payment_fingerprint
         if fingerprint:
             values.extend(
                 (
@@ -540,7 +593,7 @@ class ChannelsCoreDriver:
             hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
             for value in forbidden
         ]
-        fingerprint = journal.state.data.get("upfront_payment_fingerprint")
+        fingerprint = self._payment_fingerprint
         results = []
         for kind, text, structured in artifacts:
             leaked = tuple(value for value in forbidden if value in text)
@@ -595,11 +648,28 @@ class ChannelsCoreDriver:
                 },
             )
         self._fail(
-            f"privacy assertion failed at observer turn {turn} "
-            "(private forensic input preserved)"
+            "privacy_assertion_failed",
+            detail={"turn": turn, "failure": "forbidden_observer_artifact"},
         )
 
-    def _fail(self, reason: str) -> None:
+    @staticmethod
+    def _digest_mapping(value: Mapping) -> str:
+        encoded = json.dumps(
+            dict(value), sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()[:16]
+
+    def _update_payment_checkpoint(self, **updates) -> None:
+        checkpoint = self._journal.read_private_json(
+            "payment_checkpoint.json", required=False
+        ) or {}
+        checkpoint.update(updates)
+        self._journal.write_private_json("payment_checkpoint.json", checkpoint)
+        recorded = checkpoint.get("recorded")
+        if isinstance(recorded, Mapping):
+            self._payment_fingerprint = dict(recorded)
+
+    def _fail(self, reason_code: str, *, detail=None) -> None:
         if self._signal == GATE_FAILED:
             return
         self._signal = GATE_FAILED
@@ -607,7 +677,26 @@ class ChannelsCoreDriver:
             GATE_FAILED,
             GATE_PASSED,
         ):
-            self._journal.append("gate_failed", {"reason": reason})
+            if reason_code not in _PUBLIC_FAILURE_CODES:
+                if detail is None:
+                    detail = {"message": reason_code}
+                reason_code = "gate_invariant_failed"
+            if detail is not None:
+                sequence = self._journal.state.last_event_sequence + 1
+                try:
+                    self._journal.write_private_json(
+                        f"failure_{sequence:06d}_{reason_code}.json",
+                        {
+                            "reason_code": reason_code,
+                            "detail": self._jsonable(detail),
+                        },
+                    )
+                except Exception:
+                    # Forensics are best effort. Their failure must neither leak
+                    # the private diagnostic nor prevent the sanitized terminal
+                    # event/result from becoming durable.
+                    pass
+            self._journal.append("gate_failed", {"reason": reason_code})
             self._journal.write_result()
 
     async def _verify_restart(self) -> None:
@@ -621,23 +710,37 @@ class ChannelsCoreDriver:
         state = self._journal.state
         if state.restart_count != 1:
             self._fail(
-                f"restart count {state.restart_count} at resume; expected exactly 1"
+                "restart_verification_failed",
+                detail={
+                    "failure": "restart_count",
+                    "actual": state.restart_count,
+                    "expected": 1,
+                },
             )
             return
-        recorded = state.data.get("upfront_payment_fingerprint")
+        recorded = self._payment_fingerprint
+        if recorded is None:
+            self._fail(
+                "restart_verification_failed",
+                detail={"failure": "missing_private_payment_checkpoint"},
+            )
+            return
         live = await self._live_offer_fingerprint(
-            self.role_pid[ROLE_API], self.role_pid[ROLE_CLI]
+            self.role_pid[ROLE_API],
+            self.role_pid[ROLE_CLI],
+            failure_code="restart_verification_failed",
         )
         if live is None:
             return
-        self._journal.append(
-            "data_recorded",
-            {"data": {"restart_offer_fingerprint_after": live}},
-        )
+        self._update_payment_checkpoint(after=live)
         if live != recorded:
             self._fail(
-                f"resumed offer fingerprint {live} does not equal the recorded "
-                f"pre-restart fingerprint {recorded}"
+                "restart_verification_failed",
+                detail={
+                    "failure": "payment_checkpoint_mismatch",
+                    "live": live,
+                    "recorded": recorded,
+                },
             )
             return
         checkpoint_sequence = state.data.get("restart_channel_sequence")
@@ -647,8 +750,12 @@ class ChannelsCoreDriver:
             or live_sequence != checkpoint_sequence
         ):
             self._fail(
-                f"resumed channel sequence {live_sequence} does not equal the "
-                f"restart checkpoint sequence {checkpoint_sequence!r}"
+                "restart_verification_failed",
+                detail={
+                    "failure": "channel_sequence_mismatch",
+                    "live": live_sequence,
+                    "recorded": checkpoint_sequence,
+                },
             )
             return
         from civ_mcp.arena.channels import PaymentStatus
@@ -658,8 +765,11 @@ class ChannelsCoreDriver:
             return
         if deal.payment_status is not PaymentStatus.OFFERED:
             self._fail(
-                "up-front deal payment state changed across restart: "
-                f"{deal.payment_status}"
+                "restart_verification_failed",
+                detail={
+                    "failure": "payment_state_changed",
+                    "payment_status": str(deal.payment_status),
+                },
             )
             return
         response_acks = [
@@ -671,17 +781,18 @@ class ChannelsCoreDriver:
         ]
         if response_acks:
             self._fail(
-                "a payment-response acknowledgement already exists at resume"
+                "restart_verification_failed",
+                detail={
+                    "failure": "payment_response_already_acknowledged",
+                    "acknowledgements": response_acks,
+                },
             )
             return
         self._journal.append(
-            "restart_verified", {"turn": state.data.get("restart_turn")}
-        )
-        self._journal.append(
-            "phase_advanced",
+            "restart_verified",
             {
-                "phase": PHASE_ACCEPT_UPFRONT_PAYMENT,
                 "turn": state.data.get("restart_turn"),
+                "next_phase": PHASE_ACCEPT_UPFRONT_PAYMENT,
             },
         )
 
@@ -943,11 +1054,14 @@ class ChannelsCoreDriver:
         if player_id not in self.gate_pids or self._signal is not None:
             return
         self._admissions.pop((player_id, turn), None)
-        self._captured_this_turn.setdefault(turn, set()).add(player_id)
         if channel_fields.get("error"):
             self._fail(
-                f"channel finish error for seat {player_id} turn {turn}: "
-                f"{channel_fields['error']}"
+                "channel_finish_failed",
+                detail={
+                    "player_id": player_id,
+                    "turn": turn,
+                    "error": channel_fields["error"],
+                },
             )
             return
         if not self._verify_planned_actions(player_id, turn):
@@ -956,6 +1070,17 @@ class ChannelsCoreDriver:
             return
         self._advance_after_capture(player_id, turn)
         if self._signal is None:
+            self._journal.append(
+                "seat_captured",
+                {
+                    "turn": turn,
+                    "player_id": player_id,
+                    "expected_player_ids": sorted(self.gate_pids),
+                },
+            )
+            self._captured_this_turn[turn] = set(
+                self._journal.state.captured_players
+            )
             await self._maybe_finish_round(turn)
 
     def _verify_planned_actions(self, player_id, turn) -> bool:
@@ -972,15 +1097,22 @@ class ChannelsCoreDriver:
             ]
             if len(matches) != 1:
                 self._fail(
-                    f"expected exactly one acknowledgement for planned "
-                    f"{entry['source_id']}, got {len(matches)}"
+                    "acknowledgement_missing",
+                    detail={
+                        "source_id": entry["source_id"],
+                        "match_count": len(matches),
+                    },
                 )
                 return False
             acknowledgement = matches[0]
             if acknowledgement.status != "applied":
                 self._fail(
-                    f"acknowledgement for {entry['source_id']} is "
-                    f"{acknowledgement.status!r}: {acknowledgement.message}"
+                    "acknowledgement_rejected",
+                    detail={
+                        "source_id": entry["source_id"],
+                        "status": acknowledgement.status,
+                        "message": acknowledgement.message,
+                    },
                 )
                 return False
             self._journal.append(
@@ -1008,9 +1140,14 @@ class ChannelsCoreDriver:
                 continue
             if acknowledgement.source_id not in verified:
                 self._fail(
-                    f"unexpected channel acknowledgement "
-                    f"{acknowledgement.source_id} from seat {player_id} "
-                    f"turn {turn}"
+                    "unexpected_acknowledgement",
+                    detail={
+                        "source_id": acknowledgement.source_id,
+                        "player_id": player_id,
+                        "turn": turn,
+                        "status": acknowledgement.status,
+                        "message": acknowledgement.message,
+                    },
                 )
                 return False
         return True
@@ -1108,9 +1245,16 @@ class ChannelsCoreDriver:
                 "duration": 0,
                 "item_count": 1,
             }
+            self._update_payment_checkpoint(recorded=fingerprint)
             self._journal.append(
                 "data_recorded",
-                {"data": {"upfront_payment_fingerprint": fingerprint}},
+                {
+                    "data": {
+                        "payment_checkpoint_digest": self._digest_mapping(
+                            fingerprint
+                        )
+                    }
+                },
             )
             self._restart_armed = True
             self._journal.append(
@@ -1510,7 +1654,10 @@ class ChannelsCoreDriver:
             )
         )
         if not complete:
-            self._fail("terminal evidence missing: complete observer privacy coverage")
+            self._fail(
+                "privacy_assertion_failed",
+                detail={"failure": "incomplete_observer_privacy_coverage"},
+            )
             return
         journal.append(
             "gate_passed",
@@ -1529,28 +1676,35 @@ class ChannelsCoreDriver:
     async def _request_restart(self, turn: int) -> None:
         api = self.role_pid[ROLE_API]
         cli = self.role_pid[ROLE_CLI]
-        recorded = self._journal.state.data.get("upfront_payment_fingerprint")
+        recorded = self._payment_fingerprint
         if not recorded:
             self._fail(
-                "restart requested without a recorded payment fingerprint"
+                "restart_checkpoint_failed",
+                detail={"failure": "missing_private_payment_checkpoint"},
             )
             return
-        live = await self._live_offer_fingerprint(api, cli)
+        live = await self._live_offer_fingerprint(
+            api, cli, failure_code="restart_checkpoint_failed"
+        )
         if live is None:
             return
         if live != recorded:
             self._fail(
-                f"live pending trade fingerprint {live} does not equal the "
-                f"recorded canonical fingerprint {recorded}"
+                "restart_checkpoint_failed",
+                detail={
+                    "failure": "payment_checkpoint_mismatch",
+                    "live": live,
+                    "recorded": recorded,
+                },
             )
             return
+        self._update_payment_checkpoint(before=live)
         channel_state = self._runtime.state
         self._journal.append(
             "data_recorded",
             {
                 "data": {
                     "restart_channel_sequence": channel_state.last_event_sequence,
-                    "restart_offer_fingerprint_before": live,
                     "restart_turn": turn,
                 }
             },
@@ -1561,7 +1715,11 @@ class ChannelsCoreDriver:
         self._signal = GATE_RESTART_REQUIRED
 
     async def _live_offer_fingerprint(
-        self, payer: int, payee: int
+        self,
+        payer: int,
+        payee: int,
+        *,
+        failure_code: str = "payment_state_failed",
     ) -> dict | None:
         payment_state = await self._gs.get_channel_payment_state(
             payer, payee, PAYMENT_GOLD
@@ -1570,15 +1728,23 @@ class ChannelsCoreDriver:
         status = getattr(status, "value", status)
         if status != "exact":
             self._fail(
-                f"official pending trade for ({payer},{payee}) is {status!r}; "
-                "expected exactly one exact offer"
+                failure_code,
+                detail={
+                    "failure": "official_payment_not_exact",
+                    "payer": payer,
+                    "payee": payee,
+                    "status": status,
+                },
             )
             return None
         offer = getattr(payment_state, "offer", None)
         try:
             fingerprint = offer.fingerprint()
         except Exception as exc:
-            self._fail(f"live offer fingerprint unavailable: {exc!r}")
+            self._fail(
+                failure_code,
+                detail={"failure": "offer_fingerprint_unavailable", "error": repr(exc)},
+            )
             return None
         return fingerprint
 
@@ -1596,7 +1762,12 @@ class ChannelsCoreDriver:
             ]
             if len(matches) > 1:
                 self._fail(
-                    f"duplicate recovered acknowledgements for {entry['source_id']}"
+                    "action_recovery_failed",
+                    detail={
+                        "failure": "duplicate_acknowledgements",
+                        "source_id": entry["source_id"],
+                        "match_count": len(matches),
+                    },
                 )
                 return
             if not matches:
@@ -1605,8 +1776,13 @@ class ChannelsCoreDriver:
             acknowledgement = matches[0]
             if acknowledgement.status != "applied":
                 self._fail(
-                    f"recovered acknowledgement for {entry['source_id']} is "
-                    f"{acknowledgement.status!r}"
+                    "acknowledgement_rejected",
+                    detail={
+                        "failure": "recovered_acknowledgement",
+                        "source_id": entry["source_id"],
+                        "status": acknowledgement.status,
+                        "message": acknowledgement.message,
+                    },
                 )
                 return
             self._journal.append(
@@ -1628,9 +1804,15 @@ class ChannelsCoreDriver:
                 or entry["turn"] != current_turn
             ):
                 self._fail(
-                    f"planned action {entry['source_id']} cannot be reissued: "
-                    f"bound seat/turn is ({entry['player_id']}, {entry['turn']}), "
-                    f"current is ({player_id}, {current_turn})"
+                    "action_recovery_failed",
+                    detail={
+                        "failure": "source_identity_cannot_recur",
+                        "source_id": entry["source_id"],
+                        "bound_player_id": entry["player_id"],
+                        "bound_turn": entry["turn"],
+                        "current_player_id": player_id,
+                        "current_turn": current_turn,
+                    },
                 )
                 return
         if not missing:
@@ -1642,6 +1824,21 @@ class ChannelsCoreDriver:
                 self._advance_after_capture(recovered_player, recovered_turn)
                 if self._signal is not None:
                     return
+                if not (
+                    self._journal.state.capture_turn == recovered_turn
+                    and recovered_player in self._journal.state.captured_players
+                ):
+                    self._journal.append(
+                        "seat_captured",
+                        {
+                            "turn": recovered_turn,
+                            "player_id": recovered_player,
+                            "expected_player_ids": sorted(self.gate_pids),
+                        },
+                    )
+                    self._captured_this_turn[recovered_turn] = set(
+                        self._journal.state.captured_players
+                    )
 
     async def _run_preflight(self, gs, turn) -> None:
         api = self.role_pid[ROLE_API]
@@ -1661,14 +1858,23 @@ class ChannelsCoreDriver:
             observed = await gs.get_channel_observation(pid, turn, request)
             if observed.errors:
                 self._fail(
-                    f"preflight observation error for player {pid}: {observed.errors}"
+                    "preflight_failed",
+                    detail={
+                        "failure": "observation_error",
+                        "player_id": pid,
+                        "errors": observed.errors,
+                    },
                 )
                 return
             missing = families - observed.families_present
             if missing:
                 self._fail(
-                    f"preflight missing observation families for player {pid}: "
-                    f"{sorted(f.value for f in missing)}"
+                    "preflight_failed",
+                    detail={
+                        "failure": "missing_observation_families",
+                        "player_id": pid,
+                        "families": sorted(f.value for f in missing),
+                    },
                 )
                 return
             summaries.append(
@@ -1681,8 +1887,13 @@ class ChannelsCoreDriver:
             )
         if summaries[0]["treasury_gold"] < PAYMENT_GOLD:
             self._fail(
-                f"preflight: player {api} gold {summaries[0]['treasury_gold']} "
-                f"cannot fund the fixed {PAYMENT_GOLD}-gold official payment"
+                "preflight_failed",
+                detail={
+                    "failure": "insufficient_treasury",
+                    "player_id": api,
+                    "treasury_gold": summaries[0]["treasury_gold"],
+                    "required_gold": PAYMENT_GOLD,
+                },
             )
             return
         payment_state = await gs.get_channel_payment_state(
@@ -1692,8 +1903,13 @@ class ChannelsCoreDriver:
         status = getattr(status, "value", status)
         if status != "absent":
             self._fail(
-                f"preflight: pending official trade for pair ({api},{cli}) is "
-                f"{status!r}; linkage would be ambiguous"
+                "preflight_failed",
+                detail={
+                    "failure": "ambiguous_pending_payment",
+                    "payer": api,
+                    "payee": cli,
+                    "status": status,
+                },
             )
             return
         self._journal.append(
@@ -1701,7 +1917,16 @@ class ChannelsCoreDriver:
             {
                 "kind": "preflight",
                 "turn": turn,
-                "players": summaries,
+                "players": [
+                    {
+                        "player_id": summary["player_id"],
+                        "families": summary["families"],
+                        "observation_digest": hashlib.sha256(
+                            self._json_text(summary, compact=True).encode("utf-8")
+                        ).hexdigest()[:16],
+                    }
+                    for summary in summaries
+                ],
                 "payment_pair_status": "absent",
             },
         )

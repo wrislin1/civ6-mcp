@@ -253,6 +253,12 @@ def _enabled_gate_result(result, run_id):
     )
     if not valid:
         return gate, {"live_gate": gate}
+    if gate["run_id"] != run_id:
+        gate = _failed_gate_summary(
+            run_id,
+            "coordinator returned a live_gate summary for another run",
+        )
+        return gate, {"live_gate": gate}
     if output_result.get("live_gate") is not gate:
         output_result = dict(output_result)
         output_result["live_gate"] = gate

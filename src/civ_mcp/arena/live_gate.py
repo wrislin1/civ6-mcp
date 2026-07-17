@@ -45,6 +45,7 @@ GATE_EVENT_KINDS = frozenset(
         "action_planned",
         "action_verified",
         "privacy_asserted",
+        "seat_captured",
         "restart_required",
         "restart_verified",
         "gate_failed",
@@ -140,10 +141,14 @@ class GateState:
     status: str = GATE_ACTIVE
     reason: str = ""
     restart_count: int = 0
+    restart_phase: str = ""
     pending_actions: tuple[dict, ...] = ()
     verified_actions: tuple[dict, ...] = ()
     observations: tuple[dict, ...] = ()
     privacy_assertions: tuple[dict, ...] = ()
+    capture_turn: int | None = None
+    capture_expected_players: tuple[int, ...] = ()
+    captured_players: tuple[int, ...] = ()
     data: dict = field(default_factory=dict)
     last_event_sequence: int = 0
 
@@ -340,6 +345,52 @@ def reduce_gate_event(state: GateState | None, event: GateEvent) -> GateState:
         if payload["result"] not in ("PASS", "FAIL"):
             raise GateStateError("privacy result must be PASS or FAIL")
         changes["privacy_assertions"] = state.privacy_assertions + (payload,)
+    elif kind == "seat_captured":
+        if set(payload) != {"turn", "player_id", "expected_player_ids"}:
+            raise GateStateError("seat_captured requires an exact payload schema")
+        turn = payload["turn"]
+        player_id = payload["player_id"]
+        expected_raw = payload["expected_player_ids"]
+        if type(turn) is not int or turn < 0:
+            raise GateStateError("seat_captured turn must be a nonnegative integer")
+        if type(player_id) is not int or player_id < 0:
+            raise GateStateError(
+                "seat_captured player_id must be a nonnegative integer"
+            )
+        if not isinstance(expected_raw, (tuple, list)) or not expected_raw:
+            raise GateStateError(
+                "seat_captured expected_player_ids must be a nonempty sequence"
+            )
+        if any(type(pid) is not int or pid < 0 for pid in expected_raw):
+            raise GateStateError(
+                "seat_captured expected_player_ids must contain nonnegative integers"
+            )
+        expected = tuple(expected_raw)
+        if expected != tuple(sorted(set(expected))):
+            raise GateStateError(
+                "seat_captured expected_player_ids must be unique and sorted"
+            )
+        if player_id not in expected:
+            raise GateStateError("seat_captured player_id is not expected")
+        if state.capture_turn is None:
+            captured: tuple[int, ...] = ()
+        elif turn == state.capture_turn:
+            if expected != state.capture_expected_players:
+                raise GateStateError("seat capture identity changed within a round")
+            captured = state.captured_players
+        else:
+            if turn <= state.capture_turn:
+                raise GateStateError("seat capture turn must increase monotonically")
+            if set(state.captured_players) != set(state.capture_expected_players):
+                raise GateStateError(
+                    "seat capture turn changed before the prior round completed"
+                )
+            captured = ()
+        if player_id in captured:
+            raise GateStateError("duplicate seat capture in one round")
+        changes["capture_turn"] = turn
+        changes["capture_expected_players"] = expected
+        changes["captured_players"] = tuple(sorted((*captured, player_id)))
     elif kind == "restart_required":
         if state.restart_count >= 1:
             raise GateStateError("a second restart request is not allowed")
@@ -347,10 +398,21 @@ def reduce_gate_event(state: GateState | None, event: GateEvent) -> GateState:
             raise GateStateError("cannot request restart with unverified planned actions")
         changes["status"] = GATE_RESTART_REQUIRED
         changes["restart_count"] = state.restart_count + 1
+        changes["restart_phase"] = state.phase
     elif kind == "restart_verified":
         if state.status != GATE_RESTART_REQUIRED:
             raise GateStateError("restart_verified requires restart_required status")
+        if set(payload) != {"turn", "next_phase"}:
+            raise GateStateError("restart_verified requires an exact payload schema")
+        if type(payload["turn"]) is not int or payload["turn"] < 0:
+            raise GateStateError(
+                "restart_verified turn must be a nonnegative integer"
+            )
+        next_phase = payload["next_phase"]
+        if not isinstance(next_phase, str) or not next_phase:
+            raise GateStateError("restart_verified next_phase must be nonempty")
         changes["status"] = GATE_ACTIVE
+        changes["phase"] = next_phase
     elif kind == "gate_failed":
         changes["status"] = GATE_FAILED
         changes["reason"] = str(payload.get("reason", ""))
@@ -707,10 +769,14 @@ def _state_to_dict(state: GateState) -> dict:
         "status": state.status,
         "reason": state.reason,
         "restart_count": state.restart_count,
+        "restart_phase": state.restart_phase,
         "pending_actions": _thaw(state.pending_actions),
         "verified_actions": _thaw(state.verified_actions),
         "observations": _thaw(state.observations),
         "privacy_assertions": _thaw(state.privacy_assertions),
+        "capture_turn": state.capture_turn,
+        "capture_expected_players": _thaw(state.capture_expected_players),
+        "captured_players": _thaw(state.captured_players),
         "data": _thaw(state.data),
         "last_event_sequence": state.last_event_sequence,
     }
@@ -793,6 +859,10 @@ class LiveGateJournal:
         events = _read_journal(events_path)
 
         if not events:
+            if _private_regular_file_exists(state_path):
+                raise GateStateError(
+                    "state.json exists without an initialized gate journal"
+                )
             if _private_regular_file_exists(result_path):
                 raise GateStateError(
                     "result.json exists without an initialized gate journal"
@@ -879,6 +949,36 @@ class LiveGateJournal:
         _atomic_private_json(destination, dict(payload))
         return destination
 
+    def read_private_json(
+        self, basename: str, *, required: bool = True
+    ) -> dict[str, Any] | None:
+        """Read protected scenario evidence through the no-follow boundary."""
+
+        reserved = {"events.jsonl", "state.json", "result.json"}
+        if (
+            not isinstance(basename, str)
+            or not basename
+            or basename in {".", ".."}
+            or basename in reserved
+            or "/" in basename
+            or "\\" in basename
+            or "\x00" in basename
+            or Path(basename).name != basename
+        ):
+            raise GateStateError(f"unsafe private JSON basename {basename!r}")
+        source = self.gate_dir / basename
+        if not _private_regular_file_exists(source):
+            if required:
+                raise GateStateError(f"private gate JSON {basename!r} is missing")
+            return None
+        try:
+            payload = json.loads(_read_private_bytes(source).decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise GateStateError(f"invalid private gate JSON {basename!r}") from exc
+        if not isinstance(payload, dict):
+            raise GateStateError(f"private gate JSON {basename!r} is not a mapping")
+        return payload
+
     def _append_event(self, kind: str, payload: dict) -> GateEvent:
         sequence = 1 if self.state is None else self.state.last_event_sequence + 1
         event = GateEvent(GATE_SCHEMA_VERSION, sequence, kind, payload)
@@ -912,10 +1012,9 @@ class LiveGateJournal:
             if _private_regular_file_exists(self.result_path):
                 raise GateStateError("active gate has an unexpected result.json")
             return
-        _remove_matching_private_json(
-            self.result_path,
-            _result_payload(self.state, status=GATE_RESTART_REQUIRED),
-        )
+        expected = _result_payload(self.state, status=GATE_RESTART_REQUIRED)
+        expected["phase"] = self.state.restart_phase
+        _remove_matching_private_json(self.result_path, expected)
 
     def write_result(self) -> None:
         if self.state is None or self.state.status not in _SIGNAL_STATUSES:
