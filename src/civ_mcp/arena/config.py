@@ -28,9 +28,10 @@ STANDING_PLAN_CHARS_PER_EXTRA_TASK = 120
 
 CLI_PROVIDER_COMMANDS = {"cli-claude": "claude", "cli-codex": "codex"}
 _CLI_PROVIDERS = set(CLI_PROVIDER_COMMANDS)
-# `scripted` is a test-only provider (Task 9): it selects the deterministic
-# no-LLM ScriptedPolicy for that seat, needs no backend/CLI/tuner handoff, and
-# makes the mixed stage-1 live gate reproducible.
+# `scripted` selects the deterministic no-LLM ScriptedPolicy for that seat,
+# needs no backend/CLI/tuner handoff, and has exactly two sanctioned uses:
+# the mixed stage-1 seat-0 live gate (Task 9, test-only) and the live-gate
+# passive privacy observer (spec 2026-07-17).
 _SCRIPTED_PROVIDER = "scripted"
 _VALID_PROVIDERS = {"local", _SCRIPTED_PROVIDER} | _CLI_PROVIDERS
 
@@ -64,6 +65,19 @@ class AttentionOptions:
 @dataclass(frozen=True)
 class ChannelOptions:
     enabled: bool = False
+
+
+@dataclass(frozen=True)
+class LiveGateOptions:
+    """Deterministic attended live-gate scenario switch (spec 2026-07-17).
+
+    roles is a sorted tuple of (role_name, player_id) pairs so the frozen
+    dataclass stays hashable and fingerprint-stable.
+    """
+
+    enabled: bool = False
+    scenario: str = ""
+    roles: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -221,6 +235,7 @@ class ArenaConfig:
     run_id: str = ""
     transcript_dir: str = "arena_runs"
     channel_rules: ChannelRules = field(default_factory=ChannelRules)
+    live_gate: LiveGateOptions = field(default_factory=LiveGateOptions)
 
 
 def channel_config_fingerprint(config: ArenaConfig) -> dict:
@@ -252,13 +267,106 @@ def resolved_puppet_ids(config: ArenaConfig) -> list[int]:
     return ids
 
 
+def _validate_live_gate(config: ArenaConfig) -> None:
+    gate = config.live_gate
+    if type(gate.enabled) is not bool:
+        raise ValueError("live_gate.enabled must be an exact boolean")
+    if not gate.enabled:
+        if gate.scenario or gate.roles:
+            raise ValueError("disabled live_gate cannot carry a scenario or roles")
+        return
+    if not isinstance(gate.scenario, str) or not gate.scenario.strip():
+        raise ValueError("enabled live_gate scenario must be a non-blank string")
+
+    # Lazy imports keep config.py import-light and avoid a config/live-gate
+    # dependency cycle at module import time.
+    from civ_mcp.arena.live_gate import resolve_scenario
+    from civ_mcp.run_id import is_safe_run_id
+
+    meta = resolve_scenario(gate.scenario)
+    try:
+        role_pairs = tuple(gate.roles)
+        roles = dict(role_pairs)
+        supplied = [name for name, _player_id in role_pairs]
+    except (TypeError, ValueError):
+        raise ValueError("live_gate.roles must contain exactly the scenario roles") from None
+    expected = sorted(name for name, _kind in meta.role_contracts)
+    if (
+        len(role_pairs) != len(expected)
+        or len(roles) != len(role_pairs)
+        or set(roles) != set(expected)
+    ):
+        raise ValueError(
+            f"live_gate.roles must contain exactly {expected}, got {supplied}"
+        )
+    pids = list(roles.values())
+    if any(type(pid) is not int for pid in pids):
+        raise ValueError(f"live_gate role player ids must be exact integers, got {pids}")
+    if len(pids) != len(set(pids)):
+        raise ValueError(f"live_gate role player ids must be distinct, got {pids}")
+    if any(spec.player_id == 0 for spec in config.players):
+        # The gate relies on the human owning seat 0 across the restart
+        # boundary; seat-zero piloting cannot be combined with it.
+        raise ValueError("live_gate cannot be combined with a seat-zero (player 0) entry")
+    specs = {
+        spec.player_id: spec
+        for spec in config.players
+        if type(spec.player_id) is int
+    }
+    for role, kind in meta.role_contracts:
+        pid = roles[role]
+        spec = specs.get(pid)
+        if spec is None:
+            raise ValueError(
+                f"live_gate role {role!r} player {pid} is not a configured civ"
+            )
+        if spec.driver_kind() != kind:
+            raise ValueError(
+                f"live_gate role {role!r} requires driver kind {kind!r}, "
+                f"got {spec.driver_kind()!r}"
+            )
+        if not spec.options.channels.enabled:
+            raise ValueError(
+                f"live_gate role {role!r} player {pid} must be channel-enabled"
+            )
+        if spec.options.attention.mode != "off":
+            # Turn skipping would starve the phase machine of admissions.
+            raise ValueError(
+                f"live_gate role {role!r} player {pid} requires attention.mode 'off'"
+            )
+    bound_ids = set(pids)
+    unbound = sorted(
+        spec.player_id
+        for spec in config.players
+        if spec.player_id not in bound_ids
+    )
+    if unbound:
+        # Gate mode constructs no model-backed policies, so a configured civ
+        # without a role would have no policy at all.
+        raise ValueError(
+            f"live_gate mode admits only gate-role civs; unbound players {unbound}"
+        )
+    if not is_safe_run_id(config.run_id):
+        raise ValueError("live_gate requires an explicit and safe run_id")
+    minimum = meta.minimum_captures(config)
+    if config.max_puppet_turns < minimum:
+        raise ValueError(
+            f"live_gate scenario {gate.scenario!r} needs at least {minimum} puppet turns, "
+            f"got {config.max_puppet_turns}"
+        )
+    if config.max_game_turns and config.max_game_turns < minimum:
+        raise ValueError(
+            f"live_gate scenario {gate.scenario!r} needs at least {minimum} game turns, "
+            f"got {config.max_game_turns}"
+        )
+
+
 def validate_arena_config(config: ArenaConfig) -> None:
-    """Raise ValueError on an invalid config: bad puppet_ids (see
-    resolved_puppet_ids) or a seat-0 PlayerSpec with attention enabled
-    (seat 0 is piloted directly; attention/sleep semantics don't apply)."""
+    """Raise ValueError when shared arena cross-field invariants are invalid."""
     resolved_puppet_ids(config)
     seat0 = next((spec for spec in config.players if spec.player_id == 0), None)
     if seat0 is not None and seat0.options.attention.mode != "off":
         raise ValueError(
             "seat 0 requires attention.mode 'off' for autonomous piloting"
         )
+    _validate_live_gate(config)

@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import pytest
+from civ_mcp.arena import live_gate
 from civ_mcp.arena.config import (
     ArenaConfig,
     AttentionOptions,
@@ -8,6 +9,7 @@ from civ_mcp.arena.config import (
     ChannelOptions,
     ChannelRules,
     CivOptions,
+    LiveGateOptions,
     MemoryOptions,
     PlayerSpec,
     TaskTrackerOptions,
@@ -16,6 +18,7 @@ from civ_mcp.arena.config import (
     resolved_puppet_ids,
     validate_arena_config,
 )
+from civ_mcp.arena.live_gate import ScenarioMeta
 
 def test_parse_player_spec_local():
     assert parse_player_spec("1:local:qwen3-coder-30b") == PlayerSpec(1, "local", "qwen3-coder-30b")
@@ -265,3 +268,244 @@ def test_channel_rules_defaults_and_enabled_set_are_canonical():
     assert fp["enabled_players"] == [2]
     assert fp["rules"] == ChannelRules().fingerprint()
     assert channel_config_fingerprint(replace(cfg, players=list(reversed(cfg.players)))) == fp
+
+
+def _gate_spec(player_id: int, provider: str, model: str = "") -> PlayerSpec:
+    return PlayerSpec(
+        player_id,
+        provider,
+        model,
+        options=CivOptions(channels=ChannelOptions(enabled=True)),
+    )
+
+
+def _gate_config(
+    *,
+    players: list[PlayerSpec] | None = None,
+    max_puppet_turns: int = 36,
+    max_game_turns: int = 36,
+    run_id: str = "run-gate",
+    live_gate: LiveGateOptions | None = None,
+) -> ArenaConfig:
+    return ArenaConfig(
+        players=(
+            players
+            if players is not None
+            else [
+                _gate_spec(1, "local", "m"),
+                _gate_spec(2, "cli-codex"),
+                _gate_spec(3, "scripted"),
+            ]
+        ),
+        max_puppet_turns=max_puppet_turns,
+        max_game_turns=max_game_turns,
+        run_id=run_id,
+        live_gate=(
+            live_gate
+            if live_gate is not None
+            else LiveGateOptions(
+                enabled=True,
+                scenario="fake_gate_v1",
+                roles=(("api_actor", 1), ("cli_actor", 2), ("privacy_observer", 3)),
+            )
+        ),
+    )
+
+
+@pytest.fixture
+def gate_registry(monkeypatch):
+    meta = ScenarioMeta(
+        name="fake_gate_v1",
+        revision=1,
+        role_contracts=(
+            ("api_actor", "in_process"),
+            ("cli_actor", "cli"),
+            ("privacy_observer", "scripted"),
+        ),
+        minimum_captures=lambda config: 27,
+        create_driver=lambda config: object(),
+    )
+    monkeypatch.setattr(live_gate, "_SCENARIOS", {meta.name: meta})
+    return meta
+
+
+def test_live_gate_defaults_disabled_and_valid():
+    cfg = ArenaConfig(players=[PlayerSpec(1, "local", "m")])
+    assert cfg.live_gate == LiveGateOptions()
+    validate_arena_config(cfg)
+
+
+def test_live_gate_disabled_cannot_carry_scenario_or_roles():
+    cfg = ArenaConfig(
+        players=[PlayerSpec(1, "local", "m")],
+        live_gate=LiveGateOptions(enabled=False, scenario="fake_gate_v1"),
+    )
+    with pytest.raises(ValueError, match="cannot carry"):
+        validate_arena_config(cfg)
+
+
+@pytest.mark.parametrize("enabled", [0, 1, "false", None])
+def test_live_gate_enabled_must_be_exact_boolean(enabled):
+    cfg = ArenaConfig(
+        players=[PlayerSpec(1, "local", "m")],
+        live_gate=LiveGateOptions(enabled=enabled),
+    )
+    with pytest.raises(ValueError, match="enabled.*boolean"):
+        validate_arena_config(cfg)
+
+
+def test_live_gate_valid_config_passes(gate_registry):
+    validate_arena_config(_gate_config())
+
+
+def test_live_gate_scenario_must_be_non_blank(gate_registry):
+    gate = replace(_gate_config().live_gate, scenario="   ")
+    with pytest.raises(ValueError, match="scenario.*non-blank"):
+        validate_arena_config(_gate_config(live_gate=gate))
+
+
+def test_live_gate_unknown_scenario_rejected(monkeypatch):
+    monkeypatch.setattr(live_gate, "_SCENARIOS", {})
+    with pytest.raises(ValueError, match="unknown live-gate scenario"):
+        validate_arena_config(_gate_config())
+
+
+def test_live_gate_roles_must_match_contract_exactly(gate_registry):
+    cfg = _gate_config()
+    missing = LiveGateOptions(
+        enabled=True,
+        scenario="fake_gate_v1",
+        roles=(("api_actor", 1), ("cli_actor", 2)),
+    )
+    with pytest.raises(ValueError, match="exactly"):
+        validate_arena_config(_gate_config(live_gate=missing))
+    extra = LiveGateOptions(
+        enabled=True,
+        scenario="fake_gate_v1",
+        roles=cfg.live_gate.roles + (("stranger", 3),),
+    )
+    with pytest.raises(ValueError, match="exactly"):
+        validate_arena_config(_gate_config(live_gate=extra))
+
+
+def test_live_gate_role_ids_distinct_and_configured(gate_registry):
+    dup = LiveGateOptions(
+        enabled=True,
+        scenario="fake_gate_v1",
+        roles=(("api_actor", 1), ("cli_actor", 1), ("privacy_observer", 3)),
+    )
+    with pytest.raises(ValueError, match="distinct"):
+        validate_arena_config(_gate_config(live_gate=dup))
+    ghost = LiveGateOptions(
+        enabled=True,
+        scenario="fake_gate_v1",
+        roles=(("api_actor", 1), ("cli_actor", 2), ("privacy_observer", 9)),
+    )
+    with pytest.raises(ValueError, match="not a configured civ"):
+        validate_arena_config(_gate_config(live_gate=ghost))
+
+
+@pytest.mark.parametrize("bad_player_id", [True, 1.0, "1"])
+def test_live_gate_role_ids_must_be_exact_integers(gate_registry, bad_player_id):
+    invalid = LiveGateOptions(
+        enabled=True,
+        scenario="fake_gate_v1",
+        roles=(
+            ("api_actor", bad_player_id),
+            ("cli_actor", 2),
+            ("privacy_observer", 3),
+        ),
+    )
+    with pytest.raises(ValueError, match="exact integers"):
+        validate_arena_config(_gate_config(live_gate=invalid))
+
+
+def test_live_gate_rejects_duplicate_role_names(gate_registry):
+    duplicate = LiveGateOptions(
+        enabled=True,
+        scenario="fake_gate_v1",
+        roles=(
+            ("api_actor", 9),
+            ("api_actor", 1),
+            ("cli_actor", 2),
+            ("privacy_observer", 3),
+        ),
+    )
+    with pytest.raises(ValueError, match="exactly"):
+        validate_arena_config(_gate_config(live_gate=duplicate))
+
+
+def test_live_gate_driver_kind_contract_enforced(gate_registry):
+    players = [
+        _gate_spec(1, "cli-claude"),
+        _gate_spec(2, "cli-codex"),
+        _gate_spec(3, "scripted"),
+    ]
+    with pytest.raises(ValueError, match="driver kind"):
+        validate_arena_config(_gate_config(players=players))
+
+
+def test_live_gate_roles_must_be_channel_enabled(gate_registry):
+    players = [
+        PlayerSpec(1, "local", "m"),
+        _gate_spec(2, "cli-codex"),
+        _gate_spec(3, "scripted"),
+    ]
+    with pytest.raises(ValueError, match="channel-enabled"):
+        validate_arena_config(_gate_config(players=players))
+
+
+def test_live_gate_rejects_attention_on_gate_civ(gate_registry):
+    noisy = PlayerSpec(
+        1,
+        "local",
+        "m",
+        options=CivOptions(
+            channels=ChannelOptions(enabled=True),
+            attention=AttentionOptions(mode="auto"),
+        ),
+    )
+    players = [noisy, _gate_spec(2, "cli-codex"), _gate_spec(3, "scripted")]
+    with pytest.raises(ValueError, match="attention"):
+        validate_arena_config(_gate_config(players=players))
+
+
+def test_live_gate_rejects_seat_zero_entry(gate_registry):
+    players = [
+        _gate_spec(0, "scripted"),
+        _gate_spec(1, "local", "m"),
+        _gate_spec(2, "cli-codex"),
+        _gate_spec(3, "scripted"),
+    ]
+    with pytest.raises(ValueError, match="seat-zero"):
+        validate_arena_config(_gate_config(players=players))
+
+
+def test_live_gate_rejects_unbound_extra_civ(gate_registry):
+    players = [
+        _gate_spec(1, "local", "m"),
+        _gate_spec(2, "cli-codex"),
+        _gate_spec(3, "scripted"),
+        _gate_spec(4, "local", "m2"),
+    ]
+    with pytest.raises(ValueError, match="unbound"):
+        validate_arena_config(_gate_config(players=players))
+
+
+def test_live_gate_requires_explicit_run_id(gate_registry):
+    with pytest.raises(ValueError, match="run_id"):
+        validate_arena_config(_gate_config(run_id=""))
+
+
+@pytest.mark.parametrize("run_id", ["../escape", "nested/run", ".", ".."])
+def test_live_gate_requires_safe_run_id(gate_registry, run_id):
+    with pytest.raises(ValueError, match="run_id"):
+        validate_arena_config(_gate_config(run_id=run_id))
+
+
+def test_live_gate_budgets_must_meet_scenario_minimum(gate_registry):
+    with pytest.raises(ValueError, match="at least 27"):
+        validate_arena_config(_gate_config(max_puppet_turns=26))
+    with pytest.raises(ValueError, match="at least 27"):
+        validate_arena_config(_gate_config(max_game_turns=26))
+    validate_arena_config(_gate_config(max_game_turns=0))
