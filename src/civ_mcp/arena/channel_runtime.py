@@ -2260,6 +2260,14 @@ class ChannelRuntime:
                     "rejected",
                     "payment response outcome requires intent reconciliation",
                 )
+            if cleanup is not None:
+                return ChannelAcknowledgement(
+                    staged.actor,
+                    turn,
+                    staged.source_id,
+                    "rejected",
+                    "payment cleanup remains pending for intent reconciliation",
+                )
             return self._commit_payment_result(
                 "payment_response_result",
                 intent,
@@ -2681,6 +2689,8 @@ class ChannelRuntime:
                         intent["gold"],
                     )
                 except Exception:
+                    if cleanup is not None:
+                        continue
                     unverifiable = self._unverifiable_deal_record(
                         deal,
                         turn=current_turn,
@@ -2699,7 +2709,10 @@ class ChannelRuntime:
                         message=f"payment response became unverifiable for {deal.id}",
                     )
                     continue
-                if self._payment_state_status(remaining, deal) != "exact":
+                remaining_status = self._payment_state_status(remaining, deal)
+                if cleanup is not None and remaining_status is None:
+                    continue
+                if remaining_status != "exact":
                     unverifiable = self._unverifiable_deal_record(
                         deal,
                         turn=current_turn,
@@ -2717,6 +2730,8 @@ class ChannelRuntime:
                         grievance=None,
                         message=f"payment response became unverifiable for {deal.id}",
                     )
+                    continue
+                if cleanup is not None:
                     continue
                 engine_result = f"Error: {type(exc).__name__}"
             if self._response_succeeded(engine_result, engine_accept):
@@ -2782,6 +2797,8 @@ class ChannelRuntime:
                         message=f"recovered rejected payment for {deal.id}",
                     )
             elif self._authoritative_payment_failure(engine_result):
+                if cleanup is not None:
+                    continue
                 self._commit_payment_result(
                     "payment_response_result",
                     intent,
@@ -2818,6 +2835,8 @@ class ChannelRuntime:
                         "payment response retry returned no authoritative result; "
                         f"the post-retry offer was {post_status}"
                     )
+                if cleanup is not None and post_status in {None, "exact"}:
+                    continue
                 unverifiable = self._unverifiable_deal_record(
                     deal,
                     turn=current_turn,
