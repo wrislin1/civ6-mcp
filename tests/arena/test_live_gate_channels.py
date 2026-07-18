@@ -391,6 +391,19 @@ async def test_round2_funding_offers_exact_payment(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_auto_resolved_offer_at_acceptance_is_distinct_terminal(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    # R2: API funds, then the engine AI eats the offer before the CLI window.
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    gs.pending.clear()          # simulate engine auto-resolution
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+    state = driver._journal.state
+    assert state.status == "failed"
+    assert state.reason == "official_payment_auto_resolved"
+
+
+@pytest.mark.asyncio
 async def test_cli_line_is_exact_single_channel_line(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
     gs.active_player = 1

@@ -93,6 +93,7 @@ _PUBLIC_FAILURE_CODES = frozenset(
         "channel_finish_failed",
         "gate_invariant_failed",
         "observer_capture_failed",
+        "official_payment_auto_resolved",
         "payment_checkpoint_failed",
         "payment_state_failed",
         "preflight_failed",
@@ -1066,6 +1067,30 @@ class ChannelsCoreDriver:
                     return base_result
             self._emit_api(admission, player_id, turn, phase, plans)
             return base_result
+        if role == ROLE_CLI and phase == PHASE_ACCEPT_UPFRONT_PAYMENT:
+            deal = self._deal(self._journal.state.data["upfront_deal_id"])
+            if deal is None:
+                return base_result
+            from civ_mcp.arena.channels import PaymentStatus
+
+            if deal.payment_status is not PaymentStatus.SETTLED:
+                payment_state = await gs.get_channel_payment_state(
+                    self.role_pid[ROLE_API],
+                    self.role_pid[ROLE_CLI],
+                    PAYMENT_GOLD,
+                )
+                status = getattr(payment_state, "status", None)
+                status = getattr(status, "value", status)
+                if status != "exact":
+                    self._fail(
+                        "official_payment_auto_resolved",
+                        detail={
+                            "payer": self.role_pid[ROLE_API],
+                            "payee": self.role_pid[ROLE_CLI],
+                            "status": status,
+                        },
+                    )
+                    return base_result
         return self._emit_cli(base_result, player_id, turn, phase, plans)
 
     def _planned_channel_input(
