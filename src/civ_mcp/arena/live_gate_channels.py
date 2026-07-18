@@ -1074,13 +1074,35 @@ class ChannelsCoreDriver:
             from civ_mcp.arena.channels import PaymentStatus
 
             if deal.payment_status is not PaymentStatus.SETTLED:
-                payment_state = await gs.get_channel_payment_state(
-                    self.role_pid[ROLE_API],
-                    self.role_pid[ROLE_CLI],
-                    PAYMENT_GOLD,
-                )
-                status = getattr(payment_state, "status", None)
-                status = getattr(status, "value", status)
+                state = self._journal.state
+                if "pre_acceptance_payment_status" in state.data:
+                    status = state.data["pre_acceptance_payment_status"]
+                else:
+                    try:
+                        payment_state = await gs.get_channel_payment_state(
+                            self.role_pid[ROLE_API],
+                            self.role_pid[ROLE_CLI],
+                            PAYMENT_GOLD,
+                        )
+                    except Exception as exc:
+                        self._fail(
+                            "payment_state_failed",
+                            detail={
+                                "failure": (
+                                    "pre_acceptance_payment_state_unreadable"
+                                ),
+                                "error": repr(exc),
+                            },
+                        )
+                        return base_result
+                    status = getattr(payment_state, "status", None)
+                    status = getattr(status, "value", status)
+                    if not self._record_data_once(
+                        {"pre_acceptance_payment_status": status},
+                        reason_code="payment_state_failed",
+                        failure="pre_acceptance_payment_status_mismatch",
+                    ):
+                        return base_result
                 if status != "exact":
                     self._fail(
                         "official_payment_auto_resolved",

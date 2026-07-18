@@ -404,6 +404,48 @@ async def test_auto_resolved_offer_at_acceptance_is_distinct_terminal(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_pre_acceptance_recorded_status_is_reused_without_live_query(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    driver._journal.append(
+        "data_recorded", {"data": {"pre_acceptance_payment_status": "exact"}}
+    )
+    assert driver._journal.state.data["pre_acceptance_payment_status"] == "exact"
+    calls = []
+    original = gs.get_channel_payment_state
+
+    async def counted_payment_state_query(*args):
+        calls.append(args)
+        return await original(*args)
+
+    gs.get_channel_payment_state = counted_payment_state_query
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    # The channel runtime still validates the payment during the real action;
+    # the pre-acceptance guard must not add another live read.
+    assert calls == [(1, 2, 1)]
+    assert driver._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_pre_acceptance_payment_state_query_failure_is_explicit(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    async def unreadable_payment_state(*args):
+        raise RuntimeError("simulated pre-acceptance payment-state failure")
+
+    gs.get_channel_payment_state = unreadable_payment_state
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    assert driver._journal.state.status == GATE_FAILED
+    assert driver._journal.state.reason == "payment_state_failed"
+    assert "pre_acceptance_payment_state_unreadable" in private_failure_text(driver)
+
+
+@pytest.mark.asyncio
 async def test_cli_line_is_exact_single_channel_line(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
     gs.active_player = 1
