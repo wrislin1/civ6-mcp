@@ -1352,6 +1352,8 @@ class ChannelsCoreDriver:
             )
             return
         player_id, turn = next(iter(identities))
+        if not self._check_no_unexpected_acknowledgements(player_id, turn):
+            return
         needs_settlement_read = (
             self.pid_role.get(player_id) == ROLE_CLI
             and state.phase == PHASE_ACCEPT_UPFRONT_PAYMENT

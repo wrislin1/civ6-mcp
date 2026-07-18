@@ -487,3 +487,70 @@ $ git diff --check
 
 - No new concerns in this boundary fix. Previously documented unrelated
   concerns remain unchanged.
+
+## Validation Fix: Unexpected Acknowledgement on Verified Recovery
+
+### Implementation Summary
+
+- `_reconcile_verified_capture()` now calls
+  `_check_no_unexpected_acknowledgements(player_id, turn)` immediately after
+  reconstructing the durable capture identity.
+- A failed check returns before the attach settlement-read deferral decision,
+  before any seat-turn treasury evidence read, and before
+  `seat_capture_started`.
+- Added a regression that combines a durable `action_verified` crash with an
+  injected rogue same-player/same-turn acknowledgement.
+
+### TDD RED Evidence
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_action_verified_crash_rejects_rogue_same_turn_acknowledgement -q
+F                                                                        [100%]
+FAILED ...test_action_verified_crash_rejects_rogue_same_turn_acknowledgement
+E       AssertionError: assert None == 'failed'
+1 failed in 1.72s
+```
+
+The failure confirmed that attach deferred the verified capture without
+checking the rogue acknowledgement.
+
+### GREEN Command Output
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_action_verified_crash_rejects_rogue_same_turn_acknowledgement -q
+.                                                                        [100%]
+1 passed in 0.50s
+
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "same_round or settlement_ or restart_checkpoint or restart_without or resume or pending_actions or action_verified or unexpected_ack"
+...........................                                              [100%]
+27 passed, 83 deselected in 9.72s
+
+$ uv run python -m compileall -q src/civ_mcp/arena/live_gate_channels.py tests/arena/test_live_gate_channels.py
+[exit 0; no output]
+
+$ git diff --check
+[exit 0; no output]
+```
+
+### Files Changed
+
+- `src/civ_mcp/arena/live_gate_channels.py`
+- `tests/arena/test_live_gate_channels.py`
+- `.superpowers/sdd/task-2-3-5-report.md` (required report append)
+
+### Self-Review
+
+- The existing verifier is reused; no acknowledgement policy or journal shape
+  was redesigned.
+- The rogue acknowledgement fails with the allowlisted
+  `unexpected_acknowledgement` reason and private source detail.
+- Recovery writes neither `settlement_result` nor `seat_capture_started` after
+  detecting the rogue acknowledgement.
+- Valid attach deferral and seat-turn settlement recovery remain covered by the
+  focused suite.
+- Tasks 4, 7, and 8 remain untouched.
+
+### Concerns
+
+- No new concerns in this validation fix. Previously documented unrelated
+  concerns remain unchanged.

@@ -1008,6 +1008,69 @@ async def test_action_verified_crash_reconstructs_recovered_settlement_capture(
 
 
 @pytest.mark.asyncio
+async def test_action_verified_crash_rejects_rogue_same_turn_acknowledgement(
+    tmp_path,
+):
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    gs.active_player = 2
+    admission = await runtime.admit_player(gs, 2, 11)
+    driver.note_admission(2, 11, admission, "")
+    result = await driver.policy_for(2)(gs, 2, 11)
+    planned_source = driver._journal.state.pending_actions[0]["source_id"]
+    admission.context.dispatch(
+        "send_message",
+        {"to_player": 3, "text": "rogue post-payment recovery action"},
+    )
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    rogue = next(
+        acknowledgement
+        for acknowledgement in acknowledgements
+        if acknowledgement.source_id != planned_source
+    )
+    assert rogue.player_id == 2
+    assert rogue.turn == 11
+
+    recovering = lgc.ChannelsCoreDriver(gate_config())
+    await recovering.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+    journal = recovering._journal
+    real_append = journal.append
+
+    def crashing_append(kind, payload):
+        event = real_append(kind, payload)
+        if kind == "action_verified" and payload["name"] == "respond_to_payment":
+            raise SimulatedCrash()
+        return event
+
+    journal.append = crashing_append
+    gs.active_player = 3
+    observer_admission = await runtime.admit_player(gs, 3, 11)
+    with pytest.raises(SimulatedCrash):
+        recovering.note_admission(3, 11, observer_admission, "")
+    assert recovering._journal.state.pending_actions == ()
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert resumed._journal.state.reason == "unexpected_acknowledgement"
+    assert "settlement_result" not in resumed._journal.state.data
+    assert resumed._journal.state.capture_started_turn is None
+    assert rogue.source_id not in public_gate_text(resumed)
+    assert rogue.source_id in private_failure_text(resumed)
+    assert resumed._journal.result_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_settlement_result_append_crash_reconstructs_normal_capture(
     tmp_path,
 ):
