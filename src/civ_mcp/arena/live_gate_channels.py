@@ -280,7 +280,9 @@ class ChannelsCoreDriver:
         if state.status == GATE_RESTART_REQUIRED:
             await self._verify_restart()
         elif state.phase == PHASE_RESTART_REQUIRED:
-            self._restart_armed = self._payment_fingerprint is not None
+            self._restart_armed = (
+                self._journal.state.data.get("settlement_digest") is not None
+            )
             if state.capture_turn is not None and self._round_complete(
                 state.capture_turn
             ):
@@ -670,7 +672,10 @@ class ChannelsCoreDriver:
     @staticmethod
     def _digest_mapping(value: Mapping) -> str:
         encoded = json.dumps(
-            dict(value), sort_keys=True, separators=(",", ":"), allow_nan=False
+            ChannelsCoreDriver._jsonable(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()[:16]
 
@@ -910,7 +915,7 @@ class ChannelsCoreDriver:
             "restart_verified",
             {
                 "turn": state.data.get("restart_turn"),
-                "next_phase": PHASE_ACCEPT_UPFRONT_PAYMENT,
+                "next_phase": PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,
             },
         )
 
@@ -959,6 +964,16 @@ class ChannelsCoreDriver:
         if not plans:
             return base_result
         if role == ROLE_API:
+            if (
+                phase == PHASE_FUND_UPFRONT
+                and "settlement_baseline" not in self._journal.state.data
+            ):
+                baseline = await self._read_settlement_treasuries(gs, turn)
+                if baseline is None:
+                    return base_result
+                self._journal.append(
+                    "data_recorded", {"data": {"settlement_baseline": baseline}}
+                )
             self._emit_api(admission, player_id, turn, phase, plans)
             return base_result
         return self._emit_cli(base_result, player_id, turn, phase, plans)
@@ -1188,6 +1203,17 @@ class ChannelsCoreDriver:
             return
         journal = self._journal
         assert journal is not None
+        if (
+            self.pid_role.get(player_id) == ROLE_CLI
+            and journal.state.phase == PHASE_ACCEPT_UPFRONT_PAYMENT
+            and "settlement_result" not in journal.state.data
+        ):
+            result = await self._read_settlement_treasuries(self._gs, turn)
+            if result is None:
+                return
+            journal.append(
+                "data_recorded", {"data": {"settlement_result": result}}
+            )
         journal.append(
             "seat_capture_started",
             {
@@ -1218,8 +1244,8 @@ class ChannelsCoreDriver:
         successors = {
             PHASE_CANARY_AND_UPFRONT_PROPOSAL: (PHASE_ACCEPT_UPFRONT,),
             PHASE_ACCEPT_UPFRONT: (PHASE_FUND_UPFRONT,),
-            PHASE_FUND_UPFRONT: (PHASE_RESTART_REQUIRED,),
-            PHASE_ACCEPT_UPFRONT_PAYMENT: (PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,),
+            PHASE_FUND_UPFRONT: (PHASE_ACCEPT_UPFRONT_PAYMENT,),
+            PHASE_ACCEPT_UPFRONT_PAYMENT: (PHASE_RESTART_REQUIRED,),
             PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE: (
                 PHASE_VERIFY_UPFRONT_HONORED,
                 PHASE_PROPOSE_ON_DELIVERY,
@@ -1446,10 +1472,9 @@ class ChannelsCoreDriver:
                     }
                 },
             )
-            self._restart_armed = True
             self._journal.append(
                 "phase_advanced",
-                {"phase": PHASE_RESTART_REQUIRED, "turn": turn},
+                {"phase": PHASE_ACCEPT_UPFRONT_PAYMENT, "turn": turn},
             )
         elif phase == PHASE_ACCEPT_UPFRONT_PAYMENT and role == ROLE_CLI:
             deal = self._deal(state.data["upfront_deal_id"])
@@ -1471,12 +1496,81 @@ class ChannelsCoreDriver:
                 "data_recorded",
                 {"data": {"upfront_favor_due_turn": deal.favor_due_turn}},
             )
+            data = state.data
+            baseline = data.get("settlement_baseline")
+            result = data.get("settlement_result")
+            recorded = self._payment_fingerprint
+            gold = PAYMENT_GOLD
+            baseline_payer_gold = (
+                baseline.get("payer_gold")
+                if isinstance(baseline, Mapping)
+                else None
+            )
+            baseline_payee_gold = (
+                baseline.get("payee_gold")
+                if isinstance(baseline, Mapping)
+                else None
+            )
+            result_payer_gold = (
+                result.get("payer_gold")
+                if isinstance(result, Mapping)
+                else None
+            )
+            result_payee_gold = (
+                result.get("payee_gold")
+                if isinstance(result, Mapping)
+                else None
+            )
+            if (
+                not isinstance(baseline, Mapping)
+                or not isinstance(result, Mapping)
+                or recorded is None
+                or baseline.get("turn") != turn
+                or result.get("turn") != turn
+                or type(baseline_payer_gold) is not int
+                or type(baseline_payee_gold) is not int
+                or type(result_payer_gold) is not int
+                or type(result_payee_gold) is not int
+            ):
+                self._fail(
+                    "payment_checkpoint_failed",
+                    detail={
+                        "failure": "settlement_delta_mismatch",
+                        "baseline": baseline,
+                        "result": result,
+                    },
+                )
+                return
+            assert isinstance(baseline_payer_gold, int)
+            assert isinstance(baseline_payee_gold, int)
+            if (
+                result_payer_gold != baseline_payer_gold - gold
+                or result_payee_gold != baseline_payee_gold + gold
+            ):
+                self._fail(
+                    "payment_checkpoint_failed",
+                    detail={
+                        "failure": "settlement_delta_mismatch",
+                        "baseline": baseline,
+                        "result": result,
+                    },
+                )
+                return
+            digest = self._digest_mapping(
+                {
+                    "fingerprint": recorded,
+                    "baseline": baseline,
+                    "result": result,
+                }
+            )
+            self._journal.append(
+                "data_recorded", {"data": {"settlement_digest": digest}}
+            )
+            self._update_payment_checkpoint(settlement_digest=digest)
+            self._restart_armed = True
             self._journal.append(
                 "phase_advanced",
-                {
-                    "phase": PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,
-                    "turn": turn,
-                },
+                {"phase": PHASE_RESTART_REQUIRED, "turn": turn},
             )
         elif phase == PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE:
             deal = self._deal(state.data["upfront_deal_id"])
@@ -1864,31 +1958,30 @@ class ChannelsCoreDriver:
         self._signal = GATE_PASSED
 
     async def _request_restart(self, turn: int) -> None:
-        api = self.role_pid[ROLE_API]
-        cli = self.role_pid[ROLE_CLI]
+        data = self._journal.state.data
         recorded = self._payment_fingerprint
-        if not recorded:
+        baseline = data.get("settlement_baseline")
+        result = data.get("settlement_result")
+        digest = data.get("settlement_digest")
+        if not recorded or not digest:
             self._fail(
                 "restart_checkpoint_failed",
-                detail={"failure": "missing_private_payment_checkpoint"},
+                detail={"failure": "missing_settlement_evidence"},
             )
             return
-        live = await self._live_offer_fingerprint(
-            api, cli, failure_code="restart_checkpoint_failed"
+        recomputed = self._digest_mapping(
+            {"fingerprint": recorded, "baseline": baseline, "result": result}
         )
-        if live is None:
-            return
-        if live != recorded:
+        if recomputed != digest:
             self._fail(
                 "restart_checkpoint_failed",
                 detail={
-                    "failure": "payment_checkpoint_mismatch",
-                    "live": live,
-                    "recorded": recorded,
+                    "failure": "settlement_digest_mismatch",
+                    "recorded": digest,
+                    "recomputed": recomputed,
                 },
             )
             return
-        self._update_payment_checkpoint(before=live)
         channel_state = self._runtime.state
         self._journal.append(
             "data_recorded",
@@ -2043,6 +2136,31 @@ class ChannelsCoreDriver:
                 self._captured_this_turn[recovered_turn] = set(
                     self._journal.state.captured_players
                 )
+
+    async def _read_settlement_treasuries(self, gs, turn) -> dict | None:
+        values = {}
+        for key, pid in (
+            ("payer_gold", self.role_pid[ROLE_API]),
+            ("payee_gold", self.role_pid[ROLE_CLI]),
+        ):
+            request = ObservationRequest(
+                families=frozenset({ObservationFamily.TREASURY})
+            )
+            observed = await gs.get_channel_observation(pid, turn, request)
+            if observed.errors or (
+                ObservationFamily.TREASURY not in observed.families_present
+            ):
+                self._fail(
+                    "payment_state_failed",
+                    detail={
+                        "failure": "settlement_treasury_unreadable",
+                        "player_id": pid,
+                        "errors": list(observed.errors),
+                    },
+                )
+                return None
+            values[key] = observed.treasury_gold
+        return {"turn": turn, **values}
 
     async def _run_preflight(self, gs, turn) -> None:
         api = self.role_pid[ROLE_API]

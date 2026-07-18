@@ -765,6 +765,34 @@ async def drive_to_restart(tmp_path, gs=None):
     return driver, runtime, gs
 
 
+@pytest.mark.asyncio
+async def test_round2_settles_payment_same_round_then_requests_restart(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    assert driver._journal.state.phase == lgc.PHASE_FUND_UPFRONT
+
+    await run_gate_round(driver, runtime, gs, 11)
+
+    state = driver._journal.state
+    assert state.status == "restart_required"
+    # The official payment is consumed inside R2 — settled, not pending.
+    assert gs.pending == {}
+    assert gs.treasury[1] == 499
+    assert gs.treasury[2] == 501
+    phases = [
+        event["payload"]["phase"]
+        for event in read_events(driver)
+        if event["kind"] == "phase_advanced"
+    ]
+    assert phases == [
+        lgc.PHASE_CANARY_AND_UPFRONT_PROPOSAL,
+        lgc.PHASE_ACCEPT_UPFRONT,
+        lgc.PHASE_FUND_UPFRONT,
+        lgc.PHASE_ACCEPT_UPFRONT_PAYMENT,
+        lgc.PHASE_RESTART_REQUIRED,
+    ]
+
+
 async def drive_to_funding_offer_without_gate_capture(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
     await run_gate_round(driver, runtime, gs, 10)
@@ -791,11 +819,92 @@ def public_gate_text(driver):
     ) + "\n" + json.dumps(driver.result_summary(), sort_keys=True)
 
 
+def read_events(driver):
+    return [
+        json.loads(line)
+        for line in driver._journal.events_path.read_text().splitlines()
+    ]
+
+
 def private_failure_text(driver):
     return "\n".join(
         path.read_text()
         for path in sorted(driver._journal.gate_dir.glob("failure_*.json"))
     )
+
+
+@pytest.mark.asyncio
+async def test_settlement_records_baselines_deltas_and_digest(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    data = driver._journal.state.data
+    assert data["settlement_baseline"] == {
+        "turn": 11, "payer_gold": 500, "payee_gold": 500,
+    }
+    assert data["settlement_result"] == {
+        "turn": 11, "payer_gold": 499, "payee_gold": 501,
+    }
+    expected = lgc.ChannelsCoreDriver._digest_mapping({
+        "fingerprint": exact_payment_fingerprint(),
+        "baseline": data["settlement_baseline"],
+        "result": data["settlement_result"],
+    })
+    assert data["settlement_digest"] == expected
+
+
+@pytest.mark.asyncio
+async def test_settlement_delta_mismatch_fails_closed(tmp_path):
+    gs = GateGameState()
+    original = gs.respond_to_channel_payment
+
+    async def respond_without_transfer(payer, gold, accept):
+        result = await original(payer, gold, accept)
+        gs.treasury[payer] += gold      # undo: simulate a phantom settlement
+        gs.treasury[payee_id] -= gold
+        return result
+
+    payee_id = 2
+    gs.respond_to_channel_payment = respond_without_transfer
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_round(driver, runtime, gs, 11)
+    state = driver._journal.state
+    assert state.status == "failed"
+    assert "settlement_delta_mismatch" in private_failure_text(driver)
+
+
+@pytest.mark.asyncio
+async def test_restart_checkpoint_uses_no_live_payment_query(tmp_path):
+    gs = GateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    calls = []
+    original = gs.get_channel_payment_state
+
+    async def counting_state(payer, payee, gold):
+        calls.append((payer, payee, gold))
+        return await original(payer, payee, gold)
+
+    gs.get_channel_payment_state = counting_state
+    await run_gate_round(driver, runtime, gs, 11)
+    assert driver._journal.state.status == "restart_required"
+    # Funding and CLI pre-acceptance are the only R2 live payment-state
+    # queries; the round-boundary checkpoint must add none.
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_restart_without_settlement_digest_fails(tmp_path):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+    driver._journal.append(
+        "data_recorded", {"data": {"settlement_digest": None}}
+    )  # sabotage
+    await run_gate_seat(driver, runtime, gs, 3, 11)
+    state = driver._journal.state
+    assert state.status == "failed"
+    assert state.reason == "restart_checkpoint_failed"
 
 
 @pytest.mark.asyncio

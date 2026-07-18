@@ -1,0 +1,112 @@
+# Tasks 2, 3, and 5 Combined Corrective Slice Report
+
+## Status
+
+Implemented the same-round payment settlement phase order, durable treasury
+settlement evidence, and a restart checkpoint anchored on the settlement
+digest. The five new regression tests pass.
+
+## Implementation Summary
+
+- Reordered the round-2 phase path to
+  `fund_upfront -> accept_upfront_payment -> restart_required`.
+- Updated started-capture reconciliation successors and the post-restart next
+  phase to match the revision-2 order.
+- Recorded payer/payee treasury baselines before API funding and results after
+  the CLI settlement capture, with journal-data guards preventing game rereads
+  during recovery replay.
+- Verified the exact one-gold settlement delta from journaled evidence, then
+  persisted a 16-hex `settlement_digest` publicly and in the private payment
+  checkpoint sidecar.
+- Made `_digest_mapping` normalize immutable journal mappings before JSON
+  serialization; flat mapping digests remain unchanged.
+- Reworked `_request_restart` to recompute and verify durable settlement
+  evidence without querying game payment state.
+- Re-armed an interrupted restart boundary only when `settlement_digest` is
+  present.
+- Added fail-closed structural type checks for treasury evidence before delta
+  arithmetic.
+
+## TDD Evidence
+
+### RED
+
+1. `uv run pytest tests/arena/test_live_gate_channels.py::test_round2_settles_payment_same_round_then_requests_restart -q`
+   - Failed because the official offer remained in `gs.pending`; R2 had skipped
+     `accept_upfront_payment`.
+2. `uv run pytest tests/arena/test_live_gate_channels.py -q -k settlement_`
+   - Failed because `settlement_baseline` and `settlement_result` were absent,
+     the phantom transfer did not fail closed, and the initial immutable-state
+     sabotage needed adjustment.
+3. `uv run pytest tests/arena/test_live_gate_channels.py -q -k "restart_checkpoint or restart_without"`
+   - Failed because the round-boundary checkpoint added a live payment query
+     and missing settlement evidence was ignored.
+4. The missing-digest test was rerun after changing sabotage from direct
+   `mappingproxy` mutation to a journaled `data_recorded` overwrite. It then
+   failed for the intended reason: status remained `restart_required` instead
+   of becoming `failed`.
+
+### GREEN
+
+`uv run pytest tests/arena/test_live_gate_channels.py::test_round2_settles_payment_same_round_then_requests_restart tests/arena/test_live_gate_channels.py::test_settlement_records_baselines_deltas_and_digest tests/arena/test_live_gate_channels.py::test_settlement_delta_mismatch_fails_closed tests/arena/test_live_gate_channels.py::test_restart_checkpoint_uses_no_live_payment_query tests/arena/test_live_gate_channels.py::test_restart_without_settlement_digest_fails -q`
+
+Result: `5 passed in 2.42s`.
+
+## Test Commands and Results
+
+- Task 2 focused command: `1 passed in 0.69s`.
+- Task 3 keyword command: `3 passed, 96 deselected in 1.52s` (the keyword also
+  selects the new missing-settlement-digest test).
+- Task 5 literal keyword command: `2 passed, 1 failed, 96 deselected in 1.65s`.
+  The sole failure is the existing revision-1
+  `test_restart_checkpoint_persists_fingerprint_and_result`, which still
+  requires `payment_checkpoint["before"]`; Task 7 owns that lifecycle sweep.
+- Adjacent regression command for round-boundary deferral and half-ahead
+  checkpoint reconciliation: `3 passed in 1.19s`.
+- `uv run python -m compileall -q src/civ_mcp/arena/live_gate_channels.py tests/arena/test_live_gate_channels.py`:
+  passed.
+- `git diff --check`: passed.
+- `uv run ruff check ...` and `uv run ruff format --check ...`: not run because
+  Ruff is not installed in this environment (`Failed to spawn: ruff`).
+
+## Files Changed
+
+- `src/civ_mcp/arena/live_gate_channels.py`
+- `tests/arena/test_live_gate_channels.py`
+- `.superpowers/sdd/task-2-3-5-report.md`
+
+## Self-Review
+
+- `_advance_after_capture` performs no new game reads. Both treasury reads are
+  in the seat-turn or after-capture pre-journal paths and are guarded by
+  journal data.
+- The API write-ahead baseline is durable before the official funding side
+  effect. The post-settlement result is durable before `seat_capture_started`.
+- Recovery replays cannot dispatch a second payment from the new evidence
+  logic; they only re-evaluate journaled evidence and append deterministic
+  phase transitions.
+- The phase sequence for the happy R2 path is exactly:
+  `canary_and_upfront_proposal`, `accept_upfront`, `fund_upfront`,
+  `accept_upfront_payment`, `restart_required`.
+- Settlement mismatches use the allowlisted `payment_checkpoint_failed` reason
+  with private `settlement_delta_mismatch` detail. Restart evidence failures
+  use `restart_checkpoint_failed`.
+- The settlement digest covers the exact payment fingerprint, baseline, and
+  result and is recomputed before restart.
+
+## Concerns and Deliberate Deviations
+
+1. The Task 5 test snippet counted from attach and expected two payment-state
+   calls, but the current production runtime performs three before this change:
+   preflight, funding validation, and CLI response validation. The test now
+   installs its counter after R1 and keeps the required `len(calls) == 2`, so
+   it precisely proves that the two R2 runtime checks occur and the restart
+   checkpoint adds none.
+2. Task 5 says `_live_offer_fingerprint` is unused and should be deleted, but
+   it remains referenced by the current revision-1 payment checkpoint
+   reconciler and restart verifier. Deleting it produced real attribute errors.
+   It is retained until the out-of-scope Task 6/7 replacement removes those
+   references. `_request_restart` does not call it.
+3. The full test file/suite was not run because Tasks 6 and 7 explicitly own
+   the expected revision-1 resume and lifecycle failures. The literal Task 5
+   keyword command's one stale assertion is documented above.
