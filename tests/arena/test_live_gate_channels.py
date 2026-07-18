@@ -591,12 +591,13 @@ async def test_pending_applied_acknowledgements_recover_and_advance(tmp_path):
     gs.active_player = 2
     cli_admission = await runtime.admit_player(gs, 2, 10)
     resumed.note_admission(2, 10, cli_admission, "")
+    cli_result = await resumed.policy_for(2)(gs, 2, 10)
 
     assert resumed.pending_signal() is None
-    assert resumed._journal.state.pending_actions == ()
+    assert len(resumed._journal.state.pending_actions) == 1
+    assert resumed._journal.state.pending_actions[0]["player_id"] == 2
     assert len(resumed._journal.state.verified_actions) == 2
     assert resumed._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT
-    cli_result = await resumed.policy_for(2)(gs, 2, 10)
     channel_lines = [
         line
         for line in cli_result["transcript"]["final_summary"].splitlines()
@@ -697,6 +698,7 @@ async def test_recovery_reducer_error_is_durable_sanitized_failure(tmp_path):
     gs.active_player = 3
     next_admission = await runtime.admit_player(gs, 3, 11)
     resumed.note_admission(3, 11, next_admission, "")
+    await resumed.policy_for(3)(gs, 3, 11)
 
     assert resumed.pending_signal() == GATE_FAILED
     assert resumed._journal.state.reason == "action_recovery_failed"
@@ -837,6 +839,15 @@ def read_events(driver):
     ]
 
 
+def data_events_for_key(driver, key):
+    return [
+        event
+        for event in read_events(driver)
+        if event["kind"] == "data_recorded"
+        and key in event["payload"]["data"]
+    ]
+
+
 def private_failure_text(driver):
     return "\n".join(
         path.read_text()
@@ -860,6 +871,141 @@ async def test_settlement_records_baselines_deltas_and_digest(tmp_path):
         "result": data["settlement_result"],
     })
     assert data["settlement_digest"] == expected
+
+
+@pytest.mark.asyncio
+async def test_pending_payment_ack_recovery_records_settlement_before_capture(
+    tmp_path,
+):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    gs.active_player = 2
+    admission = await runtime.admit_player(gs, 2, 11)
+    driver.note_admission(2, 11, admission, "")
+    result = await driver.policy_for(2)(gs, 2, 11)
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    assert len(acknowledgements) == 1
+    assert gs.pending == {}
+    assert gs.treasury == {1: 499, 2: 501, 3: 500}
+    assert "settlement_result" not in driver._journal.state.data
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+    gs.active_player = 3
+    observer_admission = await runtime.admit_player(gs, 3, 11)
+    resumed.note_admission(3, 11, observer_admission, "")
+    observer_result = await resumed.policy_for(3)(gs, 3, 11)
+
+    assert resumed.pending_signal() is None
+    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert resumed._journal.state.data["settlement_result"] == {
+        "turn": 11,
+        "payer_gold": 499,
+        "payee_gold": 501,
+    }
+    assert len(data_events_for_key(resumed, "settlement_result")) == 1
+    assert gs.treasury == {1: 499, 2: 501, 3: 500}
+    cli_acks = [
+        acknowledgement
+        for acknowledgement in runtime.state.acknowledgements
+        if acknowledgement.player_id == 2 and acknowledgement.turn == 11
+    ]
+    assert len(cli_acks) == 1
+
+    observer_acks = await runtime.finish_player(
+        gs, observer_admission, observer_result
+    )
+    await resumed.after_seat_capture(
+        player_id=3,
+        turn=11,
+        channel_fields={
+            "enabled": True,
+            "acknowledgements": len(observer_acks),
+            "error": "",
+        },
+    )
+    assert resumed.pending_signal() == GATE_RESTART_REQUIRED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "crash_key", ["upfront_favor_due_turn", "settlement_digest"]
+)
+async def test_settlement_data_append_crash_replays_without_duplicate(
+    tmp_path, crash_key
+):
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    journal = driver._journal
+    real_append = journal.append
+
+    def crashing_append(kind, payload):
+        event = real_append(kind, payload)
+        if kind == "data_recorded" and crash_key in payload["data"]:
+            raise SimulatedCrash()
+        return event
+
+    journal.append = crashing_append
+    with pytest.raises(SimulatedCrash):
+        await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() is None
+    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert resumed._journal.state.capture_started_turn is None
+    assert len(data_events_for_key(resumed, crash_key)) == 1
+    await run_gate_seat(resumed, runtime, gs, 3, 11)
+    assert resumed.pending_signal() == GATE_RESTART_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_restart_metadata_append_crash_replays_without_duplicate(tmp_path):
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    journal = driver._journal
+    real_append = journal.append
+
+    def crashing_append(kind, payload):
+        event = real_append(kind, payload)
+        if (
+            kind == "data_recorded"
+            and "restart_channel_sequence" in payload["data"]
+        ):
+            raise SimulatedCrash()
+        return event
+
+    journal.append = crashing_append
+    with pytest.raises(SimulatedCrash):
+        await run_gate_seat(driver, runtime, gs, 3, 11)
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() == GATE_RESTART_REQUIRED
+    assert resumed._journal.state.restart_count == 1
+    assert len(data_events_for_key(resumed, "restart_channel_sequence")) == 1
+    assert len(data_events_for_key(resumed, "restart_turn")) == 1
 
 
 @pytest.mark.asyncio

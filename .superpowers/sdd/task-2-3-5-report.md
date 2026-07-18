@@ -213,3 +213,110 @@ $ git diff --check
 
 - Ruff remains unavailable in this environment. The requested pytest,
   compilation, and diff checks pass.
+
+## Re-Review Fix: Crash-Safe Settlement Recovery and Byte-Stable Data Replay
+
+### Implementation Summary
+
+- Pending canonical acknowledgements now queue their already-applied capture
+  for the next async `seat_turn` boundary instead of synchronously advancing
+  from `note_admission`.
+- Normal and recovered CLI settlement captures share
+  `_record_settlement_result()`. Recovery reads and journals the post-payment
+  treasury result before `seat_capture_started`, then reconciles the capture
+  without dispatching or finishing another channel action.
+- Added `_record_data_once()` for atomic durable data writes. Absent values are
+  appended, matching values are skipped on replay, and differing or partial
+  values fail closed with the caller's allowlisted reason code.
+- Applied the guard to settlement baseline/result, payment checkpoint digest,
+  up-front deal metadata and due turn, settlement digest, on-delivery deal and
+  due-turn metadata, half-ahead checkpoint repair, and restart metadata.
+- Recovery reducer exceptions still persist the established sanitized
+  `action_recovery_failed` result, now from the async recovery boundary.
+
+### TDD RED Evidence
+
+The four new recovery-boundary cases were added before production changes and
+failed for the reported reasons:
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "pending_payment_ack_recovery or settlement_data_append_crash or restart_metadata_append_crash"
+FFFF                                                                     [100%]
+FAILED ...test_pending_payment_ack_recovery_records_settlement_before_capture
+E       AssertionError: assert 'failed' is None
+FAILED ...test_settlement_data_append_crash_replays_without_duplicate[upfront_favor_due_turn]
+E       AssertionError: assert 2 == 1
+FAILED ...test_settlement_data_append_crash_replays_without_duplicate[settlement_digest]
+E       AssertionError: assert 2 == 1
+FAILED ...test_restart_metadata_append_crash_replays_without_duplicate
+E       AssertionError: assert 2 == 1
+4 failed, 101 deselected in 2.15s
+```
+
+This confirmed both root causes: recovered payment capture skipped durable
+treasury evidence, and every post-append crash replayed the same data event.
+
+### GREEN Command Output
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "pending_payment_ack_recovery or settlement_data_append_crash or restart_metadata_append_crash"
+....                                                                     [100%]
+4 passed, 101 deselected in 1.94s
+
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "same_round or settlement_ or restart_checkpoint or restart_without or resume or pending_actions"
+.....................                                                    [100%]
+21 passed, 84 deselected in 8.23s
+
+$ uv run python -m compileall -q src/civ_mcp/arena/live_gate_channels.py tests/arena/test_live_gate_channels.py
+[exit 0; no output]
+
+$ git diff --check
+[exit 0; no output]
+```
+
+An additional full-module probe reached a stale, out-of-filter assertion that
+exists unchanged at `HEAD` and expects `restart_required` immediately after
+the API funding seat, before the CLI same-round settlement seat:
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py -x --tb=short
+FAILED tests/arena/test_live_gate_channels.py::test_partial_restart_round_survives_process_crash_and_restarts_once
+E   AssertionError: assert 'accept_upfront_payment' == 'restart_required'
+1 failed, 52 passed in 11.04s
+```
+
+Ruff was also probed but is not installed:
+
+```text
+$ uv run ruff check src/civ_mcp/arena/live_gate_channels.py tests/arena/test_live_gate_channels.py
+error: Failed to spawn: `ruff`
+  Caused by: No such file or directory (os error 2)
+```
+
+### Files Changed
+
+- `src/civ_mcp/arena/live_gate_channels.py`
+- `tests/arena/test_live_gate_channels.py`
+- `.superpowers/sdd/task-2-3-5-report.md` (report append only)
+
+### Self-Review
+
+- `_advance_after_capture()` remains game-read-only. The only new treasury read
+  runs in async `seat_turn` recovery before the capture journal marker.
+- Recovery never calls `respond_to_payment`, dispatches a plan, or invokes
+  `finish_player`; the crash test proves one CLI acknowledgement and one gold
+  transfer after convergence.
+- Matching durable values produce no event, preserving the uncrashed
+  `data_recorded` and `phase_advanced` sequence. Conflicts fail closed rather
+  than overwriting evidence.
+- Restart metadata remains one atomic two-key event, so partial durable state
+  is treated as corruption rather than repaired into a different journal
+  shape.
+- Tasks 4, 7, and 8 were not implemented.
+
+### Concerns
+
+- The requested focused suite is green. The broader module still contains the
+  stale partial-restart assertion shown above; changing it is outside this
+  review fix and outside the requested covering filter.
+- Ruff is unavailable; compileall and `git diff --check` pass.

@@ -245,6 +245,7 @@ class ChannelsCoreDriver:
         self._admissions: dict[tuple[int, int], ChannelAdmission] = {}
         self._captured_this_turn: dict[int, set[int]] = {}
         self._observer_captures: dict[int, tuple[ChannelAdmission, dict]] = {}
+        self._recovered_captures: set[tuple[int, int]] = set()
         self._restart_armed = False
         self._payment_fingerprint: dict | None = None
 
@@ -781,10 +782,12 @@ class ChannelsCoreDriver:
                     },
                 )
                 return False
-            journal.append(
-                "data_recorded",
-                {"data": {"payment_checkpoint_digest": canonical_digest}},
-            )
+            if not self._record_data_once(
+                {"payment_checkpoint_digest": canonical_digest},
+                reason_code="payment_checkpoint_failed",
+                failure="payment_checkpoint_digest_mismatch",
+            ):
+                return False
         else:
             if public_digest != canonical_digest:
                 self._fail(
@@ -991,6 +994,9 @@ class ChannelsCoreDriver:
         if admission is None:
             self._fail(f"gate seat {player_id} turn {turn} acted without an admission")
             return base_result
+        await self._reconcile_recovered_captures()
+        if self._signal is not None:
+            return base_result
         if self._journal.state.phase == PHASE_PREFLIGHT:
             await self._run_preflight(gs, turn)
             if self._signal is not None:
@@ -1029,9 +1035,12 @@ class ChannelsCoreDriver:
                 baseline = await self._read_settlement_treasuries(gs, turn)
                 if baseline is None:
                     return base_result
-                self._journal.append(
-                    "data_recorded", {"data": {"settlement_baseline": baseline}}
-                )
+                if not self._record_data_once(
+                    {"settlement_baseline": baseline},
+                    reason_code="payment_checkpoint_failed",
+                    failure="settlement_baseline_mismatch",
+                ):
+                    return base_result
             self._emit_api(admission, player_id, turn, phase, plans)
             return base_result
         return self._emit_cli(base_result, player_id, turn, phase, plans)
@@ -1261,17 +1270,8 @@ class ChannelsCoreDriver:
             return
         journal = self._journal
         assert journal is not None
-        if (
-            self.pid_role.get(player_id) == ROLE_CLI
-            and journal.state.phase == PHASE_ACCEPT_UPFRONT_PAYMENT
-            and "settlement_result" not in journal.state.data
-        ):
-            result = await self._read_settlement_treasuries(self._gs, turn)
-            if result is None:
-                return
-            journal.append(
-                "data_recorded", {"data": {"settlement_result": result}}
-            )
+        if not await self._record_settlement_result(player_id, turn):
+            return
         journal.append(
             "seat_capture_started",
             {
@@ -1282,6 +1282,59 @@ class ChannelsCoreDriver:
             },
         )
         await self._reconcile_started_capture()
+
+    async def _record_settlement_result(self, player_id: int, turn: int) -> bool:
+        journal = self._journal
+        assert journal is not None
+        if (
+            self.pid_role.get(player_id) != ROLE_CLI
+            or journal.state.phase != PHASE_ACCEPT_UPFRONT_PAYMENT
+        ):
+            return True
+        if "settlement_result" in journal.state.data:
+            return True
+        result = await self._read_settlement_treasuries(self._gs, turn)
+        if result is None:
+            return False
+        return self._record_data_once(
+            {"settlement_result": result},
+            reason_code="payment_checkpoint_failed",
+            failure="settlement_result_mismatch",
+        )
+
+    async def _reconcile_recovered_captures(self) -> None:
+        for player_id, turn in sorted(self._recovered_captures):
+            state = self._journal.state
+            if state.capture_turn == turn and player_id in state.captured_players:
+                self._recovered_captures.discard((player_id, turn))
+                continue
+            if not await self._record_settlement_result(player_id, turn):
+                return
+            try:
+                self._journal.append(
+                    "seat_capture_started",
+                    {
+                        "turn": turn,
+                        "player_id": player_id,
+                        "expected_player_ids": sorted(self.gate_pids),
+                        "phase": self._journal.state.phase,
+                    },
+                )
+                await self._reconcile_started_capture()
+            except Exception as exc:
+                self._fail(
+                    "action_recovery_failed",
+                    detail={
+                        "failure": "recovery_exception",
+                        "player_id": player_id,
+                        "turn": turn,
+                        "error": repr(exc),
+                    },
+                )
+                return
+            if self._signal is not None:
+                return
+            self._recovered_captures.discard((player_id, turn))
 
     async def _reconcile_started_capture(self) -> None:
         """Finish a write-ahead seat capture after a process crash."""
@@ -1433,6 +1486,36 @@ class ChannelsCoreDriver:
         self._fail(f"deal {deal_id!r} is missing from canonical state")
         return None
 
+    def _record_data_once(
+        self,
+        data: Mapping,
+        *,
+        reason_code: str = "gate_invariant_failed",
+        failure: str = "durable_data_mismatch",
+    ) -> bool:
+        recorded = self._journal.state.data
+        present = {key: key in recorded for key in data}
+        if any(present.values()):
+            mismatches = {
+                key: {"recorded": recorded.get(key), "expected": value}
+                for key, value in data.items()
+                if key in recorded and recorded.get(key) != value
+            }
+            missing = [key for key, exists in present.items() if not exists]
+            if mismatches or missing:
+                self._fail(
+                    reason_code,
+                    detail={
+                        "failure": failure,
+                        "mismatches": mismatches,
+                        "missing": missing,
+                    },
+                )
+                return False
+            return True
+        self._journal.append("data_recorded", {"data": dict(data)})
+        return True
+
     def _advance_after_capture(self, player_id, turn) -> None:
         from civ_mcp.arena.channels import DealState, FavorStatus, PaymentStatus
 
@@ -1474,17 +1557,15 @@ class ChannelsCoreDriver:
             ):
                 self._fail("canary message is missing from canonical state")
                 return
-            self._journal.append(
-                "data_recorded",
+            if not self._record_data_once(
                 {
-                    "data": {
-                        "upfront_deal_id": deal_ids[0],
-                        "canary_message_source": (
-                            canary_sources[0] if canary_sources else ""
-                        ),
-                    }
-                },
-            )
+                    "upfront_deal_id": deal_ids[0],
+                    "canary_message_source": (
+                        canary_sources[0] if canary_sources else ""
+                    ),
+                }
+            ):
+                return
             self._journal.append(
                 "phase_advanced",
                 {"phase": PHASE_ACCEPT_UPFRONT, "turn": turn},
@@ -1520,16 +1601,16 @@ class ChannelsCoreDriver:
                 "item_count": 1,
             }
             self._update_payment_checkpoint(recorded=fingerprint)
-            self._journal.append(
-                "data_recorded",
+            if not self._record_data_once(
                 {
-                    "data": {
-                        "payment_checkpoint_digest": self._digest_mapping(
-                            fingerprint
-                        )
-                    }
+                    "payment_checkpoint_digest": self._digest_mapping(
+                        fingerprint
+                    )
                 },
-            )
+                reason_code="payment_checkpoint_failed",
+                failure="payment_checkpoint_digest_mismatch",
+            ):
+                return
             self._journal.append(
                 "phase_advanced",
                 {"phase": PHASE_ACCEPT_UPFRONT_PAYMENT, "turn": turn},
@@ -1550,10 +1631,12 @@ class ChannelsCoreDriver:
             ):
                 self._fail("up-front favor baseline is missing or incomplete")
                 return
-            self._journal.append(
-                "data_recorded",
-                {"data": {"upfront_favor_due_turn": deal.favor_due_turn}},
-            )
+            if not self._record_data_once(
+                {"upfront_favor_due_turn": deal.favor_due_turn},
+                reason_code="payment_checkpoint_failed",
+                failure="upfront_favor_due_turn_mismatch",
+            ):
+                return
             data = state.data
             baseline = data.get("settlement_baseline")
             result = data.get("settlement_result")
@@ -1621,9 +1704,12 @@ class ChannelsCoreDriver:
                     "result": result,
                 }
             )
-            self._journal.append(
-                "data_recorded", {"data": {"settlement_digest": digest}}
-            )
+            if not self._record_data_once(
+                {"settlement_digest": digest},
+                reason_code="payment_checkpoint_failed",
+                failure="settlement_digest_mismatch",
+            ):
+                return
             self._update_payment_checkpoint(settlement_digest=digest)
             self._restart_armed = True
             self._journal.append(
@@ -1726,9 +1812,8 @@ class ChannelsCoreDriver:
                 )
                 return
             deal_id = current[0].deal_id
-            self._journal.append(
-                "data_recorded", {"data": {"on_delivery_deal_id": deal_id}}
-            )
+            if not self._record_data_once({"on_delivery_deal_id": deal_id}):
+                return
             self._journal.append(
                 "phase_advanced",
                 {"phase": PHASE_ACCEPT_ON_DELIVERY, "turn": turn},
@@ -1751,10 +1836,10 @@ class ChannelsCoreDriver:
                     "on-delivery treasury baseline is missing or incomplete"
                 )
                 return
-            self._journal.append(
-                "data_recorded",
-                {"data": {"on_delivery_favor_due_turn": deal.favor_due_turn}},
-            )
+            if not self._record_data_once(
+                {"on_delivery_favor_due_turn": deal.favor_due_turn}
+            ):
+                return
             self._journal.append(
                 "phase_advanced",
                 {"phase": PHASE_AWAIT_ON_DELIVERY_FAVOR, "turn": turn},
@@ -1789,10 +1874,10 @@ class ChannelsCoreDriver:
                 )
                 return
             if actual == completed:
-                self._journal.append(
-                    "data_recorded",
-                    {"data": {"on_delivery_fund_by_turn": deal.fund_by_turn}},
-                )
+                if not self._record_data_once(
+                    {"on_delivery_fund_by_turn": deal.fund_by_turn}
+                ):
+                    return
                 self._journal.append(
                     "phase_advanced",
                     {
@@ -2041,15 +2126,15 @@ class ChannelsCoreDriver:
             )
             return
         channel_state = self._runtime.state
-        self._journal.append(
-            "data_recorded",
+        if not self._record_data_once(
             {
-                "data": {
-                    "restart_channel_sequence": channel_state.last_event_sequence,
-                    "restart_turn": turn,
-                }
+                "restart_channel_sequence": channel_state.last_event_sequence,
+                "restart_turn": turn,
             },
-        )
+            reason_code="restart_checkpoint_failed",
+            failure="restart_metadata_mismatch",
+        ):
+            return
         self._journal.append("restart_required", {"turn": turn})
         self._journal.write_result()
         self._restart_armed = False
@@ -2132,33 +2217,9 @@ class ChannelsCoreDriver:
                     self._journal.state.capture_turn == recovered_turn
                     and recovered_player in self._journal.state.captured_players
                 ):
-                    # Already durably captured (a capture implies its phase
-                    # work already ran): the started/captured pair must never
-                    # be split, so skip both instead of dangling a started
-                    # marker without its partner.
                     continue
-                self._journal.append(
-                    "seat_capture_started",
-                    {
-                        "turn": recovered_turn,
-                        "player_id": recovered_player,
-                        "expected_player_ids": sorted(self.gate_pids),
-                        "phase": self._journal.state.phase,
-                    },
-                )
-                self._advance_after_capture(recovered_player, recovered_turn)
-                if self._signal is not None:
-                    return
-                self._journal.append(
-                    "seat_captured",
-                    {
-                        "turn": recovered_turn,
-                        "player_id": recovered_player,
-                        "expected_player_ids": sorted(self.gate_pids),
-                    },
-                )
-                self._captured_this_turn[recovered_turn] = set(
-                    self._journal.state.captured_players
+                self._recovered_captures.add(
+                    (recovered_player, recovered_turn)
                 )
 
     async def _read_settlement_treasuries(self, gs, turn) -> dict | None:
