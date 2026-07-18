@@ -26,8 +26,8 @@ The scenario must:
   expected transition;
 - select valid terms from authoritative live observations, without editing the
   channel ledger or injecting evidence;
-- stop after an exact official payment becomes pending, request a watcher
-  restart, and resume from the persisted journals;
+- stop after same-round official payment settlement is durably recorded,
+  request a watcher restart, and resume from the persisted journals;
 - fail closed on acknowledgement, source, state, observation, fingerprint,
   privacy, or deadline disagreement; and
 - leave ordinary arena policy behavior unchanged when the gate is disabled.
@@ -43,7 +43,9 @@ This design does not:
 - add channel actions to the ordinary game-tool registry;
 - write directly to canonical channel state, acknowledgements, payment records,
   observations, outcomes, or grievances;
-- create synthetic game evidence or infer payment from treasury deltas;
+- create synthetic game evidence or infer payment from treasury deltas alone
+  (revision 2 uses same-turn deltas only to corroborate a consumed offer and
+  its settlement acknowledgement, never as the sole payment evidence);
 - choose ordinary game strategy for the smoke seats; or
 - alter normal local, CLI, or seat-zero agent behavior outside an explicitly
   enabled live gate.
@@ -154,7 +156,7 @@ for a gate role.
 The first scenario uses this strict configuration shape:
 
 ```yaml
-run_id: arena-channels-core-gate-v1
+run_id: arena-channels-core-gate-v3
 max_puppet_turns: 36
 max_game_turns: 36
 
@@ -192,11 +194,15 @@ Validation requires:
 - the run directory is new on first initialization or contains a matching gate
   identity on resume.
 
-The scenario's default rules and fixed one-turn favor windows require 27 seat
-captures in the expected nine-round path. The checked-in budget is 36 to leave
-room for watcher handoff and deterministic blocker cleanup. If channel-rule
-values change the computed minimum, configuration validation uses the scenario's
-computed value rather than silently accepting 36.
+The scenario's default rules and fixed one-turn favor windows require 24 seat
+captures in the expected eight-round path: revision 2's same-round settlement
+removes the dedicated post-resume payment-response round, and the first
+post-resume round is the up-front favor's inclusive due round (settlement in
+round 2 puts the `within=1` deadline exactly on round 3), so no idle resume
+round exists. The checked-in budget is 36 to leave room for watcher handoff
+and deterministic blocker cleanup. If channel-rule values change the computed
+minimum, configuration validation uses the scenario's computed value rather
+than silently accepting 36.
 
 The prior failed two-seat run directory cannot be reused because adding the
 privacy observer changes the canonical enabled-player identity. The new run ID
@@ -512,8 +518,8 @@ It does not broaden its gameplay authority to keep the test moving.
 ## Fail-Closed Rules
 
 Any of the following writes a terminal `gate_failed` event, writes
-`result.json`, stops all gate actions, preserves pending official trades, and
-requests safe coordinator deactivation:
+`result.json`, stops all gate actions, does not accept, cancel, recreate, or
+retry any pending official trade, and requests safe coordinator deactivation:
 
 - wrong run, scenario revision, config fingerprint, role, player, or turn;
 - missing, duplicate, reordered, rejected, or unexpected acknowledgement;

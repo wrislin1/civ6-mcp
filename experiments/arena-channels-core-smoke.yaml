@@ -4,10 +4,13 @@
 # prevents accidental continuation of incompatible channel state.
 # v2: v1 failed terminally at the restart checkpoint (seat-bound payment-state
 # query run from the observer/human seat); a failed gate journal is terminal,
-# so the rerun needs a fresh run_id.
-run_id: arena-channels-core-gate-v2
-# 27 captures expected on the nine-round path; 36 leaves room for watcher
-# handoff and deterministic blocker cleanup. Validation recomputes the
+# so each rerun needs a fresh run_id.
+# v3: v2 failed terminally at the same checkpoint with status=absent — the
+# engine auto-resolves deals offered to an AI player before the round
+# boundary. Spec revision 2 (same-round settlement) is the response.
+run_id: arena-channels-core-gate-v3
+# 24 captures expected on revision 2's eight-round path; 36 leaves room for
+# watcher handoff and deterministic blocker cleanup. Validation recomputes the
 # scenario minimum from channel_rules rather than trusting this number.
 max_puppet_turns: 36
 max_game_turns: 36

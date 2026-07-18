@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **SUPERSEDED IN PART (2026-07-18, spec revision 2 — do not execute the
+> stale sections):** this plan was fully executed as scenario revision 1;
+> attended runs `arena-channels-core-gate-v1`/`-v2` then disproved the
+> pending-offer-across-restart premise (the engine auto-resolves deals
+> offered to an AI player before the round boundary). Spec revision 2
+> (same-round settlement) supersedes the "Expected round schedule" below,
+> Task 8's restart checkpoint and resume verification, and every
+> code/test excerpt that requires a live pending official offer at or
+> after the restart boundary. The authoritative delta plan is
+> `docs/superpowers/plans/2026-07-18-arena-live-gate-same-round-settlement.md`.
+
 **Goal:** Build the reusable, coordinator-owned deterministic live-gate driver and its first scenario, `unofficial_channels_core_v1`, which drives the unofficial-channels lifecycle (canary, proposals, acceptance, funding, restart handshake, honored/broken deals, grievance, privacy checks) through the production channel entry paths without invoking any model.
 
 **Architecture:** A generic gate layer (`live_gate.py`: options, strict event reducer, write-ahead journal + snapshot + result persistence, scenario registry, restart/terminal signals) sits alongside the channel reducer. The scenario module (`live_gate_channels.py`) plans deterministic per-seat inputs, dispatches through the production `ChannelTurnContext` (API actor) and `transcript.final_summary` `CHANNEL {...}` lines (CLI actor), verifies every transition against canonical `ChannelRuntime` state, and asserts observer privacy every round. The coordinator gains three narrow hooks (attach, note_admission, after_seat_capture); `arena.py` resolves the driver instead of model policies and translates the terminal signal into exit code 75/0/1.
