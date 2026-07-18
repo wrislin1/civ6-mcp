@@ -110,3 +110,106 @@ Result: `5 passed in 2.42s`.
 3. The full test file/suite was not run because Tasks 6 and 7 explicitly own
    the expected revision-1 resume and lifecycle failures. The literal Task 5
    keyword command's one stale assertion is documented above.
+
+## Review Fix: Durable Revision-2 Resume Verification
+
+This follow-up folds the controller-selected Task 6 resume behavior into the
+same atomic slice. It resolves review finding locations that still depended on
+a live exact offer after same-round settlement. This section supersedes
+Concerns 2 and 3 above: `_live_offer_fingerprint` is now deleted, and the
+controller's combined covering filter is green.
+
+### Implementation
+
+- Replaced half-ahead payment checkpoint repair's live-offer query with a
+  fingerprint reconstructed from the canonical persisted `ChannelRuntime`
+  deal. Both private-ahead and public-ahead repairs now work after the engine
+  offer disappears.
+- Replaced restart verification's OFFERED/live-exact checks with:
+  - canonical deal status `SETTLED`;
+  - recomputed `settlement_digest` equality;
+  - live official payment state `absent`;
+  - exactly one settlement acknowledgement at or before `restart_turn`, bound
+    to the verified `respond_to_payment` plan's `source_id`;
+  - no matching payment acknowledgement after `restart_turn`; and
+  - unchanged channel event sequence.
+- Added fail-closed validation for missing `upfront_deal_id` and invalid
+  `restart_turn` durable fields.
+- Deleted `_live_offer_fingerprint` and removed every reference to it.
+- Updated only checkpoint/resume assertions directly superseded by Task 6;
+  Tasks 4, 7, and 8 remain out of scope.
+
+### TDD RED Evidence
+
+Task 6 happy resume failed because the old verifier required the now-settled
+deal to remain OFFERED:
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "resume_verifies_settlement or resume_with_stray"
+F.                                                                       [100%]
+FAILED ...test_resume_verifies_settlement_and_continues
+1 failed, 1 passed, 99 deselected in 1.45s
+```
+
+The stray-offer test was tightened to require the new forensic detail and then
+failed against the old `payment_state_changed` reason:
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_resume_with_stray_official_offer_fails -q
+F                                                                        [100%]
+E       assert 'stray_official_offer' in '{"detail":{"failure":"payment_state_changed",...}}'
+1 failed in 0.93s
+```
+
+Both half-ahead variants failed once the transient engine offer was removed:
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_payment_checkpoint_half_ahead_reconciles_on_attach -q
+FF                                                                       [100%]
+2 failed in 0.81s
+```
+
+### GREEN Command Output
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_resume_verifies_settlement_and_continues tests/arena/test_live_gate_channels.py::test_resume_with_stray_official_offer_fails -q
+..                                                                       [100%]
+2 passed in 1.15s
+
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k resume
+........                                                                 [100%]
+8 passed, 93 deselected in 4.27s
+
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_payment_checkpoint_half_ahead_reconciles_on_attach -q
+..                                                                       [100%]
+2 passed in 0.70s
+
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "same_round or settlement_ or restart_checkpoint or restart_without or resume"
+...............                                                          [100%]
+15 passed, 86 deselected in 7.02s
+
+$ uv run python -m compileall -q src/civ_mcp/arena/live_gate_channels.py tests/arena/test_live_gate_channels.py
+[exit 0]
+
+$ git diff --check
+[exit 0]
+```
+
+### Review-Fix Self-Review
+
+- No official payment side effect was added. Resume performs one read-only
+  payment-state query solely to require `absent`.
+- Half-ahead reconciliation performs no game query and does not require a
+  pending engine offer.
+- The settlement acknowledgement is matched through the journaled verified
+  action source, not inferred from message text or a nonexistent action field.
+- `restart_verified.next_phase` remains
+  `await_upfront_favor_deadline`, preserving deterministic revision-2 replay.
+- Semantic diagnostics in the changed region show only the file's existing
+  optional `_journal`/`_runtime`/`_gs` member warnings; the new journal field
+  boundaries are explicitly validated.
+
+### Remaining Concerns
+
+- Ruff remains unavailable in this environment. The requested pytest,
+  compilation, and diff checks pass.

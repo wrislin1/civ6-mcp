@@ -752,44 +752,58 @@ class ChannelsCoreDriver:
             self._payment_fingerprint = dict(recorded)
             return True
 
-        live = await self._live_offer_fingerprint(
-            self.role_pid[ROLE_API],
-            self.role_pid[ROLE_CLI],
-            failure_code="payment_checkpoint_failed",
-        )
-        if live is None:
+        deal_id = state.data.get("upfront_deal_id")
+        if not isinstance(deal_id, str):
+            self._fail(
+                "payment_checkpoint_failed",
+                detail={"failure": "missing_upfront_deal_id"},
+            )
             return False
-        live_digest = self._digest_mapping(live)
+        deal = self._deal(deal_id)
+        if deal is None:
+            return False
+        canonical = {
+            "payer": deal.proposer,
+            "payee": deal.counterparty,
+            "gold": deal.payment_gold,
+            "duration": 0,
+            "item_count": 1,
+        }
+        canonical_digest = self._digest_mapping(canonical)
         if recorded is not None:
-            if dict(recorded) != live:
+            if dict(recorded) != canonical:
                 self._fail(
                     "payment_checkpoint_failed",
                     detail={
-                        "failure": "private_checkpoint_live_mismatch",
+                        "failure": "private_checkpoint_channel_mismatch",
                         "recorded": recorded,
-                        "live": live,
+                        "canonical": canonical,
                     },
                 )
                 return False
             journal.append(
                 "data_recorded",
-                {"data": {"payment_checkpoint_digest": live_digest}},
+                {"data": {"payment_checkpoint_digest": canonical_digest}},
             )
         else:
-            if public_digest != live_digest:
+            if public_digest != canonical_digest:
                 self._fail(
                     "payment_checkpoint_failed",
                     detail={
-                        "failure": "public_checkpoint_live_mismatch",
+                        "failure": "public_checkpoint_channel_mismatch",
                         "digest": public_digest,
-                        "live": live,
+                        "canonical": canonical,
                     },
                 )
                 return False
+            repaired_checkpoint = {"recorded": canonical}
+            settlement_digest = state.data.get("settlement_digest")
+            if settlement_digest is not None:
+                repaired_checkpoint["settlement_digest"] = settlement_digest
             journal.write_private_json(
-                "payment_checkpoint.json", {"recorded": live}
+                "payment_checkpoint.json", repaired_checkpoint
             )
-        self._payment_fingerprint = dict(live)
+        self._payment_fingerprint = dict(canonical)
         return True
 
     def _fail(self, reason_code: str, *, detail=None) -> None:
@@ -826,8 +840,9 @@ class ChannelsCoreDriver:
         """Reconcile the persisted restart checkpoint with live state.
 
         ChannelRuntime.open has already replayed its journal before attach()
-        reaches this method.  Only an unchanged exact official offer and an
-        otherwise untouched payment response boundary may reactivate the gate.
+        reaches this method. Only durable settlement evidence, an absent
+        official offer, and an untouched post-checkpoint channel journal may
+        reactivate the gate.
         """
 
         state = self._journal.state
@@ -838,31 +853,6 @@ class ChannelsCoreDriver:
                     "failure": "restart_count",
                     "actual": state.restart_count,
                     "expected": 1,
-                },
-            )
-            return
-        recorded = self._payment_fingerprint
-        if recorded is None:
-            self._fail(
-                "restart_verification_failed",
-                detail={"failure": "missing_private_payment_checkpoint"},
-            )
-            return
-        live = await self._live_offer_fingerprint(
-            self.role_pid[ROLE_API],
-            self.role_pid[ROLE_CLI],
-            failure_code="restart_verification_failed",
-        )
-        if live is None:
-            return
-        self._update_payment_checkpoint(after=live)
-        if live != recorded:
-            self._fail(
-                "restart_verification_failed",
-                detail={
-                    "failure": "payment_checkpoint_mismatch",
-                    "live": live,
-                    "recorded": recorded,
                 },
             )
             return
@@ -883,24 +873,92 @@ class ChannelsCoreDriver:
             return
         from civ_mcp.arena.channels import PaymentStatus
 
-        deal = self._deal(state.data.get("upfront_deal_id"))
+        deal_id = state.data.get("upfront_deal_id")
+        if not isinstance(deal_id, str):
+            self._fail(
+                "restart_verification_failed",
+                detail={"failure": "missing_upfront_deal_id"},
+            )
+            return
+        deal = self._deal(deal_id)
         if deal is None:
             return
-        if deal.payment_status is not PaymentStatus.OFFERED:
+        if deal.payment_status is not PaymentStatus.SETTLED:
             self._fail(
                 "restart_verification_failed",
                 detail={
-                    "failure": "payment_state_changed",
+                    "failure": "payment_not_settled_at_resume",
                     "payment_status": str(deal.payment_status),
+                },
+            )
+            return
+        recorded = self._payment_fingerprint
+        digest = state.data.get("settlement_digest")
+        recomputed = self._digest_mapping(
+            {
+                "fingerprint": recorded,
+                "baseline": state.data.get("settlement_baseline"),
+                "result": state.data.get("settlement_result"),
+            }
+        )
+        if not digest or recomputed != digest:
+            self._fail(
+                "restart_verification_failed",
+                detail={
+                    "failure": "settlement_digest_mismatch",
+                    "recorded": digest,
+                    "recomputed": recomputed,
+                },
+            )
+            return
+        payment_state = await self._gs.get_channel_payment_state(
+            self.role_pid[ROLE_API], self.role_pid[ROLE_CLI], PAYMENT_GOLD
+        )
+        status = getattr(payment_state, "status", None)
+        status = getattr(status, "value", status)
+        if status != "absent":
+            self._fail(
+                "restart_verification_failed",
+                detail={"failure": "stray_official_offer", "status": status},
+            )
+            return
+        restart_turn = state.data.get("restart_turn")
+        if type(restart_turn) is not int:
+            self._fail(
+                "restart_verification_failed",
+                detail={"failure": "invalid_restart_turn"},
+            )
+            return
+        settlement_source_ids = {
+            entry["source_id"]
+            for entry in state.verified_actions
+            if entry.get("name") == "respond_to_payment"
+            and entry.get("player_id") == self.role_pid[ROLE_CLI]
+            and entry.get("turn", restart_turn + 1) <= restart_turn
+        }
+        settled_acks = [
+            acknowledgement
+            for acknowledgement in self._runtime.state.acknowledgements
+            if acknowledgement.source_id in settlement_source_ids
+            and acknowledgement.deal_id == deal_id
+            and acknowledgement.player_id == self.role_pid[ROLE_CLI]
+            and acknowledgement.turn <= restart_turn
+        ]
+        if len(settled_acks) != 1:
+            self._fail(
+                "restart_verification_failed",
+                detail={
+                    "failure": "settlement_acknowledgement_count",
+                    "count": len(settled_acks),
                 },
             )
             return
         response_acks = [
             acknowledgement
             for acknowledgement in self._runtime.state.acknowledgements
-            if acknowledgement.deal_id == state.data.get("upfront_deal_id")
+            if acknowledgement.deal_id == deal_id
             and acknowledgement.player_id == self.role_pid[ROLE_CLI]
-            and acknowledgement.turn > state.data.get("restart_turn", -1)
+            and acknowledgement.turn > restart_turn
         ]
         if response_acks:
             self._fail(
@@ -1996,40 +2054,6 @@ class ChannelsCoreDriver:
         self._journal.write_result()
         self._restart_armed = False
         self._signal = GATE_RESTART_REQUIRED
-
-    async def _live_offer_fingerprint(
-        self,
-        payer: int,
-        payee: int,
-        *,
-        failure_code: str = "payment_state_failed",
-    ) -> dict | None:
-        payment_state = await self._gs.get_channel_payment_state(
-            payer, payee, PAYMENT_GOLD
-        )
-        status = getattr(payment_state, "status", None)
-        status = getattr(status, "value", status)
-        if status != "exact":
-            self._fail(
-                failure_code,
-                detail={
-                    "failure": "official_payment_not_exact",
-                    "payer": payer,
-                    "payee": payee,
-                    "status": status,
-                },
-            )
-            return None
-        offer = getattr(payment_state, "offer", None)
-        try:
-            fingerprint = offer.fingerprint()
-        except Exception as exc:
-            self._fail(
-                failure_code,
-                detail={"failure": "offer_fingerprint_unavailable", "error": repr(exc)},
-            )
-            return None
-        return fingerprint
 
     def _recover_pending_actions(self, player_id: int, current_turn: int) -> None:
         """Reconcile durable plans with canonical acknowledgements on resume."""

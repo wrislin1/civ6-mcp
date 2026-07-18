@@ -765,6 +765,17 @@ async def drive_to_restart(tmp_path, gs=None):
     return driver, runtime, gs
 
 
+async def reattach_driver(tmp_path, runtime, gs):
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime, run_dir=run_dir)
+    return resumed
+
+
 @pytest.mark.asyncio
 async def test_round2_settles_payment_same_round_then_requests_restart(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
@@ -939,7 +950,9 @@ async def test_restart_checkpoint_persists_fingerprint_and_result(tmp_path):
         (driver._journal.gate_dir / "payment_checkpoint.json").read_text()
     )
     assert checkpoint["recorded"] == exact_payment_fingerprint()
-    assert checkpoint["before"] == exact_payment_fingerprint()
+    assert checkpoint["settlement_digest"] == state.data["settlement_digest"]
+    assert "before" not in checkpoint
+    assert "after" not in checkpoint
     result = json.loads(driver._journal.result_path.read_text())
     assert result["status"] == GATE_RESTART_REQUIRED
 
@@ -960,6 +973,7 @@ async def test_payment_checkpoint_half_ahead_reconciles_on_attach(
         driver._journal.append(
             "data_recorded", {"data": {"payment_checkpoint_digest": digest}}
         )
+    gs.pending.clear()
 
     resumed = lgc.ChannelsCoreDriver(gate_config())
     await resumed.attach(
@@ -971,6 +985,31 @@ async def test_payment_checkpoint_half_ahead_reconciles_on_attach(
     checkpoint = resumed._journal.read_private_json("payment_checkpoint.json")
     assert checkpoint == {"recorded": fingerprint}
     assert resumed._payment_fingerprint == fingerprint
+
+
+@pytest.mark.asyncio
+async def test_resume_verifies_settlement_and_continues(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    resumed = await reattach_driver(tmp_path, runtime, gs)
+    state = resumed._journal.state
+    assert state.status not in ("failed",)
+    verified = [e for e in read_events(resumed) if e["kind"] == "restart_verified"]
+    assert verified[-1]["payload"]["next_phase"] == (
+        lgc.PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE
+    )
+
+
+@pytest.mark.asyncio
+async def test_resume_with_stray_official_offer_fails(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    from civ_mcp.lua.channel_payments import ExactPaymentOffer
+
+    gs.pending[(1, 2)] = ExactPaymentOffer(1, 2, 1)
+    resumed = await reattach_driver(tmp_path, runtime, gs)
+    state = resumed._journal.state
+    assert state.status == "failed"
+    assert state.reason == "restart_verification_failed"
+    assert "stray_official_offer" in private_failure_text(resumed)
 
 
 @pytest.mark.asyncio
@@ -1339,7 +1378,10 @@ async def test_restart_verification_crash_replays_atomic_next_phase(tmp_path):
     )
     assert replayed.pending_signal() is None
     assert replayed._journal.state.status == GATE_ACTIVE
-    assert replayed._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+    assert (
+        replayed._journal.state.phase
+        == lgc.PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE
+    )
     assert not replayed._journal.result_path.exists()
 
 
@@ -1359,7 +1401,7 @@ async def test_restart_live_fingerprint_mismatch_fails(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_resume_verifies_offer_and_continues(tmp_path):
+async def test_resume_verifies_settlement_checkpoint_and_continues(tmp_path):
     driver, runtime, gs = await drive_to_restart(tmp_path)
     cfg = gate_config()
     run_dir = Path(tmp_path) / cfg.run_id
@@ -1373,16 +1415,13 @@ async def test_resume_verifies_offer_and_continues(tmp_path):
     assert driver2.pending_signal() is None
     state = driver2._journal.state
     assert state.status == GATE_ACTIVE
-    assert state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+    assert state.phase == lgc.PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE
     assert state.restart_count == 1
     checkpoint = json.loads(
         (driver2._journal.gate_dir / "payment_checkpoint.json").read_text()
     )
     assert checkpoint["recorded"] == exact_payment_fingerprint()
-    assert checkpoint["before"] == exact_payment_fingerprint()
-    assert checkpoint["after"] == exact_payment_fingerprint()
-
-    await run_gate_round(driver2, runtime2, gs, 12)
+    assert checkpoint["settlement_digest"] == state.data["settlement_digest"]
     deal = deals(runtime2)[state.data["upfront_deal_id"]]
     assert deal.payment_status is PaymentStatus.SETTLED
     assert (1, 2) not in gs.pending
@@ -1447,7 +1486,7 @@ async def test_restart_fingerprint_mismatch_is_forensic_only(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_resume_with_absent_offer_fails(tmp_path):
+async def test_resume_with_absent_offer_continues(tmp_path):
     driver, runtime, gs = await drive_to_restart(tmp_path)
     cfg = gate_config()
     run_dir = Path(tmp_path) / cfg.run_id
@@ -1459,7 +1498,12 @@ async def test_resume_with_absent_offer_fails(tmp_path):
     driver2 = lgc.ChannelsCoreDriver(cfg)
     await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
 
-    assert driver2.pending_signal() == GATE_FAILED
+    assert driver2.pending_signal() is None
+    assert driver2._journal.state.status == GATE_ACTIVE
+    assert (
+        driver2._journal.state.phase
+        == lgc.PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE
+    )
 
 
 @pytest.mark.asyncio
@@ -1489,7 +1533,7 @@ async def test_resume_fails_if_same_turn_channel_sequence_changed(tmp_path):
     assert acknowledgements[0].status == "applied"
     assert runtime2.state.last_event_sequence > checkpoint_sequence
     payment_state = await gs.get_channel_payment_state(1, 2, 1)
-    assert payment_state.status == "exact"
+    assert payment_state.status == "absent"
 
     runtime3 = ChannelRuntime.open(
         run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
@@ -1531,11 +1575,8 @@ async def test_resume_rejects_same_turn_payment_response_acknowledgement(
         },
     )
     assert len(acknowledgements) == 1
-    assert acknowledgements[0].status == "applied"
+    assert acknowledgements[0].status == "rejected"
 
-    from civ_mcp.lua.channel_payments import ExactPaymentOffer
-
-    gs.pending[(1, 2)] = ExactPaymentOffer(1, 2, 1)
     runtime3 = ChannelRuntime.open(
         run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
     )
