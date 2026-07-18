@@ -932,6 +932,110 @@ async def test_pending_payment_ack_recovery_records_settlement_before_capture(
 
 
 @pytest.mark.asyncio
+async def test_action_verified_crash_reconstructs_recovered_settlement_capture(
+    tmp_path,
+):
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    gs.active_player = 2
+    admission = await runtime.admit_player(gs, 2, 11)
+    driver.note_admission(2, 11, admission, "")
+    result = await driver.policy_for(2)(gs, 2, 11)
+    acknowledgements = await runtime.finish_player(gs, admission, result)
+    assert len(acknowledgements) == 1
+
+    recovering = lgc.ChannelsCoreDriver(gate_config())
+    await recovering.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+    journal = recovering._journal
+    real_append = journal.append
+
+    def crashing_append(kind, payload):
+        event = real_append(kind, payload)
+        if kind == "action_verified" and payload["name"] == "respond_to_payment":
+            raise SimulatedCrash()
+        return event
+
+    journal.append = crashing_append
+    gs.active_player = 3
+    observer_admission = await runtime.admit_player(gs, 3, 11)
+    with pytest.raises(SimulatedCrash):
+        recovering.note_admission(3, 11, observer_admission, "")
+    assert recovering._journal.state.pending_actions == ()
+    assert recovering._journal.state.capture_started_turn is None
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() is None
+    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert resumed._journal.state.capture_started_turn is None
+    assert 2 in resumed._journal.state.captured_players
+    assert len(data_events_for_key(resumed, "settlement_result")) == 1
+    assert gs.treasury == {1: 499, 2: 501, 3: 500}
+    cli_acks = [
+        acknowledgement
+        for acknowledgement in runtime.state.acknowledgements
+        if acknowledgement.player_id == 2 and acknowledgement.turn == 11
+    ]
+    assert len(cli_acks) == 1
+
+    await run_gate_seat(resumed, runtime, gs, 3, 11)
+    assert resumed.pending_signal() == GATE_RESTART_REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_settlement_result_append_crash_reconstructs_normal_capture(
+    tmp_path,
+):
+    class SimulatedCrash(BaseException):
+        pass
+
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    journal = driver._journal
+    real_append = journal.append
+
+    def crashing_append(kind, payload):
+        event = real_append(kind, payload)
+        if kind == "data_recorded" and "settlement_result" in payload["data"]:
+            raise SimulatedCrash()
+        return event
+
+    journal.append = crashing_append
+    with pytest.raises(SimulatedCrash):
+        await run_gate_seat(driver, runtime, gs, 2, 11)
+    assert driver._journal.state.pending_actions == ()
+    assert driver._journal.state.capture_started_turn is None
+    assert len(data_events_for_key(driver, "settlement_result")) == 1
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() is None
+    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert resumed._journal.state.capture_started_turn is None
+    assert 2 in resumed._journal.state.captured_players
+    assert len(data_events_for_key(resumed, "settlement_result")) == 1
+    assert gs.treasury == {1: 499, 2: 501, 3: 500}
+
+    await run_gate_seat(resumed, runtime, gs, 3, 11)
+    assert resumed.pending_signal() == GATE_RESTART_REQUIRED
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "crash_key", ["upfront_favor_due_turn", "settlement_digest"]
 )
@@ -1062,6 +1166,58 @@ async def test_restart_without_settlement_digest_fails(tmp_path):
     state = driver._journal.state
     assert state.status == "failed"
     assert state.reason == "restart_checkpoint_failed"
+
+
+@pytest.mark.asyncio
+async def test_restart_request_non_finite_settlement_evidence_fails_closed(
+    tmp_path,
+):
+    driver, runtime, gs = await attached_driver(tmp_path)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+    driver._payment_fingerprint = json.loads(
+        '{"payer": NaN, "payee": 2, "gold": 1, '
+        '"duration": 0, "item_count": 1}'
+    )
+
+    await run_gate_seat(driver, runtime, gs, 3, 11)
+
+    assert driver.pending_signal() == GATE_FAILED
+    assert driver._journal.state.reason == "restart_checkpoint_failed"
+    assert driver._journal.result_path.exists()
+    assert "settlement_evidence_invalid" in private_failure_text(driver)
+
+
+@pytest.mark.asyncio
+async def test_restart_verify_non_finite_settlement_evidence_fails_closed(
+    tmp_path, monkeypatch
+):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    hostile_fingerprint = json.loads(
+        '{"payer": NaN, "payee": 2, "gold": 1, '
+        '"duration": 0, "item_count": 1}'
+    )
+
+    async def reconcile_hostile_checkpoint(self):
+        self._payment_fingerprint = hostile_fingerprint
+        return True
+
+    monkeypatch.setattr(
+        lgc.ChannelsCoreDriver,
+        "_reconcile_payment_checkpoint",
+        reconcile_hostile_checkpoint,
+    )
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert resumed._journal.state.reason == "restart_verification_failed"
+    assert resumed._journal.result_path.exists()
+    assert "settlement_evidence_invalid" in private_failure_text(resumed)
 
 
 @pytest.mark.asyncio

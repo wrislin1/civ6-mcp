@@ -245,7 +245,6 @@ class ChannelsCoreDriver:
         self._admissions: dict[tuple[int, int], ChannelAdmission] = {}
         self._captured_this_turn: dict[int, set[int]] = {}
         self._observer_captures: dict[int, tuple[ChannelAdmission, dict]] = {}
-        self._recovered_captures: set[tuple[int, int]] = set()
         self._restart_armed = False
         self._payment_fingerprint: dict | None = None
 
@@ -273,6 +272,10 @@ class ChannelsCoreDriver:
             raise RuntimeError(f"gate already terminal: {state.status} ({state.reason})")
         if not await self._reconcile_payment_checkpoint():
             return
+        if self._journal.state.capture_started_turn is None:
+            await self._reconcile_verified_capture()
+            if self._signal is not None:
+                return
         if self._journal.state.capture_started_turn is not None:
             await self._reconcile_started_capture()
             if self._signal is not None:
@@ -897,13 +900,23 @@ class ChannelsCoreDriver:
             return
         recorded = self._payment_fingerprint
         digest = state.data.get("settlement_digest")
-        recomputed = self._digest_mapping(
-            {
-                "fingerprint": recorded,
-                "baseline": state.data.get("settlement_baseline"),
-                "result": state.data.get("settlement_result"),
-            }
-        )
+        try:
+            recomputed = self._digest_mapping(
+                {
+                    "fingerprint": recorded,
+                    "baseline": state.data.get("settlement_baseline"),
+                    "result": state.data.get("settlement_result"),
+                }
+            )
+        except Exception as exc:
+            self._fail(
+                "restart_verification_failed",
+                detail={
+                    "failure": "settlement_evidence_invalid",
+                    "error": repr(exc),
+                },
+            )
+            return
         if not digest or recomputed != digest:
             self._fail(
                 "restart_verification_failed",
@@ -994,7 +1007,7 @@ class ChannelsCoreDriver:
         if admission is None:
             self._fail(f"gate seat {player_id} turn {turn} acted without an admission")
             return base_result
-        await self._reconcile_recovered_captures()
+        await self._reconcile_verified_capture()
         if self._signal is not None:
             return base_result
         if self._journal.state.phase == PHASE_PREFLIGHT:
@@ -1302,39 +1315,64 @@ class ChannelsCoreDriver:
             failure="settlement_result_mismatch",
         )
 
-    async def _reconcile_recovered_captures(self) -> None:
-        for player_id, turn in sorted(self._recovered_captures):
-            state = self._journal.state
-            if state.capture_turn == turn and player_id in state.captured_players:
-                self._recovered_captures.discard((player_id, turn))
-                continue
-            if not await self._record_settlement_result(player_id, turn):
-                return
-            try:
-                self._journal.append(
-                    "seat_capture_started",
-                    {
-                        "turn": turn,
-                        "player_id": player_id,
-                        "expected_player_ids": sorted(self.gate_pids),
-                        "phase": self._journal.state.phase,
-                    },
-                )
-                await self._reconcile_started_capture()
-            except Exception as exc:
-                self._fail(
-                    "action_recovery_failed",
-                    detail={
-                        "failure": "recovery_exception",
-                        "player_id": player_id,
-                        "turn": turn,
-                        "error": repr(exc),
-                    },
-                )
-                return
-            if self._signal is not None:
-                return
-            self._recovered_captures.discard((player_id, turn))
+    async def _reconcile_verified_capture(self) -> None:
+        state = self._journal.state
+        identities = {
+            (entry.get("player_id"), entry.get("turn"))
+            for entry in state.verified_actions
+            if entry.get("phase") == state.phase
+        }
+        identities = {
+            (player_id, turn)
+            for player_id, turn in identities
+            if type(player_id) is int
+            and type(turn) is int
+            and not any(
+                entry.get("player_id") == player_id
+                and entry.get("turn") == turn
+                and entry.get("phase") == state.phase
+                for entry in state.pending_actions
+            )
+            and not (
+                state.capture_turn == turn
+                and player_id in state.captured_players
+            )
+        }
+        if not identities:
+            return
+        if len(identities) != 1:
+            self._fail(
+                "action_recovery_failed",
+                detail={
+                    "failure": "ambiguous_verified_capture",
+                    "identities": sorted(identities),
+                },
+            )
+            return
+        player_id, turn = next(iter(identities))
+        if not await self._record_settlement_result(player_id, turn):
+            return
+        try:
+            self._journal.append(
+                "seat_capture_started",
+                {
+                    "turn": turn,
+                    "player_id": player_id,
+                    "expected_player_ids": sorted(self.gate_pids),
+                    "phase": self._journal.state.phase,
+                },
+            )
+            await self._reconcile_started_capture()
+        except Exception as exc:
+            self._fail(
+                "action_recovery_failed",
+                detail={
+                    "failure": "recovery_exception",
+                    "player_id": player_id,
+                    "turn": turn,
+                    "error": repr(exc),
+                },
+            )
 
     async def _reconcile_started_capture(self) -> None:
         """Finish a write-ahead seat capture after a process crash."""
@@ -2112,9 +2150,19 @@ class ChannelsCoreDriver:
                 detail={"failure": "missing_settlement_evidence"},
             )
             return
-        recomputed = self._digest_mapping(
-            {"fingerprint": recorded, "baseline": baseline, "result": result}
-        )
+        try:
+            recomputed = self._digest_mapping(
+                {"fingerprint": recorded, "baseline": baseline, "result": result}
+            )
+        except Exception as exc:
+            self._fail(
+                "restart_checkpoint_failed",
+                detail={
+                    "failure": "settlement_evidence_invalid",
+                    "error": repr(exc),
+                },
+            )
+            return
         if recomputed != digest:
             self._fail(
                 "restart_checkpoint_failed",
@@ -2218,9 +2266,6 @@ class ChannelsCoreDriver:
                     and recovered_player in self._journal.state.captured_players
                 ):
                     continue
-                self._recovered_captures.add(
-                    (recovered_player, recovered_turn)
-                )
 
     async def _read_settlement_treasuries(self, gs, turn) -> dict | None:
         values = {}

@@ -320,3 +320,98 @@ error: Failed to spawn: `ruff`
   stale partial-restart assertion shown above; changing it is outside this
   review fix and outside the requested covering filter.
 - Ruff is unavailable; compileall and `git diff --check` pass.
+
+## Latest Re-Review Fix: Durable Verified-Capture Handoff
+
+### Implementation Summary
+
+- Removed the process-local `_recovered_captures` handoff.
+- Added reconstruction of an unfinished capture from durable
+  `verified_actions` whose phase still matches the journal's current phase.
+  Reconstruction excludes identities that still have pending actions and
+  fails closed if more than one verified identity is eligible.
+- Both `attach()` and the async seat-turn pre-journal path now reconstruct the
+  capture, record a missing settlement treasury result before
+  `seat_capture_started`, and finish through the existing started-capture
+  reconciler without dispatching or finishing another channel action.
+- The same reconstruction covers the normal callback crash after the durable
+  `settlement_result` append but before `seat_capture_started`; the existing
+  result is reused without a second data event or game read.
+- Wrapped settlement digest recomputation in `_verify_restart()` and
+  `_request_restart()`. Invalid digest inputs now persist sanitized
+  `restart_verification_failed` or `restart_checkpoint_failed` results with
+  private `settlement_evidence_invalid` detail.
+
+### TDD RED Evidence
+
+After correcting the non-finite test fixture to use a JSON-parseable NaN in
+the private fingerprint digest input (the public journal reducer already
+rejects non-finite floats), the four new tests failed at the intended
+boundaries:
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "action_verified_crash or settlement_result_append_crash or non_finite_settlement_evidence"
+FFFF                                                                     [100%]
+FAILED ...test_action_verified_crash_reconstructs_recovered_settlement_capture
+E       AssertionError: assert 'accept_upfront_payment' == 'restart_required'
+FAILED ...test_settlement_result_append_crash_reconstructs_normal_capture
+E       AssertionError: assert 'accept_upfront_payment' == 'restart_required'
+FAILED ...test_restart_request_non_finite_settlement_evidence_fails_closed
+E       AssertionError: assert 'gate_invariant_failed' == 'restart_checkpoint_failed'
+FAILED ...test_restart_verify_non_finite_settlement_evidence_fails_closed
+E       ValueError: Out of range float values are not JSON compliant: nan
+4 failed, 105 deselected in 1.98s
+```
+
+### GREEN Command Output
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_action_verified_crash_reconstructs_recovered_settlement_capture tests/arena/test_live_gate_channels.py::test_settlement_result_append_crash_reconstructs_normal_capture tests/arena/test_live_gate_channels.py::test_restart_request_non_finite_settlement_evidence_fails_closed tests/arena/test_live_gate_channels.py::test_restart_verify_non_finite_settlement_evidence_fails_closed -q
+....                                                                     [100%]
+4 passed in 1.80s
+
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "same_round or settlement_ or restart_checkpoint or restart_without or resume or pending_actions or action_verified"
+.........................                                                [100%]
+25 passed, 84 deselected in 8.94s
+
+$ uv run python -m compileall -q src/civ_mcp/arena/live_gate_channels.py tests/arena/test_live_gate_channels.py
+[exit 0; no output]
+
+$ git diff --check
+[exit 0; no output]
+```
+
+Additional recovery-contract probe:
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "recovery_reducer or recovered_capture or pending_applied"
+...                                                                      [100%]
+3 passed, 106 deselected in 0.51s
+```
+
+### Files Changed
+
+- `src/civ_mcp/arena/live_gate_channels.py`
+- `tests/arena/test_live_gate_channels.py`
+- `.superpowers/sdd/task-2-3-5-report.md` (required report append)
+
+### Self-Review
+
+- The capture-recovery source of truth is now entirely durable: verified
+  action identity, current phase, pending actions, and captured players.
+- A partial multi-action recovery cannot start a capture because any remaining
+  pending action for the same identity suppresses reconstruction.
+- Settlement treasury reads occur only in async attach/seat-turn recovery
+  before `seat_capture_started`; `_advance_after_capture()` remains game-read
+  only.
+- Recovery does not invoke channel dispatch or `finish_player`; tests assert
+  one payment acknowledgement, one treasury transfer, and one
+  `settlement_result` event.
+- Digest exceptions are converted at the two required ownership boundaries,
+  with no non-finite value copied into the public failure journal.
+- Tasks 4, 7, and 8 remain untouched.
+
+### Concerns
+
+- No new concerns in the requested scope. The previously documented stale
+  full-module phase assertion and unavailable Ruff executable remain unchanged.
