@@ -88,9 +88,10 @@ def test_scenario_registered_with_contracts():
     )
 
 
-def test_minimum_captures_is_27_for_smoke_rules():
-    # 9 expected rounds x 3 seats with the checked-in rules (spec budget note).
-    assert lgc.minimum_captures(gate_config()) == 27
+def test_minimum_captures_is_24_for_smoke_rules():
+    # Revision 2: same-round settlement removes the dedicated post-resume
+    # payment-response round (spec "Expected eight-round path").
+    assert lgc.minimum_captures(gate_config()) == 24
 
 
 def test_minimum_captures_tracks_funding_turns():
@@ -101,7 +102,11 @@ def test_minimum_captures_tracks_funding_turns():
             payment_response_turns=2,
         )
     )
-    assert lgc.minimum_captures(cfg) == 33  # two extra withheld rounds x 3 seats
+    assert lgc.minimum_captures(cfg) == 30  # two extra withheld rounds x 3 seats
+
+
+def test_scenario_revision_is_2_for_same_round_settlement():
+    assert lgc.SCENARIO_REVISION == 2
 
 
 def test_gate_config_validates_end_to_end():

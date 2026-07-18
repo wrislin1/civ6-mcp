@@ -32,7 +32,7 @@ from civ_mcp.arena.scripted_policy import ScriptedPolicy
 from civ_mcp.arena.transcript import serialize_transcript_record
 
 SCENARIO_NAME = "unofficial_channels_core_v1"
-SCENARIO_REVISION = 1
+SCENARIO_REVISION = 2
 
 ROLE_API = "api_actor"
 ROLE_CLI = "cli_actor"
@@ -133,16 +133,17 @@ class _PrivacyScanBudget:
 def minimum_captures(config) -> int:
     """Seat captures for the expected deterministic path.
 
-    Handshake rounds: R1 canary+propose+accept, R2 fund (restart boundary),
-    R3 restart-verify + payment response — 3 rounds. Then UPFRONT_WITHIN
-    rounds to the up-front favor's inclusive deadline, 2 rounds for the
-    on-delivery proposal + acceptance, ON_DELIVERY_WITHIN rounds to its favor
-    deadline, then funding_turns withheld rounds through the inclusive
-    funding deadline. 9 rounds x 3 seats = 27 with the checked-in rules.
+    Revision 2 handshake rounds: R1 canary+propose+accept, R2 fund +
+    same-round payment settlement (restart boundary) — 2 rounds. Then
+    UPFRONT_WITHIN rounds to the up-front favor's inclusive deadline (the
+    first post-resume round), 2 rounds for the on-delivery proposal +
+    acceptance, ON_DELIVERY_WITHIN rounds to its favor deadline, then
+    funding_turns withheld rounds through the inclusive funding deadline.
+    8 rounds x 3 seats = 24 with the checked-in rules.
     """
 
     rounds = (
-        3
+        2
         + UPFRONT_WITHIN
         + 2
         + ON_DELIVERY_WITHIN
