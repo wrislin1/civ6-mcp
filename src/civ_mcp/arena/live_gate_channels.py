@@ -2329,11 +2329,6 @@ class ChannelsCoreDriver:
                     recovered_player, recovered_turn
                 ):
                     return
-                if (
-                    self._journal.state.capture_turn == recovered_turn
-                    and recovered_player in self._journal.state.captured_players
-                ):
-                    continue
 
     async def _read_settlement_treasuries(self, gs, turn) -> dict | None:
         values = {}

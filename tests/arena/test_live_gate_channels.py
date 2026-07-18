@@ -842,6 +842,10 @@ async def test_round2_settles_payment_same_round_then_requests_restart(tmp_path)
 
     state = driver._journal.state
     assert state.status == "restart_required"
+    assert state.data["pre_acceptance_payment_status"] == "exact"
+    assert len(
+        data_events_for_key(driver, "pre_acceptance_payment_status")
+    ) == 1
     # The official payment is consumed inside R2 — settled, not pending.
     assert gs.pending == {}
     assert gs.treasury[1] == 499
@@ -1291,9 +1295,9 @@ async def test_restart_checkpoint_uses_no_live_payment_query(tmp_path):
     gs.get_channel_payment_state = counting_state
     await run_gate_round(driver, runtime, gs, 11)
     assert driver._journal.state.status == "restart_required"
-    # Funding and CLI pre-acceptance are the only R2 live payment-state
-    # queries; the round-boundary checkpoint must add none.
-    assert len(calls) == 2
+    # Funding, CLI pre-acceptance, and same-round settlement verification are
+    # the only R2 live payment-state queries; the restart checkpoint adds none.
+    assert len(calls) == 3
 
 
 @pytest.mark.asyncio
@@ -1556,7 +1560,7 @@ async def test_partial_restart_round_survives_process_crash_and_restarts_once(tm
     driver, runtime, gs = await attached_driver(tmp_path)
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_seat(driver, runtime, gs, 1, 11)
-    assert driver._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert driver._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
     assert driver.pending_signal() is None
 
     resumed = lgc.ChannelsCoreDriver(gate_config())
@@ -1650,14 +1654,14 @@ async def test_started_capture_reconciles_transition_crash_and_restarts_once(
 
 
 # The exact phase_advanced payload sequence of one successful scenario run.
-# restart_verified moves restart_required -> accept_upfront_payment without a
+# restart_verified moves restart_required -> await_upfront_favor_deadline without a
 # phase_advanced event, so it is deliberately absent from this list.
 GATE_PHASE_SEQUENCE = [
     lgc.PHASE_CANARY_AND_UPFRONT_PROPOSAL,
     lgc.PHASE_ACCEPT_UPFRONT,
     lgc.PHASE_FUND_UPFRONT,
+    lgc.PHASE_ACCEPT_UPFRONT_PAYMENT,
     lgc.PHASE_RESTART_REQUIRED,
-    lgc.PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE,
     lgc.PHASE_VERIFY_UPFRONT_HONORED,
     lgc.PHASE_PROPOSE_ON_DELIVERY,
     lgc.PHASE_ACCEPT_ON_DELIVERY,
@@ -1674,14 +1678,14 @@ GATE_PHASE_SEQUENCE = [
     "stop_round,crash_turn,intermediate_phase,final_phase",
     [
         (
-            4,
-            13,
+            3,
+            12,
             lgc.PHASE_VERIFY_UPFRONT_HONORED,
             lgc.PHASE_PROPOSE_ON_DELIVERY,
         ),
         (
-            9,
-            18,
+            8,
+            17,
             lgc.PHASE_VERIFY_FUNDING_BREACH,
             lgc.PHASE_VERIFY_TERMINAL_GATE,
         ),
@@ -1751,7 +1755,7 @@ async def test_dual_advance_transition_crash_reconciles_and_converges(
     for pid in (1, 2, 3):
         if pid > crashed_pid and resumed.pending_signal() is None:
             await run_gate_seat(resumed, runtime, gs, pid, crash_turn)
-    for turn in range(crash_turn + 1, 19):
+    for turn in range(crash_turn + 1, 18):
         if resumed.pending_signal() is not None:
             break
         await run_gate_round(resumed, runtime, gs, turn)
@@ -1849,7 +1853,7 @@ async def test_restart_verification_crash_replays_atomic_next_phase(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_restart_live_fingerprint_mismatch_fails(tmp_path):
+async def test_official_payment_auto_resolved_fails_before_restart(tmp_path):
     gs = GateGameState()
     driver, runtime, _ = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
@@ -1860,7 +1864,8 @@ async def test_restart_live_fingerprint_mismatch_fails(tmp_path):
     await run_gate_seat(driver, runtime, gs, 3, 11)
 
     assert driver.pending_signal() == GATE_FAILED
-    assert driver._journal.state.reason == "restart_checkpoint_failed"
+    assert driver._journal.state.reason == "official_payment_auto_resolved"
+    assert "official_payment_auto_resolved" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
@@ -1892,83 +1897,6 @@ async def test_resume_verifies_settlement_checkpoint_and_continues(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_resume_with_changed_offer_fails(tmp_path):
-    driver, runtime, gs = await drive_to_restart(tmp_path)
-    cfg = gate_config()
-    run_dir = Path(tmp_path) / cfg.run_id
-    from civ_mcp.lua.channel_payments import ExactPaymentOffer
-
-    gs.pending[(1, 2)] = ExactPaymentOffer(1, 2, 5)
-    runtime2 = ChannelRuntime.open(
-        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
-    )
-    driver2 = lgc.ChannelsCoreDriver(cfg)
-    await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
-
-    assert driver2.pending_signal() == GATE_FAILED
-
-
-@pytest.mark.asyncio
-async def test_restart_fingerprint_mismatch_is_forensic_only(tmp_path):
-    private_value = "PRIVATE_RESTART_FINGERPRINT_VALUE"
-    driver, runtime, gs = await drive_to_restart(tmp_path)
-    cfg = gate_config()
-
-    class PrivateOffer:
-        def fingerprint(self):
-            return {
-                "payer": 1,
-                "payee": 2,
-                "gold": 1,
-                "duration": 0,
-                "item_count": 1,
-                "private": private_value,
-            }
-
-    class ExactPrivateState:
-        status = "exact"
-        offer = PrivateOffer()
-
-    async def private_state(payer, payee, gold):
-        return ExactPrivateState()
-
-    gs.get_channel_payment_state = private_state
-    runtime2 = ChannelRuntime.open(
-        driver._run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
-    )
-    resumed = lgc.ChannelsCoreDriver(cfg)
-    await resumed.attach(gs=gs, channel_runtime=runtime2, run_dir=driver._run_dir)
-
-    assert resumed.pending_signal() == GATE_FAILED
-    assert resumed._journal.state.reason == "restart_verification_failed"
-    public = public_gate_text(resumed)
-    assert private_value not in public
-    assert "restart_offer_fingerprint_after" not in public
-    assert "upfront_payment_fingerprint" not in public
-    assert private_value in private_failure_text(resumed)
-
-
-@pytest.mark.asyncio
-async def test_resume_with_absent_offer_continues(tmp_path):
-    driver, runtime, gs = await drive_to_restart(tmp_path)
-    cfg = gate_config()
-    run_dir = Path(tmp_path) / cfg.run_id
-
-    gs.pending.clear()
-    runtime2 = ChannelRuntime.open(
-        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
-    )
-    driver2 = lgc.ChannelsCoreDriver(cfg)
-    await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
-
-    assert driver2.pending_signal() is None
-    assert driver2._journal.state.status == GATE_ACTIVE
-    assert (
-        driver2._journal.state.phase
-        == lgc.PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE
-    )
-
-
 @pytest.mark.asyncio
 async def test_resume_fails_if_same_turn_channel_sequence_changed(tmp_path):
     driver, runtime, gs = await drive_to_restart(tmp_path)
@@ -2070,7 +1998,7 @@ async def test_resume_config_fingerprint_mismatch_fails(tmp_path):
 
 
 async def full_run(tmp_path, *, stop_before_round=None):
-    """Drive both invocations of the expected nine-round gate path."""
+    """Drive both invocations of the expected eight-round gate path."""
 
     gs = GateGameState()
     driver, runtime, _ = await attached_driver(tmp_path, gs=gs)
@@ -2085,7 +2013,7 @@ async def full_run(tmp_path, *, stop_before_round=None):
     )
     driver2 = lgc.ChannelsCoreDriver(cfg)
     await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
-    for offset, turn in enumerate(range(12, 19), start=3):  # R3..R9
+    for offset, turn in enumerate(range(12, 18), start=3):  # R3..R8
         if stop_before_round is not None and offset >= stop_before_round:
             break
         await run_gate_round(driver2, runtime2, gs, turn)
@@ -2096,12 +2024,12 @@ async def full_run(tmp_path, *, stop_before_round=None):
 
 @pytest.mark.asyncio
 async def test_upfront_deal_honored_on_inclusive_deadline(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=5)
-    # R3 settled at turn 12; favor due turn 13 (R4) — honored there, not earlier.
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=4)
+    # R3 settles at turn 12 and honors the inclusive favor deadline.
     deal = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
     assert deal.state is DealState.HONORED
     assert deal.favor_status is FavorStatus.SATISFIED
-    assert deal.favor_due_turn == 13
+    assert deal.favor_due_turn == 12
     assert deal.favor.baseline
     assert all(
         value is True
@@ -2112,8 +2040,8 @@ async def test_upfront_deal_honored_on_inclusive_deadline(tmp_path):
 
 @pytest.mark.asyncio
 async def test_upfront_not_terminal_before_deadline(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=4)
-    # After R3 (turn 12) the deal must be nonterminal: favor window still open.
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=3)
+    # After attach and before R3 (turn 12), the favor window is still open.
     deal = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
     assert deal.state is DealState.ACTIVE
     assert driver.pending_signal() is None
@@ -2151,8 +2079,8 @@ async def test_existing_routes_are_baseline_exempt(tmp_path):
 
 @pytest.mark.asyncio
 async def test_on_delivery_proposed_accepted_and_treasury_satisfied(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=8)
-    # R5 (turn 14) CLI proposes; R6 (turn 15) API accepts; R7 (turn 16) favor due.
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=7)
+    # R4 (turn 13) CLI proposes; R5 (turn 14) API accepts; R6 (turn 15) favor is due.
     deal_id = driver._journal.state.data["on_delivery_deal_id"]
     deal = deals(runtime)[deal_id]
     assert deal.proposer == 2 and deal.counterparty == 1
@@ -2160,13 +2088,13 @@ async def test_on_delivery_proposed_accepted_and_treasury_satisfied(tmp_path):
     assert deal.favor.term_type == "maintain_gold_reserve"
     assert deal.favor_status is FavorStatus.SATISFIED
     assert deal.payment_status is PaymentStatus.DUE
-    assert deal.fund_by_turn == 18
+    assert deal.fund_by_turn == 17
 
 
 @pytest.mark.asyncio
 async def test_withholding_does_not_breach_early(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=9)
-    # After R8 (turn 17), before fund_by (18), the deal remains nonterminal.
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=8)
+    # After R7 (turn 16), before the inclusive fund-by turn (17), it is nonterminal.
     deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
     assert deal.state is DealState.ACTIVE
     assert driver.pending_signal() is None
@@ -2211,8 +2139,7 @@ async def test_premature_terminal_state_fails_gate(tmp_path):
     )
     driver2 = lgc.ChannelsCoreDriver(cfg)
     await driver2.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
-    await run_gate_round(driver2, runtime2, gs, 12)
-    # A new route after settlement violates the continuous term on the due turn.
+    # A new route after settlement violates the continuous term on the R3 due turn.
     from civ_mcp.arena.channel_terms import ObservedRoute
 
     gs.routes[2] = (
@@ -2223,7 +2150,7 @@ async def test_premature_terminal_state_fails_gate(tmp_path):
             destination_is_city_state=False,
         ),
     )
-    await run_gate_round(driver2, runtime2, gs, 13)
+    await run_gate_round(driver2, runtime2, gs, 12)
     assert driver2.pending_signal() == GATE_FAILED
 
 
@@ -2231,7 +2158,6 @@ async def test_premature_terminal_state_fails_gate(tmp_path):
 async def test_upfront_responsible_capture_requires_deadline_transition(tmp_path):
     driver, runtime, gs = await full_run(tmp_path, stop_before_round=3)
     await run_gate_seat(driver, runtime, gs, 1, 12)
-    await run_gate_seat(driver, runtime, gs, 2, 12)
     deal = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
     assert deal.counterparty == 2
     assert deal.state is DealState.ACTIVE
@@ -2243,7 +2169,7 @@ async def test_upfront_responsible_capture_requires_deadline_transition(tmp_path
     # real capture leaves the exact pending tuple in place, so the driver must
     # fail immediately instead of waiting for a later round.
     driver._journal.append(
-        "data_recorded", {"data": {"upfront_favor_due_turn": 12}}
+        "data_recorded", {"data": {"upfront_favor_due_turn": 11}}
     )
     await run_gate_seat(driver, runtime, gs, deal.counterparty, 12)
 
@@ -2256,7 +2182,7 @@ async def test_upfront_responsible_capture_requires_deadline_transition(tmp_path
 async def test_on_delivery_responsible_capture_requires_deadline_transition(
     tmp_path,
 ):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=7)
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=6)
     deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
     assert deal.counterparty == 1
     assert deal.state is DealState.ACTIVE
@@ -2264,7 +2190,7 @@ async def test_on_delivery_responsible_capture_requires_deadline_transition(
     assert deal.payment_status is PaymentStatus.NOT_DUE
 
     driver._journal.append(
-        "data_recorded", {"data": {"on_delivery_favor_due_turn": 15}}
+        "data_recorded", {"data": {"on_delivery_favor_due_turn": 14}}
     )
     await run_gate_seat(driver, runtime, gs, deal.counterparty, 15)
 
@@ -2283,7 +2209,7 @@ async def test_funding_responsible_capture_requires_deadline_transition(tmp_path
     assert deal.payment_status is PaymentStatus.DUE
 
     driver._journal.append(
-        "data_recorded", {"data": {"on_delivery_fund_by_turn": 17}}
+        "data_recorded", {"data": {"on_delivery_fund_by_turn": 16}}
     )
     await run_gate_seat(driver, runtime, gs, deal.proposer, 17)
 
@@ -2294,13 +2220,13 @@ async def test_funding_responsible_capture_requires_deadline_transition(tmp_path
 
 @pytest.mark.asyncio
 async def test_upfront_completed_transition_after_deadline_fails(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=4)
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=3)
     deal = deals(runtime)[driver._journal.state.data["upfront_deal_id"]]
     driver._journal.append(
-        "data_recorded", {"data": {"upfront_favor_due_turn": 12}}
+        "data_recorded", {"data": {"upfront_favor_due_turn": 11}}
     )
 
-    await run_gate_seat(driver, runtime, gs, deal.counterparty, 13)
+    await run_gate_seat(driver, runtime, gs, deal.counterparty, 12)
 
     changed = deals(runtime)[deal.id]
     assert changed.state is DealState.HONORED
@@ -2311,13 +2237,13 @@ async def test_upfront_completed_transition_after_deadline_fails(tmp_path):
 
 @pytest.mark.asyncio
 async def test_on_delivery_completed_transition_after_deadline_fails(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=7)
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=6)
     deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
     driver._journal.append(
-        "data_recorded", {"data": {"on_delivery_favor_due_turn": 15}}
+        "data_recorded", {"data": {"on_delivery_favor_due_turn": 14}}
     )
 
-    await run_gate_seat(driver, runtime, gs, deal.counterparty, 16)
+    await run_gate_seat(driver, runtime, gs, deal.counterparty, 15)
 
     changed = deals(runtime)[deal.id]
     assert changed.favor_status is FavorStatus.SATISFIED
@@ -2332,10 +2258,10 @@ async def test_funding_completed_transition_after_deadline_fails(tmp_path):
     driver, runtime, gs = await full_run(tmp_path, stop_before_round=8)
     deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
     driver._journal.append(
-        "data_recorded", {"data": {"on_delivery_fund_by_turn": 17}}
+        "data_recorded", {"data": {"on_delivery_fund_by_turn": 16}}
     )
 
-    await run_gate_seat(driver, runtime, gs, deal.proposer, 18)
+    await run_gate_seat(driver, runtime, gs, deal.proposer, 17)
 
     changed = deals(runtime)[deal.id]
     assert changed.state is DealState.BROKEN
@@ -2347,14 +2273,14 @@ async def test_funding_completed_transition_after_deadline_fails(tmp_path):
 
 @pytest.mark.asyncio
 async def test_on_delivery_premature_nonterminal_success_fails(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=7)
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=6)
     deal = deals(runtime)[driver._journal.state.data["on_delivery_deal_id"]]
-    assert deal.favor_due_turn == 16
+    assert deal.favor_due_turn == 15
     driver._journal.append(
-        "data_recorded", {"data": {"on_delivery_favor_due_turn": 17}}
+        "data_recorded", {"data": {"on_delivery_favor_due_turn": 16}}
     )
 
-    await run_gate_seat(driver, runtime, gs, deal.counterparty, 16)
+    await run_gate_seat(driver, runtime, gs, deal.counterparty, 15)
     changed = deals(runtime)[deal.id]
     assert changed.state is DealState.ACTIVE
     assert changed.favor_status is FavorStatus.SATISFIED
@@ -2366,7 +2292,7 @@ async def test_on_delivery_premature_nonterminal_success_fails(tmp_path):
 
 @pytest.mark.asyncio
 async def test_on_delivery_id_is_bound_to_current_cli_capture(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=5)
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=4)
     assert driver._journal.state.phase == lgc.PHASE_PROPOSE_ON_DELIVERY
 
     stale_payload = {
@@ -2385,7 +2311,7 @@ async def test_on_delivery_id_is_bound_to_current_cli_capture(tmp_path):
         stale_payload, sort_keys=True, separators=(",", ":")
     )
     gs.active_player = 2
-    stale_admission = await runtime.admit_player(gs, 2, 13)
+    stale_admission = await runtime.admit_player(gs, 2, 12)
     stale_acknowledgements = await runtime.finish_player(
         gs,
         stale_admission,
@@ -2399,7 +2325,7 @@ async def test_on_delivery_id_is_bound_to_current_cli_capture(tmp_path):
     driver._journal.append(
         "action_planned",
         {
-            "turn": 13,
+            "turn": 12,
             "player_id": 2,
             "phase": lgc.PHASE_PROPOSE_ON_DELIVERY,
             "name": "propose_deal",
@@ -2412,18 +2338,18 @@ async def test_on_delivery_id_is_bound_to_current_cli_capture(tmp_path):
         "action_verified",
         {
             "source_id": stale_ack.source_id,
-            "turn": 13,
+            "turn": 12,
             "deal_id": stale_ack.deal_id,
         },
     )
 
-    await run_gate_round(driver, runtime, gs, 14)
+    await run_gate_round(driver, runtime, gs, 13)
 
     current = [
         acknowledgement
         for acknowledgement in runtime.state.acknowledgements
         if acknowledgement.player_id == 2
-        and acknowledgement.turn == 14
+        and acknowledgement.turn == 13
         and acknowledgement.status == "applied"
         and acknowledgement.deal_id
     ]
@@ -2923,24 +2849,24 @@ async def test_terminal_pass_requires_full_privacy_coverage_for_every_turn(tmp_p
     for assertion in privacy_assertions(driver):
         per_turn.setdefault(assertion["turn"], set()).add(assertion["artifact_kind"])
         assert assertion["result"] == "PASS"
-    assert set(per_turn) == set(range(10, 19))
+    assert set(per_turn) == set(range(10, 18))
     assert all(kinds == PRIVACY_KINDS for kinds in per_turn.values())
 
 
 @pytest.mark.asyncio
 async def test_terminal_gate_fails_if_pending_transcript_hook_was_skipped(tmp_path):
-    driver, runtime, gs = await full_run(tmp_path, stop_before_round=9)
-    await run_gate_seat(driver, runtime, gs, 1, 18)
-    await run_gate_seat(driver, runtime, gs, 2, 18)
+    driver, runtime, gs = await full_run(tmp_path, stop_before_round=8)
+    await run_gate_seat(driver, runtime, gs, 1, 17)
+    await run_gate_seat(driver, runtime, gs, 2, 17)
 
     gs.active_player = 3
-    admission = await runtime.admit_player(gs, 3, 18)
-    driver.note_admission(3, 18, admission, "")
-    result = await driver.policy_for(3)(gs, 3, 18)
+    admission = await runtime.admit_player(gs, 3, 17)
+    driver.note_admission(3, 17, admission, "")
+    result = await driver.policy_for(3)(gs, 3, 17)
     acknowledgements = await runtime.finish_player(gs, admission, result)
     await driver.after_seat_capture(
         player_id=3,
-        turn=18,
+        turn=17,
         channel_fields={
             "enabled": True,
             "acknowledgements": len(acknowledgements),
