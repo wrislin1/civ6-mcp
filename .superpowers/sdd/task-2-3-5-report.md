@@ -415,3 +415,75 @@ $ uv run pytest tests/arena/test_live_gate_channels.py -q -k "recovery_reducer o
 
 - No new concerns in the requested scope. The previously documented stale
   full-module phase assertion and unavailable Ruff executable remain unchanged.
+
+## Narrow Boundary Fix: Defer Missing Settlement Evidence from Attach
+
+### Implementation Summary
+
+- Added the keyword-only `allow_settlement_read` mode to
+  `_reconcile_verified_capture()`.
+- `attach()` passes `False`. A durable verified payment capture with no
+  `settlement_result` remains reconstructible but attach appends no capture
+  marker and performs no treasury observation.
+- `_seat_turn_inner()` passes `True`, so the next seat-turn pre-journal path
+  records the payer/payee treasury result once and completes the verified
+  capture before normal seat work.
+- If `settlement_result` is already durable, attach still completes recovery
+  immediately because `_record_settlement_result()` returns without querying
+  the game.
+
+### TDD RED Evidence
+
+The updated boundary tests were run before the production change. The
+durable-result case already passed, while the missing-result case proved that
+attach incorrectly advanced to restart instead of deferring:
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_action_verified_crash_reconstructs_recovered_settlement_capture tests/arena/test_live_gate_channels.py::test_settlement_result_append_crash_reconstructs_normal_capture -q
+F.                                                                       [100%]
+FAILED ...test_action_verified_crash_reconstructs_recovered_settlement_capture
+E       AssertionError: assert 'restart_required' == 'accept_upfront_payment'
+1 failed, 1 passed in 1.24s
+```
+
+### GREEN Command Output
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_action_verified_crash_reconstructs_recovered_settlement_capture tests/arena/test_live_gate_channels.py::test_settlement_result_append_crash_reconstructs_normal_capture -q
+..                                                                       [100%]
+2 passed in 0.99s
+
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "same_round or settlement_ or restart_checkpoint or restart_without or resume or pending_actions or action_verified"
+.........................                                                [100%]
+25 passed, 84 deselected in 9.16s
+
+$ uv run python -m compileall -q src/civ_mcp/arena/live_gate_channels.py tests/arena/test_live_gate_channels.py
+[exit 0; no output]
+
+$ git diff --check
+[exit 0; no output]
+```
+
+### Files Changed
+
+- `src/civ_mcp/arena/live_gate_channels.py`
+- `tests/arena/test_live_gate_channels.py`
+- `.superpowers/sdd/task-2-3-5-report.md` (required report append)
+
+### Self-Review
+
+- Attach performs no settlement treasury query. The regression records all
+  treasury-family observations and requires none during attach.
+- The next seat turn performs exactly the two expected treasury observations,
+  records one `settlement_result`, and does not create a second payment
+  acknowledgement or treasury transfer.
+- Existing durable-result recovery remains attach-completable with no duplicate
+  data event and no treasury observation.
+- `_advance_after_capture()` remains game-read-only; journal shape and event
+  kinds are unchanged.
+- Tasks 4, 7, and 8 remain untouched.
+
+### Concerns
+
+- No new concerns in this boundary fix. Previously documented unrelated
+  concerns remain unchanged.

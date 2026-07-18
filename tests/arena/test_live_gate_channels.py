@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from civ_mcp.arena.channel_runtime import ChannelRuntime
+from civ_mcp.arena.channel_terms import ObservationFamily
 from civ_mcp.arena.channels import (
     ChannelAcknowledgement,
     DealState,
@@ -206,8 +207,6 @@ async def test_preflight_runs_once_and_advances_phase(tmp_path):
 
 @pytest.mark.asyncio
 async def test_preflight_missing_family_fails_closed(tmp_path):
-    from civ_mcp.arena.channel_terms import ObservationFamily
-
     gs = GateGameState()
     gs.missing_families[2] = frozenset({ObservationFamily.TRADE_ROUTES})
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
@@ -970,15 +969,33 @@ async def test_action_verified_crash_reconstructs_recovered_settlement_capture(
     assert recovering._journal.state.pending_actions == ()
     assert recovering._journal.state.capture_started_turn is None
 
+    treasury_observations = []
+    observe = gs.get_channel_observation
+
+    async def record_observation(player_id, turn, request):
+        if request.families == frozenset({ObservationFamily.TREASURY}):
+            treasury_observations.append((player_id, turn, request))
+        return await observe(player_id, turn, request)
+
+    gs.get_channel_observation = record_observation
     resumed = lgc.ChannelsCoreDriver(gate_config())
     await resumed.attach(
         gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
     )
 
     assert resumed.pending_signal() is None
-    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert resumed._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
     assert resumed._journal.state.capture_started_turn is None
-    assert 2 in resumed._journal.state.captured_players
+    assert 2 not in resumed._journal.state.captured_players
+    assert "settlement_result" not in resumed._journal.state.data
+    assert treasury_observations == []
+
+    await run_gate_seat(resumed, runtime, gs, 3, 11)
+
+    assert [
+        (player_id, turn)
+        for player_id, turn, _request in treasury_observations
+    ] == [(1, 11), (2, 11)]
     assert len(data_events_for_key(resumed, "settlement_result")) == 1
     assert gs.treasury == {1: 499, 2: 501, 3: 500}
     cli_acks = [
@@ -987,8 +1004,6 @@ async def test_action_verified_crash_reconstructs_recovered_settlement_capture(
         if acknowledgement.player_id == 2 and acknowledgement.turn == 11
     ]
     assert len(cli_acks) == 1
-
-    await run_gate_seat(resumed, runtime, gs, 3, 11)
     assert resumed.pending_signal() == GATE_RESTART_REQUIRED
 
 
@@ -1019,6 +1034,15 @@ async def test_settlement_result_append_crash_reconstructs_normal_capture(
     assert driver._journal.state.capture_started_turn is None
     assert len(data_events_for_key(driver, "settlement_result")) == 1
 
+    treasury_observations = []
+    observe = gs.get_channel_observation
+
+    async def record_observation(player_id, turn, request):
+        if request.families == frozenset({ObservationFamily.TREASURY}):
+            treasury_observations.append((player_id, turn, request))
+        return await observe(player_id, turn, request)
+
+    gs.get_channel_observation = record_observation
     resumed = lgc.ChannelsCoreDriver(gate_config())
     await resumed.attach(
         gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
@@ -1030,6 +1054,7 @@ async def test_settlement_result_append_crash_reconstructs_normal_capture(
     assert 2 in resumed._journal.state.captured_players
     assert len(data_events_for_key(resumed, "settlement_result")) == 1
     assert gs.treasury == {1: 499, 2: 501, 3: 500}
+    assert treasury_observations == []
 
     await run_gate_seat(resumed, runtime, gs, 3, 11)
     assert resumed.pending_signal() == GATE_RESTART_REQUIRED

@@ -273,7 +273,7 @@ class ChannelsCoreDriver:
         if not await self._reconcile_payment_checkpoint():
             return
         if self._journal.state.capture_started_turn is None:
-            await self._reconcile_verified_capture()
+            await self._reconcile_verified_capture(allow_settlement_read=False)
             if self._signal is not None:
                 return
         if self._journal.state.capture_started_turn is not None:
@@ -1007,7 +1007,7 @@ class ChannelsCoreDriver:
         if admission is None:
             self._fail(f"gate seat {player_id} turn {turn} acted without an admission")
             return base_result
-        await self._reconcile_verified_capture()
+        await self._reconcile_verified_capture(allow_settlement_read=True)
         if self._signal is not None:
             return base_result
         if self._journal.state.phase == PHASE_PREFLIGHT:
@@ -1315,7 +1315,9 @@ class ChannelsCoreDriver:
             failure="settlement_result_mismatch",
         )
 
-    async def _reconcile_verified_capture(self) -> None:
+    async def _reconcile_verified_capture(
+        self, *, allow_settlement_read: bool
+    ) -> None:
         state = self._journal.state
         identities = {
             (entry.get("player_id"), entry.get("turn"))
@@ -1350,6 +1352,13 @@ class ChannelsCoreDriver:
             )
             return
         player_id, turn = next(iter(identities))
+        needs_settlement_read = (
+            self.pid_role.get(player_id) == ROLE_CLI
+            and state.phase == PHASE_ACCEPT_UPFRONT_PAYMENT
+            and "settlement_result" not in state.data
+        )
+        if needs_settlement_read and not allow_settlement_read:
+            return
         if not await self._record_settlement_result(player_id, turn):
             return
         try:
