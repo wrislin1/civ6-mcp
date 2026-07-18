@@ -2851,10 +2851,13 @@ async def test_terminal_pass_requires_full_privacy_coverage_for_every_turn(tmp_p
         assert assertion["result"] == "PASS"
     assert set(per_turn) == set(range(10, 18))
     assert all(kinds == PRIVACY_KINDS for kinds in per_turn.values())
+    capture_events = [
+        event for event in read_events(driver) if event["kind"] == "seat_captured"
+    ]
+    assert len(capture_events) == 24
     captured_pairs = {
         (event["payload"]["turn"], event["payload"]["player_id"])
-        for event in read_events(driver)
-        if event["kind"] == "seat_captured"
+        for event in capture_events
     }
     assert captured_pairs == {
         (turn, player_id)
