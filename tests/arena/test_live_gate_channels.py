@@ -913,6 +913,30 @@ def private_failure_text(driver):
     )
 
 
+def private_failure_details(driver):
+    return [
+        json.loads(path.read_text())["detail"]
+        for path in sorted(driver._journal.gate_dir.glob("failure_*.json"))
+    ]
+
+
+def assert_restart_verification_failed(driver, forensic_failure):
+    assert driver.pending_signal() == GATE_FAILED
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "restart_verification_failed"
+    assert driver._journal.result_path.exists()
+    result = json.loads(driver._journal.result_path.read_text())
+    assert result["status"] == GATE_FAILED
+    assert result["reason"] == "restart_verification_failed"
+    assert any(
+        detail.get("failure") == forensic_failure
+        for detail in private_failure_details(driver)
+    )
+    assert forensic_failure in private_failure_text(driver)
+    assert forensic_failure not in public_gate_text(driver)
+
+
 @pytest.mark.asyncio
 async def test_settlement_records_baselines_deltas_and_digest(tmp_path):
     driver, runtime, gs = await drive_to_restart(tmp_path)
@@ -1897,6 +1921,145 @@ async def test_resume_verifies_settlement_checkpoint_and_continues(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_resume_fails_if_canonical_payment_not_settled(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    deal_id = driver._journal.state.data["upfront_deal_id"]
+    runtime2.state = dataclasses.replace(
+        runtime2.state,
+        deals=tuple(
+            dataclasses.replace(deal, payment_status=PaymentStatus.OFFERED)
+            if deal.id == deal_id
+            else deal
+            for deal in runtime2.state.deals
+        ),
+    )
+
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+
+    assert deals(runtime2)[deal_id].payment_status is PaymentStatus.OFFERED
+    assert_restart_verification_failed(
+        resumed, "payment_not_settled_at_resume"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resume_fails_if_settlement_digest_mismatches(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    deal_id = driver._journal.state.data["upfront_deal_id"]
+    original_digest = driver._journal.state.data["settlement_digest"]
+    mismatched_digest = "deadbeefcafebabe"
+    assert mismatched_digest != original_digest
+    driver._journal.append(
+        "data_recorded", {"data": {"settlement_digest": mismatched_digest}}
+    )
+
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+
+    assert resumed._journal.state.data["settlement_digest"] == mismatched_digest
+    assert deals(runtime2)[deal_id].payment_status is PaymentStatus.SETTLED
+    assert_restart_verification_failed(resumed, "settlement_digest_mismatch")
+
+
+def settlement_source_ids(driver):
+    state = driver._journal.state
+    restart_turn = state.data["restart_turn"]
+    return {
+        entry["source_id"]
+        for entry in state.verified_actions
+        if entry.get("name") == "respond_to_payment"
+        and entry.get("player_id") == 2
+        and entry.get("turn", restart_turn + 1) <= restart_turn
+    }
+
+
+def runtime_with_settlement_acknowledgements(runtime, acknowledgements):
+    runtime.state = dataclasses.replace(
+        runtime.state,
+        acknowledgements=tuple(acknowledgements),
+    )
+    return runtime
+
+
+@pytest.mark.asyncio
+async def test_resume_fails_if_settlement_acknowledgement_missing(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    checkpoint_sequence = driver._journal.state.data[
+        "restart_channel_sequence"
+    ]
+    settlement_sources = settlement_source_ids(driver)
+    assert settlement_sources
+    runtime_with_settlement_acknowledgements(
+        runtime2,
+        [
+            acknowledgement
+            for acknowledgement in runtime2.state.acknowledgements
+            if acknowledgement.source_id not in settlement_sources
+        ],
+    )
+    assert runtime2.state.last_event_sequence == checkpoint_sequence
+
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+
+    assert_restart_verification_failed(
+        resumed, "settlement_acknowledgement_count"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resume_fails_if_settlement_acknowledgement_duplicated(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+    cfg = gate_config()
+    run_dir = Path(tmp_path) / cfg.run_id
+    runtime2 = ChannelRuntime.open(
+        run_dir, cfg.run_id, frozenset({1, 2, 3}), cfg.channel_rules
+    )
+    checkpoint_sequence = driver._journal.state.data[
+        "restart_channel_sequence"
+    ]
+    settlement_sources = settlement_source_ids(driver)
+    settlement_acknowledgements = [
+        acknowledgement
+        for acknowledgement in runtime2.state.acknowledgements
+        if acknowledgement.source_id in settlement_sources
+    ]
+    assert settlement_sources
+    assert len(settlement_acknowledgements) == 1
+    duplicate = dataclasses.replace(
+        settlement_acknowledgements[0],
+        message="duplicate settlement acknowledgement",
+    )
+    runtime_with_settlement_acknowledgements(
+        runtime2,
+        (*runtime2.state.acknowledgements, duplicate),
+    )
+    assert runtime2.state.last_event_sequence == checkpoint_sequence
+
+    resumed = lgc.ChannelsCoreDriver(cfg)
+    await resumed.attach(gs=gs, channel_runtime=runtime2, run_dir=run_dir)
+
+    assert_restart_verification_failed(
+        resumed, "settlement_acknowledgement_count"
+    )
+
+
 @pytest.mark.asyncio
 async def test_resume_fails_if_same_turn_channel_sequence_changed(tmp_path):
     driver, runtime, gs = await drive_to_restart(tmp_path)
