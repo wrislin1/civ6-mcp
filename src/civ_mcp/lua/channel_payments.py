@@ -172,31 +172,22 @@ def build_channel_payment_query(payer: int, gold: int) -> str:
 
 
 def build_channel_payment_state_query(payer: int, payee: int, gold: int) -> str:
-    """Classify the ordered pair's pending deal from either involved seat."""
+    """Classify the ordered pair's pending deal from any seat.
+
+    Must not depend on the local player: the live-gate restart checkpoint
+    runs at the round boundary (observer or human seat active) and reattach
+    verification runs during the human turn.
+    """
     payer, payee, gold = _payment_state_inputs(payer, payee, gold)
     return f"""
-local me = Game.GetLocalPlayer()
 local payer = {payer}
 local payee = {payee}
-local direction = nil
-local other = nil
-if me == payer then
-    direction = DealDirection.OUTGOING
-    other = payee
-elseif me == payee then
-    direction = DealDirection.INCOMING
-    other = payer
-else
-    print("ERR:CHANNEL_PAYMENT_WRONG_SEAT")
-    print("{SENTINEL}")
-    return
-end
 if not DealManager.HasPendingDeal(payer, payee) then
     print("PAYMENT_STATE|{payer}|{payee}|{gold}|absent")
     print("{SENTINEL}")
     return
 end
-local deal = DealManager.GetWorkingDeal(direction, me, other)
+local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, payer, payee)
 if not deal or deal:GetItemCount() ~= 1 then
     print("PAYMENT_STATE|{payer}|{payee}|{gold}|conflicting")
     print("{SENTINEL}")

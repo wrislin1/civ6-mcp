@@ -2,7 +2,10 @@
 # The prior failed two-seat run directory cannot be reused: adding the privacy
 # observer changes the canonical enabled-player identity, so the new run_id
 # prevents accidental continuation of incompatible channel state.
-run_id: arena-channels-core-gate-v1
+# v2: v1 failed terminally at the restart checkpoint (seat-bound payment-state
+# query run from the observer/human seat); a failed gate journal is terminal,
+# so the rerun needs a fresh run_id.
+run_id: arena-channels-core-gate-v2
 # 27 captures expected on the nine-round path; 36 leaves room for watcher
 # handoff and deterministic blocker cleanup. Validation recomputes the
 # scenario minimum from channel_rules rather than trusting this number.

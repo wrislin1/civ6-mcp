@@ -88,17 +88,19 @@ def test_payment_builders_are_exact_gold_only_and_never_accept_counteroffers():
     assert "DealProposalAction.ACCEPTED" in response
 
 
-def test_payment_state_query_supports_only_the_ordered_pair_seats_and_directions():
+def test_payment_state_query_is_seat_independent():
+    # The live-gate restart checkpoint runs at the round boundary (observer or
+    # human seat active) and reattach verification runs during the human turn,
+    # so this query must classify the payer→payee pending deal from ANY seat.
     query = build_channel_payment_state_query(1, 2, 100)
-    assert "if me == payer then" in query
-    assert "DealDirection.OUTGOING" in query
-    assert "elseif me == payee then" in query
-    assert "DealDirection.INCOMING" in query
+    assert "GetLocalPlayer" not in query
+    assert "ERR:CHANNEL_PAYMENT_WRONG_SEAT" not in query
     assert "DealManager.HasPendingDeal(payer, payee)" in query
+    assert "DealManager.GetWorkingDeal(DealDirection.OUTGOING, payer, payee)" in query
+    assert "DealDirection.INCOMING" not in query
     assert "PAYMENT_STATE|1|2|100|absent" in query
     assert "PAYMENT_STATE|1|2|100|conflicting" in query
     assert "PAYMENT_STATE|1|2|100|exact|0|1" in query
-    assert "ERR:CHANNEL_PAYMENT_WRONG_SEAT" in query
 
 
 def test_payment_state_parser_distinguishes_absent_exact_and_conflicting():
