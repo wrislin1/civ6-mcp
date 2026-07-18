@@ -927,9 +927,19 @@ class ChannelsCoreDriver:
                 },
             )
             return
-        payment_state = await self._gs.get_channel_payment_state(
-            self.role_pid[ROLE_API], self.role_pid[ROLE_CLI], PAYMENT_GOLD
-        )
+        try:
+            payment_state = await self._gs.get_channel_payment_state(
+                self.role_pid[ROLE_API], self.role_pid[ROLE_CLI], PAYMENT_GOLD
+            )
+        except Exception as exc:
+            self._fail(
+                "restart_verification_failed",
+                detail={
+                    "failure": "payment_state_unreadable",
+                    "error": repr(exc),
+                },
+            )
+            return
         status = getattr(payment_state, "status", None)
         status = getattr(status, "value", status)
         if status != "absent":

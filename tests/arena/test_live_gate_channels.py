@@ -1390,6 +1390,24 @@ async def test_resume_verifies_settlement_and_continues(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_resume_payment_state_query_exception_fails_closed(tmp_path):
+    driver, runtime, gs = await drive_to_restart(tmp_path)
+
+    async def unreadable_payment_state(payer, payee, gold):
+        raise RuntimeError("simulated payment-state transport failure")
+
+    gs.get_channel_payment_state = unreadable_payment_state
+    resumed = await reattach_driver(tmp_path, runtime, gs)
+
+    assert resumed.pending_signal() == GATE_FAILED
+    assert resumed._journal.state.status == GATE_FAILED
+    assert resumed._journal.state.reason == "restart_verification_failed"
+    assert resumed._journal.result_path.exists()
+    assert "payment_state_unreadable" in private_failure_text(resumed)
+    assert "payment_state_unreadable" not in public_gate_text(resumed)
+
+
+@pytest.mark.asyncio
 async def test_resume_with_stray_official_offer_fails(tmp_path):
     driver, runtime, gs = await drive_to_restart(tmp_path)
     from civ_mcp.lua.channel_payments import ExactPaymentOffer

@@ -554,3 +554,65 @@ $ git diff --check
 
 - No new concerns in this validation fix. Previously documented unrelated
   concerns remain unchanged.
+
+## Fail-Closed Fix: Unreadable Resume Payment State
+
+### Implementation Summary
+
+- Wrapped `_verify_restart()`'s live `get_channel_payment_state()` await in
+  `try/except Exception`.
+- Query failures now call `_fail("restart_verification_failed", detail={...})`
+  with private failure code `payment_state_unreadable` and the exception repr,
+  then return.
+- Added a resume regression whose fake payment-state query raises a simulated
+  transport exception. Attach must return with durable failed journal state and
+  `result.json` instead of propagating the exception.
+
+### TDD RED Evidence
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_resume_payment_state_query_exception_fails_closed -q
+F                                                                        [100%]
+FAILED ...test_resume_payment_state_query_exception_fails_closed
+E       RuntimeError: simulated payment-state transport failure
+1 failed in 0.92s
+```
+
+### GREEN Command Output
+
+```text
+$ uv run pytest tests/arena/test_live_gate_channels.py::test_resume_payment_state_query_exception_fails_closed -q
+.                                                                        [100%]
+1 passed in 0.58s
+
+$ uv run pytest tests/arena/test_live_gate_channels.py -q -k "resume or same_round or settlement_ or restart_checkpoint or restart_without or pending_actions or action_verified or unexpected_ack"
+............................                                             [100%]
+28 passed, 83 deselected in 10.24s
+
+$ uv run python -m compileall -q src/civ_mcp/arena/live_gate_channels.py tests/arena/test_live_gate_channels.py
+[exit 0; no output]
+
+$ git diff --check
+[exit 0; no output]
+```
+
+### Files Changed
+
+- `src/civ_mcp/arena/live_gate_channels.py`
+- `tests/arena/test_live_gate_channels.py`
+- `.superpowers/sdd/task-2-3-5-report.md` (required report append)
+
+### Self-Review
+
+- The exact required reason and private failure code are used.
+- The exception repr is confined to private forensic output; public gate text
+  contains neither the detail code nor transport exception.
+- No retry or payment side effect was introduced.
+- Existing absent/stray payment-state behavior remains covered by the focused
+  resume suite.
+- Tasks 4, 7, and 8 remain untouched.
+
+### Concerns
+
+- No new concerns in this fail-closed fix. Previously documented unrelated
+  concerns remain unchanged.
