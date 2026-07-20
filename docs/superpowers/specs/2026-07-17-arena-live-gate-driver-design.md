@@ -26,8 +26,9 @@ The scenario must:
   expected transition;
 - select valid terms from authoritative live observations, without editing the
   channel ledger or injecting evidence;
-- stop after same-round official payment settlement is durably recorded,
-  request a watcher restart, and resume from the persisted journals;
+- stop after the official payment's synchronous settlement is durably recorded
+  in the funding seat window, request a watcher restart, and resume from the
+  persisted journals;
 - fail closed on acknowledgement, source, state, observation, fingerprint,
   privacy, or deadline disagreement; and
 - leave ordinary arena policy behavior unchanged when the gate is disabled.
@@ -44,8 +45,11 @@ This design does not:
 - write directly to canonical channel state, acknowledgements, payment records,
   observations, outcomes, or grievances;
 - create synthetic game evidence or infer payment from treasury deltas alone
-  (revision 2 uses same-turn deltas only to corroborate a consumed offer and
-  its settlement acknowledgement, never as the sole payment evidence);
+  (revision 3 verifies settlement with three concurrent same-window signals —
+  the exact ±gold treasury deltas, the seat-independent absent offer state,
+  and the authoritative fund acknowledgement — never a delta by itself; the
+  payee's payment response is channel-ledger bookkeeping that consumes no
+  engine offer);
 - choose ordinary game strategy for the smoke seats; or
 - alter normal local, CLI, or seat-zero agent behavior outside an explicitly
   enabled live gate.
@@ -96,6 +100,24 @@ scenario and the separate raw FireTuner-probe scenario pass.
     to an AI player asynchronously — even mid-human-turn and even when every
     gate seat completes its no-action capture — so a pending official payment
     cannot survive to the round boundary, let alone across the restart gap.
+14. (Revision 3, 2026-07-20.) The engine enacts an AI→AI `PROPOSED` official
+    deal synchronously at send: `SendWorkingDeal(PROPOSED, payer, payee)`
+    transfers the gold before the first observable poll, and no pending deal
+    ever exists for the pair. Settlement is therefore verified in the same
+    seat window that funds: the payer's window records write-ahead treasury
+    baselines, sends the offer, then immediately requires the seat-independent
+    payment-state query to report `absent` and the same-window treasury deltas
+    to equal exactly −gold/+gold, and records the settlement digest. The payee
+    still emits `respond_to_payment(accept=true)` — it exercises the
+    production CLI parse path and settles the channel ledger — but it is
+    bookkeeping: its preflight expects `absent` (an `exact` offer at response
+    time is the anomaly), and it performs no engine mutation. Grounds:
+    attended run `arena-channels-core-gate-v3` failed
+    `official_payment_auto_resolved` with the offer already absent at the
+    first CLI-window poll of the same game turn, and a controlled lifecycle
+    probe (2026-07-20, same save, turn 158) observed `pending=false` with
+    deltas of exactly −1.000/+1.000 on the first sub-second poll after send,
+    unchanged for 300 s with no turn advance.
 
 ## Architecture and File Boundaries
 
@@ -356,18 +378,18 @@ does not inject a treasury value.
 The scenario advances through the following persisted phases. A passive privacy
 assertion runs on every observer admission, not only at the end.
 
-Same-round settlement is `scenario_revision: 2`. The revision participates in
-the configuration fingerprint, so a revision-1 journal (runs `-v1`/`-v2`) can
-never be resumed by a revision-2 process; a rerun requires a fresh run ID and
-the reloaded disposable save.
+Synchronous fund-window settlement is `scenario_revision: 3`. The revision
+participates in the configuration fingerprint, so a revision-1 or revision-2
+journal (runs `-v1`/`-v2`/`-v3`) can never be resumed by a revision-3 process;
+a rerun requires a fresh run ID and the reloaded disposable save.
 
 | Phase | Input | Required canonical evidence before advancement |
 |---|---|---|
 | `preflight` | Read-only treasury, route, and pending-trade queries | Complete requested families, no errors, legal roles/target, sufficient player-1 gold, no conflicting offer |
 | `canary_and_upfront_proposal` | API actor dispatches `send_message` then `propose_deal` | Exactly two expected `api:` acknowledgements; captured canary message and up-front deal IDs |
 | `accept_upfront` | CLI actor emits `respond_to_deal(accept=true)` | Expected `cli:` acknowledgement; deal active, payment due, canonical trade-route baseline attached |
-| `fund_upfront` | API actor dispatches `fund_deal` | Expected `api:` acknowledgement; payment offered; exact official fingerprint recorded by channel runtime; same-turn payer and payee treasury baselines recorded |
-| `accept_upfront_payment` | CLI actor emits `respond_to_payment(accept=true)` as the first action of its seat window in the same game turn | Expected `cli:` acknowledgement; official offer re-verified exact from the involved seat immediately before acceptance; payment settled; offer consumed; same-turn treasury deltas match (payer −gold, payee +gold); settlement digest recorded. An absent offer at acceptance time is the distinct terminal forensic `official_payment_auto_resolved` |
+| `fund_upfront` | API actor dispatches `fund_deal`; settlement verified in the same seat window | Write-ahead payer/payee treasury baselines recorded before the send; expected `api:` acknowledgement; exact official fingerprint recorded by channel runtime; immediately after the send, the seat-independent payment-state query reports `absent` and the same-window treasury deltas equal exactly −gold/+gold; settlement digest recorded. A non-`absent` post-send state or any delta mismatch is the terminal forensic `official_payment_not_enacted` |
+| `accept_upfront_payment` | CLI actor emits `respond_to_payment(accept=true)` in its seat window of the same game turn | Expected `cli:` acknowledgement; settlement digest already recorded; pre-response seat-independent payment-state is `absent` (the enacted offer is gone); channel ledger transitions the payment to `settled` exactly once with no engine mutation. An `exact` or conflicting offer at response time is the distinct terminal forensic `official_payment_unexpectedly_pending` |
 | `restart_required` | Deterministic no-action turns for the round's remaining gate seats | Settlement digest present and internally consistent; canonical channel state/event identity recorded; gate snapshot and result persisted; the round completes with no gate seat released to the game AI; watcher exits 75. No live pending-deal query participates in this checkpoint |
 | `restart_verify` | Reopen and reconcile only | Same configuration/channel identity; exactly one restart; settlement digest unchanged; the seat-independent payment-state query reports `absent` for the ordered pair (no stray or resurrected official offer); no duplicate payment-response acknowledgement |
 | `await_upfront_favor_deadline` | Deterministic no-action turns | No premature terminal state; complete route observations on each obligated admission |
@@ -390,10 +412,16 @@ no-action captures would shield the pending official payment from player 2's
 engine AI until the resumed gate accepted it. Attended runs
 `arena-channels-core-gate-v1` and `-v2` disproved that mechanism (see Observed
 Engine Constraints below): the engine auto-resolves deals offered to an AI
-player asynchronously, regardless of round choreography. The payment therefore
-settles in the same round it is offered (`fund_upfront` in the API seat window,
-`accept_upfront_payment` first thing in the CLI seat window of the same game
-turn), and the restart checkpoint anchors on durable settlement evidence only.
+player asynchronously, regardless of round choreography.
+
+Revision 3 (2026-07-20): attended run `arena-channels-core-gate-v3` and the
+controlled lifecycle probe showed that even consecutive seat windows of one
+game turn cannot bracket a pending offer — enactment is synchronous with the
+send (Locked Decision 14). Settlement is therefore verified entirely inside
+the funding seat window (baselines → send → absent-state check → exact-delta
+check → settlement digest), and the CLI actor's `respond_to_payment` in the
+same game turn settles only the channel ledger. The restart checkpoint
+continues to anchor on durable settlement evidence only.
 
 After settlement, the driver completes the current channel finish before
 requesting a restart. The restart takes effect only at the round boundary:
@@ -431,18 +459,25 @@ reconciliation before the gate may act. The driver then requires:
 Only then does the scenario advance to `await_upfront_favor_deadline`. A second
 restart request or any settlement-evidence disagreement is terminal failure.
 
-### Observed Engine Constraints (live evidence, 2026-07-18)
+### Observed Engine Constraints (live evidence, 2026-07-18 and 2026-07-20)
 
-Recorded from attended runs `arena-channels-core-gate-v1`/`-v2` and seat-0
-FireTuner probes on the reloaded gate save (fix commit `a9682b2`); raw
-responses preserved in that commit message and the retained run directories:
+Recorded from attended runs `arena-channels-core-gate-v1`/`-v2`/`-v3`, seat-0
+FireTuner probes on the reloaded gate save (fix commit `a9682b2`), and the
+2026-07-20 deal-lifecycle probe (retained run directories; probe script
+`probe_deal_lifecycle.py`):
 
-- Deals offered to an AI player are auto-resolved by that player's engine AI
-  asynchronously, within minutes, mid-human-turn, and regardless of puppet
-  window choreography. A pending official payment does not survive to the
-  round boundary (v2 checkpoint observed `absent`; probe deals vanished with
-  no turn advance). Puppeting a seat suspends its AI only during that seat's
-  window.
+- (Supersedes "within minutes".) The engine enacts an AI→AI `PROPOSED` deal
+  synchronously at `SendWorkingDeal`: the 2026-07-20 lifecycle probe created
+  a one-gold player-1→player-2 deal mid-human-turn and observed
+  `HasPendingDeal=false` with treasury deltas of exactly −1.000/+1.000 on the
+  first sub-second poll, stable for 300 s with no turn advance. Attended run
+  `-v3` independently observed the funded offer already absent at the first
+  CLI-window poll of the same game turn. A pending AI→AI official payment is
+  never observable at all; enactment (gold transfer) is part of the send.
+- Within one game turn, gate-seat treasuries are otherwise static (the same
+  300 s trace showed no other movement), so exact same-window −gold/+gold
+  deltas immediately after a send are attributable to the official payment.
+- Puppeting a seat suspends its AI only during that seat's window.
 - `PlayerManager.SetLocalPlayerAndObserver` silently refuses to switch seats
   outside the turn-start event context the puppet hook runs in, so a
   checkpoint can never "borrow" an involved seat; any query it needs must be
@@ -453,11 +488,7 @@ responses preserved in that commit message and the retained run directories:
 - `DealManager.GetWorkingDeal` can return a stale one-item working buffer when
   no pending deal exists; `HasPendingDeal` must remain the gating check.
 - Treasury reads (`Players[i]:GetTreasury():GetGoldBalance()`) are
-  seat-independent, which is the basis for same-turn settlement deltas.
-- Within one game turn, gate-seat treasuries change only through deliberate
-  actions (income applies at turn advance; scripted gate turns never buy or
-  sell), so same-turn deltas of exactly −gold/+gold are attributable to the
-  official payment.
+  seat-independent, which is the basis for same-window settlement deltas.
 
 ## Privacy Contract
 
@@ -527,9 +558,13 @@ retry any pending official trade, and requests safe coordinator deactivation:
 - unexpected channel action from any role;
 - missing observation family, observation/parser error, or changed term input;
 - canonical state transition before or after the specified inclusive boundary;
-- missing, extra, ambiguous, or changed official pending trade inside the
-  settlement round (an offer absent at acceptance time is the distinct
-  terminal forensic `official_payment_auto_resolved`);
+- a post-send payment state other than `absent` or same-window treasury
+  deltas other than exactly −gold/+gold inside the funding seat window (the
+  terminal forensic `official_payment_not_enacted`);
+- an `exact` or conflicting official offer at payment-response time (the
+  distinct terminal forensic `official_payment_unexpectedly_pending`;
+  revision 2's `official_payment_auto_resolved` is retired — an absent offer
+  at response time is now the expected state);
 - disagreement within the recorded settlement evidence, or between the
   recorded settlement digest and the resume-boundary re-check;
 - a non-`absent` seat-independent payment-state result for the ordered pair
@@ -577,7 +612,9 @@ tests prove:
 - the continuous trade term remains pending before and succeeds on its inclusive
   deadline;
 - the payment fingerprint is identical before and after reopen;
-- payment acceptance consumes the exact offer once;
+- payment enactment is verified synchronously in the funding window (absent
+  state plus exact deltas), and the payee response settles the ledger exactly
+  once with no engine mutation;
 - the treasury term is satisfied from real observations;
 - omission before the funding deadline does not breach early;
 - omission on the responsible player's inclusive deadline produces the expected
@@ -618,10 +655,11 @@ conditions.
 The operator follows the `civ6-arena-live` ownership workflow and invokes the
 same checked-in experiment twice:
 
-1. First invocation completes same-round settlement of the official payment,
-   reaches `restart_required`, exits 75, and leaves the settlement digest
-   recorded with no pending official offer in the engine. The human turn is
-   not ended again until the second watcher is armed.
+1. First invocation completes synchronous settlement of the official payment
+   in the funding seat window, reaches `restart_required`, exits 75, and
+   leaves the settlement digest recorded with no pending official offer in
+   the engine. The human turn is not ended again until the second watcher is
+   armed.
 2. Second invocation uses the same run ID, verifies the settlement evidence
    and the absence of any official offer for the pair, honors the up-front
    deal, breaks the on-delivery deal at its funding deadline, records a
