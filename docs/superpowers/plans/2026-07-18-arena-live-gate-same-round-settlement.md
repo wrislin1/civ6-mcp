@@ -1,5 +1,14 @@
 # Arena Live-Gate Same-Round Settlement (Spec Revision 2) Implementation Plan
 
+> **STATUS: EXECUTED** (merged to main 2026-07-20). Tasks 1–7 shipped as
+> `a52c73c..df6ab20` + `6cf18ca` (suite migration); three additional
+> review-hardening commits followed (`b4c6926` terminal privacy seat coverage,
+> `6fbf521` exact gate capture count, `77b3a72` rev-2 resume failure guards).
+> Task 8 readiness checks verified at merge: full suite 1952 green,
+> `tests/arena/test_experiment.py` + `test_config.py` 213 green, zero stale
+> `gate-v2`/nine-round/27-seat references. Remaining work is the operator-attended
+> live run `arena-channels-core-gate-v3` (see Task 8 live procedure).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rework the `unofficial_channels_core_v1` gate so the official payment settles in the same round it is offered, and the restart checkpoint/resume verification anchor on durable settlement evidence instead of a live pending deal.
@@ -49,7 +58,7 @@ Rules: `acceptance_turns: 3, funding_turns: 2, payment_response_turns: 2`, both 
 **Interfaces:**
 - Produces: `SCENARIO_REVISION == 2`; `minimum_captures(gate_config()) == 24`. Later tasks and the config fingerprint rely on both.
 
-- [ ] **Step 1: Update the two capture-math tests and add the revision pin**
+- [x] **Step 1: Update the two capture-math tests and add the revision pin**
 
 Replace `test_minimum_captures_is_27_for_smoke_rules` and the expectation inside `test_minimum_captures_tracks_funding_turns`:
 
@@ -75,12 +84,12 @@ def test_scenario_revision_is_2_for_same_round_settlement():
     assert lgc.SCENARIO_REVISION == 2
 ```
 
-- [ ] **Step 2: Run to verify all three fail**
+- [x] **Step 2: Run to verify all three fail**
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k "minimum_captures or scenario_revision_is_2"`
 Expected: FAIL — 27 != 24, 33 != 30, 1 != 2.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `live_gate_channels.py`: set `SCENARIO_REVISION = 2` and change `minimum_captures`:
 
@@ -107,11 +116,11 @@ def minimum_captures(config) -> int:
     return rounds * len(ROLE_CONTRACTS)
 ```
 
-- [ ] **Step 4: Run the three tests — PASS.** Other lifecycle tests will still be red-free because nothing else changed yet.
+- [x] **Step 4: Run the three tests — PASS.** Other lifecycle tests will still be red-free because nothing else changed yet.
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k "minimum_captures or scenario_revision"`
 
-- [ ] **Step 5: Commit** — `feat(arena): live-gate revision 2 constants — 24-capture eight-round path`
+- [x] **Step 5: Commit** — `feat(arena): live-gate revision 2 constants — 24-capture eight-round path`
 
 ---
 
@@ -125,7 +134,7 @@ Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k "minimum_captur
 - Consumes: Task 1's revision constant (journal fingerprints change).
 - Produces: phase transitions `fund_upfront → accept_upfront_payment` (API capture), `accept_upfront_payment → restart_required` (CLI capture, arms restart), `restart_verified.next_phase == PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE`. Tasks 3–6 build on this order.
 
-- [ ] **Step 1: Write the failing round-2 lifecycle test**
+- [x] **Step 1: Write the failing round-2 lifecycle test**
 
 ```python
 @pytest.mark.asyncio
@@ -166,11 +175,11 @@ def read_events(driver):
     ]
 ```
 
-- [ ] **Step 2: Run to verify it fails** — currently R2 stops at `restart_required` with the offer still pending (`gs.pending != {}`) and no `accept_upfront_payment` advance.
+- [x] **Step 2: Run to verify it fails** — currently R2 stops at `restart_required` with the offer still pending (`gs.pending != {}`) and no `accept_upfront_payment` advance.
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py::test_round2_settles_payment_same_round_then_requests_restart -q`
 
-- [ ] **Step 3: Implement the reorder**
+- [x] **Step 3: Implement the reorder**
 
 a. `_advance_after_capture`, `PHASE_FUND_UPFRONT and role == ROLE_API` branch: keep the OFFERED check, fingerprint, `_update_payment_checkpoint(recorded=...)`, and `payment_checkpoint_digest` recording. Delete `self._restart_armed = True`. Change the advance target:
 
@@ -204,11 +213,11 @@ d. `_verify_restart` tail: `"next_phase": PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE`.
 
 e. Attach re-arm (`attach`, `elif state.phase == PHASE_RESTART_REQUIRED:`): unchanged in this task (Task 5 retargets it to the settlement digest).
 
-- [ ] **Step 4: Run the new test — PASS.** Expect a wave of failures in old rev-1 lifecycle tests; that is Task 7's sweep, not a reason to revert. Verify specifically:
+- [x] **Step 4: Run the new test — PASS.** Expect a wave of failures in old rev-1 lifecycle tests; that is Task 7's sweep, not a reason to revert. Verify specifically:
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py::test_round2_settles_payment_same_round_then_requests_restart -q`
 
-- [ ] **Step 5: Commit** — `feat(arena): same-round settlement phase order (rev 2)`
+- [x] **Step 5: Commit** — `feat(arena): same-round settlement phase order (rev 2)`
 
 ---
 
@@ -222,7 +231,7 @@ Run: `uv run pytest tests/arena/test_live_gate_channels.py::test_round2_settles_
 - Consumes: Task 2's phase order.
 - Produces: journal `data_recorded` payloads `settlement_baseline` (`{"turn", "payer_gold", "payee_gold"}`) and `settlement_result` (same keys), plus `settlement_digest` (16-hex string from `_digest_mapping`). Tasks 5–6 verify against `settlement_digest`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 @pytest.mark.asyncio
@@ -266,11 +275,11 @@ async def test_settlement_delta_mismatch_fails_closed(tmp_path):
 
 `ChannelsCoreDriver` (`live_gate_channels.py:215`) is the driver class holding the `_digest_mapping` staticmethod.
 
-- [ ] **Step 2: Run to verify both fail** (no `settlement_baseline` key yet).
+- [x] **Step 2: Run to verify both fail** (no `settlement_baseline` key yet).
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k settlement_`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 a. Baseline write-ahead, in `_seat_turn_inner`, immediately before `self._emit_api(...)` when `role == ROLE_API and phase == PHASE_FUND_UPFRONT`, guarded for recovery replays:
 
@@ -374,11 +383,11 @@ d. Delta verification + digest, in the ACCEPT_UPFRONT_PAYMENT advance branch, af
             self._update_payment_checkpoint(settlement_digest=digest)
 ```
 
-- [ ] **Step 4: Run the two tests — PASS.**
+- [x] **Step 4: Run the two tests — PASS.**
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k settlement_`
 
-- [ ] **Step 5: Commit** — `feat(arena): durable same-turn settlement evidence (rev 2)`
+- [x] **Step 5: Commit** — `feat(arena): durable same-turn settlement evidence (rev 2)`
 
 ---
 
@@ -392,7 +401,7 @@ Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k settlement_`
 - Consumes: Task 2's phase order (CLI acts in R2).
 - Produces: terminal failure reason `official_payment_auto_resolved` whenever the offer is not `exact` at acceptance time and the channel deal is not already settled.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 @pytest.mark.asyncio
@@ -408,11 +417,11 @@ async def test_auto_resolved_offer_at_acceptance_is_distinct_terminal(tmp_path):
     assert state.reason == "official_payment_auto_resolved"
 ```
 
-- [ ] **Step 2: Run to verify it fails** — today the CLI's `respond_to_payment` produces a runtime error ack (`NO_EXACT_CHANNEL_PAYMENT`) and a generic failure, not the distinct reason.
+- [x] **Step 2: Run to verify it fails** — today the CLI's `respond_to_payment` produces a runtime error ack (`NO_EXACT_CHANNEL_PAYMENT`) and a generic failure, not the distinct reason.
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py::test_auto_resolved_offer_at_acceptance_is_distinct_terminal -q`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 a. Add `"official_payment_auto_resolved"` to `_PUBLIC_FAILURE_CODES`.
 
@@ -445,11 +454,11 @@ b. In `_seat_turn_inner`, before the `_emit_cli(...)` return, when the CLI is ab
                     return base_result
 ```
 
-- [ ] **Step 4: Run the test — PASS.** Also re-run Task 2/3 tests to confirm the happy path still settles.
+- [x] **Step 4: Run the test — PASS.** Also re-run Task 2/3 tests to confirm the happy path still settles.
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k "auto_resolved or settlement_ or same_round"`
 
-- [ ] **Step 5: Commit** — `feat(arena): distinct official_payment_auto_resolved forensic (rev 2)`
+- [x] **Step 5: Commit** — `feat(arena): distinct official_payment_auto_resolved forensic (rev 2)`
 
 ---
 
@@ -463,7 +472,7 @@ Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k "auto_resolved 
 - Consumes: Task 3's `settlement_digest`.
 - Produces: `_request_restart` that performs no game query; re-arm on attach keyed to `state.data["settlement_digest"]`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 @pytest.mark.asyncio
@@ -500,9 +509,9 @@ async def test_restart_without_settlement_digest_fails(tmp_path):
 
 If `state.data` is immutable in Step 1's sabotage, monkeypatch `driver._digest_mapping` inconsistency instead — the intent is: checkpoint must fail when the digest is missing or does not recompute.
 
-- [ ] **Step 2: Run to verify both fail** (checkpoint currently queries live state → 3 calls; missing digest is currently ignored).
+- [x] **Step 2: Run to verify both fail** (checkpoint currently queries live state → 3 calls; missing digest is currently ignored).
 
-- [ ] **Step 3: Implement — rewrite `_request_restart`**
+- [x] **Step 3: Implement — rewrite `_request_restart`**
 
 ```python
     async def _request_restart(self, turn: int) -> None:
@@ -554,11 +563,11 @@ Delete `_live_offer_fingerprint` (now unused) and change the attach re-arm line 
             )
 ```
 
-- [ ] **Step 4: Run both tests — PASS.**
+- [x] **Step 4: Run both tests — PASS.**
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k "restart_checkpoint or restart_without"`
 
-- [ ] **Step 5: Commit** — `feat(arena): restart checkpoint anchors on settlement digest (rev 2)`
+- [x] **Step 5: Commit** — `feat(arena): restart checkpoint anchors on settlement digest (rev 2)`
 
 ---
 
@@ -572,7 +581,7 @@ Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k "restart_checkp
 - Consumes: Tasks 3 and 5 (digest present at resume).
 - Produces: resume that requires SETTLED payment, digest recompute equality, `absent` live payment-state, single settlement ack ≤ `restart_turn`, none after; advances to `await_upfront_favor_deadline`.
 
-- [ ] **Step 1: Write the failing tests** (mirror the file's existing resume idiom — reattach a fresh driver over the same `run_dir`):
+- [x] **Step 1: Write the failing tests** (mirror the file's existing resume idiom — reattach a fresh driver over the same `run_dir`):
 
 ```python
 @pytest.mark.asyncio
@@ -598,9 +607,9 @@ async def test_resume_with_stray_official_offer_fails(tmp_path):
 
 Use the existing reattach helper if the file has one (see `test_resume_verifies_offer_and_continues` at ~`:1248` for the established construction); otherwise extract `reattach_driver` from that test verbatim.
 
-- [ ] **Step 2: Run to verify failures** — today resume demands payment OFFERED (now SETTLED) so the happy resume fails, and a stray offer passes.
+- [x] **Step 2: Run to verify failures** — today resume demands payment OFFERED (now SETTLED) so the happy resume fails, and a stray offer passes.
 
-- [ ] **Step 3: Implement — inside `_verify_restart`**, replacing the OFFERED check and the fingerprint-equality block:
+- [x] **Step 3: Implement — inside `_verify_restart`**, replacing the OFFERED check and the fingerprint-equality block:
 
 ```python
         deal = self._deal(state.data.get("upfront_deal_id"))
@@ -661,11 +670,11 @@ Then adjust the acknowledgement discipline: keep the existing "no ack **after** 
 
 `ChannelAcknowledgement` (`channels.py:102`) carries `player_id, turn, source_id, status, message, deal_id` — there is no action-name field, so identify the settlement ack by its journaled plan: the `verified_actions` entry whose `name` is `"respond_to_payment"` holds the `source_id`; count acks whose `source_id` equals it. Fail with `{"failure": "settlement_acknowledgement_count", "count": len(settled_acks)}` unless that count is exactly one.
 
-- [ ] **Step 4: Run the resume tests — PASS.**
+- [x] **Step 4: Run the resume tests — PASS.**
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k resume`
 
-- [ ] **Step 5: Commit** — `feat(arena): rev-2 resume verification — settled evidence + absent offer`
+- [x] **Step 5: Commit** — `feat(arena): rev-2 resume verification — settled evidence + absent offer`
 
 ---
 
@@ -679,22 +688,22 @@ Run: `uv run pytest tests/arena/test_live_gate_channels.py -q -k resume`
 - Consumes: Tasks 1–6.
 - Produces: 100% green suite where every lifecycle expectation matches the authoritative eight-round table at the top of this plan.
 
-- [ ] **Step 1: Run the full arena gate test file and list failures**
+- [x] **Step 1: Run the full arena gate test file and list failures**
 
 Run: `uv run pytest tests/arena/test_live_gate_channels.py -q`
 
-- [ ] **Step 2: Fix each failing test against the eight-round table.** Known categories (verify each against the table, do not guess):
+- [x] **Step 2: Fix each failing test against the eight-round table.** Known categories (verify each against the table, do not guess):
   - Tests that drove `respond_to_payment` after resume (e.g. `test_resume_verifies_offer_and_continues`, `test_resume_with_changed_offer_fails`, `test_resume_with_absent_offer_fails`): the payment now settles pre-restart. Changed/absent-offer variants become Task 6's stray-offer/digest-mismatch cases; delete duplicates that Task 6 already covers rather than keeping parallel copies.
   - Deadline tests pinned to turns 12–18: shift one round earlier per the table (up-front favor due turn 12; on-delivery propose 13, accept 14, favor due 15, `fund_by_turn` 17; breach at 17).
   - Crash/reconcile tests exercising the `FUND_UPFRONT → RESTART_REQUIRED` chain: retarget to `FUND_UPFRONT → ACCEPT_UPFRONT_PAYMENT` and `ACCEPT_UPFRONT_PAYMENT → RESTART_REQUIRED` chains.
   - `test_restart_checkpoint_persists_fingerprint_and_result` and payment-checkpoint reconcile tests: the private checkpoint now carries `settlement_digest` in addition to `recorded`.
   - Terminal-PASS lifecycle test: total rounds 8, captures 24.
-- [ ] **Step 3: Full suite**
+- [x] **Step 3: Full suite**
 
 Run: `uv run pytest tests -q`
 Expected: all green (baseline was 1930; net count will shift with added/removed tests).
 
-- [ ] **Step 4: Commit** — `test(arena): migrate gate lifecycle suite to rev-2 eight-round schedule`
+- [x] **Step 4: Commit** — `test(arena): migrate gate lifecycle suite to rev-2 eight-round schedule`
 
 ---
 
@@ -705,9 +714,9 @@ Expected: all green (baseline was 1930; net count will shift with added/removed 
 
 **Steps:**
 
-- [ ] **Step 1:** `uv run pytest tests/arena/test_experiment.py tests/arena/test_config.py -q` — config validation accepts the 36 budgets against the computed 24 minimum.
-- [ ] **Step 2:** Confirm no stale references: `grep -rn 'gate-v2\|nine-round\|27 seat' src tests docs/superpowers/specs experiments` → only historical mentions (run directories, v2 postmortems) may remain; no live config/code/test may reference them as current.
-- [ ] **Step 3: Commit** any stragglers — `chore(arena): rev-2 rerun readiness`.
+- [x] **Step 1:** `uv run pytest tests/arena/test_experiment.py tests/arena/test_config.py -q` — config validation accepts the 36 budgets against the computed 24 minimum.
+- [x] **Step 2:** Confirm no stale references: `grep -rn 'gate-v2\|nine-round\|27 seat' src tests docs/superpowers/specs experiments` → only historical mentions (run directories, v2 postmortems) may remain; no live config/code/test may reference them as current.
+- [x] **Step 3: Commit** any stragglers — `chore(arena): rev-2 rerun readiness`.
 
 **Live procedure after this plan (operator-attended, not part of the plan):** reload `CHANNELS_GATE_V1_T157`, arm via the `civ6-arena-live` workflow with run `arena-channels-core-gate-v3`, two-invocation exit-75 handshake, rearm fast in the gap, expect terminal PASS at R8.
 
