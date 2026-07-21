@@ -3460,6 +3460,60 @@ async def test_response_intent_recovery_ignores_stale_engine_retry_inputs(
 
 
 @pytest.mark.asyncio
+async def test_pending_response_recovery_reason_survives_replay(
+    tmp_path, payment_gs
+):
+    # No `offered_payment_deal` helper exists; build the offered deal the
+    # same way the other response-recovery tests do (accept, satisfy the
+    # favor, then fund).
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="on_delivery",
+    )
+    await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    deal = rt.deal(deal.id)
+    rt._commit(
+        "payment_response_intent",
+        payment_response_intent_payload(deal, "src-resp-pending", accept=True),
+    )
+    payment_gs.pending[(deal.proposer, deal.counterparty)] = (
+        ExactPaymentOffer(
+            deal.proposer, deal.counterparty, deal.payment_gold + 1
+        )
+    )
+    payment_gs.local_player = deal.counterparty
+    reopened = runtime(tmp_path)
+    await reopened.reconcile_payment_intents(
+        payment_gs, current_turn=4, current_player_id=deal.counterparty
+    )
+    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
+    # The written journal must replay through the validator.
+    replayed = runtime(tmp_path)
+    assert replayed.deal(deal.id).state is DealState.UNVERIFIABLE
+
+
+def test_response_pending_reasons_are_shared_with_the_writer():
+    from civ_mcp.arena import channel_runtime as cr
+
+    assert cr._response_pending_reason("exact") in (
+        cr._RESPONSE_PENDING_REASONS
+    )
+    assert cr._response_pending_reason("conflicting") in (
+        cr._RESPONSE_PENDING_REASONS
+    )
+    assert len(cr._RESPONSE_PENDING_REASONS) == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("intent_kind", ["fund", "response"])
 async def test_recovery_rejects_regressed_turn_before_query_or_append(
     tmp_path,

@@ -64,6 +64,20 @@ _INCOMPLETE_ACCEPTANCE_REASON = (
 ENACTED_ABSENT_RESULT = "CHANNEL_PAYMENT_ENACTED_ABSENT"
 
 
+def _response_pending_reason(status: str) -> str:
+    """Single source for the writer and the replay validator — the journal
+    self-poisons if the two ever drift."""
+    return (
+        "payment response intent outcome is ambiguous because an offer is "
+        f"unexpectedly {status}"
+    )
+
+
+_RESPONSE_PENDING_REASONS = frozenset(
+    _response_pending_reason(status) for status in ("exact", "conflicting")
+)
+
+
 class ChannelStateError(RuntimeError):
     """Canonical channel state cannot be opened safely."""
 
@@ -1301,17 +1315,11 @@ class ChannelRuntime:
             elif recovery == "conflicting_offer":
                 if engine_result != "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING":
                     raise ValueError("invalid payment-response preflight recovery")
-                reasons = {
-                    "payment response intent outcome is ambiguous because "
-                    "an offer is unexpectedly exact",
-                    "payment response intent outcome is ambiguous because "
-                    "an offer is unexpectedly conflicting",
-                }
                 expected_deal = cls._expected_unverifiable_result(
                     deal,
                     deal_payload,
                     intent,
-                    reasons,
+                    _RESPONSE_PENDING_REASONS,
                 )
             else:
                 raise ValueError("unknown payment-response recovery outcome")
@@ -2563,10 +2571,7 @@ class ChannelRuntime:
                 unverifiable = self._unverifiable_deal_record(
                     deal,
                     turn=current_turn,
-                    reason=(
-                        "payment response intent outcome is ambiguous because "
-                        f"an offer is unexpectedly {status}"
-                    ),
+                    reason=_response_pending_reason(status),
                 )
                 self._commit_payment_result(
                     "payment_response_result",
