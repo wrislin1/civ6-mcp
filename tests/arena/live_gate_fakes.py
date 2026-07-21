@@ -28,10 +28,9 @@ class PaymentStateView:
 
 
 class GateGameState:
-    """Complete observations + an exact-payment engine + the minimal
+    """Complete observations + synchronous payment enactment + the minimal
     overview/units surface ScriptedPolicy needs. Result strings mirror the
-    live engine wrappers (channel_runtime._funding_succeeded /
-    _response_succeeded)."""
+    live engine wrappers."""
 
     def __init__(self):
         self.active_player = 0
