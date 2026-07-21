@@ -31,6 +31,7 @@ from civ_mcp.arena.live_gate import (
     resolve_scenario,
 )
 from civ_mcp.arena import live_gate_channels as lgc
+import civ_mcp.arena.channel_runtime as cr
 from civ_mcp.arena.transcript import TranscriptSink, serialize_transcript_record
 from .live_gate_fakes import GateGameState, run_gate_round, run_gate_seat
 
@@ -520,27 +521,35 @@ async def test_round2_funding_offers_exact_payment(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_auto_resolved_offer_at_acceptance_is_distinct_terminal(tmp_path):
-    driver, runtime, gs = await attached_driver(tmp_path)
+async def test_pending_offer_at_response_is_official_payment_unexpectedly_pending(
+    tmp_path,
+):
+    from civ_mcp.lua.channel_payments import ExactPaymentOffer
+
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
-    # R2: API funds, then the engine AI eats the offer before the CLI window.
     await run_gate_seat(driver, runtime, gs, 1, 11)
-    gs.pending.clear()          # simulate engine auto-resolution
+    gs.pending[(1, 2)] = ExactPaymentOffer(1, 2, 1)
+
     await run_gate_seat(driver, runtime, gs, 2, 11)
+
     state = driver._journal.state
-    assert state.status == "failed"
-    assert state.reason == "official_payment_auto_resolved"
+    assert state.status == GATE_FAILED
+    assert state.reason == "official_payment_unexpectedly_pending"
+    assert "official_payment_unexpectedly_pending" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio
 async def test_pre_acceptance_recorded_status_is_reused_without_live_query(tmp_path):
-    driver, runtime, gs = await attached_driver(tmp_path)
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_seat(driver, runtime, gs, 1, 11)
     driver._journal.append(
-        "data_recorded", {"data": {"pre_acceptance_payment_status": "exact"}}
+        "data_recorded", {"data": {"pre_acceptance_payment_status": "absent"}}
     )
-    assert driver._journal.state.data["pre_acceptance_payment_status"] == "exact"
+    assert driver._journal.state.data["pre_acceptance_payment_status"] == "absent"
     calls = []
     original = gs.get_channel_payment_state
 
@@ -551,8 +560,8 @@ async def test_pre_acceptance_recorded_status_is_reused_without_live_query(tmp_p
     gs.get_channel_payment_state = counted_payment_state_query
     await run_gate_seat(driver, runtime, gs, 2, 11)
 
-    # The channel runtime still validates the payment during the real action;
-    # the pre-acceptance guard must not add another live read.
+    # The channel runtime validates the payment during the real action; the
+    # pre-response guard must not add another live read.
     assert calls == [(1, 2, 1)]
     assert driver._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
 
@@ -962,35 +971,31 @@ async def reattach_driver(tmp_path, runtime, gs):
 
 
 @pytest.mark.asyncio
-async def test_round2_settles_payment_same_round_then_requests_restart(tmp_path):
-    driver, runtime, gs = await attached_driver(tmp_path)
+async def test_cli_response_proceeds_when_enacted_payment_absent(tmp_path):
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
-    assert driver._journal.state.phase == lgc.PHASE_FUND_UPFRONT
+    await run_gate_seat(driver, runtime, gs, 1, 11)
 
-    await run_gate_round(driver, runtime, gs, 11)
+    await run_gate_seat(driver, runtime, gs, 2, 11)
 
     state = driver._journal.state
-    assert state.status == "restart_required"
-    assert state.data["pre_acceptance_payment_status"] == "exact"
-    assert len(
-        data_events_for_key(driver, "pre_acceptance_payment_status")
-    ) == 1
-    # The official payment is consumed inside R2 — settled, not pending.
-    assert gs.pending == {}
-    assert gs.treasury[1] == 499
-    assert gs.treasury[2] == 501
-    phases = [
-        event["payload"]["phase"]
-        for event in read_events(driver)
-        if event["kind"] == "phase_advanced"
+    assert state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert state.data["pre_acceptance_payment_status"] == "absent"
+    assert len(data_events_for_key(driver, "pre_acceptance_payment_status")) == 1
+    deal = deals(runtime)[state.data["upfront_deal_id"]]
+    assert deal.payment_status is PaymentStatus.SETTLED
+    runtime_events = [
+        json.loads(line)
+        for line in runtime.events_path.read_text().splitlines()
     ]
-    assert phases == [
-        lgc.PHASE_CANARY_AND_UPFRONT_PROPOSAL,
-        lgc.PHASE_ACCEPT_UPFRONT,
-        lgc.PHASE_FUND_UPFRONT,
-        lgc.PHASE_ACCEPT_UPFRONT_PAYMENT,
-        lgc.PHASE_RESTART_REQUIRED,
+    response_results = [
+        event for event in runtime_events
+        if event["kind"] == "payment_response_result"
     ]
+    assert response_results[-1]["payload"]["engine_result"] == (
+        cr.ENACTED_ABSENT_RESULT
+    )
 
 
 async def drive_to_funding_offer_without_gate_capture(tmp_path):
@@ -2012,22 +2017,6 @@ async def test_restart_verification_crash_replays_atomic_next_phase(tmp_path):
         == lgc.PHASE_AWAIT_UPFRONT_FAVOR_DEADLINE
     )
     assert not replayed._journal.result_path.exists()
-
-
-@pytest.mark.asyncio
-async def test_official_payment_auto_resolved_fails_before_restart(tmp_path):
-    gs = GateGameState()
-    driver, runtime, _ = await attached_driver(tmp_path, gs=gs)
-    await run_gate_round(driver, runtime, gs, 10)
-    await run_gate_seat(driver, runtime, gs, 1, 11)
-
-    gs.pending.clear()
-    await run_gate_seat(driver, runtime, gs, 2, 11)
-    await run_gate_seat(driver, runtime, gs, 3, 11)
-
-    assert driver.pending_signal() == GATE_FAILED
-    assert driver._journal.state.reason == "official_payment_auto_resolved"
-    assert "official_payment_auto_resolved" in private_failure_text(driver)
 
 
 @pytest.mark.asyncio

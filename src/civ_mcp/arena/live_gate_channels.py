@@ -1104,9 +1104,9 @@ class ChannelsCoreDriver:
                         failure="pre_acceptance_payment_status_mismatch",
                     ):
                         return base_result
-                if status != "exact":
+                if status != "absent":
                     self._fail(
-                        "official_payment_auto_resolved",
+                        "official_payment_unexpectedly_pending",
                         detail={
                             "payer": self.role_pid[ROLE_API],
                             "payee": self.role_pid[ROLE_CLI],
