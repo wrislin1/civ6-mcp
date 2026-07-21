@@ -1113,7 +1113,7 @@ def test_loads_seat0_llm_smoke_artifact():
 def test_checked_in_channels_core_gate_experiment_validates():
     cfg = load_experiment(CHANNELS_CORE_SMOKE)
 
-    assert cfg.run_id == "arena-channels-core-gate-v3"
+    assert cfg.run_id == "arena-channels-core-gate-v4"
     assert cfg.live_gate.enabled is True
     assert cfg.live_gate.scenario == "unofficial_channels_core_v1"
     assert cfg.live_gate.roles == (
