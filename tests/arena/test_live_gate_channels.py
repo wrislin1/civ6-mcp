@@ -572,6 +572,64 @@ async def test_pre_acceptance_payment_state_query_failure_is_explicit(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_pre_acceptance_none_payment_state_is_unreadable_not_pending(
+    tmp_path,
+):
+    gs = GateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    async def unreadable(payer, payee, gold):
+        return None
+
+    gs.get_channel_payment_state = unreadable
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "payment_state_failed"
+    assert private_failure_details(driver)[-1]["failure"] == (
+        "pre_acceptance_payment_state_unreadable"
+    )
+    assert "pre_acceptance_payment_status" not in state.data
+
+
+@pytest.mark.asyncio
+async def test_post_send_none_payment_state_is_unreadable_not_pending(tmp_path):
+    gs = GateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    # _fund_deal's own ordered-pair preflight (channel_runtime.py) queries
+    # get_channel_payment_state before the send; the driver's
+    # _record_settlement_result queries it again after, to verify
+    # enactment. A blanket None stub would intercept the preflight too and
+    # reject the action before the post-send read is ever reached, so let
+    # the first (preflight) call through and only go unreadable after.
+    original = gs.get_channel_payment_state
+    calls = 0
+
+    async def unreadable_after_send(payer, payee, gold):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return await original(payer, payee, gold)
+        return None
+
+    gs.get_channel_payment_state = unreadable_after_send
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "payment_state_failed"
+    assert private_failure_details(driver)[-1]["failure"] == (
+        "post_send_payment_state_unreadable"
+    )
+    assert "post_send_payment_status" not in state.data
+
+
+@pytest.mark.asyncio
 async def test_cli_line_is_exact_single_channel_line(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
     gs.active_player = 1

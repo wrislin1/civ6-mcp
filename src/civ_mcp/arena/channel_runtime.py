@@ -2118,7 +2118,13 @@ class ChannelRuntime:
                 "could not verify the ordered-pair payment state: "
                 f"{type(exc).__name__}"
             ) from exc
-        if self._payment_state_status(payment_state, deal) != "absent":
+        status = self._payment_state_status(payment_state, deal)
+        if status is None:
+            raise _ActionRejected(
+                "could not verify the ordered-pair payment state: "
+                "state unreadable"
+            )
+        if status != "absent":
             raise _ActionRejected(
                 "the ordered pair already has a pending or conflicting deal"
             )
@@ -2265,8 +2271,15 @@ class ChannelRuntime:
                 "could not verify the exact linked payment: "
                 f"{type(exc).__name__}"
             ) from exc
-        if self._payment_state_status(payment_state, deal) != "absent":
-            raise _ActionRejected("the linked payment offer is unexpectedly pending")
+        status = self._payment_state_status(payment_state, deal)
+        if status is None:
+            raise _ActionRejected(
+                "could not verify the exact linked payment: state unreadable"
+            )
+        if status != "absent":
+            raise _ActionRejected(
+                "the linked payment offer is unexpectedly pending"
+            )
         intent = self._payment_intent_payload(
             deal,
             staged,

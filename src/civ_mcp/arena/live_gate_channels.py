@@ -1098,12 +1098,34 @@ class ChannelsCoreDriver:
                         return base_result
                     status = getattr(payment_state, "status", None)
                     status = getattr(status, "value", status)
+                    if status is None:
+                        self._fail(
+                            "payment_state_failed",
+                            detail={
+                                "failure": (
+                                    "pre_acceptance_payment_state_unreadable"
+                                ),
+                                "state": repr(payment_state),
+                            },
+                        )
+                        return base_result
                     if not self._record_data_once(
                         {"pre_acceptance_payment_status": status},
                         reason_code="payment_state_failed",
                         failure="pre_acceptance_payment_status_mismatch",
                     ):
                         return base_result
+                if status is None:
+                    self._fail(
+                        "payment_state_failed",
+                        detail={
+                            "failure": (
+                                "pre_acceptance_payment_state_unreadable"
+                            ),
+                            "state": "journaled status is None",
+                        },
+                    )
+                    return base_result
                 if status != "absent":
                     self._fail(
                         "official_payment_unexpectedly_pending",
@@ -1396,6 +1418,15 @@ class ChannelsCoreDriver:
             return False
         status = getattr(payment_state, "status", None)
         status = getattr(status, "value", status)
+        if status is None:
+            self._fail(
+                "payment_state_failed",
+                detail={
+                    "failure": "post_send_payment_state_unreadable",
+                    "state": repr(payment_state),
+                },
+            )
+            return False
         return self._record_data_once(
             {"settlement_result": result, "post_send_payment_status": status},
             reason_code="payment_checkpoint_failed",

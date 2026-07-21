@@ -2759,6 +2759,57 @@ async def test_payment_response_rejects_unexpectedly_pending_offer(
 
 
 @pytest.mark.asyncio
+async def test_respond_rejects_unreadable_payment_state_as_unreadable(
+    tmp_path, payment_gs
+):
+    # No `offered_payment_deal` helper exists; build the offered deal the
+    # same way the other respond-path tests do (accept, then fund).
+    rt, deal = await accepted_payment_deal(
+        tmp_path, payment_gs, timing="up_front"
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    payment_gs.state_results.append(None)
+    ack = await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.counterparty,
+        "respond_to_payment",
+        {"deal_id": deal.id, "accept": True},
+        turn=4,
+    )
+    assert ack.status == "rejected"
+    assert "unreadable" in ack.message
+    assert "unexpectedly pending" not in ack.message
+
+
+@pytest.mark.asyncio
+async def test_fund_rejects_unreadable_payment_state_as_unreadable(
+    tmp_path, payment_gs
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path, payment_gs, timing="up_front"
+    )
+    payment_gs.state_results.append(None)
+    ack = await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    assert ack.status == "rejected"
+    assert "unreadable" in ack.message
+
+
+@pytest.mark.asyncio
 async def test_open_rejects_payment_response_intent_with_legacy_exact_preflight(
     tmp_path,
     payment_gs,
