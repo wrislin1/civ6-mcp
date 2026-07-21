@@ -168,26 +168,11 @@ async def attached_driver(tmp_path, cfg=None, gs=None):
     return driver, runtime, gs
 
 
-class SynchronousPaymentGateGameState(GateGameState):
-    async def offer_channel_payment(self, payee, gold):
-        payer = self.active_player
-        if (payer, payee) in self.pending:
-            return "Error: CHANNEL_PAYMENT_PENDING_DEAL"
-        self.treasury[payer] -= gold
-        self.treasury[payee] += gold
-        return "CHANNEL_PAYMENT_PROPOSED"
-
-    async def respond_to_channel_payment(self, payer, gold, accept):
-        raise AssertionError(
-            "revision 3: nothing may mutate the engine at payment response"
-        )
-
-
 @pytest.mark.asyncio
 async def test_fund_capture_records_settlement_result_and_post_send_status(
     tmp_path,
 ):
-    gs = SynchronousPaymentGateGameState()
+    gs = GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
 
@@ -210,7 +195,7 @@ async def test_fund_capture_records_settlement_result_and_post_send_status(
 
 @pytest.mark.asyncio
 async def test_fund_hop_verifies_enactment_and_records_digest(tmp_path):
-    gs = SynchronousPaymentGateGameState()
+    gs = GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
 
@@ -238,7 +223,7 @@ async def test_fund_hop_fails_official_payment_not_enacted_on_pending_state(
 ):
     from .live_gate_fakes import PaymentStateView
 
-    gs = SynchronousPaymentGateGameState()
+    gs = GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
     original = gs.get_channel_payment_state
@@ -258,7 +243,7 @@ async def test_fund_hop_fails_official_payment_not_enacted_on_pending_state(
     assert "official_payment_not_enacted" in private_failure_text(driver)
 
 
-class NoTransferPaymentGateGameState(SynchronousPaymentGateGameState):
+class NoTransferPaymentGateGameState(GateGameState):
     async def offer_channel_payment(self, payee, gold):
         payer = self.active_player
         if (payer, payee) in self.pending:
@@ -503,7 +488,7 @@ async def test_round1_canary_proposal_and_acceptance(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_round2_funding_offers_exact_payment(tmp_path):
+async def test_round2_funding_enacts_payment_synchronously(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_seat(driver, runtime, gs, 1, 11)
@@ -515,9 +500,11 @@ async def test_round2_funding_offers_exact_payment(tmp_path):
     public = public_gate_text(driver)
     assert "upfront_payment_fingerprint" not in public
     assert json.dumps(exact_payment_fingerprint(), sort_keys=True) not in public
-    from civ_mcp.lua.channel_payments import ExactPaymentOffer
-
-    assert gs.pending[(1, 2)] == ExactPaymentOffer(1, 2, 1)
+    assert gs.pending == {}
+    assert gs.treasury[1] == 499
+    assert gs.treasury[2] == 501
+    assert driver._journal.state.data["post_send_payment_status"] == "absent"
+    assert "settlement_digest" in driver._journal.state.data
 
 
 @pytest.mark.asyncio
@@ -526,7 +513,7 @@ async def test_pending_offer_at_response_is_official_payment_unexpectedly_pendin
 ):
     from civ_mcp.lua.channel_payments import ExactPaymentOffer
 
-    gs = SynchronousPaymentGateGameState()
+    gs = GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_seat(driver, runtime, gs, 1, 11)
@@ -542,7 +529,7 @@ async def test_pending_offer_at_response_is_official_payment_unexpectedly_pendin
 
 @pytest.mark.asyncio
 async def test_pre_acceptance_recorded_status_is_reused_without_live_query(tmp_path):
-    gs = SynchronousPaymentGateGameState()
+    gs = GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_seat(driver, runtime, gs, 1, 11)
@@ -972,7 +959,7 @@ async def reattach_driver(tmp_path, runtime, gs):
 
 @pytest.mark.asyncio
 async def test_cli_response_proceeds_when_enacted_payment_absent(tmp_path):
-    gs = SynchronousPaymentGateGameState()
+    gs = GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
     await run_gate_seat(driver, runtime, gs, 1, 11)
@@ -1009,7 +996,10 @@ async def drive_to_funding_offer_without_gate_capture(tmp_path):
     result = await driver.policy_for(1)(gs, 1, 11)
     acknowledgements = await runtime.finish_player(gs, admission, result)
     assert [ack.status for ack in acknowledgements] == ["applied"]
-    assert await gs.get_channel_payment_state(1, 2, 1)
+    payment_state = await gs.get_channel_payment_state(1, 2, 1)
+    assert payment_state.status == "absent"
+    assert gs.treasury[1] == 499
+    assert gs.treasury[2] == 501
     return driver, runtime, gs
 
 
@@ -1081,6 +1071,7 @@ async def test_settlement_records_baselines_deltas_and_digest(tmp_path):
     assert data["settlement_result"] == {
         "turn": 11, "payer_gold": 499, "payee_gold": 501,
     }
+    assert data["post_send_payment_status"] == "absent"
     expected = lgc.ChannelsCoreDriver._digest_mapping({
         "fingerprint": exact_payment_fingerprint(),
         "baseline": data["settlement_baseline"],
@@ -1105,7 +1096,12 @@ async def test_pending_payment_ack_recovery_records_settlement_before_capture(
     assert len(acknowledgements) == 1
     assert gs.pending == {}
     assert gs.treasury == {1: 499, 2: 501, 3: 500}
-    assert "settlement_result" not in driver._journal.state.data
+    assert driver._journal.state.data["settlement_result"] == {
+        "turn": 11,
+        "payer_gold": 499,
+        "payee_gold": 501,
+    }
+    assert driver._journal.state.data["post_send_payment_status"] == "absent"
 
     resumed = lgc.ChannelsCoreDriver(gate_config())
     await resumed.attach(
@@ -1201,18 +1197,20 @@ async def test_action_verified_crash_reconstructs_recovered_settlement_capture(
     )
 
     assert resumed.pending_signal() is None
-    assert resumed._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
     assert resumed._journal.state.capture_started_turn is None
-    assert 2 not in resumed._journal.state.captured_players
-    assert "settlement_result" not in resumed._journal.state.data
+    assert 2 in resumed._journal.state.captured_players
+    assert resumed._journal.state.data["settlement_result"] == {
+        "turn": 11,
+        "payer_gold": 499,
+        "payee_gold": 501,
+    }
+    assert resumed._journal.state.data["post_send_payment_status"] == "absent"
     assert treasury_observations == []
 
     await run_gate_seat(resumed, runtime, gs, 3, 11)
 
-    assert [
-        (player_id, turn)
-        for player_id, turn, _request in treasury_observations
-    ] == [(1, 11), (2, 11)]
+    assert treasury_observations == []
     assert len(data_events_for_key(resumed, "settlement_result")) == 1
     assert gs.treasury == {1: 499, 2: 501, 3: 500}
     cli_acks = [
@@ -1280,7 +1278,12 @@ async def test_action_verified_crash_rejects_rogue_same_turn_acknowledgement(
 
     assert resumed.pending_signal() == GATE_FAILED
     assert resumed._journal.state.reason == "unexpected_acknowledgement"
-    assert "settlement_result" not in resumed._journal.state.data
+    assert resumed._journal.state.data["settlement_result"] == {
+        "turn": 11,
+        "payer_gold": 499,
+        "payee_gold": 501,
+    }
+    assert resumed._journal.state.data["post_send_payment_status"] == "absent"
     assert resumed._journal.state.capture_started_turn is None
     assert rogue.source_id not in public_gate_text(resumed)
     assert rogue.source_id in private_failure_text(resumed)
@@ -1294,7 +1297,7 @@ async def test_settlement_result_append_crash_reconstructs_normal_capture(
     class SimulatedCrash(BaseException):
         pass
 
-    gs = SynchronousPaymentGateGameState()
+    gs = GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
 
@@ -1351,7 +1354,7 @@ async def test_settlement_data_append_crash_replays_without_duplicate(
     class SimulatedCrash(BaseException):
         pass
 
-    gs = SynchronousPaymentGateGameState()
+    gs = GateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
 
@@ -1463,9 +1466,10 @@ async def test_restart_checkpoint_uses_no_live_payment_query(tmp_path):
     gs.get_channel_payment_state = counting_state
     await run_gate_round(driver, runtime, gs, 11)
     assert driver._journal.state.status == "restart_required"
-    # Funding, CLI pre-acceptance, and same-round settlement verification are
-    # the only R2 live payment-state queries; the restart checkpoint adds none.
-    assert len(calls) == 3
+    # Funding preflight, post-send settlement check, driver pre-acceptance
+    # guard, and runtime response preflight are the R2 payment-state queries;
+    # the restart checkpoint adds none.
+    assert len(calls) == 4
 
 
 @pytest.mark.asyncio

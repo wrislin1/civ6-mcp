@@ -66,10 +66,14 @@ class GateGameState:
         )
 
     async def offer_channel_payment(self, payee, gold):
+        # Observed engine truth (2026-07-20 lifecycle probe): an AI->AI
+        # PROPOSED deal is enacted synchronously at send -- the gold moves
+        # before the first observable poll and nothing is ever pending.
         payer = self.active_player
         if (payer, payee) in self.pending:
             return "Error: CHANNEL_PAYMENT_PENDING_DEAL"
-        self.pending[(payer, payee)] = ExactPaymentOffer(payer, payee, gold)
+        self.treasury[payer] -= gold
+        self.treasury[payee] += gold
         return "CHANNEL_PAYMENT_PROPOSED"
 
     async def get_channel_payment_state(self, payer, payee, gold):
@@ -82,16 +86,9 @@ class GateGameState:
         return PaymentStateView("conflicting")
 
     async def respond_to_channel_payment(self, payer, gold, accept):
-        payee = self.active_player
-        expected = ExactPaymentOffer(payer, payee, gold)
-        if self.pending.get((payer, payee)) != expected:
-            return "Error: NO_EXACT_CHANNEL_PAYMENT"
-        del self.pending[(payer, payee)]
-        if accept:
-            self.treasury[payer] -= gold
-            self.treasury[payee] += gold
-            return "CHANNEL_PAYMENT_ACCEPTED"
-        return "CHANNEL_PAYMENT_REJECTED"
+        raise AssertionError(
+            "revision 3: nothing may mutate the engine at payment response"
+        )
 
 
 async def run_gate_seat(
