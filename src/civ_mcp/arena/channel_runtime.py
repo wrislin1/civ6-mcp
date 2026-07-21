@@ -2147,7 +2147,6 @@ class ChannelRuntime:
                 "an unresolved payment intent requires reconciliation"
             )
         success_deal = None
-        cleanup_deal = None
         cleanup = None
         if action.accept:
             try:
@@ -2159,14 +2158,6 @@ class ChannelRuntime:
                 )
             except _IncompleteFavorObservation:
                 cleanup = _INCOMPLETE_ACCEPTANCE_CLEANUP
-                cleanup_deal = self._unverifiable_deal_record(
-                    deal,
-                    turn=turn,
-                    reason=_INCOMPLETE_ACCEPTANCE_REASON,
-                    evidence_refs=(
-                        (observation_id,) if observation_id is not None else ()
-                    ),
-                )
         try:
             payment_state = await gs.get_channel_payment_state(
                 deal.proposer,
