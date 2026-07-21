@@ -1354,18 +1354,27 @@ class ChannelsCoreDriver:
         )
         await self._reconcile_started_capture()
 
+    def _settlement_read_pending(self, player_id: int) -> bool:
+        """True while the API fund capture still owes its settlement read.
+
+        Single source for _record_settlement_result and the attach-time
+        reconcile: drift between the two either performs live reads in the
+        read-free attach path or silently skips a required read.
+        """
+        state = self._journal.state
+        return (
+            self.pid_role.get(player_id) == ROLE_API
+            and state.phase == PHASE_FUND_UPFRONT
+            and (
+                "settlement_result" not in state.data
+                or "post_send_payment_status" not in state.data
+            )
+        )
+
     async def _record_settlement_result(self, player_id: int, turn: int) -> bool:
         journal = self._journal
         assert journal is not None
-        if (
-            self.pid_role.get(player_id) != ROLE_API
-            or journal.state.phase != PHASE_FUND_UPFRONT
-        ):
-            return True
-        if (
-            "settlement_result" in journal.state.data
-            and "post_send_payment_status" in journal.state.data
-        ):
+        if not self._settlement_read_pending(player_id):
             return True
         result = await self._read_settlement_treasuries(self._gs, turn)
         if result is None:
@@ -1432,14 +1441,7 @@ class ChannelsCoreDriver:
         player_id, turn = next(iter(identities))
         if not self._check_no_unexpected_acknowledgements(player_id, turn):
             return
-        needs_settlement_read = (
-            self.pid_role.get(player_id) == ROLE_API
-            and state.phase == PHASE_FUND_UPFRONT
-            and (
-                "settlement_result" not in state.data
-                or "post_send_payment_status" not in state.data
-            )
-        )
+        needs_settlement_read = self._settlement_read_pending(player_id)
         if needs_settlement_read and not allow_settlement_read:
             return
         if not await self._record_settlement_result(player_id, turn):
