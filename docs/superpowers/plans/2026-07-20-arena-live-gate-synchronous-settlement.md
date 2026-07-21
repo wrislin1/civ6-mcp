@@ -484,7 +484,7 @@ Update replay-side validation in `_reduce_persisted_event` / completed response-
                     raise ValueError("invalid payment-response preflight recovery")
 ```
 
-Keep legacy `"offer_absent"` replay support for historical rev-1/rev-2 response journals.
+Legacy rev-1/rev-2 response journals are rejected at `ChannelRuntime.open` (their response intents recorded preflight `"exact"`, which rev-3 validation refuses — pinned by `test_open_rejects_payment_response_intent_with_legacy_exact_preflight`). There is deliberately no legacy response replay support; fund-side `"offer_absent"` recovery is unrelated and remains live.
 
 - [ ] **Step 4: Run the tests — PASS**, then the file: `uv run pytest tests/arena/test_channel_runtime.py -q`
 
