@@ -1240,43 +1240,37 @@ class ChannelRuntime:
         else:
             accept = intent["accept"]
             cleanup = intent.get("cleanup")
-            engine_accept = False if cleanup is not None else accept
-            if recovery in {None, "response_retried"}:
-                if cls._response_succeeded(engine_result, engine_accept):
-                    if cleanup is not None:
-                        observation_id = intent.get("observation_id")
-                        expected_deal = cls._unverifiable_deal_record(
+            if recovery is None:
+                if engine_result != ENACTED_ABSENT_RESULT:
+                    raise ValueError(
+                        "invalid ledger-only payment response result"
+                    )
+                if cleanup is not None:
+                    observation_id = intent.get("observation_id")
+                    expected_deal = cls._unverifiable_deal_record(
+                        deal,
+                        turn=intent["turn"],
+                        reason=_INCOMPLETE_ACCEPTANCE_REASON,
+                        evidence_refs=(
+                            (observation_id,)
+                            if isinstance(observation_id, str)
+                            else ()
+                        ),
+                    )
+                elif accept:
+                    expected_deal = cls._validated_success_deal(
+                        state, deal, intent
+                    )
+                else:
+                    expected_deal, expected_grievance = (
+                        cls._expected_breach_records(
+                            state,
                             deal,
                             turn=intent["turn"],
-                            reason=_INCOMPLETE_ACCEPTANCE_REASON,
-                            evidence_refs=(
-                                (observation_id,)
-                                if isinstance(observation_id, str)
-                                else ()
-                            ),
+                            breach="payment_response",
+                            reason="enacted linked payment was rejected",
                         )
-                    elif accept:
-                        expected_deal = cls._validated_success_deal(
-                            state, deal, intent
-                        )
-                    else:
-                        expected_deal, expected_grievance = (
-                            cls._expected_breach_records(
-                                state,
-                                deal,
-                                turn=intent["turn"],
-                                breach="payment_response",
-                                reason=(
-                                    "enacted linked payment was rejected"
-                                    if engine_result == ENACTED_ABSENT_RESULT
-                                    else "exact linked payment was rejected"
-                                ),
-                            )
-                        )
-                elif cls._authoritative_payment_failure(engine_result):
-                    expected_deal = None
-                else:
-                    raise ValueError("non-authoritative payment response was completed")
+                    )
             elif recovery == "observed_absent_enacted":
                 if engine_result != ENACTED_ABSENT_RESULT:
                     raise ValueError("invalid absent-enacted response recovery")
@@ -1305,46 +1299,19 @@ class ChannelRuntime:
                         )
                     )
             elif recovery == "conflicting_offer":
-                if engine_result not in {
-                    "RECOVERY_PAYMENT_ABSENT",
-                    "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING",
-                }:
+                if engine_result != "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING":
                     raise ValueError("invalid payment-response preflight recovery")
                 reasons = {
                     "payment response intent outcome is ambiguous because "
-                    "the exact offer is conflicting",
+                    "an offer is unexpectedly exact",
+                    "payment response intent outcome is ambiguous because "
+                    "an offer is unexpectedly conflicting",
                 }
-                if engine_result == "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING":
-                    reasons |= {
-                        "payment response intent outcome is ambiguous because "
-                        "an offer is unexpectedly exact",
-                        "payment response intent outcome is ambiguous because "
-                        "an offer is unexpectedly conflicting",
-                    }
                 expected_deal = cls._expected_unverifiable_result(
                     deal,
                     deal_payload,
                     intent,
                     reasons,
-                )
-            elif recovery == "offer_absent":
-                if engine_result != "RECOVERY_PAYMENT_ABSENT":
-                    raise ValueError("invalid payment-response preflight recovery")
-                expected_deal = cls._expected_unverifiable_result(
-                    deal,
-                    deal_payload,
-                    intent,
-                    "payment response intent outcome is ambiguous because "
-                    "the exact offer is absent",
-                )
-            elif recovery == "response_retry_query_failed":
-                if not cls._authoritative_payment_failure(engine_result):
-                    raise ValueError("invalid response query-failure recovery")
-                expected_deal = cls._expected_unverifiable_result(
-                    deal,
-                    deal_payload,
-                    intent,
-                    "payment response recovery could not verify the engine outcome after retry",
                 )
             elif recovery == "response_retry_ambiguous":
                 if not cls._authoritative_payment_failure(engine_result):
@@ -2379,17 +2346,6 @@ class ChannelRuntime:
             "CHANNEL_PAYMENT_PROPOSED",
             "PAYMENT_PROPOSED",
         }
-
-    @staticmethod
-    def _response_succeeded(engine_result: str, accept: bool) -> bool:
-        if engine_result == ENACTED_ABSENT_RESULT:
-            return True
-        expected = (
-            {"CHANNEL_PAYMENT_ACCEPTED", "PAYMENT_ACCEPTED"}
-            if accept
-            else {"CHANNEL_PAYMENT_REJECTED", "PAYMENT_REJECTED"}
-        )
-        return engine_result in expected
 
     @staticmethod
     def _authoritative_payment_failure(engine_result: str) -> bool:
