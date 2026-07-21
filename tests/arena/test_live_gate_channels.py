@@ -277,6 +277,42 @@ async def test_fund_hop_fails_official_payment_not_enacted_on_delta_mismatch(
     }
 
 
+def test_settlement_verdict_classifies_evidence_and_enactment():
+    verdict = lgc.ChannelsCoreDriver._settlement_verdict
+    fingerprint = exact_payment_fingerprint()
+    baseline = {"turn": 11, "payer_gold": 500, "payee_gold": 500}
+    good = {"turn": 11, "payer_gold": 499, "payee_gold": 501}
+    gold = lgc.PAYMENT_GOLD
+
+    assert verdict("absent", baseline, good, fingerprint, 11, gold) is None
+    # engine-attributed: pending state, or well-formed evidence w/o transfer
+    assert verdict("exact", baseline, good, fingerprint, 11, gold) == (
+        "not_enacted"
+    )
+    no_move = {"turn": 11, "payer_gold": 500, "payee_gold": 500}
+    assert verdict("absent", baseline, no_move, fingerprint, 11, gold) == (
+        "not_enacted"
+    )
+    # driver-attributed: malformed or cross-turn evidence
+    assert verdict(None, baseline, good, fingerprint, 11, gold) == (
+        "evidence_invalid"
+    )
+    assert verdict("absent", None, good, fingerprint, 11, gold) == (
+        "evidence_invalid"
+    )
+    assert verdict("absent", baseline, good, None, 11, gold) == (
+        "evidence_invalid"
+    )
+    stale = {"turn": 10, "payer_gold": 499, "payee_gold": 501}
+    assert verdict("absent", baseline, stale, fingerprint, 11, gold) == (
+        "evidence_invalid"
+    )
+    floats = {"turn": 11, "payer_gold": 499.0, "payee_gold": 501}
+    assert verdict("absent", baseline, floats, fingerprint, 11, gold) == (
+        "evidence_invalid"
+    )
+
+
 @pytest.mark.asyncio
 async def test_attach_opens_gate_journal_in_preflight(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)

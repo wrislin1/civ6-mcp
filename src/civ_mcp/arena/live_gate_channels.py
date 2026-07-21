@@ -676,6 +676,36 @@ class ChannelsCoreDriver:
         )
 
     @staticmethod
+    def _settlement_verdict(status, baseline, result, recorded, turn, gold):
+        """Classify fund-hop settlement evidence.
+
+        None: verifiably enacted. "not_enacted": well-formed evidence shows
+        the engine did not enact (engine-attributed). "evidence_invalid":
+        the driver's own evidence is malformed or cross-turn
+        (driver-attributed) — never blamed on the engine.
+        """
+        if status is None:
+            return "evidence_invalid"
+        if status != "absent":
+            return "not_enacted"
+        for values in (baseline, result):
+            if not (
+                isinstance(values, Mapping)
+                and values.get("turn") == turn
+                and type(values.get("payer_gold")) is int
+                and type(values.get("payee_gold")) is int
+            ):
+                return "evidence_invalid"
+        if recorded is None:
+            return "evidence_invalid"
+        if (
+            result["payer_gold"] == baseline["payer_gold"] - gold
+            and result["payee_gold"] == baseline["payee_gold"] + gold
+        ):
+            return None
+        return "not_enacted"
+
+    @staticmethod
     def _digest_mapping(value: Mapping) -> str:
         encoded = json.dumps(
             ChannelsCoreDriver._jsonable(value),
@@ -1780,47 +1810,31 @@ class ChannelsCoreDriver:
             result = data.get("settlement_result")
             recorded = self._payment_fingerprint
             gold = PAYMENT_GOLD
-            baseline_payer_gold = (
-                baseline.get("payer_gold")
-                if isinstance(baseline, Mapping)
-                else None
+            verdict = self._settlement_verdict(
+                status, baseline, result, recorded, turn, gold
             )
-            baseline_payee_gold = (
-                baseline.get("payee_gold")
-                if isinstance(baseline, Mapping)
-                else None
-            )
-            result_payer_gold = (
-                result.get("payer_gold")
-                if isinstance(result, Mapping)
-                else None
-            )
-            result_payee_gold = (
-                result.get("payee_gold")
-                if isinstance(result, Mapping)
-                else None
-            )
-            ok = (
-                status == "absent"
-                and isinstance(baseline, Mapping)
-                and isinstance(result, Mapping)
-                and recorded is not None
-                and baseline.get("turn") == turn
-                and result.get("turn") == turn
-                and type(baseline_payer_gold) is int
-                and type(baseline_payee_gold) is int
-                and type(result_payer_gold) is int
-                and type(result_payee_gold) is int
-                and result_payer_gold == baseline_payer_gold - gold
-                and result_payee_gold == baseline_payee_gold + gold
-            )
-            if not ok:
+            if verdict == "evidence_invalid":
+                self._fail(
+                    "payment_checkpoint_failed",
+                    detail={
+                        "failure": "settlement_evidence_invalid",
+                        "status": status,
+                        "baseline": baseline,
+                        "result": result,
+                        "recorded": recorded,
+                        "turn": turn,
+                    },
+                )
+                return
+            if verdict == "not_enacted":
                 self._fail(
                     "official_payment_not_enacted",
                     detail={
                         "status": status,
                         "baseline": baseline,
                         "result": result,
+                        "recorded": recorded,
+                        "turn": turn,
                     },
                 )
                 return
