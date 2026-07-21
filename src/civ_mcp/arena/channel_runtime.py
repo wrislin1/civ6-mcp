@@ -1313,58 +1313,6 @@ class ChannelRuntime:
                     intent,
                     reasons,
                 )
-            elif recovery == "response_retry_ambiguous":
-                if not cls._authoritative_payment_failure(engine_result):
-                    raise ValueError("invalid ambiguous response recovery")
-                reasons = {
-                    "payment response recovery remained ambiguous after an engine exception",
-                    "payment response recovery returned no authoritative engine result",
-                }
-                expected_deal = cls._expected_unverifiable_result(
-                    deal,
-                    deal_payload,
-                    intent,
-                    reasons,
-                )
-            elif recovery in {
-                "response_retry_exact_ambiguous",
-                "response_retry_absent_ambiguous",
-                "response_retry_conflicting_ambiguous",
-            }:
-                if engine_result != "RECOVERY_AMBIGUOUS_RESPONSE":
-                    raise ValueError("invalid canonical ambiguous response recovery")
-                status = recovery.removeprefix("response_retry_").removesuffix(
-                    "_ambiguous"
-                )
-                expected_deal = cls._expected_unverifiable_result(
-                    deal,
-                    deal_payload,
-                    intent,
-                    "payment response retry returned no authoritative result; "
-                    f"the post-retry offer was {status}",
-                )
-            elif recovery in {
-                "response_retry_post_query_failed",
-                "response_retry_post_state_invalid",
-            }:
-                if engine_result != "RECOVERY_AMBIGUOUS_RESPONSE":
-                    raise ValueError("invalid post-retry query recovery")
-                reasons = {
-                    "response_retry_post_query_failed": (
-                        "payment response retry returned no authoritative result "
-                        "and the post-retry offer query failed"
-                    ),
-                    "response_retry_post_state_invalid": (
-                        "payment response retry returned no authoritative result "
-                        "and the post-retry offer state was invalid"
-                    ),
-                }
-                expected_deal = cls._expected_unverifiable_result(
-                    deal,
-                    deal_payload,
-                    intent,
-                    reasons[recovery],
-                )
             else:
                 raise ValueError("unknown payment-response recovery outcome")
 

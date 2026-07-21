@@ -3369,29 +3369,11 @@ async def test_response_intent_recovery_rejects_exact_reopenably(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "post_query_outcome, expected_recovery, expected_reason",
-    [
-        (
-            "exception",
-            "response_retry_post_query_failed",
-            "payment response retry returned no authoritative result and the "
-            "post-retry offer query failed",
-        ),
-        (
-            "invalid",
-            "response_retry_post_state_invalid",
-            "payment response retry returned no authoritative result and the "
-            "post-retry offer state was invalid",
-        ),
-    ],
-)
+@pytest.mark.parametrize("post_query_outcome", ["exception", "invalid"])
 async def test_response_intent_recovery_ignores_stale_engine_retry_inputs(
     tmp_path,
     payment_gs,
     post_query_outcome,
-    expected_recovery,
-    expected_reason,
 ):
     rt, deal = await accepted_payment_deal(
         tmp_path,
