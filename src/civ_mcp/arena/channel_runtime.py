@@ -1203,10 +1203,6 @@ class ChannelRuntime:
                     expected_deal = None
                 else:
                     raise ValueError("non-authoritative funding result was completed")
-            elif recovery == "observed_exact_offer":
-                if engine_result != "RECOVERED_EXACT_CHANNEL_PAYMENT":
-                    raise ValueError("invalid exact-offer funding recovery")
-                expected_deal = offered
             elif recovery == "conflicting_offer":
                 if engine_result != "RECOVERY_CONFLICTING_PAYMENT":
                     raise ValueError("invalid conflicting funding recovery")
@@ -2606,24 +2602,10 @@ class ChannelRuntime:
             if status is None:
                 continue
             if kind == "payment_fund_intent":
-                if status == "exact":
-                    offered = replace(
-                        deal,
-                        payment_status=PaymentStatus.OFFERED,
-                        payment_response_by_turn=(
-                            intent["turn"] + self.rules.payment_response_turns
-                        ),
-                    )
-                    self._commit_payment_result(
-                        "payment_fund_result",
-                        intent,
-                        engine_result="RECOVERED_EXACT_CHANNEL_PAYMENT",
-                        recovery="observed_exact_offer",
-                        deal=offered,
-                        grievance=None,
-                        message=f"recovered linked payment offer for {deal.id}",
-                    )
-                elif status == "conflicting":
+                # Rev-3 (Locked Decision 14): a successful send is never
+                # observable as pending, so any pending offer — exact or
+                # conflicting — proves the payment was not enacted.
+                if status in ("exact", "conflicting"):
                     if current_turn <= intent["deadline"]:
                         self._commit_payment_result(
                             "payment_fund_result",
@@ -2633,7 +2615,7 @@ class ChannelRuntime:
                             deal=None,
                             grievance=None,
                             message=(
-                                "conflicting pending payment left funding due for "
+                                "pending payment offer left funding due for "
                                 f"{deal.id}"
                             ),
                         )

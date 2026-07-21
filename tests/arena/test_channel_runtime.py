@@ -2935,7 +2935,7 @@ async def test_ignored_exact_payment_defaults_against_counterparty(
 
 
 @pytest.mark.asyncio
-async def test_recovery_observed_offer_records_offered_without_resend(
+async def test_recovery_exact_pending_offer_leaves_funding_due(
     tmp_path,
     payment_gs,
 ):
@@ -2955,26 +2955,57 @@ async def test_recovery_observed_offer_records_offered_without_resend(
     )
     payment_gs.local_player = deal.counterparty
     reopened = runtime(tmp_path)
-    payment_gs.runtime = reopened
     await reopened.reconcile_payment_intents(
         payment_gs, current_turn=3, current_player_id=deal.counterparty
     )
-    assert reopened.deal(deal.id).payment_status is PaymentStatus.OFFERED
+    # Rev-3: a pending offer proves the send did not enact — funding
+    # remains due; nothing is recovered as OFFERED.
+    recovered = reopened.deal(deal.id)
+    assert recovered.state is DealState.ACTIVE
+    assert recovered.payment_status is PaymentStatus.DUE
     assert payment_gs.offer_calls == 0
     assert "src-fund-recovery" in reopened.state.applied_source_ids
-    sequence = reopened.state.last_event_sequence
-    replay = await apply_payment_action(
-        reopened,
+    assert reopened.state.grievances == ()
+
+
+@pytest.mark.asyncio
+async def test_recovery_exact_pending_offer_after_deadline_is_funding_breach(
+    tmp_path,
+    payment_gs,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
         payment_gs,
-        deal.proposer,
-        "fund_deal",
-        {"deal_id": deal.id},
-        turn=3,
-        source_id="src-fund-recovery",
+        timing="up_front",
     )
-    assert replay == reopened.state.acknowledgements[-1]
-    assert reopened.state.last_event_sequence == sequence
-    assert payment_gs.offer_calls == 0
+    rt._commit(
+        "payment_fund_intent",
+        payment_fund_intent_payload(deal, "src-fund-late"),
+    )
+    payment_gs.install_exact_offer(
+        deal.proposer,
+        deal.counterparty,
+        deal.payment_gold,
+    )
+    payment_gs.local_player = deal.counterparty
+    reopened = runtime(tmp_path)
+    intent = next(
+        intent
+        for _, intent in reopened._unfinished_payment_intents()
+        if intent["source_id"] == "src-fund-late"
+    )
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=intent["deadline"] + 1,
+        current_player_id=deal.counterparty,
+    )
+    broken = reopened.deal(deal.id)
+    assert broken.state is DealState.BROKEN
+    assert broken.payment_status is PaymentStatus.FAILED
+    assert broken.terminal["wronged"] == deal.counterparty
+    assert broken.terminal["offender"] == deal.proposer
+    assert reopened.state.grievances[-1].wronged == deal.counterparty
+    assert "src-fund-late" in reopened.state.applied_source_ids
 
 
 @pytest.mark.asyncio
