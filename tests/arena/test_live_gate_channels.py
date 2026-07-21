@@ -106,8 +106,14 @@ def test_minimum_captures_tracks_funding_turns():
     assert lgc.minimum_captures(cfg) == 30  # two extra withheld rounds x 3 seats
 
 
-def test_scenario_revision_is_2_for_same_round_settlement():
-    assert lgc.SCENARIO_REVISION == 2
+def test_scenario_revision_is_3_for_synchronous_settlement():
+    assert lgc.SCENARIO_REVISION == 3
+
+
+def test_revision_3_failure_codes_registered():
+    assert "official_payment_not_enacted" in lgc._PUBLIC_FAILURE_CODES
+    assert "official_payment_unexpectedly_pending" in lgc._PUBLIC_FAILURE_CODES
+    assert "official_payment_auto_resolved" not in lgc._PUBLIC_FAILURE_CODES
 
 
 def test_gate_config_validates_end_to_end():

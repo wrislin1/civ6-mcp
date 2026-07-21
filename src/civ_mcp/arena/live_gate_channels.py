@@ -32,7 +32,7 @@ from civ_mcp.arena.scripted_policy import ScriptedPolicy
 from civ_mcp.arena.transcript import serialize_transcript_record
 
 SCENARIO_NAME = "unofficial_channels_core_v1"
-SCENARIO_REVISION = 2
+SCENARIO_REVISION = 3
 
 ROLE_API = "api_actor"
 ROLE_CLI = "cli_actor"
@@ -93,7 +93,8 @@ _PUBLIC_FAILURE_CODES = frozenset(
         "channel_finish_failed",
         "gate_invariant_failed",
         "observer_capture_failed",
-        "official_payment_auto_resolved",
+        "official_payment_not_enacted",
+        "official_payment_unexpectedly_pending",
         "payment_checkpoint_failed",
         "payment_state_failed",
         "preflight_failed",
