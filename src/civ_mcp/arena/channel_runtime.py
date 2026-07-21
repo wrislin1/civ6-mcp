@@ -62,6 +62,7 @@ _INCOMPLETE_ACCEPTANCE_REASON = (
     "payment acceptance observation baseline was incomplete"
 )
 ENACTED_ABSENT_RESULT = "CHANNEL_PAYMENT_ENACTED_ABSENT"
+_ENACTED_PAYMENT_REJECTED_REASON = "enacted linked payment was rejected"
 
 
 def _response_pending_reason(status: str) -> str:
@@ -1252,66 +1253,14 @@ class ChannelRuntime:
             else:
                 raise ValueError("unknown funding recovery outcome")
         else:
-            accept = intent["accept"]
-            cleanup = intent.get("cleanup")
-            if recovery is None:
+            if recovery in (None, "observed_absent_enacted"):
                 if engine_result != ENACTED_ABSENT_RESULT:
                     raise ValueError(
                         "invalid ledger-only payment response result"
                     )
-                if cleanup is not None:
-                    observation_id = intent.get("observation_id")
-                    expected_deal = cls._unverifiable_deal_record(
-                        deal,
-                        turn=intent["turn"],
-                        reason=_INCOMPLETE_ACCEPTANCE_REASON,
-                        evidence_refs=(
-                            (observation_id,)
-                            if isinstance(observation_id, str)
-                            else ()
-                        ),
-                    )
-                elif accept:
-                    expected_deal = cls._validated_success_deal(
-                        state, deal, intent
-                    )
-                else:
-                    expected_deal, expected_grievance = (
-                        cls._expected_breach_records(
-                            state,
-                            deal,
-                            turn=intent["turn"],
-                            breach="payment_response",
-                            reason="enacted linked payment was rejected",
-                        )
-                    )
-            elif recovery == "observed_absent_enacted":
-                if engine_result != ENACTED_ABSENT_RESULT:
-                    raise ValueError("invalid absent-enacted response recovery")
-                if cleanup is not None:
-                    observation_id = intent.get("observation_id")
-                    expected_deal = cls._unverifiable_deal_record(
-                        deal,
-                        turn=intent["turn"],
-                        reason=_INCOMPLETE_ACCEPTANCE_REASON,
-                        evidence_refs=(
-                            (observation_id,)
-                            if isinstance(observation_id, str)
-                            else ()
-                        ),
-                    )
-                elif accept:
-                    expected_deal = cls._validated_success_deal(state, deal, intent)
-                else:
-                    expected_deal, expected_grievance = (
-                        cls._expected_breach_records(
-                            state,
-                            deal,
-                            turn=intent["turn"],
-                            breach="payment_response",
-                            reason="enacted linked payment was rejected",
-                        )
-                    )
+                expected_deal, expected_grievance, _ = (
+                    cls._absent_response_records(state, deal, intent)
+                )
             elif recovery == "conflicting_offer":
                 if engine_result != "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING":
                     raise ValueError("invalid payment-response preflight recovery")
@@ -1511,6 +1460,45 @@ class ChannelRuntime:
             breach=breach,
             reason=reason,
         )
+
+    @classmethod
+    def _absent_response_records(
+        cls, state: ChannelState, deal: Deal, intent: dict
+    ) -> tuple[Deal, dict | None, str]:
+        """Outcome records for a ledger-only response to an absent enacted
+        payment (rev-3). Single source for the direct path, recovery, and
+        replay validation — drift between them makes recovered journals
+        fail replay."""
+        if intent.get("cleanup") is not None:
+            observation_id = intent.get("observation_id")
+            return (
+                cls._unverifiable_deal_record(
+                    deal,
+                    turn=intent["turn"],
+                    reason=_INCOMPLETE_ACCEPTANCE_REASON,
+                    evidence_refs=(
+                        (observation_id,)
+                        if isinstance(observation_id, str)
+                        else ()
+                    ),
+                ),
+                None,
+                "cleanup",
+            )
+        if intent["accept"]:
+            return (
+                cls._validated_success_deal(state, deal, intent),
+                None,
+                "accepted",
+            )
+        expected_deal, grievance = cls._expected_breach_records(
+            state,
+            deal,
+            turn=intent["turn"],
+            breach="payment_response",
+            reason=_ENACTED_PAYMENT_REJECTED_REASON,
+        )
+        return expected_deal, grievance, "rejected"
 
     @classmethod
     def _canonical_breach_records(
@@ -2218,40 +2206,22 @@ class ChannelRuntime:
         if conflict is not None:
             return conflict
         engine_result = ENACTED_ABSENT_RESULT
-        if cleanup_deal is not None:
-            return self._commit_payment_result(
-                "payment_response_result",
-                intent,
-                engine_result=engine_result,
-                recovery=None,
-                deal=cleanup_deal,
-                grievance=None,
-                message=f"payment acceptance became unverifiable for {deal.id}",
-            )
-        if action.accept:
-            return self._commit_payment_result(
-                "payment_response_result",
-                intent,
-                engine_result=engine_result,
-                recovery=None,
-                deal=success_deal,
-                grievance=None,
-                message=f"accepted linked payment for {deal.id}",
-            )
-        broken, grievance = self._broken_deal_records(
-            deal,
-            turn=turn,
-            breach="payment_response",
-            reason="enacted linked payment was rejected",
+        expected_deal, grievance, outcome = self._absent_response_records(
+            self.state, deal, intent
         )
+        message = {
+            "cleanup": f"payment acceptance became unverifiable for {deal.id}",
+            "accepted": f"accepted linked payment for {deal.id}",
+            "rejected": f"rejected linked payment for {deal.id}",
+        }[outcome]
         return self._commit_payment_result(
             "payment_response_result",
             intent,
             engine_result=engine_result,
             recovery=None,
-            deal=broken,
+            deal=expected_deal,
             grievance=grievance,
-            message=f"rejected linked payment for {deal.id}",
+            message=message,
         )
 
     def _commit_payment_intent_for_action(
@@ -2583,59 +2553,25 @@ class ChannelRuntime:
                     message=f"payment response became unverifiable for {deal.id}",
                 )
                 continue
-            accept = intent["accept"]
-            cleanup = intent.get("cleanup")
-            if cleanup is not None:
-                observation_id = intent.get("observation_id")
-                unverifiable = self._unverifiable_deal_record(
-                    deal,
-                    turn=intent["turn"],
-                    reason=_INCOMPLETE_ACCEPTANCE_REASON,
-                    evidence_refs=(
-                        (observation_id,)
-                        if isinstance(observation_id, str)
-                        else ()
-                    ),
-                )
-                self._commit_payment_result(
-                    "payment_response_result",
-                    intent,
-                    engine_result=ENACTED_ABSENT_RESULT,
-                    recovery="observed_absent_enacted",
-                    deal=unverifiable,
-                    grievance=None,
-                    message=(
-                        "recovered incomplete payment acceptance for "
-                        f"{deal.id}"
-                    ),
-                )
-            elif accept:
-                accepted = self._validated_success_deal(self.state, deal, intent)
-                self._commit_payment_result(
-                    "payment_response_result",
-                    intent,
-                    engine_result=ENACTED_ABSENT_RESULT,
-                    recovery="observed_absent_enacted",
-                    deal=accepted,
-                    grievance=None,
-                    message=f"recovered accepted payment for {deal.id}",
-                )
-            else:
-                broken, grievance = self._broken_deal_records(
-                    deal,
-                    turn=intent["turn"],
-                    breach="payment_response",
-                    reason="enacted linked payment was rejected",
-                )
-                self._commit_payment_result(
-                    "payment_response_result",
-                    intent,
-                    engine_result=ENACTED_ABSENT_RESULT,
-                    recovery="observed_absent_enacted",
-                    deal=broken,
-                    grievance=grievance,
-                    message=f"recovered rejected payment for {deal.id}",
-                )
+            expected_deal, grievance, outcome = self._absent_response_records(
+                self.state, deal, intent
+            )
+            message = {
+                "cleanup": (
+                    f"recovered incomplete payment acceptance for {deal.id}"
+                ),
+                "accepted": f"recovered accepted payment for {deal.id}",
+                "rejected": f"recovered rejected payment for {deal.id}",
+            }[outcome]
+            self._commit_payment_result(
+                "payment_response_result",
+                intent,
+                engine_result=ENACTED_ABSENT_RESULT,
+                recovery="observed_absent_enacted",
+                deal=expected_deal,
+                grievance=grievance,
+                message=message,
+            )
 
     def _deal_from_changed_payload(self, payload: dict) -> Deal:
         event = ChannelEvent(
