@@ -61,6 +61,7 @@ _INCOMPLETE_ACCEPTANCE_CLEANUP = "reject_incomplete_acceptance"
 _INCOMPLETE_ACCEPTANCE_REASON = (
     "payment acceptance observation baseline was incomplete"
 )
+ENACTED_ABSENT_RESULT = "CHANNEL_PAYMENT_ENACTED_ABSENT"
 
 
 class ChannelStateError(RuntimeError):
@@ -486,7 +487,7 @@ class ChannelRuntime:
         expected_preflight = (
             ("absent", deal.proposer)
             if kind == "payment_fund_intent"
-            else ("exact", deal.counterparty)
+            else ("absent", deal.counterparty)
         )
         if (
             not isinstance(payload["preflight_status"], str)
@@ -1269,7 +1270,11 @@ class ChannelRuntime:
                                 deal,
                                 turn=intent["turn"],
                                 breach="payment_response",
-                                reason="exact linked payment was rejected",
+                                reason=(
+                                    "enacted linked payment was rejected"
+                                    if engine_result == ENACTED_ABSENT_RESULT
+                                    else "exact linked payment was rejected"
+                                ),
                             )
                         )
                 elif cls._authoritative_payment_failure(engine_result):
@@ -2211,8 +2216,8 @@ class ChannelRuntime:
                 "could not verify the exact linked payment: "
                 f"{type(exc).__name__}"
             ) from exc
-        if self._payment_state_status(payment_state, deal) != "exact":
-            raise _ActionRejected("the exact linked payment offer is not pending")
+        if self._payment_state_status(payment_state, deal) != "absent":
+            raise _ActionRejected("the linked payment offer is unexpectedly pending")
         intent = self._payment_intent_payload(
             deal,
             staged,
@@ -2231,71 +2236,7 @@ class ChannelRuntime:
         )
         if conflict is not None:
             return conflict
-        engine_accept = False if cleanup is not None else action.accept
-        try:
-            engine_result = await gs.respond_to_channel_payment(
-                deal.proposer,
-                deal.payment_gold,
-                engine_accept,
-            )
-        except Exception as exc:
-            await self.reconcile_payment_intents(
-                gs,
-                current_turn=turn,
-                current_player_id=staged.actor,
-            )
-            recovered = next(
-                (
-                    acknowledgement
-                    for acknowledgement in self.state.acknowledgements
-                    if acknowledgement.source_id == staged.source_id
-                ),
-                None,
-            )
-            if recovered is not None:
-                return recovered
-            return ChannelAcknowledgement(
-                staged.actor,
-                turn,
-                staged.source_id,
-                "rejected",
-                "payment response outcome requires recovery after "
-                f"{type(exc).__name__}",
-            )
-        if not isinstance(engine_result, str) or not engine_result:
-            return ChannelAcknowledgement(
-                staged.actor,
-                turn,
-                staged.source_id,
-                "rejected",
-                "payment response returned no authoritative engine result",
-            )
-        if not self._response_succeeded(engine_result, engine_accept):
-            if not self._authoritative_payment_failure(engine_result):
-                return ChannelAcknowledgement(
-                    staged.actor,
-                    turn,
-                    staged.source_id,
-                    "rejected",
-                    "payment response outcome requires intent reconciliation",
-                )
-            if cleanup is not None:
-                return ChannelAcknowledgement(
-                    staged.actor,
-                    turn,
-                    staged.source_id,
-                    "rejected",
-                    "payment cleanup remains pending for intent reconciliation",
-                )
-            return self._commit_payment_result(
-                "payment_response_result",
-                intent,
-                engine_result=engine_result,
-                recovery=None,
-                deal=None,
-                grievance=None,
-                message=f"linked payment response failed: {engine_result}",
-            )
+        engine_result = ENACTED_ABSENT_RESULT
         if cleanup_deal is not None:
             return self._commit_payment_result(
                 "payment_response_result",
@@ -2320,7 +2261,7 @@ class ChannelRuntime:
             deal,
             turn=turn,
             breach="payment_response",
-            reason="exact linked payment was rejected",
+            reason="enacted linked payment was rejected",
         )
         return self._commit_payment_result(
             "payment_response_result",
@@ -2383,6 +2324,8 @@ class ChannelRuntime:
 
     @staticmethod
     def _response_succeeded(engine_result: str, accept: bool) -> bool:
+        if engine_result == ENACTED_ABSENT_RESULT:
+            return True
         expected = (
             {"CHANNEL_PAYMENT_ACCEPTED", "PAYMENT_ACCEPTED"}
             if accept
@@ -2458,7 +2401,7 @@ class ChannelRuntime:
             "payee": deal.counterparty,
             "gold": deal.payment_gold,
             "deadline": deadline,
-            "preflight_status": "absent" if accept is None else "exact",
+            "preflight_status": "absent",
             "preflight_player": (
                 deal.proposer if accept is None else deal.counterparty
             ),
@@ -3709,5 +3652,6 @@ __all__ = [
     "ChannelAdmission",
     "ChannelRuntime",
     "ChannelStateError",
+    "ENACTED_ABSENT_RESULT",
     "grievance_base_magnitude",
 ]
