@@ -1358,19 +1358,39 @@ class ChannelsCoreDriver:
         journal = self._journal
         assert journal is not None
         if (
-            self.pid_role.get(player_id) != ROLE_CLI
-            or journal.state.phase != PHASE_ACCEPT_UPFRONT_PAYMENT
+            self.pid_role.get(player_id) != ROLE_API
+            or journal.state.phase != PHASE_FUND_UPFRONT
         ):
             return True
-        if "settlement_result" in journal.state.data:
+        if (
+            "settlement_result" in journal.state.data
+            and "post_send_payment_status" in journal.state.data
+        ):
             return True
         result = await self._read_settlement_treasuries(self._gs, turn)
         if result is None:
             return False
+        try:
+            payment_state = await self._gs.get_channel_payment_state(
+                self.role_pid[ROLE_API],
+                self.role_pid[ROLE_CLI],
+                PAYMENT_GOLD,
+            )
+        except Exception as exc:
+            self._fail(
+                "payment_state_failed",
+                detail={
+                    "failure": "post_send_payment_state_unreadable",
+                    "error": repr(exc),
+                },
+            )
+            return False
+        status = getattr(payment_state, "status", None)
+        status = getattr(status, "value", status)
         return self._record_data_once(
-            {"settlement_result": result},
+            {"settlement_result": result, "post_send_payment_status": status},
             reason_code="payment_checkpoint_failed",
-            failure="settlement_result_mismatch",
+            failure="settlement_result_or_post_send_status_mismatch",
         )
 
     async def _reconcile_verified_capture(
@@ -1413,9 +1433,12 @@ class ChannelsCoreDriver:
         if not self._check_no_unexpected_acknowledgements(player_id, turn):
             return
         needs_settlement_read = (
-            self.pid_role.get(player_id) == ROLE_CLI
-            and state.phase == PHASE_ACCEPT_UPFRONT_PAYMENT
-            and "settlement_result" not in state.data
+            self.pid_role.get(player_id) == ROLE_API
+            and state.phase == PHASE_FUND_UPFRONT
+            and (
+                "settlement_result" not in state.data
+                or "post_send_payment_status" not in state.data
+            )
         )
         if needs_settlement_read and not allow_settlement_read:
             return

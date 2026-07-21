@@ -167,6 +167,46 @@ async def attached_driver(tmp_path, cfg=None, gs=None):
     return driver, runtime, gs
 
 
+class SynchronousPaymentGateGameState(GateGameState):
+    async def offer_channel_payment(self, payee, gold):
+        payer = self.active_player
+        if (payer, payee) in self.pending:
+            return "Error: CHANNEL_PAYMENT_PENDING_DEAL"
+        self.treasury[payer] -= gold
+        self.treasury[payee] += gold
+        return "CHANNEL_PAYMENT_PROPOSED"
+
+    async def respond_to_channel_payment(self, payer, gold, accept):
+        raise AssertionError(
+            "revision 3: nothing may mutate the engine at payment response"
+        )
+
+
+@pytest.mark.asyncio
+async def test_fund_capture_records_settlement_result_and_post_send_status(
+    tmp_path,
+):
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    data = driver._journal.state.data
+    assert data["settlement_baseline"] == {
+        "turn": 11,
+        "payer_gold": 500,
+        "payee_gold": 500,
+    }
+    assert data["settlement_result"] == {
+        "turn": 11,
+        "payer_gold": 499,
+        "payee_gold": 501,
+    }
+    assert data["post_send_payment_status"] == "absent"
+    assert driver._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+
+
 @pytest.mark.asyncio
 async def test_attach_opens_gate_journal_in_preflight(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
