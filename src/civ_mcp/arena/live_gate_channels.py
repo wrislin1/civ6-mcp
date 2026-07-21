@@ -1741,6 +1741,70 @@ class ChannelsCoreDriver:
                 failure="payment_checkpoint_digest_mismatch",
             ):
                 return
+            data = state.data
+            status = data.get("post_send_payment_status")
+            baseline = data.get("settlement_baseline")
+            result = data.get("settlement_result")
+            recorded = self._payment_fingerprint
+            gold = PAYMENT_GOLD
+            baseline_payer_gold = (
+                baseline.get("payer_gold")
+                if isinstance(baseline, Mapping)
+                else None
+            )
+            baseline_payee_gold = (
+                baseline.get("payee_gold")
+                if isinstance(baseline, Mapping)
+                else None
+            )
+            result_payer_gold = (
+                result.get("payer_gold")
+                if isinstance(result, Mapping)
+                else None
+            )
+            result_payee_gold = (
+                result.get("payee_gold")
+                if isinstance(result, Mapping)
+                else None
+            )
+            ok = (
+                status == "absent"
+                and isinstance(baseline, Mapping)
+                and isinstance(result, Mapping)
+                and recorded is not None
+                and baseline.get("turn") == turn
+                and result.get("turn") == turn
+                and type(baseline_payer_gold) is int
+                and type(baseline_payee_gold) is int
+                and type(result_payer_gold) is int
+                and type(result_payee_gold) is int
+                and result_payer_gold == baseline_payer_gold - gold
+                and result_payee_gold == baseline_payee_gold + gold
+            )
+            if not ok:
+                self._fail(
+                    "official_payment_not_enacted",
+                    detail={
+                        "status": status,
+                        "baseline": baseline,
+                        "result": result,
+                    },
+                )
+                return
+            if not self._record_data_once(
+                {
+                    "settlement_digest": self._digest_mapping(
+                        {
+                            "fingerprint": recorded,
+                            "baseline": baseline,
+                            "result": result,
+                        }
+                    )
+                },
+                reason_code="payment_checkpoint_failed",
+                failure="settlement_digest_mismatch",
+            ):
+                return
             self._journal.append(
                 "phase_advanced",
                 {"phase": PHASE_ACCEPT_UPFRONT_PAYMENT, "turn": turn},
@@ -1767,80 +1831,15 @@ class ChannelsCoreDriver:
                 failure="upfront_favor_due_turn_mismatch",
             ):
                 return
-            data = state.data
-            baseline = data.get("settlement_baseline")
-            result = data.get("settlement_result")
-            recorded = self._payment_fingerprint
-            gold = PAYMENT_GOLD
-            baseline_payer_gold = (
-                baseline.get("payer_gold")
-                if isinstance(baseline, Mapping)
-                else None
-            )
-            baseline_payee_gold = (
-                baseline.get("payee_gold")
-                if isinstance(baseline, Mapping)
-                else None
-            )
-            result_payer_gold = (
-                result.get("payer_gold")
-                if isinstance(result, Mapping)
-                else None
-            )
-            result_payee_gold = (
-                result.get("payee_gold")
-                if isinstance(result, Mapping)
-                else None
-            )
-            if (
-                not isinstance(baseline, Mapping)
-                or not isinstance(result, Mapping)
-                or recorded is None
-                or baseline.get("turn") != turn
-                or result.get("turn") != turn
-                or type(baseline_payer_gold) is not int
-                or type(baseline_payee_gold) is not int
-                or type(result_payer_gold) is not int
-                or type(result_payee_gold) is not int
-            ):
+            if "settlement_digest" not in state.data:
                 self._fail(
                     "payment_checkpoint_failed",
-                    detail={
-                        "failure": "settlement_delta_mismatch",
-                        "baseline": baseline,
-                        "result": result,
-                    },
+                    detail={"failure": "settlement_digest_missing_at_response"},
                 )
                 return
-            assert isinstance(baseline_payer_gold, int)
-            assert isinstance(baseline_payee_gold, int)
-            if (
-                result_payer_gold != baseline_payer_gold - gold
-                or result_payee_gold != baseline_payee_gold + gold
-            ):
-                self._fail(
-                    "payment_checkpoint_failed",
-                    detail={
-                        "failure": "settlement_delta_mismatch",
-                        "baseline": baseline,
-                        "result": result,
-                    },
-                )
-                return
-            digest = self._digest_mapping(
-                {
-                    "fingerprint": recorded,
-                    "baseline": baseline,
-                    "result": result,
-                }
+            self._update_payment_checkpoint(
+                settlement_digest=state.data["settlement_digest"]
             )
-            if not self._record_data_once(
-                {"settlement_digest": digest},
-                reason_code="payment_checkpoint_failed",
-                failure="settlement_digest_mismatch",
-            ):
-                return
-            self._update_payment_checkpoint(settlement_digest=digest)
             self._restart_armed = True
             self._journal.append(
                 "phase_advanced",

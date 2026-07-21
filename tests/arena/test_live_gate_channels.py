@@ -208,6 +208,89 @@ async def test_fund_capture_records_settlement_result_and_post_send_status(
 
 
 @pytest.mark.asyncio
+async def test_fund_hop_verifies_enactment_and_records_digest(tmp_path):
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    data = driver._journal.state.data
+    expected = lgc.ChannelsCoreDriver._digest_mapping({
+        "fingerprint": exact_payment_fingerprint(),
+        "baseline": data["settlement_baseline"],
+        "result": data["settlement_result"],
+    })
+    assert data["post_send_payment_status"] == "absent"
+    assert data["settlement_result"] == {
+        "turn": 11,
+        "payer_gold": 499,
+        "payee_gold": 501,
+    }
+    assert data["settlement_digest"] == expected
+    assert driver._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+
+
+@pytest.mark.asyncio
+async def test_fund_hop_fails_official_payment_not_enacted_on_pending_state(
+    tmp_path,
+):
+    from .live_gate_fakes import PaymentStateView
+
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    original = gs.get_channel_payment_state
+
+    async def pending_after_send(payer, payee, gold):
+        if gs.active_player == 1 and gs.treasury[1] == 499:
+            return PaymentStateView("exact")
+        return await original(payer, payee, gold)
+
+    gs.get_channel_payment_state = pending_after_send
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "official_payment_not_enacted"
+    assert "official_payment_not_enacted" in private_failure_text(driver)
+
+
+class NoTransferPaymentGateGameState(SynchronousPaymentGateGameState):
+    async def offer_channel_payment(self, payee, gold):
+        payer = self.active_player
+        if (payer, payee) in self.pending:
+            return "Error: CHANNEL_PAYMENT_PENDING_DEAL"
+        return "CHANNEL_PAYMENT_PROPOSED"
+
+
+@pytest.mark.asyncio
+async def test_fund_hop_fails_official_payment_not_enacted_on_delta_mismatch(
+    tmp_path,
+):
+    gs = NoTransferPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "official_payment_not_enacted"
+    assert private_failure_details(driver)[-1]["baseline"] == {
+        "turn": 11,
+        "payer_gold": 500,
+        "payee_gold": 500,
+    }
+    assert private_failure_details(driver)[-1]["result"] == {
+        "turn": 11,
+        "payer_gold": 500,
+        "payee_gold": 500,
+    }
+
+
+@pytest.mark.asyncio
 async def test_attach_opens_gate_journal_in_preflight(tmp_path):
     driver, runtime, gs = await attached_driver(tmp_path)
     state = driver._journal.state
