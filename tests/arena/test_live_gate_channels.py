@@ -1345,9 +1345,9 @@ async def test_settlement_data_append_crash_replays_without_duplicate(
     class SimulatedCrash(BaseException):
         pass
 
-    driver, runtime, gs = await attached_driver(tmp_path)
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
-    await run_gate_seat(driver, runtime, gs, 1, 11)
 
     journal = driver._journal
     real_append = journal.append
@@ -1360,7 +1360,11 @@ async def test_settlement_data_append_crash_replays_without_duplicate(
 
     journal.append = crashing_append
     with pytest.raises(SimulatedCrash):
-        await run_gate_seat(driver, runtime, gs, 2, 11)
+        if crash_key == "settlement_digest":
+            await run_gate_seat(driver, runtime, gs, 1, 11)
+        else:
+            await run_gate_seat(driver, runtime, gs, 1, 11)
+            await run_gate_seat(driver, runtime, gs, 2, 11)
 
     resumed = lgc.ChannelsCoreDriver(gate_config())
     await resumed.attach(
@@ -1368,9 +1372,12 @@ async def test_settlement_data_append_crash_replays_without_duplicate(
     )
 
     assert resumed.pending_signal() is None
-    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
     assert resumed._journal.state.capture_started_turn is None
     assert len(data_events_for_key(resumed, crash_key)) == 1
+    if crash_key == "settlement_digest":
+        assert resumed._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+        return
+    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
     await run_gate_seat(resumed, runtime, gs, 3, 11)
     assert resumed.pending_signal() == GATE_RESTART_REQUIRED
 
@@ -1414,23 +1421,25 @@ async def test_restart_metadata_append_crash_replays_without_duplicate(tmp_path)
 
 @pytest.mark.asyncio
 async def test_settlement_delta_mismatch_fails_closed(tmp_path):
-    gs = GateGameState()
-    original = gs.respond_to_channel_payment
-
-    async def respond_without_transfer(payer, gold, accept):
-        result = await original(payer, gold, accept)
-        gs.treasury[payer] += gold      # undo: simulate a phantom settlement
-        gs.treasury[payee_id] -= gold
-        return result
-
-    payee_id = 2
-    gs.respond_to_channel_payment = respond_without_transfer
+    gs = NoTransferPaymentGateGameState()
     driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
-    await run_gate_round(driver, runtime, gs, 11)
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
     state = driver._journal.state
-    assert state.status == "failed"
-    assert "settlement_delta_mismatch" in private_failure_text(driver)
+    assert state.status == GATE_FAILED
+    assert state.reason == "official_payment_not_enacted"
+    assert private_failure_details(driver)[-1]["baseline"] == {
+        "turn": 11,
+        "payer_gold": 500,
+        "payee_gold": 500,
+    }
+    assert private_failure_details(driver)[-1]["result"] == {
+        "turn": 11,
+        "payer_gold": 500,
+        "payee_gold": 500,
+    }
 
 
 @pytest.mark.asyncio
