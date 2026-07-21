@@ -12,7 +12,7 @@
 # AI->AI PROPOSED deal enactment is synchronous at send. Spec revision 3
 # responds with fund-window settlement verification and ledger-only response.
 run_id: arena-channels-core-gate-v4
-# 24 captures expected on revision 2's eight-round path; 36 leaves room for
+# 24 captures expected on revision 3's retained eight-round path; 36 leaves room for
 # watcher handoff and deterministic blocker cleanup. Validation recomputes the
 # scenario minimum from channel_rules rather than trusting this number.
 max_puppet_turns: 36
