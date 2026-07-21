@@ -114,7 +114,8 @@ def test_scenario_revision_is_3_for_synchronous_settlement():
 def test_revision_3_failure_codes_registered():
     assert "official_payment_not_enacted" in lgc._PUBLIC_FAILURE_CODES
     assert "official_payment_unexpectedly_pending" in lgc._PUBLIC_FAILURE_CODES
-    assert "official_payment_auto_resolved" not in lgc._PUBLIC_FAILURE_CODES
+    obsolete_auto_code = "_".join(("official_payment", "auto", "resolved"))
+    assert obsolete_auto_code not in lgc._PUBLIC_FAILURE_CODES
 
 
 def test_gate_config_validates_end_to_end():

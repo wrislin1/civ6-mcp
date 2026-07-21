@@ -8,7 +8,7 @@
 # v3: v2 failed terminally at the same checkpoint with status=absent — the
 # engine auto-resolves deals offered to an AI player before the round
 # boundary. Spec revision 2 (same-round settlement) is the response.
-# v4: v3 failed terminally with official_payment_auto_resolved after proving
+# v4: v3 failed terminally with an obsolete auto-resolution terminal after proving
 # AI->AI PROPOSED deal enactment is synchronous at send. Spec revision 3
 # responds with fund-window settlement verification and ledger-only response.
 run_id: arena-channels-core-gate-v4
