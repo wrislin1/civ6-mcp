@@ -1086,6 +1086,7 @@ async def drive_to_funding_offer_without_gate_capture(tmp_path):
     assert driver._journal.state.phase == lgc.PHASE_FUND_UPFRONT
 
     gs.active_player = 1
+    gs.game_turn = 11
     admission = await runtime.admit_player(gs, 1, 11)
     driver.note_admission(1, 11, admission, "")
     result = await driver.policy_for(1)(gs, 1, 11)
@@ -1383,6 +1384,49 @@ async def test_action_verified_crash_rejects_rogue_same_turn_acknowledgement(
     assert rogue.source_id not in public_gate_text(resumed)
     assert rogue.source_id in private_failure_text(resumed)
     assert resumed._journal.result_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_deferred_settlement_read_after_turn_advance_fails_closed(
+    tmp_path,
+):
+    class SimulatedCrash(BaseException):
+        pass
+
+    gs = GateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    journal = driver._journal
+    real_append = journal.append
+
+    def crashing_append(kind, payload):
+        if kind == "data_recorded" and "settlement_result" in payload["data"]:
+            raise SimulatedCrash()
+        return real_append(kind, payload)
+
+    journal.append = crashing_append
+    with pytest.raises(SimulatedCrash):
+        await run_gate_seat(driver, runtime, gs, 1, 11)
+    assert len(data_events_for_key(driver, "settlement_result")) == 0
+
+    resumed = lgc.ChannelsCoreDriver(gate_config())
+    await resumed.attach(
+        gs=gs, channel_runtime=runtime, run_dir=driver._run_dir
+    )
+    assert resumed.pending_signal() is None  # attach performs no reads
+
+    # The human ends the turn before the watcher is rearmed.
+    await run_gate_seat(resumed, runtime, gs, 2, 12)
+
+    state = resumed._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "payment_checkpoint_failed"
+    assert private_failure_details(resumed)[-1] == {
+        "failure": "settlement_read_turn_drift",
+        "capture_turn": 11,
+        "live_turn": 12,
+    }
 
 
 @pytest.mark.asyncio

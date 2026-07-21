@@ -34,6 +34,7 @@ class GateGameState:
 
     def __init__(self):
         self.active_player = 0
+        self.game_turn = 0
         self.treasury = {1: 500, 2: 500, 3: 500}
         self.routes = {}
         self.missing_families = {}
@@ -43,6 +44,9 @@ class GateGameState:
 
     async def get_game_overview(self):
         return "OV"
+
+    async def get_current_game_turn(self):
+        return self.game_turn
 
     async def get_units(self):
         return []
@@ -89,6 +93,7 @@ async def run_gate_seat(
 ):
     """One coordinator-shaped capture for one gate seat."""
     gs.active_player = pid
+    gs.game_turn = turn
     admission = await runtime.admit_player(gs, pid, turn)
     driver.note_admission(pid, turn, admission, "")
     if driver.pending_signal() is not None:

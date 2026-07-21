@@ -2401,6 +2401,27 @@ class ChannelsCoreDriver:
                     return
 
     async def _read_settlement_treasuries(self, gs, turn) -> dict | None:
+        try:
+            live_turn = await gs.get_current_game_turn()
+        except Exception as exc:
+            self._fail(
+                "payment_state_failed",
+                detail={
+                    "failure": "settlement_turn_unreadable",
+                    "error": repr(exc),
+                },
+            )
+            return None
+        if live_turn != turn:
+            self._fail(
+                "payment_checkpoint_failed",
+                detail={
+                    "failure": "settlement_read_turn_drift",
+                    "capture_turn": turn,
+                    "live_turn": live_turn,
+                },
+            )
+            return None
         values = {}
         for key, pid in (
             ("payer_gold", self.role_pid[ROLE_API]),

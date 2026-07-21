@@ -949,6 +949,14 @@ class GameState:
         )
         return lq.parse_channel_payment_query(lines)
 
+    async def get_current_game_turn(self) -> int:
+        lines = await self.conn.execute_read(
+            'print(Game.GetCurrentGameTurn()); print("---END---")'
+        )
+        if not lines:
+            raise ValueError("no response to game turn query")
+        return int(lines[0])
+
     async def get_channel_payment_state(
         self, payer: int, payee: int, gold: int
     ) -> lq.ChannelPaymentOfferState | None:
