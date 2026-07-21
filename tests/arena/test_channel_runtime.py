@@ -3073,7 +3073,7 @@ async def test_recovery_conflicting_offer_after_deadline_is_funding_breach(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("accept", [True, False])
-async def test_response_recovery_retries_journaled_boolean_exactly_once(
+async def test_response_intent_recovery_rejects_pending_exact_without_mutation(
     tmp_path,
     payment_gs,
     accept,
@@ -3106,19 +3106,17 @@ async def test_response_recovery_retries_journaled_boolean_exactly_once(
     await reopened.reconcile_payment_intents(
         payment_gs, current_turn=4, current_player_id=deal.counterparty
     )
-    assert payment_gs.response_calls == [accept]
-    assert reopened.deal(deal.id).state is (
-        DealState.HONORED if accept else DealState.BROKEN
-    )
+    assert payment_gs.response_calls == []
+    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
     assert "src-response-recovery" in reopened.state.applied_source_ids
     await reopened.reconcile_payment_intents(
         payment_gs, current_turn=4, current_player_id=deal.counterparty
     )
-    assert payment_gs.response_calls == [accept]
+    assert payment_gs.response_calls == []
 
 
 @pytest.mark.asyncio
-async def test_response_recovery_records_authoritative_failure_without_repeating(
+async def test_response_intent_recovery_rejects_conflicting_without_mutation(
     tmp_path,
     payment_gs,
 ):
@@ -3145,7 +3143,7 @@ async def test_response_recovery_records_authoritative_failure_without_repeating
             accept=True,
         ),
     )
-    payment_gs.response_results.append("Error: CHANNEL_PAYMENT_ENGINE_FAILED")
+    payment_gs.pending[(offered.proposer, offered.counterparty)] = "conflicting"
     payment_gs.local_player = deal.counterparty
     reopened = runtime(tmp_path)
 
@@ -3156,13 +3154,112 @@ async def test_response_recovery_records_authoritative_failure_without_repeating
         payment_gs, current_turn=4, current_player_id=deal.counterparty
     )
 
-    assert reopened.deal(deal.id).payment_status is PaymentStatus.OFFERED
-    assert payment_gs.response_calls == [True]
+    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
+    assert payment_gs.response_calls == []
     assert "src-response-recovery-failed" in reopened.state.applied_source_ids
+    result = journal_events(reopened)[-1]
+    assert result["payload"]["engine_result"] == (
+        "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING"
+    )
+    assert result["payload"]["recovery"] == "conflicting_offer"
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_response_retry_is_canonical_reopenable_and_not_retried(
+async def test_response_intent_recovery_completes_on_absent(
+    tmp_path,
+    payment_gs,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="on_delivery",
+    )
+    await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    rt._commit(
+        "payment_response_intent",
+        payment_response_intent_payload(
+            offered,
+            "src-response-absent-recovery",
+            accept=True,
+        ),
+    )
+    payment_gs.pending.clear()
+    payment_gs.local_player = deal.counterparty
+    reopened = runtime(tmp_path)
+
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=4,
+        current_player_id=deal.counterparty,
+    )
+
+    assert payment_gs.response_calls == []
+    assert reopened.deal(deal.id).state is DealState.HONORED
+    assert reopened.deal(deal.id).payment_status is PaymentStatus.SETTLED
+    result = journal_events(reopened)[-1]
+    assert result["kind"] == "payment_response_result"
+    assert result["payload"]["recovery"] == "observed_absent_enacted"
+    assert result["payload"]["engine_result"] == cr.ENACTED_ABSENT_RESULT
+
+
+@pytest.mark.asyncio
+async def test_response_intent_recovery_unverifiable_on_exact(
+    tmp_path,
+    payment_gs,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="on_delivery",
+    )
+    await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    rt._commit(
+        "payment_response_intent",
+        payment_response_intent_payload(
+            offered,
+            "src-response-exact-recovery",
+            accept=True,
+        ),
+    )
+    payment_gs.local_player = deal.counterparty
+    reopened = runtime(tmp_path)
+
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=4,
+        current_player_id=deal.counterparty,
+    )
+
+    assert payment_gs.response_calls == []
+    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
+    result = journal_events(reopened)[-1]
+    assert result["kind"] == "payment_response_result"
+    assert result["payload"]["engine_result"] == (
+        "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING"
+    )
+    assert result["payload"]["recovery"] == "conflicting_offer"
+
+
+@pytest.mark.asyncio
+async def test_response_intent_recovery_rejects_exact_reopenably(
     tmp_path,
     payment_gs,
 ):
@@ -3189,7 +3286,6 @@ async def test_ambiguous_response_retry_is_canonical_reopenable_and_not_retried(
             accept=True,
         ),
     )
-    payment_gs.response_results.append("Action completed (no response).")
     payment_gs.local_player = deal.counterparty
     reopened = runtime(tmp_path)
 
@@ -3199,15 +3295,17 @@ async def test_ambiguous_response_retry_is_canonical_reopenable_and_not_retried(
         current_player_id=deal.counterparty,
     )
 
-    assert payment_gs.response_calls == [True]
-    assert len(payment_gs.state_queries) == 3  # funding + pre-retry + post-retry
+    assert payment_gs.response_calls == []
+    assert len(payment_gs.state_queries) == 2  # funding + recovery observation
     assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
     assert reopened.state.grievances == ()
     assert "src-response-ambiguous-retry" in reopened.state.applied_source_ids
     result = journal_events(reopened)[-1]
     assert result["kind"] == "payment_response_result"
-    assert result["payload"]["engine_result"] == "RECOVERY_AMBIGUOUS_RESPONSE"
-    assert result["payload"]["recovery"] == "response_retry_exact_ambiguous"
+    assert result["payload"]["engine_result"] == (
+        "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING"
+    )
+    assert result["payload"]["recovery"] == "conflicting_offer"
 
     reopened_again = runtime(tmp_path)
     await reopened_again.reconcile_payment_intents(
@@ -3215,7 +3313,7 @@ async def test_ambiguous_response_retry_is_canonical_reopenable_and_not_retried(
         current_turn=4,
         current_player_id=deal.counterparty,
     )
-    assert payment_gs.response_calls == [True]
+    assert payment_gs.response_calls == []
 
 
 @pytest.mark.asyncio
@@ -3236,7 +3334,7 @@ async def test_ambiguous_response_retry_is_canonical_reopenable_and_not_retried(
         ),
     ],
 )
-async def test_response_recovery_post_query_outage_is_canonical_and_exactly_once(
+async def test_response_intent_recovery_ignores_stale_engine_retry_inputs(
     tmp_path,
     payment_gs,
     post_query_outcome,
@@ -3295,7 +3393,7 @@ async def test_response_recovery_post_query_outage_is_canonical_and_exactly_once
         current_player_id=deal.counterparty,
     )
 
-    assert payment_gs.response_calls == [True]
+    assert payment_gs.response_calls == []
     assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
     assert reopened.state.grievances == ()
     assert source_id in reopened.state.applied_source_ids
@@ -3305,10 +3403,15 @@ async def test_response_recovery_post_query_outage_is_canonical_and_exactly_once
     assert acknowledgement.status == "applied"
     result = journal_events(reopened)[-1]
     assert result["kind"] == "payment_response_result"
-    assert result["payload"]["engine_result"] == "RECOVERY_AMBIGUOUS_RESPONSE"
-    assert result["payload"]["recovery"] == expected_recovery
+    assert result["payload"]["engine_result"] == (
+        "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING"
+    )
+    assert result["payload"]["recovery"] == "conflicting_offer"
     assert result["payload"]["acknowledgement"]["source_id"] == source_id
-    assert result["payload"]["deal"]["terminal"]["reason"] == expected_reason
+    assert result["payload"]["deal"]["terminal"]["reason"] == (
+        "payment response intent outcome is ambiguous because an offer is "
+        "unexpectedly exact"
+    )
     journal_after_recovery = reopened.events_path.read_bytes()
 
     reopened_again = runtime(tmp_path)
@@ -3318,7 +3421,7 @@ async def test_response_recovery_post_query_outage_is_canonical_and_exactly_once
         current_player_id=deal.counterparty,
     )
 
-    assert payment_gs.response_calls == [True]
+    assert payment_gs.response_calls == []
     assert reopened_again.events_path.read_bytes() == journal_after_recovery
 
 
@@ -3375,7 +3478,7 @@ async def test_recovery_rejects_regressed_turn_before_query_or_append(
 
 
 @pytest.mark.asyncio
-async def test_response_recovery_missing_offer_is_unverifiable_without_retry(
+async def test_response_intent_recovery_completes_missing_offer_without_mutation(
     tmp_path,
     payment_gs,
 ):
@@ -3408,7 +3511,8 @@ async def test_response_recovery_missing_offer_is_unverifiable_without_retry(
     await reopened.reconcile_payment_intents(
         payment_gs, current_turn=4, current_player_id=deal.counterparty
     )
-    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
+    assert reopened.deal(deal.id).state is DealState.HONORED
+    assert reopened.deal(deal.id).payment_status is PaymentStatus.SETTLED
     assert payment_gs.response_calls == []
     assert reopened.state.grievances == ()
 

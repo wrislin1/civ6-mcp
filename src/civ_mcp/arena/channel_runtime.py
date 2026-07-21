@@ -1281,16 +1281,65 @@ class ChannelRuntime:
                     expected_deal = None
                 else:
                     raise ValueError("non-authoritative payment response was completed")
-            elif recovery in {"offer_absent", "conflicting_offer"}:
+            elif recovery == "observed_absent_enacted":
+                if engine_result != ENACTED_ABSENT_RESULT:
+                    raise ValueError("invalid absent-enacted response recovery")
+                if cleanup is not None:
+                    observation_id = intent.get("observation_id")
+                    expected_deal = cls._unverifiable_deal_record(
+                        deal,
+                        turn=intent["turn"],
+                        reason=_INCOMPLETE_ACCEPTANCE_REASON,
+                        evidence_refs=(
+                            (observation_id,)
+                            if isinstance(observation_id, str)
+                            else ()
+                        ),
+                    )
+                elif accept:
+                    expected_deal = cls._validated_success_deal(state, deal, intent)
+                else:
+                    expected_deal, expected_grievance = (
+                        cls._expected_breach_records(
+                            state,
+                            deal,
+                            turn=intent["turn"],
+                            breach="payment_response",
+                            reason="enacted linked payment was rejected",
+                        )
+                    )
+            elif recovery == "conflicting_offer":
+                if engine_result not in {
+                    "RECOVERY_PAYMENT_ABSENT",
+                    "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING",
+                }:
+                    raise ValueError("invalid payment-response preflight recovery")
+                reasons = {
+                    "payment response intent outcome is ambiguous because "
+                    "the exact offer is conflicting",
+                }
+                if engine_result == "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING":
+                    reasons |= {
+                        "payment response intent outcome is ambiguous because "
+                        "an offer is unexpectedly exact",
+                        "payment response intent outcome is ambiguous because "
+                        "an offer is unexpectedly conflicting",
+                    }
+                expected_deal = cls._expected_unverifiable_result(
+                    deal,
+                    deal_payload,
+                    intent,
+                    reasons,
+                )
+            elif recovery == "offer_absent":
                 if engine_result != "RECOVERY_PAYMENT_ABSENT":
                     raise ValueError("invalid payment-response preflight recovery")
-                status = "absent" if recovery == "offer_absent" else "conflicting"
                 expected_deal = cls._expected_unverifiable_result(
                     deal,
                     deal_payload,
                     intent,
                     "payment response intent outcome is ambiguous because "
-                    f"the exact offer is {status}",
+                    "the exact offer is absent",
                 )
             elif recovery == "response_retry_query_failed":
                 if not cls._authoritative_payment_failure(engine_result):
@@ -2611,24 +2660,20 @@ class ChannelRuntime:
                     )
                 continue
 
-            if status != "exact":
+            if status != "absent":
                 unverifiable = self._unverifiable_deal_record(
                     deal,
                     turn=current_turn,
                     reason=(
                         "payment response intent outcome is ambiguous because "
-                        f"the exact offer is {status}"
+                        f"an offer is unexpectedly {status}"
                     ),
                 )
                 self._commit_payment_result(
                     "payment_response_result",
                     intent,
-                    engine_result="RECOVERY_PAYMENT_ABSENT",
-                    recovery=(
-                        "offer_absent"
-                        if status == "absent"
-                        else "conflicting_offer"
-                    ),
+                    engine_result="RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING",
+                    recovery="conflicting_offer",
                     deal=unverifiable,
                     grievance=None,
                     message=f"payment response became unverifiable for {deal.id}",
@@ -2636,182 +2681,56 @@ class ChannelRuntime:
                 continue
             accept = intent["accept"]
             cleanup = intent.get("cleanup")
-            engine_accept = False if cleanup is not None else accept
-            try:
-                engine_result = await gs.respond_to_channel_payment(
-                    intent["payer"],
-                    intent["gold"],
-                    engine_accept,
-                )
-            except Exception as exc:
-                try:
-                    remaining = await gs.get_channel_payment_state(
-                        intent["payer"],
-                        intent["payee"],
-                        intent["gold"],
-                    )
-                except Exception:
-                    if cleanup is not None:
-                        continue
-                    unverifiable = self._unverifiable_deal_record(
-                        deal,
-                        turn=current_turn,
-                        reason=(
-                            "payment response recovery could not verify the "
-                            "engine outcome after retry"
-                        ),
-                    )
-                    self._commit_payment_result(
-                        "payment_response_result",
-                        intent,
-                        engine_result=f"Error: {type(exc).__name__}",
-                        recovery="response_retry_query_failed",
-                        deal=unverifiable,
-                        grievance=None,
-                        message=f"payment response became unverifiable for {deal.id}",
-                    )
-                    continue
-                remaining_status = self._payment_state_status(remaining, deal)
-                if cleanup is not None and remaining_status is None:
-                    continue
-                if remaining_status != "exact":
-                    unverifiable = self._unverifiable_deal_record(
-                        deal,
-                        turn=current_turn,
-                        reason=(
-                            "payment response recovery remained ambiguous "
-                            "after an engine exception"
-                        ),
-                    )
-                    self._commit_payment_result(
-                        "payment_response_result",
-                        intent,
-                        engine_result=f"Error: {type(exc).__name__}",
-                        recovery="response_retry_ambiguous",
-                        deal=unverifiable,
-                        grievance=None,
-                        message=f"payment response became unverifiable for {deal.id}",
-                    )
-                    continue
-                if cleanup is not None:
-                    continue
-                engine_result = f"Error: {type(exc).__name__}"
-            if self._response_succeeded(engine_result, engine_accept):
-                if cleanup is not None:
-                    observation_id = intent.get("observation_id")
-                    unverifiable = self._unverifiable_deal_record(
-                        deal,
-                        turn=intent["turn"],
-                        reason=_INCOMPLETE_ACCEPTANCE_REASON,
-                        evidence_refs=(
-                            (observation_id,)
-                            if isinstance(observation_id, str)
-                            else ()
-                        ),
-                    )
-                    self._commit_payment_result(
-                        "payment_response_result",
-                        intent,
-                        engine_result=engine_result,
-                        recovery="response_retried",
-                        deal=unverifiable,
-                        grievance=None,
-                        message=(
-                            "recovered incomplete payment acceptance for "
-                            f"{deal.id}"
-                        ),
-                    )
-                elif accept:
-                    success_payload = intent.get("success_deal")
-                    accepted = (
-                        self._deal_from_changed_payload(success_payload)
-                        if isinstance(success_payload, dict)
-                        else self._accepted_payment_deal(
-                            deal,
-                            turn=intent["turn"],
-                            observation=None,
-                            observation_id=None,
-                        )
-                    )
-                    self._commit_payment_result(
-                        "payment_response_result",
-                        intent,
-                        engine_result=engine_result,
-                        recovery="response_retried",
-                        deal=accepted,
-                        grievance=None,
-                        message=f"recovered accepted payment for {deal.id}",
-                    )
-                else:
-                    broken, grievance = self._broken_deal_records(
-                        deal,
-                        turn=intent["turn"],
-                        breach="payment_response",
-                        reason="exact linked payment was rejected",
-                    )
-                    self._commit_payment_result(
-                        "payment_response_result",
-                        intent,
-                        engine_result=engine_result,
-                        recovery="response_retried",
-                        deal=broken,
-                        grievance=grievance,
-                        message=f"recovered rejected payment for {deal.id}",
-                    )
-            elif self._authoritative_payment_failure(engine_result):
-                if cleanup is not None:
-                    continue
-                self._commit_payment_result(
-                    "payment_response_result",
-                    intent,
-                    engine_result=engine_result,
-                    recovery="response_retried",
-                    deal=None,
-                    grievance=None,
-                    message=f"recovered payment response failed for {deal.id}",
-                )
-            else:
-                try:
-                    post_retry = await gs.get_channel_payment_state(
-                        intent["payer"],
-                        intent["payee"],
-                        intent["gold"],
-                    )
-                except Exception:
-                    post_status = None
-                    recovery = "response_retry_post_query_failed"
-                    reason = (
-                        "payment response retry returned no authoritative result "
-                        "and the post-retry offer query failed"
-                    )
-                else:
-                    post_status = self._payment_state_status(post_retry, deal)
-                    recovery = "response_retry_post_state_invalid"
-                    reason = (
-                        "payment response retry returned no authoritative result "
-                        "and the post-retry offer state was invalid"
-                    )
-                if post_status is not None:
-                    recovery = f"response_retry_{post_status}_ambiguous"
-                    reason = (
-                        "payment response retry returned no authoritative result; "
-                        f"the post-retry offer was {post_status}"
-                    )
-                if cleanup is not None and post_status in {None, "exact"}:
-                    continue
+            if cleanup is not None:
+                observation_id = intent.get("observation_id")
                 unverifiable = self._unverifiable_deal_record(
                     deal,
-                    turn=current_turn,
-                    reason=reason,
+                    turn=intent["turn"],
+                    reason=_INCOMPLETE_ACCEPTANCE_REASON,
+                    evidence_refs=(
+                        (observation_id,)
+                        if isinstance(observation_id, str)
+                        else ()
+                    ),
                 )
                 self._commit_payment_result(
                     "payment_response_result",
                     intent,
-                    engine_result="RECOVERY_AMBIGUOUS_RESPONSE",
-                    recovery=recovery,
+                    engine_result=ENACTED_ABSENT_RESULT,
+                    recovery="observed_absent_enacted",
                     deal=unverifiable,
                     grievance=None,
-                    message=f"payment response became unverifiable for {deal.id}",
+                    message=(
+                        "recovered incomplete payment acceptance for "
+                        f"{deal.id}"
+                    ),
+                )
+            elif accept:
+                accepted = self._validated_success_deal(self.state, deal, intent)
+                self._commit_payment_result(
+                    "payment_response_result",
+                    intent,
+                    engine_result=ENACTED_ABSENT_RESULT,
+                    recovery="observed_absent_enacted",
+                    deal=accepted,
+                    grievance=None,
+                    message=f"recovered accepted payment for {deal.id}",
+                )
+            else:
+                broken, grievance = self._broken_deal_records(
+                    deal,
+                    turn=intent["turn"],
+                    breach="payment_response",
+                    reason="enacted linked payment was rejected",
+                )
+                self._commit_payment_result(
+                    "payment_response_result",
+                    intent,
+                    engine_result=ENACTED_ABSENT_RESULT,
+                    recovery="observed_absent_enacted",
+                    deal=broken,
+                    grievance=grievance,
+                    message=f"recovered rejected payment for {deal.id}",
                 )
 
     def _deal_from_changed_payload(self, payload: dict) -> Deal:
