@@ -14,7 +14,6 @@ from civ_mcp.lua.channel_payments import (
     PaymentOfferStatus,
     build_channel_payment_offer,
     build_channel_payment_query,
-    build_channel_payment_response,
     build_channel_payment_state_query,
     parse_channel_payment_query,
     parse_channel_payment_state_query,
@@ -83,9 +82,6 @@ def test_payment_builders_are_exact_gold_only_and_never_accept_counteroffers():
     assert "SetDuration(0)" in offer
     assert "DealProposalAction.PROPOSED" in offer
     assert "DealProposalAction.ACCEPTED" not in offer
-    response = build_channel_payment_response(1, 100, True)
-    assert "GetItemCount() ~= 1" in response
-    assert "DealProposalAction.ACCEPTED" in response
 
 
 def test_payment_state_query_is_seat_independent():
@@ -312,8 +308,6 @@ def test_observation_builder_prints_only_requested_families():
         (build_channel_payment_state_query, ('1); os.exit(); --', 2, 100)),
         (build_channel_payment_state_query, (1, '2); os.exit(); --', 100)),
         (build_channel_payment_state_query, (1, 2, '100); os.exit(); --')),
-        (build_channel_payment_response, ('2); os.exit(); --', 100, True)),
-        (build_channel_payment_response, (2, '100); os.exit(); --', True)),
     ],
 )
 def test_channel_builders_reject_integer_injection(builder, args):
@@ -356,7 +350,6 @@ async def test_game_state_channel_wrappers_use_ingame_write_context():
             ["OK:PAYMENT_PROPOSED", "---END---"],
             ["PAYMENT|1|2|100|0|1", "---END---"],
             ["PAYMENT_STATE|1|2|100|exact|0|1", "---END---"],
-            ["OK:PAYMENT_ACCEPTED", "---END---"],
         ]
     )
     gs = GameState(conn)  # type: ignore[arg-type]
@@ -365,7 +358,6 @@ async def test_game_state_channel_wrappers_use_ingame_write_context():
     proposed = await gs.offer_channel_payment(2, 100)
     pending = await gs.get_channel_payment_offer(1, 100)
     pending_state = await gs.get_channel_payment_state(1, 2, 100)
-    accepted = await gs.respond_to_channel_payment(1, 100, True)
 
     assert obs.treasury_gold == 250
     assert proposed == "PAYMENT_PROPOSED"
@@ -374,5 +366,4 @@ async def test_game_state_channel_wrappers_use_ingame_write_context():
         PaymentOfferStatus.EXACT,
         ExactPaymentOffer(1, 2, 100),
     )
-    assert accepted == "PAYMENT_ACCEPTED"
-    assert len(conn.writes) == 5
+    assert len(conn.writes) == 4

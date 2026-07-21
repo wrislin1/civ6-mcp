@@ -280,30 +280,12 @@ def parse_channel_payment_state_query(
     return ChannelPaymentOfferState(status)
 
 
-def build_channel_payment_response(payer: int, gold: int, accept: bool) -> str:
-    """Accept/reject only after revalidating the exact linked payment offer."""
-    payer, gold = _payment_inputs(payer, gold)
-    if not isinstance(accept, bool):
-        raise TypeError("accept must be a boolean")
-    action = (
-        "DealProposalAction.ACCEPTED" if accept else "DealProposalAction.REJECTED"
-    )
-    verb = "ACCEPTED" if accept else "REJECTED"
-    return _build_exact_incoming_check(
-        payer,
-        gold,
-        f"""DealManager.SendWorkingDeal({action}, me, payer)
-print("OK:CHANNEL_PAYMENT_{verb}")""",
-    )
-
-
 __all__ = [
     "ChannelPaymentOfferState",
     "ExactPaymentOffer",
     "PaymentOfferStatus",
     "build_channel_payment_offer",
     "build_channel_payment_query",
-    "build_channel_payment_response",
     "build_channel_payment_state_query",
     "parse_channel_payment_query",
     "parse_channel_payment_state_query",

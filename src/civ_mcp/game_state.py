@@ -962,14 +962,6 @@ class GameState:
             gold=gold,
         )
 
-    async def respond_to_channel_payment(
-        self, payer: int, gold: int, accept: bool
-    ) -> str:
-        lines = await self.conn.execute_write(
-            lq.build_channel_payment_response(payer, gold, accept)
-        )
-        return _action_result(lines)
-
     async def respond_to_deal(self, other_player_id: int, accept: bool) -> str:
         other_player_id = int(other_player_id)
         lua = lq.build_respond_to_deal(other_player_id, accept)

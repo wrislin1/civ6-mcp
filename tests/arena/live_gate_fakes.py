@@ -84,12 +84,6 @@ class GateGameState:
             return PaymentStateView("exact", expected)
         return PaymentStateView("conflicting")
 
-    async def respond_to_channel_payment(self, payer, gold, accept):
-        raise AssertionError(
-            "revision 3: nothing may mutate the engine at payment response"
-        )
-
-
 async def run_gate_seat(
     driver, runtime, gs, pid, turn, *, pending_record_overrides=None
 ):

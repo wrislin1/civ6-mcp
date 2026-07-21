@@ -94,7 +94,6 @@ class PaymentGameState:
         self.response_results: list[str | BaseException] = []
         self.offer_calls = 0
         self.response_calls: list[bool] = []
-        self.snapshot_at_response: str | None = None
         self.query_calls = 0
         self.state_queries: list[tuple[int, int, int, int]] = []
         self.state_results: list[object | BaseException] = []
@@ -171,35 +170,6 @@ class PaymentGameState:
                 result = PaymentStateView("conflicting")
         if self.state_query_barrier is not None:
             await self.state_query_barrier.wait()
-        return result
-
-    async def respond_to_channel_payment(
-        self,
-        payer: int,
-        gold: int,
-        accept: bool,
-    ) -> str:
-        self.response_calls.append(accept)
-        if self.yield_response:
-            await asyncio.sleep(0)
-        if self.runtime is not None:
-            self.snapshot_at_response = self.runtime.state_path.read_text()
-        result = (
-            self.response_results.pop(0)
-            if self.response_results
-            else (
-                "CHANNEL_PAYMENT_ACCEPTED"
-                if accept
-                else "CHANNEL_PAYMENT_REJECTED"
-            )
-        )
-        if isinstance(result, BaseException):
-            raise result
-        expected = ExactPaymentOffer(payer, self.local_player, gold)
-        if self.pending.get((payer, self.local_player)) != expected:
-            return "Error: NO_EXACT_CHANNEL_PAYMENT"
-        if result in {"CHANNEL_PAYMENT_ACCEPTED", "CHANNEL_PAYMENT_REJECTED"}:
-            del self.pending[(payer, self.local_player)]
         return result
 
     def install_exact_offer(self, payer: int, payee: int, gold: int) -> None:
