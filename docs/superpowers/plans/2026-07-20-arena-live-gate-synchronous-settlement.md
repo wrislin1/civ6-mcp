@@ -18,11 +18,11 @@
 
 - `_advance_after_capture` must remain **read-only against the game** — crash reconcile re-runs it (`_reconcile_started_capture`) and re-journals exactly the events the uncrashed capture would have written. All new game reads happen in `_record_settlement_result` (the pre-journal path before `seat_capture_started`), are journaled via `data_recorded` through `_record_data_once`, and are guarded so a recovery re-run does not re-read.
 - The engine enacts AI→AI `PROPOSED` deals synchronously at send (Locked Decision 14). No design may expect an `exact` pending official offer at any time after `offer_channel_payment` returns.
-- Fail closed everywhere: new mismatches write `gate_failed` + `result.json` through `self._fail(reason_code, detail=...)` with codes registered in `_PUBLIC_FAILURE_CODES` (`live_gate_channels.py:90`).
+- Fail closed everywhere: new mismatches write `gate_failed` + `result.json` through `self._fail` with codes registered in `_PUBLIC_FAILURE_CODES` (`live_gate_channels.py:90`).
 - No retry may create a second official payment side effect; the channel runtime's payment intent/result reconciliation stays the only retry authority. A fund-intent crash whose recovery observes `absent` without same-window delta evidence stays `unverifiable` (fail-closed) — this plan does not add delta-based fund recovery.
 - Journal shape discipline: `phase_advanced` events and the successful-run journal shape must be byte-stable for a given path.
 - The eight-round schedule and 24-capture minimum from the rev-2 plan are **unchanged** — no round is added or removed; only the in-round work moves between seat windows.
-- All work on `main` in `/home/riz/projects/civ6-mcp`; run the full suite with `uv run pytest tests -q` (≈2 min) before each commit that touches shared code.
+- All work on `main` in `/home/riz/projects/civ6-mcp`; run the full suite with `uv run pytest tests -q` before each commit that touches shared code.
 
 ## Revised round-2 content (all other rounds unchanged from the rev-2 plan)
 
@@ -46,62 +46,136 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-In `tests/arena/test_channel_runtime.py`, next to the existing respond-path tests (search `respond_to_payment`), using that file's existing fixtures for a runtime holding an `OFFERED` up-front deal:
+In `tests/arena/test_channel_runtime.py`, add a module import for the new
+constant next to the existing runtime imports:
 
 ```python
-class _AbsentStateGS:
-    """Engine truth: the enacted payment is absent; any engine mutation is a bug."""
-
-    def __init__(self, observation_gs):
-        self._inner = observation_gs
-        self.respond_calls = 0
-
-    def __getattr__(self, name):
-        return getattr(self._inner, name)
-
-    async def get_channel_payment_state(self, payer, payee, gold):
-        from tests.arena.live_gate_fakes import PaymentStateView
-        return PaymentStateView("absent")
-
-    async def respond_to_channel_payment(self, payer, gold, accept):
-        self.respond_calls += 1
-        raise AssertionError("revision 3: response must not mutate the engine")
-
-
-async def test_payment_response_settles_ledger_against_absent_enacted_payment(
-    offered_runtime, offered_gs, offered_deal_id, staged_response_accept
-):
-    gs = _AbsentStateGS(offered_gs)
-    ack = await offered_runtime.apply_staged(gs, staged_response_accept, turn=TURN)
-    assert ack.status == "applied"
-    assert gs.respond_calls == 0
-    deal = offered_runtime.deal(offered_deal_id)
-    assert deal.payment_status is PaymentStatus.SETTLED
-    result = [
-        e for e in offered_runtime.state_events()
-        if e.kind == "payment_response_result"
-    ][-1]
-    assert result.payload["engine_result"] == cr.ENACTED_ABSENT_RESULT
-    intent = [
-        e for e in offered_runtime.state_events()
-        if e.kind == "payment_response_intent"
-    ][-1]
-    assert intent.payload["preflight_status"] == "absent"
-    assert intent.payload["preflight_player"] == deal.counterparty
-
-
-async def test_payment_response_rejects_unexpectedly_pending_offer(
-    offered_runtime, offered_gs, staged_response_accept
-):
-    # offered_gs still models a pending exact offer -> now the anomaly
-    ack = await offered_runtime.apply_staged(
-        offered_gs, staged_response_accept, turn=TURN
-    )
-    assert ack.status == "rejected"
-    assert "unexpectedly pending" in ack.message
+import civ_mcp.arena.channel_runtime as cr
 ```
 
-Adapt fixture names to the file's local ones (the file already stages accepted responses against an `OFFERED` deal); the assertions above are the contract. Add a validation-side test that a journaled `payment_response_intent` with `preflight_status="exact"` is now rejected by `_validate_payment_intent` (mirror the existing invalid-preflight test with the statuses swapped).
+Then add these tests next to
+`test_payment_response_validates_actor_deadline_and_exact_offer`:
+
+```python
+@pytest.mark.asyncio
+async def test_payment_response_settles_ledger_against_absent_enacted_payment(
+    tmp_path,
+    payment_gs,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="up_front",
+    )
+    fund = await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    assert fund.status == "applied"
+    payment_gs.pending.clear()
+
+    response = await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.counterparty,
+        "respond_to_payment",
+        {"deal_id": deal.id, "accept": True},
+        turn=4,
+        source_id="response-absent-enacted",
+        action_observation=observation(
+            deal.counterparty,
+            4,
+            camps=frozenset({(12, 7)}),
+        ),
+    )
+
+    assert response.status == "applied"
+    assert payment_gs.response_calls == []
+    settled = rt.deal(deal.id)
+    assert settled.payment_status is PaymentStatus.SETTLED
+    result = [
+        event for event in journal_events(rt)
+        if event["kind"] == "payment_response_result"
+    ][-1]
+    assert result["payload"]["engine_result"] == cr.ENACTED_ABSENT_RESULT
+    intent = [
+        event for event in journal_events(rt)
+        if event["kind"] == "payment_response_intent"
+    ][-1]
+    assert intent["payload"]["preflight_status"] == "absent"
+    assert intent["payload"]["preflight_player"] == deal.counterparty
+
+
+@pytest.mark.asyncio
+async def test_payment_response_rejects_unexpectedly_pending_offer(
+    tmp_path,
+    payment_gs,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="up_front",
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+
+    response = await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.counterparty,
+        "respond_to_payment",
+        {"deal_id": deal.id, "accept": True},
+        turn=4,
+        source_id="response-unexpected-pending",
+        action_observation=observation(deal.counterparty, 4),
+    )
+
+    assert response.status == "rejected"
+    assert "unexpectedly pending" in response.message
+    assert payment_gs.response_calls == []
+    assert rt.deal(deal.id).payment_status is PaymentStatus.OFFERED
+
+
+@pytest.mark.asyncio
+async def test_open_rejects_payment_response_intent_with_legacy_exact_preflight(
+    tmp_path,
+    payment_gs,
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="up_front",
+    )
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    intent = payment_response_intent_payload(
+        offered,
+        "src-legacy-exact-response-preflight",
+        accept=True,
+    )
+    intent["preflight_status"] = "exact"
+    append_complete_event(rt, "payment_response_intent", intent)
+
+    with pytest.raises(ChannelStateError, match="invalid channel journal"):
+        runtime(tmp_path)
+```
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -118,7 +192,16 @@ In `channel_runtime.py`:
 ENACTED_ABSENT_RESULT = "CHANNEL_PAYMENT_ENACTED_ABSENT"
 ```
 
-2. `_validate_payment_intent` (~line 486): flip the response expectation —
+2. In `tests/arena/test_channel_runtime.py`, update
+   `payment_response_intent_payload` so its response-intent fixture emits the
+   rev-3 preflight:
+
+```python
+        "preflight_status": "absent",
+        "preflight_player": deal.counterparty,
+```
+
+3. `_validate_payment_intent` (~line 486): flip the response expectation —
 
 ```python
         expected_preflight = (
@@ -128,7 +211,7 @@ ENACTED_ABSENT_RESULT = "CHANNEL_PAYMENT_ENACTED_ABSENT"
         )
 ```
 
-3. `_respond_to_payment` (~line 2214): replace the exact-offer gate —
+4. `_respond_to_payment` (~line 2214): replace the exact-offer gate —
 
 ```python
         if self._payment_state_status(payment_state, deal) != "absent":
@@ -139,7 +222,7 @@ ENACTED_ABSENT_RESULT = "CHANNEL_PAYMENT_ENACTED_ABSENT"
 
 and pass `preflight_status="absent"` through `_payment_intent_payload` (it derives preflight from the queried state — confirm the recorded payload carries `absent`/counterparty).
 
-4. Delete the entire `gs.respond_to_channel_payment` call block (the `engine_accept` computation, the try/except recovery wrapper, and the `_response_succeeded` branching, ~lines 2234–2299). After `_commit_payment_intent_for_action` returns `None`, commit directly:
+5. Delete the entire `gs.respond_to_channel_payment` call block (the `engine_accept` computation, the try/except recovery wrapper, and the `_response_succeeded` branching, ~lines 2234–2299). After `_commit_payment_intent_for_action` returns `None`, commit directly:
 
 ```python
         engine_result = ENACTED_ABSENT_RESULT
@@ -180,12 +263,36 @@ and pass `preflight_status="absent"` through `_payment_intent_payload` (it deriv
         )
 ```
 
-5. Replay-side result validation (~lines 1248–1305): where journaled `payment_response_result` events are validated via `_response_succeeded(engine_result, engine_accept)`, accept `ENACTED_ABSENT_RESULT` as the success string for both accept and reject responses (it is the recorded engine evidence in every rev-3 response). Keep validation of legacy strings so rev-1/-2 journals still replay.
+6. Replay-side result validation (~lines 1248–1305): where journaled `payment_response_result` events are validated via `_response_succeeded(engine_result, engine_accept)`, accept `ENACTED_ABSENT_RESULT` as the success string for both accept and reject responses (it is the recorded engine evidence in every rev-3 response). Keep validation of legacy strings so rev-1/-2 journals still replay.
 
-- [ ] **Step 4: Run the runtime suite — new tests PASS; note collateral failures**
+- [ ] **Step 4: Run the runtime suite and migrate old response expectations**
 
 Run: `uv run pytest tests/arena/test_channel_runtime.py -q`
-Collateral failures in old respond-path tests that model the disproved engine (pending offers surviving to the response) are expected — migrate them now: any test staging a response against a fake still holding an `exact` pending offer either becomes an `unexpectedly pending` rejection test or updates its fake to the absent-enacted shape. Do not delete coverage: every migrated test must still assert ledger `SETTLED`/broken transitions and single-ack discipline.
+
+Expected before migration: the new tests pass; older response-path tests that
+left an exact pending offer in `payment_gs.pending` fail because rev 3 treats
+that state as anomalous.
+
+Apply these migration rules to every failing response-path test in
+`tests/arena/test_channel_runtime.py`:
+
+- Tests that verify a successful accept path must call
+  `payment_gs.pending.clear()` after `fund_deal` and before
+  `respond_to_payment`, then assert `payment_gs.response_calls == []`.
+- Tests that verify a response reject/breach path must either call
+  `payment_gs.pending.clear()` and assert the ledger breach, or intentionally
+  leave the exact offer pending and assert the `"unexpectedly pending"`
+  rejection. Preserve the existing `SETTLED`/`BROKEN` assertions.
+- Tests that inspect `payment_response_result["engine_result"]` must expect
+  `cr.ENACTED_ABSENT_RESULT`; tests that inspect response-intent preflight must
+  expect `preflight_status == "absent"`.
+- Tests whose only purpose was engine retry after `respond_to_channel_payment`
+  are obsolete for the direct response path. Keep replay/reconciliation retry
+  coverage in Task 2; do not keep direct-response tests that require calling
+  `gs.respond_to_channel_payment`.
+
+Re-run: `uv run pytest tests/arena/test_channel_runtime.py -q`
+Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -208,34 +315,102 @@ git commit -m "feat(arena): payment response settles ledger without engine mutat
 
 - [ ] **Step 1: Write the failing tests**
 
-Mirror the file's existing reconcile tests (search `reconcile_payment_intents`):
+Add these tests after
+`test_response_recovery_records_authoritative_failure_without_repeating`:
 
 ```python
+@pytest.mark.asyncio
 async def test_response_intent_recovery_completes_on_absent(
-    runtime_with_unfinished_response_intent, absent_gs, deal_id
+    tmp_path,
+    payment_gs,
 ):
-    rt = runtime_with_unfinished_response_intent
-    await rt.reconcile_payment_intents(
-        absent_gs, current_turn=TURN, current_player_id=PAYEE
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="on_delivery",
     )
-    deal = rt.deal(deal_id)
-    assert deal.payment_status is PaymentStatus.SETTLED
-    result = [
-        e for e in rt.state_events() if e.kind == "payment_response_result"
-    ][-1]
-    assert result.payload["recovery"] == "observed_absent_enacted"
-    assert result.payload["engine_result"] == cr.ENACTED_ABSENT_RESULT
+    await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    rt._commit(
+        "payment_response_intent",
+        payment_response_intent_payload(
+            offered,
+            "src-response-absent-recovery",
+            accept=True,
+        ),
+    )
+    payment_gs.pending.clear()
+    payment_gs.local_player = deal.counterparty
+    reopened = runtime(tmp_path)
+
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=4,
+        current_player_id=deal.counterparty,
+    )
+
+    assert payment_gs.response_calls == []
+    assert reopened.deal(deal.id).state is DealState.HONORED
+    assert reopened.deal(deal.id).payment_status is PaymentStatus.SETTLED
+    result = journal_events(reopened)[-1]
+    assert result["kind"] == "payment_response_result"
+    assert result["payload"]["recovery"] == "observed_absent_enacted"
+    assert result["payload"]["engine_result"] == cr.ENACTED_ABSENT_RESULT
 
 
+@pytest.mark.asyncio
 async def test_response_intent_recovery_unverifiable_on_exact(
-    runtime_with_unfinished_response_intent, exact_gs, deal_id
+    tmp_path,
+    payment_gs,
 ):
-    rt = runtime_with_unfinished_response_intent
-    await rt.reconcile_payment_intents(
-        exact_gs, current_turn=TURN, current_player_id=PAYEE
+    rt, deal = await accepted_payment_deal(
+        tmp_path,
+        payment_gs,
+        timing="on_delivery",
     )
-    deal = rt.deal(deal_id)
-    assert deal.is_terminal  # unverifiable record
+    await satisfy_payment_favor(rt, payment_gs, deal, turn=3)
+    await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    offered = rt.deal(deal.id)
+    rt._commit(
+        "payment_response_intent",
+        payment_response_intent_payload(
+            offered,
+            "src-response-exact-recovery",
+            accept=True,
+        ),
+    )
+    payment_gs.local_player = deal.counterparty
+    reopened = runtime(tmp_path)
+
+    await reopened.reconcile_payment_intents(
+        payment_gs,
+        current_turn=4,
+        current_player_id=deal.counterparty,
+    )
+
+    assert payment_gs.response_calls == []
+    assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
+    result = journal_events(reopened)[-1]
+    assert result["kind"] == "payment_response_result"
+    assert result["payload"]["engine_result"] == (
+        "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING"
+    )
+    assert result["payload"]["recovery"] == "conflicting_offer"
 ```
 
 - [ ] **Step 2: Run to verify both fail**
@@ -270,6 +445,46 @@ In the reconcile response branch, swap the roles of `absent` and `exact`:
 ```
 
 then complete the absent path with the intent's recorded outcome (no engine call): rebuild `success_deal`/`cleanup_deal`/`broken` exactly as `_respond_to_payment` does from the intent payload, and commit `payment_response_result` with `engine_result=ENACTED_ABSENT_RESULT`, `recovery="observed_absent_enacted"`.
+
+Update replay-side validation in `_reduce_persisted_event` / completed response-result validation so:
+
+```python
+            elif recovery == "observed_absent_enacted":
+                if engine_result != ENACTED_ABSENT_RESULT:
+                    raise ValueError("invalid absent-enacted response recovery")
+                if cleanup is not None:
+                    observation_id = intent.get("observation_id")
+                    expected_deal = cls._unverifiable_deal_record(
+                        deal,
+                        turn=intent["turn"],
+                        reason=_INCOMPLETE_ACCEPTANCE_REASON,
+                        evidence_refs=(
+                            (observation_id,)
+                            if isinstance(observation_id, str)
+                            else ()
+                        ),
+                    )
+                elif accept:
+                    expected_deal = cls._validated_success_deal(state, deal, intent)
+                else:
+                    expected_deal, expected_grievance = (
+                        cls._expected_breach_records(
+                            state,
+                            deal,
+                            turn=intent["turn"],
+                            breach="payment_response",
+                            reason="enacted linked payment was rejected",
+                        )
+                    )
+            elif recovery == "conflicting_offer":
+                if engine_result not in {
+                    "RECOVERY_PAYMENT_ABSENT",
+                    "RECOVERY_PAYMENT_UNEXPECTEDLY_PENDING",
+                }:
+                    raise ValueError("invalid payment-response preflight recovery")
+```
+
+Keep legacy `"offer_absent"` replay support for historical rev-1/rev-2 response journals.
 
 - [ ] **Step 4: Run the tests — PASS**, then the file: `uv run pytest tests/arena/test_channel_runtime.py -q`
 
@@ -333,19 +548,49 @@ git commit -m "feat(arena): live-gate revision 3 constants and failure codes"
 
 - [ ] **Step 1: Write the failing test**
 
-```python
-async def test_fund_capture_records_settlement_result_and_post_send_status(
-    gate_driver_at_fund_upfront, runtime, gs
-):
-    # fakes updated in Task 7 apply -1/+1 at offer; until then this test
-    # drives the fake treasuries directly after the fund action
-    await run_gate_seat(gate_driver_at_fund_upfront, runtime, gs, API_PID, TURN)
-    data = gate_driver_at_fund_upfront._journal.state.data
-    assert data["settlement_result"]["turn"] == TURN
-    assert data["post_send_payment_status"] == "absent"
-```
+Add this temporary test helper near `attached_driver`; Task 7 deletes it after
+the shared fake moves to the same engine truth:
 
-Use the file's existing fund-phase lifecycle fixtures (search `PHASE_FUND_UPFRONT` in the test file for the rev-2 arrangement helpers).
+```python
+class SynchronousPaymentGateGameState(GateGameState):
+    async def offer_channel_payment(self, payee, gold):
+        payer = self.active_player
+        if (payer, payee) in self.pending:
+            return "Error: CHANNEL_PAYMENT_PENDING_DEAL"
+        self.treasury[payer] -= gold
+        self.treasury[payee] += gold
+        return "CHANNEL_PAYMENT_PROPOSED"
+
+    async def respond_to_channel_payment(self, payer, gold, accept):
+        raise AssertionError(
+            "revision 3: nothing may mutate the engine at payment response"
+        )
+
+
+@pytest.mark.asyncio
+async def test_fund_capture_records_settlement_result_and_post_send_status(
+    tmp_path,
+):
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    data = driver._journal.state.data
+    assert data["settlement_baseline"] == {
+        "turn": 11,
+        "payer_gold": 500,
+        "payee_gold": 500,
+    }
+    assert data["settlement_result"] == {
+        "turn": 11,
+        "payer_gold": 499,
+        "payee_gold": 501,
+    }
+    assert data["post_send_payment_status"] == "absent"
+    assert driver._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
+```
 
 - [ ] **Step 2: Run to verify it fails** — today `settlement_result` is only recorded at the CLI acceptance capture.
 
@@ -390,7 +635,7 @@ Rewrite `_record_settlement_result` to trigger on the API fund capture and also 
         return self._record_data_once(
             {"settlement_result": result, "post_send_payment_status": status},
             reason_code="payment_checkpoint_failed",
-            failure="settlement_result_mismatch",
+            failure="settlement_result_or_post_send_status_mismatch",
         )
 ```
 
@@ -433,27 +678,88 @@ git commit -m "feat(arena): read settlement evidence in the funding seat window"
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-async def test_fund_hop_verifies_enactment_and_records_digest(...):
-    # happy path: absent status + exact deltas -> digest recorded, phase advances
-    ...
+@pytest.mark.asyncio
+async def test_fund_hop_verifies_enactment_and_records_digest(tmp_path):
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
     data = driver._journal.state.data
-    assert "settlement_digest" in data
+    expected = lgc.ChannelsCoreDriver._digest_mapping({
+        "fingerprint": exact_payment_fingerprint(),
+        "baseline": data["settlement_baseline"],
+        "result": data["settlement_result"],
+    })
+    assert data["post_send_payment_status"] == "absent"
+    assert data["settlement_result"] == {
+        "turn": 11,
+        "payer_gold": 499,
+        "payee_gold": 501,
+    }
+    assert data["settlement_digest"] == expected
     assert driver._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
 
 
-async def test_fund_hop_fails_official_payment_not_enacted_on_pending_state(...):
-    # post_send_payment_status "exact" -> terminal
-    ...
-    assert result["reason"] == "official_payment_not_enacted"
+@pytest.mark.asyncio
+async def test_fund_hop_fails_official_payment_not_enacted_on_pending_state(
+    tmp_path,
+):
+    from .live_gate_fakes import PaymentStateView
+
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    original = gs.get_channel_payment_state
+
+    async def pending_after_send(payer, payee, gold):
+        if gs.active_player == 1 and gs.treasury[1] == 499:
+            return PaymentStateView("exact")
+        return await original(payer, payee, gold)
+
+    gs.get_channel_payment_state = pending_after_send
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "official_payment_not_enacted"
+    assert "official_payment_not_enacted" in private_failure_text(driver)
 
 
-async def test_fund_hop_fails_official_payment_not_enacted_on_delta_mismatch(...):
-    # payee treasury unchanged -> terminal
-    ...
-    assert result["reason"] == "official_payment_not_enacted"
+class NoTransferPaymentGateGameState(SynchronousPaymentGateGameState):
+    async def offer_channel_payment(self, payee, gold):
+        payer = self.active_player
+        if (payer, payee) in self.pending:
+            return "Error: CHANNEL_PAYMENT_PENDING_DEAL"
+        return "CHANNEL_PAYMENT_PROPOSED"
+
+
+@pytest.mark.asyncio
+async def test_fund_hop_fails_official_payment_not_enacted_on_delta_mismatch(
+    tmp_path,
+):
+    gs = NoTransferPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "official_payment_not_enacted"
+    assert private_failure_details(driver)[-1]["baseline"] == {
+        "turn": 11,
+        "payer_gold": 500,
+        "payee_gold": 500,
+    }
+    assert private_failure_details(driver)[-1]["result"] == {
+        "turn": 11,
+        "payer_gold": 500,
+        "payee_gold": 500,
+    }
 ```
-
-Base these on the rev-2 lifecycle tests around the acceptance-hop delta verification (search `settlement_digest` in the test file) — the same arithmetic assertions move one hop earlier. Digest composition is unchanged: `_digest_mapping({"fingerprint": ..., "baseline": ..., "result": ...})`.
 
 - [ ] **Step 2: Run to verify they fail.**
 
@@ -466,14 +772,41 @@ In the `PHASE_FUND_UPFRONT and role == ROLE_API` branch, after the existing `OFF
             status = data.get("post_send_payment_status")
             baseline = data.get("settlement_baseline")
             result = data.get("settlement_result")
+            recorded = self._payment_fingerprint
             gold = PAYMENT_GOLD
+            baseline_payer_gold = (
+                baseline.get("payer_gold")
+                if isinstance(baseline, Mapping)
+                else None
+            )
+            baseline_payee_gold = (
+                baseline.get("payee_gold")
+                if isinstance(baseline, Mapping)
+                else None
+            )
+            result_payer_gold = (
+                result.get("payer_gold")
+                if isinstance(result, Mapping)
+                else None
+            )
+            result_payee_gold = (
+                result.get("payee_gold")
+                if isinstance(result, Mapping)
+                else None
+            )
             ok = (
                 status == "absent"
                 and isinstance(baseline, Mapping)
                 and isinstance(result, Mapping)
-                and result.get("turn") == baseline.get("turn") == turn
-                and result.get("payer_gold") == baseline.get("payer_gold") - gold
-                and result.get("payee_gold") == baseline.get("payee_gold") + gold
+                and recorded is not None
+                and baseline.get("turn") == turn
+                and result.get("turn") == turn
+                and type(baseline_payer_gold) is int
+                and type(baseline_payee_gold) is int
+                and type(result_payer_gold) is int
+                and type(result_payee_gold) is int
+                and result_payer_gold == baseline_payer_gold - gold
+                and result_payee_gold == baseline_payee_gold + gold
             )
             if not ok:
                 self._fail(
@@ -489,7 +822,7 @@ In the `PHASE_FUND_UPFRONT and role == ROLE_API` branch, after the existing `OFF
                 {
                     "settlement_digest": self._digest_mapping(
                         {
-                            "fingerprint": fingerprint,
+                            "fingerprint": recorded,
                             "baseline": baseline,
                             "result": result,
                         }
@@ -531,23 +864,69 @@ git commit -m "feat(arena): verify synchronous enactment at the fund hop"
 
 **Interfaces:**
 - Consumes: journaled `pre_acceptance_payment_status` (mechanism unchanged, `_record_data_once` guarded).
-- Produces: CLI response window proceeds only when the pre-response state is `absent`; `official_payment_unexpectedly_pending` terminal otherwise. The rev-2 test `test_absent_offer_at_acceptance_is_official_payment_auto_resolved` (or equivalent, search `auto_resolved` in the test file) is inverted.
+- Produces: CLI response window proceeds only when the pre-response state is `absent`; `official_payment_unexpectedly_pending` terminal otherwise. The rev-2 tests `test_auto_resolved_offer_at_acceptance_is_distinct_terminal` and `test_official_payment_auto_resolved_fails_before_restart` are replaced by the pending-offer anomaly test in Step 1.
 
 - [ ] **Step 1: Write the failing tests**
 
+Add this import near the existing `live_gate_channels as lgc` import:
+
 ```python
-async def test_cli_response_proceeds_when_enacted_payment_absent(...):
-    # pre-response state absent -> respond_to_payment plan emitted, phase advances
-    ...
-
-
-async def test_pending_offer_at_response_is_official_payment_unexpectedly_pending(...):
-    # fake holds an exact pending offer at the CLI window -> terminal
-    ...
-    assert result["reason"] == "official_payment_unexpectedly_pending"
+import civ_mcp.arena.channel_runtime as cr
 ```
 
-Delete/replace every `official_payment_auto_resolved` test (grep the test file; the forensic no longer exists).
+```python
+@pytest.mark.asyncio
+async def test_cli_response_proceeds_when_enacted_payment_absent(tmp_path):
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    state = driver._journal.state
+    assert state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert state.data["pre_acceptance_payment_status"] == "absent"
+    assert len(data_events_for_key(driver, "pre_acceptance_payment_status")) == 1
+    deal = deals(runtime)[state.data["upfront_deal_id"]]
+    assert deal.payment_status is PaymentStatus.SETTLED
+    runtime_events = [
+        json.loads(line)
+        for line in runtime.events_path.read_text().splitlines()
+    ]
+    response_results = [
+        event for event in runtime_events
+        if event["kind"] == "payment_response_result"
+    ]
+    assert response_results[-1]["payload"]["engine_result"] == (
+        cr.ENACTED_ABSENT_RESULT
+    )
+
+
+@pytest.mark.asyncio
+async def test_pending_offer_at_response_is_official_payment_unexpectedly_pending(
+    tmp_path,
+):
+    from civ_mcp.lua.channel_payments import ExactPaymentOffer
+
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    gs.pending[(1, 2)] = ExactPaymentOffer(1, 2, 1)
+
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "official_payment_unexpectedly_pending"
+    assert "official_payment_unexpectedly_pending" in private_failure_text(driver)
+```
+
+Replace the existing `test_auto_resolved_offer_at_acceptance_is_distinct_terminal`
+and `test_official_payment_auto_resolved_fails_before_restart` with the pending
+anomaly test above; the `official_payment_auto_resolved` forensic no longer
+exists in rev 3.
 
 - [ ] **Step 2: Run to verify they fail.**
 
@@ -611,15 +990,84 @@ git commit -m "feat(arena): expect absent enacted payment at the CLI response wi
 
 Keep `self.pending` and `get_channel_payment_state` unchanged — tests that need an anomalous pending offer (Task 5/6 terminals) seed `gs.pending[(payer, payee)]` directly.
 
-- [ ] **Step 2: Run the gate suite and enumerate failures**
+- [ ] **Step 2: Migrate the known rev-2 gate-test assumptions**
 
-Run: `uv run pytest tests/arena/test_live_gate_channels.py -q 2>&1 | tail -20`
-Fix each failing test against the revised phase-row expectations (Task 5/6 semantics, digest at the fund hop, absent at response). Restart-checkpoint and resume tests (rev-2 Tasks 5–6) should pass unchanged — they anchor on `settlement_digest` + absent state, both still recorded. Investigate any failure there as a regression, not a migration.
+Apply these exact test migrations in `tests/arena/test_live_gate_channels.py`:
+
+- Delete `SynchronousPaymentGateGameState`; change every
+  `SynchronousPaymentGateGameState()` construction to `GateGameState()`.
+- Change `class NoTransferPaymentGateGameState(SynchronousPaymentGateGameState)`
+  to `class NoTransferPaymentGateGameState(GateGameState)`.
+- Rename `test_round2_funding_offers_exact_payment` to
+  `test_round2_funding_enacts_payment_synchronously`; keep the `OFFERED`
+  ledger assertion, delete the `ExactPaymentOffer` import/assertion, and assert:
+
+```python
+    assert gs.pending == {}
+    assert gs.treasury[1] == 499
+    assert gs.treasury[2] == 501
+    assert driver._journal.state.data["post_send_payment_status"] == "absent"
+    assert "settlement_digest" in driver._journal.state.data
+```
+
+- In `test_pre_acceptance_recorded_status_is_reused_without_live_query`, journal
+  `{"pre_acceptance_payment_status": "absent"}` instead of `"exact"` and keep
+  `assert calls == [(1, 2, 1)]`: that remaining query is the runtime's
+  ledger-response preflight, not the driver's pre-acceptance guard.
+- Delete `test_auto_resolved_offer_at_acceptance_is_distinct_terminal`; Task 6's
+  pending-offer anomaly test replaces it.
+- In `test_round2_settles_payment_same_round_then_requests_restart`, assert
+  `state.data["pre_acceptance_payment_status"] == "absent"` and keep the phase
+  sequence unchanged.
+- In `drive_to_funding_offer_without_gate_capture`, replace
+  `assert await gs.get_channel_payment_state(1, 2, 1)` with:
+
+```python
+    payment_state = await gs.get_channel_payment_state(1, 2, 1)
+    assert payment_state.status == "absent"
+    assert gs.treasury[1] == 499
+    assert gs.treasury[2] == 501
+```
+
+- In `test_settlement_records_baselines_deltas_and_digest`, add
+  `assert data["post_send_payment_status"] == "absent"`.
+- In the payment-action crash/recovery tests around
+  `test_pending_payment_ack_recovery_records_settlement_before_capture`,
+  `test_action_verified_crash_reconstructs_recovered_settlement_capture`,
+  `test_settlement_result_append_crash_reconstructs_normal_capture`, and
+  `test_settlement_data_append_crash_replays_without_duplicate`, move
+  settlement-result expectations to the API fund capture: `settlement_result`
+  and `post_send_payment_status` are present before the CLI response capture;
+  CLI capture recovery must not perform a treasury read.
+- In `test_settlement_delta_mismatch_fails_closed`, use
+  `NoTransferPaymentGateGameState()`, delete the monkeypatch of
+  `respond_to_channel_payment`, and assert:
+
+```python
+    assert state.status == "failed"
+    assert state.reason == "official_payment_not_enacted"
+```
+
+- In `test_restart_checkpoint_uses_no_live_payment_query`, update the comment
+  and assertion to four R2 payment-state queries: fund preflight, post-send
+  settlement check, driver pre-acceptance guard, and runtime response preflight.
+
+```python
+    assert len(calls) == 4
+```
+
+- Delete `test_official_payment_auto_resolved_fails_before_restart`; Task 6's
+  `official_payment_unexpectedly_pending` test is the rev-3 replacement.
+
+Run: `uv run pytest tests/arena/test_live_gate_channels.py -q`
+Expected: PASS. If a restart-verify test fails after the migrations above,
+treat it as a regression; the restart checkpoint still consumes
+`settlement_digest` plus an absent payment-state query.
 
 - [ ] **Step 3: Full suite**
 
 Run: `uv run pytest tests -q`
-Expected: green (≈1950+ tests).
+Expected: PASS.
 
 - [ ] **Step 4: Commit**
 
@@ -638,9 +1086,31 @@ git commit -m "test(arena): migrate gate suite to synchronous-enactment engine t
 
 **Steps:**
 
-- [ ] **Step 1:** Update the run-id test first (search `arena-channels-core-gate-v3` in `tests/arena/test_experiment.py`), watch it fail, then set `run_id: arena-channels-core-gate-v4` with a comment: v3 failed terminally `official_payment_auto_resolved` (rev-2 forensic worked as designed); spec revision 3 responds with synchronous fund-window settlement; a failed gate journal is terminal so each rerun needs a fresh run_id.
+- [ ] **Step 1:** Update `test_checked_in_channels_core_gate_experiment_validates` in `tests/arena/test_experiment.py` first:
+
+```python
+    assert cfg.run_id == "arena-channels-core-gate-v4"
+```
+
+Run: `uv run pytest tests/arena/test_experiment.py -q -k channels_core_gate`
+Expected: FAIL with the current `arena-channels-core-gate-v3` value.
+
+Then set `run_id: arena-channels-core-gate-v4` in
+`experiments/arena-channels-core-smoke.yaml` and extend the comments above it
+with:
+
+```yaml
+# v4: v3 failed terminally with official_payment_auto_resolved after proving
+# AI->AI PROPOSED deal enactment is synchronous at send. Spec revision 3
+# responds with fund-window settlement verification and ledger-only response.
+```
+
 - [ ] **Step 2:** `uv run pytest tests/arena/test_experiment.py tests/arena/test_config.py -q` — config validation accepts the 36 budgets against the computed 24 minimum.
-- [ ] **Step 3:** Confirm no stale references: `grep -rn 'gate-v3\|auto_resolved' src tests experiments` → only historical mentions (retained run directories, spec/plan postmortem text) may remain; no live config/code/test may reference them as current.
+- [ ] **Step 3:** Confirm no stale live references:
+
+Run: `rg -n 'gate-v3|auto_resolved' src tests experiments`
+Expected: no matches in live code/config/tests. Historical mentions may remain
+only under `docs/` or retained `arena_runs/` evidence directories.
 - [ ] **Step 4: Commit** — `chore(arena): rev-3 rerun readiness (gate-v4)`.
 
 **Live procedure after this plan (operator-attended, not part of the plan):** reload `CHANNELS_GATE_V1_T157` (manual menu load — no automation exists at the main menu on this rig), arm via the `civ6-arena-live` workflow with run `arena-channels-core-gate-v4`, two-invocation exit-75 handshake with fast rearm in the gap, expect terminal PASS at R8 (24 captures).
