@@ -1294,9 +1294,9 @@ async def test_settlement_result_append_crash_reconstructs_normal_capture(
     class SimulatedCrash(BaseException):
         pass
 
-    driver, runtime, gs = await attached_driver(tmp_path)
+    gs = SynchronousPaymentGateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
     await run_gate_round(driver, runtime, gs, 10)
-    await run_gate_seat(driver, runtime, gs, 1, 11)
 
     journal = driver._journal
     real_append = journal.append
@@ -1309,7 +1309,7 @@ async def test_settlement_result_append_crash_reconstructs_normal_capture(
 
     journal.append = crashing_append
     with pytest.raises(SimulatedCrash):
-        await run_gate_seat(driver, runtime, gs, 2, 11)
+        await run_gate_seat(driver, runtime, gs, 1, 11)
     assert driver._journal.state.pending_actions == ()
     assert driver._journal.state.capture_started_turn is None
     assert len(data_events_for_key(driver, "settlement_result")) == 1
@@ -1329,13 +1329,14 @@ async def test_settlement_result_append_crash_reconstructs_normal_capture(
     )
 
     assert resumed.pending_signal() is None
-    assert resumed._journal.state.phase == lgc.PHASE_RESTART_REQUIRED
+    assert resumed._journal.state.phase == lgc.PHASE_ACCEPT_UPFRONT_PAYMENT
     assert resumed._journal.state.capture_started_turn is None
-    assert 2 in resumed._journal.state.captured_players
+    assert 1 in resumed._journal.state.captured_players
     assert len(data_events_for_key(resumed, "settlement_result")) == 1
     assert gs.treasury == {1: 499, 2: 501, 3: 500}
     assert treasury_observations == []
 
+    await run_gate_seat(resumed, runtime, gs, 2, 11)
     await run_gate_seat(resumed, runtime, gs, 3, 11)
     assert resumed.pending_signal() == GATE_RESTART_REQUIRED
 
