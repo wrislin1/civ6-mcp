@@ -86,6 +86,7 @@ class AsyncCallBarrier:
 class PaymentGameState:
     def __init__(self) -> None:
         self.local_player = 1
+        self.treasury: dict[int, int] = {pid: 500 for pid in range(8)}
         self.pending: dict[tuple[int, int], ExactPaymentOffer | str] = {}
         self.observations: list[ChannelObservation] = []
         self.observation_requests = []
@@ -106,14 +107,23 @@ class PaymentGameState:
 
     async def get_channel_observation(self, player_id, turn, request):
         self.observation_requests.append((player_id, turn, request))
-        result = self.observations.pop(0)
-        assert (result.player_id, result.turn) == (player_id, turn)
-        if self.request_aware_observations:
-            result = dataclasses.replace(
-                result,
-                families_present=request.families,
-            )
-        return result
+        if self.observations:
+            result = self.observations.pop(0)
+            assert (result.player_id, result.turn) == (player_id, turn)
+            if self.request_aware_observations:
+                result = dataclasses.replace(
+                    result,
+                    families_present=request.families,
+                )
+            return result
+        # No favor-observation queued (e.g. the fund-path treasury check) —
+        # synthesize one from the tracked treasury so rev-3 settlement
+        # verification has real gold figures to compare against.
+        return observation(
+            player_id,
+            turn,
+            treasury_gold=self.treasury.get(player_id, 500),
+        )
 
     async def offer_channel_payment(self, payee: int, gold: int) -> str:
         self.offer_calls += 1
@@ -135,7 +145,8 @@ class PaymentGameState:
         if pair in self.pending:
             return "Error: CHANNEL_PAYMENT_PENDING_DEAL"
         if result == "CHANNEL_PAYMENT_PROPOSED":
-            self.install_exact_offer(self.local_player, payee, gold)
+            self.treasury[self.local_player] -= gold
+            self.treasury[payee] += gold
         return result
 
     async def get_channel_payment_offer(
@@ -2740,6 +2751,10 @@ async def test_payment_response_rejects_unexpectedly_pending_offer(
         {"deal_id": deal.id},
         turn=3,
     )
+    # Rev-3: a successful fund enacts synchronously and leaves the pair
+    # absent. Plant a stray exact offer explicitly to exercise the
+    # "unexpectedly pending" preflight rejection this test targets.
+    payment_gs.install_exact_offer(deal.proposer, deal.counterparty, deal.payment_gold)
 
     response = await apply_payment_action(
         rt,
@@ -2807,6 +2822,72 @@ async def test_fund_rejects_unreadable_payment_state_as_unreadable(
     )
     assert ack.status == "rejected"
     assert "unreadable" in ack.message
+
+
+@pytest.mark.asyncio
+async def test_fund_fails_closed_when_send_reports_success_without_transfer(
+    tmp_path, payment_gs
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path, payment_gs, timing="up_front"
+    )
+    real_offer = payment_gs.offer_channel_payment
+
+    async def no_transfer(payee, gold):
+        result = await real_offer(payee, gold)
+        if result == "CHANNEL_PAYMENT_PROPOSED":
+            # Undo the fake's enactment: engine said yes, gold never moved.
+            payment_gs.treasury[payment_gs.local_player] += gold
+            payment_gs.treasury[payee] -= gold
+        return result
+
+    payment_gs.offer_channel_payment = no_transfer
+    ack = await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    assert ack.status == "rejected"
+    assert rt.deal(deal.id).payment_status is PaymentStatus.DUE
+    events = journal_events(rt)
+    assert events[-1]["kind"] == "payment_fund_result"
+    assert events[-1]["payload"]["engine_result"] == (
+        "Error: CHANNEL_PAYMENT_NOT_ENACTED"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fund_skips_inline_settlement_verification_when_externally_verified(
+    tmp_path, payment_gs
+):
+    rt, deal = await accepted_payment_deal(
+        tmp_path, payment_gs, timing="up_front"
+    )
+    rt.external_fund_settlement_verification = True
+    real_offer = payment_gs.offer_channel_payment
+
+    async def no_transfer(payee, gold):
+        result = await real_offer(payee, gold)
+        if result == "CHANNEL_PAYMENT_PROPOSED":
+            # Undo the fake's enactment: engine said yes, gold never moved.
+            payment_gs.treasury[payment_gs.local_player] += gold
+            payment_gs.treasury[payee] -= gold
+        return result
+
+    payment_gs.offer_channel_payment = no_transfer
+    ack = await apply_payment_action(
+        rt,
+        payment_gs,
+        deal.proposer,
+        "fund_deal",
+        {"deal_id": deal.id},
+        turn=3,
+    )
+    assert ack.status == "applied"
+    assert rt.deal(deal.id).payment_status is PaymentStatus.OFFERED
 
 
 @pytest.mark.asyncio
@@ -2894,7 +2975,11 @@ async def test_failed_payment_response_remains_offered_until_deadline(
         {"deal_id": deal.id},
         turn=3,
     )
-    payment_gs.response_results.append("Error: CHANNEL_PAYMENT_ENGINE_FAILED")
+    # Rev-3: response no longer drives an engine call to fail (`respond_to_
+    # payment`'s outcome is deterministic once its preflight passes), so the
+    # only pre-deadline failure left to exercise here is an unreadable
+    # payment-state preflight, which must leave the deal untouched.
+    payment_gs.state_results.append(None)
     ack = await apply_payment_action(
         rt,
         payment_gs,
@@ -2904,6 +2989,7 @@ async def test_failed_payment_response_remains_offered_until_deadline(
         turn=4,
     )
     assert ack.status == "rejected"
+    assert "unreadable" in ack.message
     assert rt.deal(deal.id).payment_status is PaymentStatus.OFFERED
     assert rt.deal(deal.id).state is DealState.ACTIVE
 
@@ -3153,6 +3239,12 @@ async def test_response_intent_recovery_rejects_pending_exact_without_mutation(
             accept=accept,
         ),
     )
+    # Rev-3: a successful fund enacts synchronously and leaves the pair
+    # absent, so recovery needs an explicitly planted stray exact offer to
+    # exercise the "still pending" branch this test targets.
+    payment_gs.install_exact_offer(
+        offered.proposer, offered.counterparty, offered.payment_gold
+    )
     payment_gs.local_player = deal.counterparty
     reopened = runtime(tmp_path)
     await reopened.reconcile_payment_intents(
@@ -3291,6 +3383,12 @@ async def test_response_intent_recovery_unverifiable_on_exact(
             accept=True,
         ),
     )
+    # Rev-3: a successful fund enacts synchronously and leaves the pair
+    # absent, so recovery needs an explicitly planted stray exact offer to
+    # exercise the "still pending" branch this test targets.
+    payment_gs.install_exact_offer(
+        offered.proposer, offered.counterparty, offered.payment_gold
+    )
     payment_gs.local_player = deal.counterparty
     reopened = runtime(tmp_path)
 
@@ -3338,6 +3436,12 @@ async def test_response_intent_recovery_rejects_exact_reopenably(
             accept=True,
         ),
     )
+    # Rev-3: a successful fund enacts synchronously and leaves the pair
+    # absent, so recovery needs an explicitly planted stray exact offer to
+    # exercise the "still pending" branch this test targets.
+    payment_gs.install_exact_offer(
+        offered.proposer, offered.counterparty, offered.payment_gold
+    )
     payment_gs.local_player = deal.counterparty
     reopened = runtime(tmp_path)
 
@@ -3348,7 +3452,9 @@ async def test_response_intent_recovery_rejects_exact_reopenably(
     )
 
     assert payment_gs.response_calls == []
-    assert len(payment_gs.state_queries) == 2  # funding + recovery observation
+    # funding preflight + funding settlement verification + recovery
+    # observation.
+    assert len(payment_gs.state_queries) == 3
     assert reopened.deal(deal.id).state is DealState.UNVERIFIABLE
     assert reopened.state.grievances == ()
     assert "src-response-ambiguous-retry" in reopened.state.applied_source_ids

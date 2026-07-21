@@ -255,6 +255,11 @@ class ChannelsCoreDriver:
             raise RuntimeError("live gate requires the channel runtime")
         self._gs = gs
         self._runtime = channel_runtime
+        # This driver owns fund-settlement verification for the API funding
+        # window (_record_settlement_result -> _settlement_verdict); tell
+        # the runtime's ordinary-run inline check to stand down so gate runs
+        # aren't double-verified and driver-attributed reasons stay reachable.
+        channel_runtime.external_fund_settlement_verification = True
         self._run_dir = Path(run_dir)
         self._journal = LiveGateJournal.open(
             self._run_dir,

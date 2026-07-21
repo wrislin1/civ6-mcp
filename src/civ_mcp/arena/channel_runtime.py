@@ -22,6 +22,7 @@ from civ_mcp.arena.channel_protocol import (
 from civ_mcp.arena.channel_terms import (
     ChannelObservation,
     ObservationFamily,
+    ObservationRequest,
     ObservedAction,
     ObservedCity,
     ObservedRoute,
@@ -126,6 +127,11 @@ class ChannelRuntime:
             int,
             tuple[ChannelObservation, str],
         ] = {}
+        # A live-gate driver verifies fund settlement itself in the API
+        # funding window (baseline -> send -> absent check -> exact delta);
+        # when one is attached it sets this flag so the ordinary-run inline
+        # verification in _fund_deal stands down.
+        self.external_fund_settlement_verification = False
 
     @classmethod
     def open(
@@ -2035,6 +2041,11 @@ class ChannelRuntime:
             raise _ActionRejected(
                 "the ordered pair already has a pending or conflicting deal"
             )
+        baseline = None
+        if not self.external_fund_settlement_verification:
+            baseline = await self._read_payment_treasuries(gs, deal, turn)
+            if baseline is None:
+                raise _ActionRejected("could not read the settlement baseline")
         intent = self._payment_intent_payload(
             deal,
             staged,
@@ -2072,6 +2083,32 @@ class ChannelRuntime:
                 "payment funding returned no authoritative engine result",
             )
         if self._funding_succeeded(engine_result):
+            if not self.external_fund_settlement_verification:
+                settled = await self._verify_synchronous_settlement(
+                    gs, deal, turn, baseline
+                )
+                if settled is None:
+                    return ChannelAcknowledgement(
+                        staged.actor,
+                        turn,
+                        staged.source_id,
+                        "rejected",
+                        "payment funding outcome requires recovery after an "
+                        "unreadable settlement check",
+                    )
+                if not settled:
+                    return self._commit_payment_result(
+                        "payment_fund_result",
+                        intent,
+                        engine_result="Error: CHANNEL_PAYMENT_NOT_ENACTED",
+                        recovery=None,
+                        deal=None,
+                        grievance=None,
+                        message=(
+                            "payment send reported success but settlement "
+                            f"verification shows no enactment for {deal.id}"
+                        ),
+                    )
             offered = replace(
                 deal,
                 payment_status=PaymentStatus.OFFERED,
@@ -2294,6 +2331,53 @@ class ChannelRuntime:
         ):
             return None
         return fingerprint
+
+    async def _read_payment_treasuries(
+        self, gs, deal: Deal, turn: int
+    ) -> dict[str, int] | None:
+        values: dict[str, int] = {}
+        for key, pid in (
+            ("payer_gold", deal.proposer),
+            ("payee_gold", deal.counterparty),
+        ):
+            request = ObservationRequest(
+                families=frozenset({ObservationFamily.TREASURY})
+            )
+            try:
+                observed = await gs.get_channel_observation(pid, turn, request)
+            except Exception:
+                return None
+            if observed.errors or (
+                ObservationFamily.TREASURY not in observed.families_present
+            ):
+                return None
+            values[key] = observed.treasury_gold
+        return values
+
+    async def _verify_synchronous_settlement(
+        self, gs, deal: Deal, turn: int, baseline: dict[str, int]
+    ) -> bool | None:
+        """True: enacted (exact delta, pair absent). False: verifiably not
+        enacted. None: unreadable — the caller must leave the intent
+        unfinished so recovery fail-closes (no delta-based fund recovery)."""
+        result = await self._read_payment_treasuries(gs, deal, turn)
+        if result is None:
+            return None
+        try:
+            payment_state = await gs.get_channel_payment_state(
+                deal.proposer, deal.counterparty, deal.payment_gold
+            )
+        except Exception:
+            return None
+        status = self._payment_state_status(payment_state, deal)
+        if status is None:
+            return None
+        gold = deal.payment_gold
+        return (
+            status == "absent"
+            and result["payer_gold"] == baseline["payer_gold"] - gold
+            and result["payee_gold"] == baseline["payee_gold"] + gold
+        )
 
     @classmethod
     def _payment_state_status(cls, payment_state: Any, deal: Deal) -> str | None:
