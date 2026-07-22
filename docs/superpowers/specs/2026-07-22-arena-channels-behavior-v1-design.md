@@ -87,7 +87,7 @@ New file `experiments/arena-channels-behavior-v1.yaml` (the gate config
 
 ## Code changes
 
-Two small, independently testable changes:
+Two small code changes plus the experiment config, all independently testable:
 
 ### 1. Backend: disable thinking unconditionally
 
@@ -100,15 +100,38 @@ chat-completions request.
 - No config knob (YAGNI): the first experiment that wants thinking on adds
   the knob then. CLI providers (`cli-claude`, `cli-codex`) do not use this
   backend and are unaffected.
+- Preserve the existing request contract: `max_tokens`, `timeout`, optional
+  `tools`/`tool_choice`, bounded non-timeout retries, and immediate timeout
+  re-raise stay unchanged. Backend tests assert the new `extra_body` is present
+  in both tool and no-tool calls.
 
 ### 2. Channels: per-player guidance preamble
 
 `ChannelOptions` (`src/civ_mcp/arena/config.py`) gains
 `guidance: bool = False`, parseable from the experiment YAML's per-civ
-`channels:` mapping. When true for a player, that player's rendered channel
-block includes a static guidance paragraph immediately after the
-`== PRIVATE UNOFFICIAL CHANNELS ==` header. Default off ⇒ existing runs,
-gate configs, and gate artifacts are byte-identical.
+`channels:` mapping. `_parse_channels` accepts exactly `enabled` and
+`guidance`; both values must be exact booleans. `CivOptions.fingerprint()`
+includes `{"enabled": ..., "guidance": ...}` so transcripts distinguish this
+guided experiment from an otherwise identical unguided run. The lower-level
+`channel_config_fingerprint()` and canonical `ChannelState.rules_fingerprint`
+do not include guidance, because guidance is prompt furniture rather than
+ledger identity.
+
+Rendering contract:
+
+- `ChannelProjection` (`src/civ_mcp/arena/channels.py`) gains
+  `guidance: bool = False`.
+- `ChannelRuntime.admit_player(gs, player_id, turn, *, guidance: bool = False)`
+  sets the returned projection's `guidance` flag before formatting the block.
+  Existing callers that omit the keyword preserve current behavior.
+- The coordinator passes `spec.options.channels.guidance` for the admitted
+  actor when channels are enabled.
+- `format_channel_block(projection)` keeps its existing signature and inserts
+  the static guidance paragraph immediately after the
+  `== PRIVATE UNOFFICIAL CHANNELS ==` header when `projection.guidance` is
+  true.
+- No guidance text is written to canonical `channels/state.json` or
+  `channels/events.jsonl`.
 
 Exact guidance text (an experimental variable — changing it is a new
 experiment revision):
@@ -125,12 +148,38 @@ experiment revision):
 > would advance your position.
 
 The nudge is encouraging, not directive: it never instructs the agent to act
-this turn. How the per-player flag reaches the block renderer (the
-projection/rendering path in `channel_runtime.py` / `channels.py`) is an
-implementation-plan decision; the observable contract is: guidance text
-present in the prompts of players configured `guidance: true`, absent for
-everyone else, and absent from all persisted canonical channel state (it is
-prompt furniture, not ledger data).
+this turn. The observable contract is: guidance text present in the prompts of
+players configured `guidance: true`, absent for everyone else, and absent from
+all persisted canonical channel state.
+
+Tests:
+
+- `tests/arena/test_experiment.py` loads
+  `channels: {enabled: true, guidance: true}` and rejects non-boolean
+  `channels.guidance`.
+- `tests/arena/test_config.py` asserts channel defaults and
+  `CivOptions.fingerprint()["channels"] == {"enabled": False, "guidance":
+  False}`.
+- `tests/arena/test_channels.py` asserts the exact guidance paragraph appears
+  immediately after the header only when `ChannelProjection.guidance` is true,
+  and that the unguided block remains unchanged apart from the projection
+  dataclass gaining a defaulted field.
+- `tests/arena/test_channel_runtime.py` asserts the admission keyword sets the
+  projection flag and rendered block.
+- `tests/arena/test_coordinator.py` asserts the coordinator passes guidance
+  only for configured players.
+
+### 3. Experiment config artifact
+
+`experiments/arena-channels-behavior-v1.yaml` is committed with the roster and
+rules above. A loader test asserts:
+
+- run ID is `arena-channels-behavior-v1`;
+- no `live_gate` block is enabled;
+- players 1 and 2 are local, `tools: minimal`, `max_steps: 10`,
+  channels-enabled, and `guidance: true`;
+- player 3 is scripted, channels-enabled, and `guidance: false`;
+- channel deadlines are acceptance 3, funding 2, payment response 2.
 
 ## Measurement
 
