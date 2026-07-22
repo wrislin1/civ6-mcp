@@ -43,6 +43,7 @@ class OpenAICompatBackend:
             messages=messages,
             max_tokens=MAX_COMPLETION_TOKENS,
             timeout=REQUEST_TIMEOUT_S,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
         if tools:
             kw["tools"] = tools

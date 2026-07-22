@@ -45,21 +45,27 @@ def _backend_with_capture():
     return b, cap
 
 
-def test_chat_sends_max_tokens_and_timeout():
+def _thinking_off_extra_body():
+    return {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_chat_sends_max_tokens_timeout_and_thinking_off_without_tools():
     # Without these, a degenerate generation runs until it exhausts context and
     # stalls the whole game — the cap + timeout bound each turn-step.
     b, cap = _backend_with_capture()
     asyncio.run(b.chat([{"role": "user", "content": "hi"}], tools=[]))
     assert cap.kwargs["max_tokens"] == MAX_COMPLETION_TOKENS
     assert cap.kwargs["timeout"] == REQUEST_TIMEOUT_S
+    assert cap.kwargs["extra_body"] == _thinking_off_extra_body()
     assert "tools" not in cap.kwargs
 
 
-def test_chat_passes_tools_with_cap():
+def test_chat_passes_tools_with_cap_and_thinking_off():
     b, cap = _backend_with_capture()
     asyncio.run(b.chat([{"role": "user", "content": "hi"}], tools=[{"type": "function"}]))
     assert cap.kwargs["tool_choice"] == "auto"
     assert cap.kwargs["max_tokens"] == MAX_COMPLETION_TOKENS
+    assert cap.kwargs["extra_body"] == _thinking_off_extra_body()
 
 
 def test_caps_are_bounded():
