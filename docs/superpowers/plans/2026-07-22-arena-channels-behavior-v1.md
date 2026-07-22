@@ -257,12 +257,16 @@ def _parse_channels(civ_label: str, raw: object) -> ChannelOptions:
         raise _err(civ_label, f"channels must be a mapping, got {raw!r}")
     _validate_mapping_keys(civ_label, raw, {"enabled", "guidance"}, "channels")
     enabled = raw.get("enabled", _CHANNEL_DEFAULTS.enabled)
-    if type(enabled) is not bool:
+    if not isinstance(enabled, bool):
         raise _err(civ_label, f"channels.enabled must be a boolean, got {enabled!r}")
     guidance = raw.get("guidance", _CHANNEL_DEFAULTS.guidance)
-    if type(guidance) is not bool:
+    if not isinstance(guidance, bool):
         raise _err(civ_label, f"channels.guidance must be a boolean, got {guidance!r}")
     return ChannelOptions(enabled=enabled, guidance=guidance)
+
+The `isinstance` checks match the file's existing idiom and are strict in
+practice: the experiment YAML loader constructs legacy booleans (`yes`/`no`)
+as a non-bool `_LegacyBooleanToken`, so only real `true`/`false` pass.
 ```
 
 - [ ] **Step 5: Run the config/parser tests and verify they pass**
