@@ -12,6 +12,19 @@ from civ_mcp.arena.config import ChannelRules
 
 SCHEMA_VERSION = 1
 
+CHANNEL_GUIDANCE_TEXT = (
+    "These channels are private back-channel negotiations with rival leaders — "
+    "invisible to everyone else. You can send private messages, propose deals "
+    "that trade gold for in-game favors (for example destroying a barbarian "
+    "camp or keeping units out of an area), accept or decline offers, fund "
+    "payments, and acknowledge payments received. Deals are NOT enforced by the "
+    "game: a promise can be honored or broken. Breaking a promise creates a "
+    "lasting grievance the wronged player remembers. Used well, deals can earn "
+    "you gold, remove threats, or buy cooperation you cannot get openly. Review "
+    "the channel state below every turn and weigh whether a message or deal "
+    "would advance your position."
+)
+
 
 class DealState(StrEnum):
     PROPOSED = "proposed"
@@ -148,6 +161,7 @@ class ChannelProjection:
     deals: tuple[Deal, ...] = ()
     grievances: tuple[Grievance, ...] = ()
     acknowledgements: tuple[ChannelAcknowledgement, ...] = ()
+    guidance: bool = False
     cli_instructions: bool = False
 
 
@@ -1256,6 +1270,8 @@ def _compact_json(value: Any) -> str:
 
 def format_channel_block(projection: ChannelProjection) -> str:
     lines = ["== PRIVATE UNOFFICIAL CHANNELS =="]
+    if projection.guidance:
+        lines.append(CHANNEL_GUIDANCE_TEXT)
     if projection.messages:
         lines.append("Messages:")
         lines.extend(

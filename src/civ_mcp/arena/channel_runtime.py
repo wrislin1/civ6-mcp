@@ -2838,6 +2838,8 @@ class ChannelRuntime:
         gs: Any,
         player_id: int,
         turn: int,
+        *,
+        guidance: bool = False,
     ) -> ChannelAdmission:
         if player_id not in self.state.enabled_players:
             raise ValueError(f"player {player_id} is not channel-enabled")
@@ -2851,6 +2853,8 @@ class ChannelRuntime:
             finalize_deadline=False,
         )
         projection = self.project_for_player(player_id, turn)
+        if guidance:
+            projection = replace(projection, guidance=True)
         return ChannelAdmission(
             player_id=player_id,
             turn=turn,

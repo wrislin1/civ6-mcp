@@ -18,6 +18,7 @@ from civ_mcp.arena.channel_runtime import (
 )
 from civ_mcp.arena.config import ChannelRules
 from civ_mcp.arena.channels import (
+    CHANNEL_GUIDANCE_TEXT,
     ChannelAcknowledgement,
     ChannelEvent,
     DealState,
@@ -1008,6 +1009,18 @@ async def test_admission_and_finish_make_two_union_observations_and_apply_contex
     assert acknowledgements[0].status == "applied"
     assert rt.state.messages[-1].text == "working on it"
 
+
+@pytest.mark.asyncio
+async def test_admission_guidance_keyword_sets_projection_and_block(tmp_path):
+    rt = runtime(tmp_path)
+
+    guided = await rt.admit_player(CountingObservationGS(), 2, 3, guidance=True)
+    assert guided.projection.guidance is True
+    assert guided.block.splitlines()[1] == CHANNEL_GUIDANCE_TEXT
+
+    unguided = await rt.admit_player(CountingObservationGS(), 1, 3)
+    assert unguided.projection.guidance is False
+    assert CHANNEL_GUIDANCE_TEXT not in unguided.block
 
 @pytest.mark.asyncio
 async def test_eight_player_shape_has_bounded_projection_and_two_queries_per_turn(

@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError, replace
 import pytest
 
 from civ_mcp.arena.channels import (
+    CHANNEL_GUIDANCE_TEXT,
     ChannelAcknowledgement,
     ChannelEvent,
     ChannelProjection,
@@ -843,3 +844,15 @@ def test_disabled_projection_is_empty_and_cli_examples_are_exact():
     rendered = format_channel_block(ChannelProjection(player_id=1, cli_instructions=True))
     assert 'CHANNEL {"action":"send_message","to_player":2,"text":"..."}' in rendered
     assert 'CHANNEL {"action":"respond_to_payment","deal_id":"deal-000001","accept":true}' in rendered
+
+
+def test_channel_guidance_renders_immediately_after_header_only_when_enabled():
+    unguided = format_channel_block(ChannelProjection(player_id=1))
+    guided = format_channel_block(ChannelProjection(player_id=1, guidance=True))
+
+    assert unguided == "== PRIVATE UNOFFICIAL CHANNELS =="
+    assert CHANNEL_GUIDANCE_TEXT not in unguided
+
+    lines = guided.splitlines()
+    assert lines[0] == "== PRIVATE UNOFFICIAL CHANNELS =="
+    assert lines[1] == CHANNEL_GUIDANCE_TEXT
