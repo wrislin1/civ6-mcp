@@ -1,6 +1,17 @@
 # Unofficial Channels Core — Attended Live Gate
 
-**Verdict: FAIL / BLOCKED.** The attended run exercised one API puppet turn and
+> **Status 2026-07-22: lifecycle PASS** on attended run
+> `arena-channels-core-gate-v4` (scenario revision 3, main at `453a902`).
+> Every pass-contract row that concerns the channel lifecycle now has direct
+> live evidence — see the "2026-07-22 attended rerun" section at the end of
+> this document. The lifecycle PASS is distinct from the raw FireTuner-probe
+> ledger below, which remains its own record: the formal probe table was
+> superseded in part by the gate-v1/v2/v3 investigation probes and by rev-3's
+> in-run settlement evidence, but it was never re-executed as written.
+> The verdict paragraph and evidence sections that follow describe the
+> original 2026-07-16 attempt and are retained unchanged as history.
+
+**Verdict (2026-07-16 attempt): FAIL / BLOCKED.** The attended run exercised one API puppet turn and
 one CLI puppet turn, but neither agent emitted a channel action. Consequently it
 did not create the required canary, messages, deals, payment, restart
 reconciliation, terminal outcomes, or grievance. The inherited raw FireTuner
@@ -240,3 +251,132 @@ The next attended run must start from the reviewed Task 12 tip, re-run the full
 ownership and provider preflight, deliberately stage both channel actions, and
 execute every blocked probe. This report must remain FAIL / BLOCKED until all
 pass-contract rows have direct evidence.
+
+---
+
+## 2026-07-22 attended rerun — `arena-channels-core-gate-v4` (revision 3): lifecycle PASS
+
+Intermediate attended runs `arena-channels-core-gate-v1` and `-v2` failed
+terminally at the restart checkpoint and proved the engine auto-resolves deals
+offered to an AI player (spec revision 2); `-v3` failed with an obsolete
+auto-resolution terminal after its probes proved AI→AI `PROPOSED` enactment is
+synchronous at send (spec revision 3, Locked Decision 14). Revision 3 —
+fund-window settlement verification, ledger-only payment response — plus all
+ten findings of the rev-3 code review were implemented and pushed as
+`e7e0cb7..453a902` before this run.
+
+### Run record
+
+| Field | Recorded value |
+|---|---|
+| Date | 2026-07-22, ~17:13–17:35 UTC |
+| run ID | `arena-channels-core-gate-v4` |
+| tested code | `main` at `453a902`, clean tracked tree, 1963 tests passing |
+| loaded save | `CHANNELS_GATE_V1_T157` (manual menu load); verified live: turn 157, local player 0 Korea/Seondeok; players 1 Khmer, 2 Brazil, 3 Cree alive |
+| config | `experiments/arena-channels-core-smoke.yaml` (`run_id: arena-channels-core-gate-v4`, `max_puppet_turns: 36`, idle poll limit 1800) |
+| roles | `api_actor=1`, `cli_actor=2`, `privacy_observer=3` |
+| model/CLI processes | none — deterministic gate mode; cost log `total_usd: 0.0`, `by_player: {}` |
+| run directory | `arena_runs/arena-channels-core-gate-v4` (local checkout on the gaming PC) |
+| watcher stdout/stderr | `.arena-runs/arena-channels-core-gate-v4.out` / `.err` (stderr empty) |
+
+### Ownership and chronology
+
+The FireTuner slot was owned by a stale session `civ-mcp` (started before the
+rev-3 merge); it was used read-only to verify the loaded save, then stopped,
+and the free `4318` slot was confirmed before each arm. Each watcher held the
+only established `4318` socket for its lifetime.
+
+1. **Invocation 1** (turns 157–158, 6 puppet turns): phases
+   `preflight → canary_and_upfront_proposal → accept_upfront → fund_upfront →
+   accept_upfront_payment → restart_required`. The funding seat window
+   recorded write-ahead treasury baselines, sent the official 1-gold offer
+   (payer 1 → payee 2), verified the payment state `absent` and exact
+   same-window deltas, and recorded settlement digest `89d8100c487efca6`
+   (`payment_checkpoint.json`). Exit at the persisted restart checkpoint with
+   `LIVE_GATE … "status":"restart_required"`, `restart_count: 1`.
+2. **Restart gap**: the human turn was not ended; the second watcher was
+   rearmed with the identical command and run ID ~5 minutes later.
+3. **Invocation 2** (turns 158–164, 18 puppet turns): resume verification
+   passed — matching gate/channel identities, exactly one prior restart
+   request, unchanged settlement digest, payment state `absent`, no duplicate
+   acknowledgement — then `restart_verified → await_upfront_favor_deadline →
+   verify_upfront_honored → propose_on_delivery → accept_on_delivery →
+   await_on_delivery_favor → withhold_on_delivery_funding →
+   verify_funding_breach → verify_terminal_gate`, ending with a `gate_passed`
+   event and `LIVE_GATE … "status":"passed"`.
+
+`result.json`: `{"status":"passed", "scenario":"unofficial_channels_core_v1",
+"scenario_revision":3, "restart_count":1, "phase":"verify_terminal_gate"}`.
+
+### Lifecycle evidence
+
+Gate journal totals: 24/24 budgeted seat captures, 12 phase advances, 7
+planned+verified actions, 56 privacy assertions (each checking 6 forbidden
+canary digests across 7 capture artifact kinds), 1 `restart_required`, 1
+`restart_verified`, 1 `gate_passed` with evidence
+`{honored_deal: deal-000001, broken_deal: deal-000002, grievances: 1,
+privacy_assertions: 56}`.
+
+Canonical channel state (`channels/state.json`):
+
+| Required item | Result | Evidence |
+|---|---|---|
+| API + CLI acknowledgements | PASS | 7 acknowledgements, all `applied`, from both actors' production paths |
+| player-3 privacy canary | PASS | canary `message_sent` recorded; 56 per-capture assertions found no forbidden digest in any observer artifact |
+| up-front deal honored | PASS | `deal-000001`: `payment_status: settled`, `favor_status: satisfied` |
+| synchronous settlement | PASS | digest `89d8100c487efca6`; verified `absent` + exact −1/+1 same-window deltas at send; digest unchanged at resume |
+| restart/reconcile exactly once | PASS | `restart_count: 1`; `restart_verified` at turn 158 |
+| on-delivery deal broken | PASS | `deal-000002`: funding deliberately withheld; `payment_status: failed`; `deal_broken` event |
+| deterministic grievance | PASS | `grv-000001`: offender 2, wronged 1, magnitude 0.25, turn 164, "promised payment was not funded by the deadline", `adjudication_source: deterministic` |
+
+### Analyzer result
+
+`uv run civ-arena-analyze arena_runs/arena-channels-core-gate-v4` (schema-1
+channels report):
+
+| Assertion | Result |
+|---|---|
+| honored >= 1 | PASS: 1 |
+| broken >= 1 | PASS: 1 |
+| settled >= 1 | PASS: 1 |
+| deterministic grievance >= 1 | PASS: 1 (raw and effective magnitude 0.25) |
+| pair totals | PASS: `1->2` settled+honored; `2->1` failed+broken+grievance |
+| observer isolation | PASS: player 3 has 0 messages, 0 deals, 0 grievances |
+
+### Artifact hashes (SHA-256)
+
+Paths relative to `arena_runs/arena-channels-core-gate-v4/` unless noted.
+
+| Artifact | SHA-256 |
+|---|---|
+| `channels/state.json` | `4f356427f350a412435dafc57161266f7a86bd60dbec882c21dcdba4a36993ac` |
+| `channels/events.jsonl` | `107b835ed6f657a3b5892b24f738e6ff2394321456e9c89c383568f1c862d139` |
+| `live_gate/events.jsonl` | `f50b411cf1f6cc729f698621ef03726ad5f7fd923cb7e9b08fed374cb1d33aac` |
+| `live_gate/state.json` | `7627d357c0c01daa0c90878f20cd64184766ed73a58655889e73dd139af1f19b` |
+| `live_gate/result.json` | `64907d5cddf3167e3f4f44b46bf88d35b239c60c83d64ddff045e54892ceee88` |
+| `live_gate/payment_checkpoint.json` | `7e4520ddf8def37e8b6064242e623a34e60a968a22a30922a4d6ca4685c54c4f` |
+| `transcript.jsonl` | `db2e63dca631cc648f05503620ffb542c9629144eb5171c8bac101fa0ccf0f21` |
+| `report.json` | `f21772cee198d28686ba385f68eda01d6fdb77127e83e87d0ed2e6906e6b924c` |
+| `report.md` | `7b03ed8e518698b33c0676f36693dbf3270c863ba85aedb62ed0643bc5b950b2` |
+| `.arena-runs/arena-channels-core-gate-v4.out` | `7ac52f537230bc0b3eac5420f93a17375694cd5aa6b66420e0fb5de72a4837d7` |
+| `.arena-runs/arena-channels-core-gate-v4.err` (empty) | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
+### Cleanup
+
+| Cleanup check | Result |
+|---|---|
+| terminal result and journal read | PASS |
+| watcher/process groups exited | PASS: no `civ-arena`, `codex`, or `civ-mcp` process |
+| final owner map | PASS: no established `4318` socket |
+| human control restored | PASS: watcher exit 0 after coordinator handback |
+
+### Scope of this PASS
+
+This section records the **lifecycle** PASS: acknowledgements, canary privacy,
+deal lifecycle (honored/broken), synchronous settlement with a verified
+restart, deterministic grievance, and analyzer assertions. The raw
+FireTuner-probe table earlier in this document is a separate ledger; the
+gate-v1/v2/v3 investigations answered several of those questions live
+(auto-resolution behavior, synchronous AI→AI enactment, working-deal
+fingerprints), but the table as written was not re-executed and its rows
+remain individually tracked.
