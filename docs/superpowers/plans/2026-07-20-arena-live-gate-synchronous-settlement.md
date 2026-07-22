@@ -1,5 +1,13 @@
 # Arena Live-Gate Synchronous Fund-Window Settlement (Spec Revision 3) Implementation Plan
 
+> **STATUS: EXECUTED AND LIVE-VALIDATED.** Implemented on main as
+> `e7e0cb7..175100e` (16 commits, 2026-07-20/21); the follow-up review-fix
+> plan `2026-07-21-arena-rev3-review-fixes.md` shipped as `175100e..453a902`.
+> The operator-attended live procedure at the end of this plan ran 2026-07-22
+> as `arena-channels-core-gate-v4` and reached **terminal PASS** (restart
+> handshake verified, 24/24 captures) — evidence recorded in
+> `2026-07-16-arena-unofficial-channels-core-live-gate.md` (commit `3d51cdb`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rework the `unofficial_channels_core_v1` gate and the channel payment runtime so official-payment settlement is verified synchronously in the funding seat window, and the payee's `respond_to_payment` becomes channel-ledger bookkeeping that performs no engine mutation.

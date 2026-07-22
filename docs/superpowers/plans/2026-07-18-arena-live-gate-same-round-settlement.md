@@ -6,8 +6,14 @@
 > `6fbf521` exact gate capture count, `77b3a72` rev-2 resume failure guards).
 > Task 8 readiness checks verified at merge: full suite 1952 green,
 > `tests/arena/test_experiment.py` + `test_config.py` 213 green, zero stale
-> `gate-v2`/nine-round/27-seat references. Remaining work is the operator-attended
-> live run `arena-channels-core-gate-v3` (see Task 8 live procedure).
+> `gate-v2`/nine-round/27-seat references.
+>
+> **Update 2026-07-22:** the attended `arena-channels-core-gate-v3` run failed
+> terminally with an obsolete auto-resolution terminal while its probes proved
+> AI→AI `PROPOSED` enactment is synchronous at send. Spec revision 3 supersedes
+> this plan's settlement-verification placement (see
+> `2026-07-20-arena-live-gate-synchronous-settlement.md`); the rerun
+> `arena-channels-core-gate-v4` passed 2026-07-22.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
