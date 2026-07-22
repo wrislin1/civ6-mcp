@@ -254,13 +254,16 @@ def test_seat0_requires_attention_off():
 
 def test_channel_defaults_are_off_and_fingerprinted():
     opts = CivOptions()
-    assert opts.channels == ChannelOptions(enabled=False)
-    assert opts.fingerprint()["channels"] == {"enabled": False}
+    assert opts.channels == ChannelOptions(enabled=False, guidance=False)
+    assert opts.fingerprint()["channels"] == {"enabled": False, "guidance": False}
+
+    guided = CivOptions(channels=ChannelOptions(enabled=True, guidance=True))
+    assert guided.fingerprint()["channels"] == {"enabled": True, "guidance": True}
 
 
 def test_channel_rules_defaults_and_enabled_set_are_canonical():
     cfg = ArenaConfig(players=[
-        PlayerSpec(2, "local", "m", options=CivOptions(channels=ChannelOptions(True))),
+        PlayerSpec(2, "local", "m", options=CivOptions(channels=ChannelOptions(True, True))),
         PlayerSpec(1, "local", "m"),
     ])
     fp = channel_config_fingerprint(cfg)

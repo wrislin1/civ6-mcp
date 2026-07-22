@@ -65,6 +65,7 @@ class AttentionOptions:
 @dataclass(frozen=True)
 class ChannelOptions:
     enabled: bool = False
+    guidance: bool = False
 
 
 @dataclass(frozen=True)
@@ -139,7 +140,10 @@ class CivOptions:
                 "max_streak": self.attention.max_streak,
                 "threat_radius": self.attention.threat_radius,
             },
-            "channels": {"enabled": self.channels.enabled},
+            "channels": {
+                "enabled": self.channels.enabled,
+                "guidance": self.channels.guidance,
+            },
         }
 
     @property

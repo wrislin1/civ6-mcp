@@ -260,11 +260,14 @@ def _parse_attention(civ_label: str, raw: object) -> AttentionOptions:
 def _parse_channels(civ_label: str, raw: object) -> ChannelOptions:
     if not isinstance(raw, dict):
         raise _err(civ_label, f"channels must be a mapping, got {raw!r}")
-    _validate_mapping_keys(civ_label, raw, {"enabled"}, "channels")
+    _validate_mapping_keys(civ_label, raw, {"enabled", "guidance"}, "channels")
     enabled = raw.get("enabled", _CHANNEL_DEFAULTS.enabled)
     if not isinstance(enabled, bool):
         raise _err(civ_label, f"channels.enabled must be a boolean, got {enabled!r}")
-    return ChannelOptions(enabled=enabled)
+    guidance = raw.get("guidance", _CHANNEL_DEFAULTS.guidance)
+    if not isinstance(guidance, bool):
+        raise _err(civ_label, f"channels.guidance must be a boolean, got {guidance!r}")
+    return ChannelOptions(enabled=enabled, guidance=guidance)
 
 
 def _parse_channel_rules(raw: object) -> ChannelRules:

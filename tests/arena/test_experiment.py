@@ -1183,7 +1183,7 @@ civs:
   - player: 1
     provider: local
     model: m
-    channels: {enabled: true}
+    channels: {enabled: true, guidance: true}
   - player: 2
     provider: cli-codex
     model: gpt-5
@@ -1191,12 +1191,15 @@ civs:
 """)
     cfg = load_experiment(path)
     assert cfg.players[0].options.channels.enabled is True
+    assert cfg.players[0].options.channels.guidance is True
     assert cfg.players[1].options.channels.enabled is False
+    assert cfg.players[1].options.channels.guidance is False
     assert cfg.channel_rules == ChannelRules()
 
 
 @pytest.mark.parametrize("fragment, match", [
     ("channels: {enabled: yes}", "channels.enabled must be a boolean"),
+    ("channels: {enabled: true, guidance: yes}", "channels.guidance must be a boolean"),
     ("channel_rules: {max_payment_gold: 10001}", "max_payment_gold must be 1..10000"),
     ("channel_rules: {max_completion_turns: 31}", "max_completion_turns must be 1..30"),
     ("channel_rules: {max_zone_distance: 0}", "max_zone_distance must be 1..10"),
