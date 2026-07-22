@@ -954,8 +954,16 @@ class GameState:
             'print(Game.GetCurrentGameTurn()); print("---END---")'
         )
         if not lines:
-            raise ValueError("no response to game turn query")
-        return int(lines[0])
+            raise ValueError(
+                "game turn query returned no output; the FireTuner "
+                "connection may be stale or owned by another client"
+            )
+        try:
+            return int(lines[0])
+        except ValueError:
+            raise ValueError(
+                f"game turn query returned non-numeric output: {lines[0]!r}"
+            ) from None
 
     async def get_channel_payment_state(
         self, payer: int, payee: int, gold: int

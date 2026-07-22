@@ -116,9 +116,13 @@ class PaymentGameState:
                     families_present=request.families,
                 )
             return result
-        # No favor-observation queued (e.g. the fund-path treasury check) —
-        # synthesize one from the tracked treasury so rev-3 settlement
-        # verification has real gold figures to compare against.
+        # No observation queued: only the fund-path treasury check (and empty
+        # admission/finish requests) may fall through here — synthesize gold
+        # from the tracked treasury so rev-3 settlement verification has real
+        # figures. Favor-family requests must be explicitly queued.
+        assert request.families <= {ObservationFamily.TREASURY}, (
+            f"no queued observation for non-treasury request {request.families}"
+        )
         return observation(
             player_id,
             turn,

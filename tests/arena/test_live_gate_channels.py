@@ -311,6 +311,11 @@ def test_settlement_verdict_classifies_evidence_and_enactment():
     assert verdict("absent", baseline, floats, fingerprint, 11, gold) == (
         "evidence_invalid"
     )
+    # a status outside the observed vocabulary is corrupt driver evidence,
+    # never proof the engine withheld enactment
+    assert verdict("garbled", baseline, good, fingerprint, 11, gold) == (
+        "evidence_invalid"
+    )
 
 
 @pytest.mark.asyncio
@@ -629,6 +634,34 @@ async def test_pre_acceptance_none_payment_state_is_unreadable_not_pending(
         "pre_acceptance_payment_state_unreadable"
     )
     assert "pre_acceptance_payment_status" not in state.data
+
+
+@pytest.mark.asyncio
+async def test_journaled_none_pre_acceptance_status_is_unreadable_not_pending(
+    tmp_path,
+):
+    gs = GateGameState()
+    driver, runtime, gs = await attached_driver(tmp_path, gs=gs)
+    await run_gate_round(driver, runtime, gs, 10)
+    await run_gate_seat(driver, runtime, gs, 1, 11)
+    driver._journal.append(
+        "data_recorded", {"data": {"pre_acceptance_payment_status": None}}
+    )
+
+    async def forbidden(*args):
+        raise AssertionError(
+            "poisoned journaled status must not trigger a live re-query"
+        )
+
+    gs.get_channel_payment_state = forbidden
+    await run_gate_seat(driver, runtime, gs, 2, 11)
+
+    state = driver._journal.state
+    assert state.status == GATE_FAILED
+    assert state.reason == "payment_state_failed"
+    assert private_failure_details(driver)[-1]["failure"] == (
+        "pre_acceptance_payment_state_unreadable"
+    )
 
 
 @pytest.mark.asyncio

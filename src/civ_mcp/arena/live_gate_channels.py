@@ -689,10 +689,12 @@ class ChannelsCoreDriver:
         the driver's own evidence is malformed or cross-turn
         (driver-attributed) — never blamed on the engine.
         """
-        if status is None:
-            return "evidence_invalid"
-        if status != "absent":
+        if status in ("exact", "conflicting"):
             return "not_enacted"
+        if status != "absent":
+            # None or a value outside the observed-status vocabulary is the
+            # driver's own evidence going bad, not proof of engine behavior.
+            return "evidence_invalid"
         for values in (baseline, result):
             if not (
                 isinstance(values, Mapping)
