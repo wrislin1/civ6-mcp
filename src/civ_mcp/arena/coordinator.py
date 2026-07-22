@@ -402,6 +402,11 @@ async def run_arena(
         for spec in config.players
         if spec.options.channels.enabled
     )
+    channel_guidance_by_player = {
+        spec.player_id: spec.options.channels.guidance
+        for spec in config.players
+        if spec.options.channels.enabled
+    }
     channel_runtime_error = ""
     if enabled_channel_players:
         try:
@@ -655,7 +660,12 @@ async def run_arena(
                 return None
         seat0_channel_admission_attempts.add(turn)
         try:
-            admission = await channel_runtime.admit_player(gs, 0, turn)
+            admission = await channel_runtime.admit_player(
+                gs,
+                0,
+                turn,
+                guidance=channel_guidance_by_player.get(0, False),
+            )
         except Exception as e:
             error = repr(e)
             seat0_channel_errors[turn] = error
@@ -1552,7 +1562,10 @@ async def run_arena(
                 ):
                     try:
                         channel_admission = await channel_runtime.admit_player(
-                            gs, st.local, st.turn
+                            gs,
+                            st.local,
+                            st.turn,
+                            guidance=channel_guidance_by_player.get(st.local, False),
                         )
                     except Exception as e:
                         channel_error = repr(e)

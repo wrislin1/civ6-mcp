@@ -5142,6 +5142,7 @@ class FakeChannelRuntime:
         self.reconcile_error = reconcile_error
         self.poll_error = poll_error
         self.calls = []
+        self.admissions = []
         self.finish_admissions = []
         self.finish_results = []
         self.finish_staged_actions = []
@@ -5159,11 +5160,14 @@ class FakeChannelRuntime:
         if self.reconcile_error is not None:
             raise self.reconcile_error
 
-    async def admit_player(self, gs, player_id, turn):
+    async def admit_player(self, gs, player_id, turn, *, guidance=False):
         from types import SimpleNamespace
         from civ_mcp.arena.channel_protocol import ChannelTurnContext
 
         self._record(f"admit:{player_id}:{turn}")
+        self.admissions.append(
+            {"player_id": player_id, "turn": turn, "guidance": guidance}
+        )
         if self.admit_error is not None:
             raise self.admit_error
         context = ChannelTurnContext(
@@ -5196,12 +5200,12 @@ class FakeChannelRuntime:
             raise self.poll_error
 
 
-def _channel_options(*, attention_mode="off"):
+def _channel_options(*, attention_mode="off", guidance=False):
     from civ_mcp.arena.config import AttentionOptions, ChannelOptions
 
     return CivOptions(
         attention=AttentionOptions(mode=attention_mode),
-        channels=ChannelOptions(enabled=True),
+        channels=ChannelOptions(enabled=True, guidance=guidance),
     )
 
 
@@ -5516,6 +5520,11 @@ async def test_channels_open_admit_policy_finish_with_run_identity(
         "policy:1:7",
         "finish:1:7",
     ]
+    assert runtime.admissions[0] == {
+        "player_id": 1,
+        "turn": 7,
+        "guidance": False,
+    }
     assert len(policy.calls) == 1
     assert policy.calls[0]["channel_block"] == "CHANNEL BLOCK"
     assert policy.calls[0]["channel_context"].player_id == 1
@@ -5529,6 +5538,26 @@ async def test_channels_open_admit_policy_finish_with_run_identity(
         "error": "",
     }
     assert sink.records[0]["channels"] == result["log"][0]["channels"]
+
+
+@pytest.mark.asyncio
+async def test_channel_guidance_option_is_passed_to_runtime(monkeypatch, tmp_path):
+    runtime = FakeChannelRuntime(acknowledgements=1)
+    _patch_channel_open(monkeypatch, runtime)
+    policy = ChannelRecordingPolicy(runtime, final_summary="")
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+    sink = FakeSink()
+    config = _channel_config(
+        tmp_path,
+        options=_channel_options(guidance=True),
+    )
+
+    await run_arena(conn, FakeGS(), config, policy=policy, transcript=sink)
+
+    assert runtime.admissions == [
+        {"player_id": 1, "turn": 7, "guidance": True}
+    ]
 
 
 @pytest.mark.asyncio
