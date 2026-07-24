@@ -1,9 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 
-# Canonical in-process LLM gateway endpoint; single source of truth for both the
-# ArenaConfig default and the --gateway-url CLI default.
-DEFAULT_GATEWAY_URL = "http://192.168.20.196:11444/v1"
+from civ_mcp.arena.endpoint_registry import resolve_gateway
+
+DEFAULT_GATEWAY_ENDPOINT = "riz-unified-cpp"
 
 VALID_SECTIONS = (
     "promotions",
@@ -201,7 +201,8 @@ class PlayerSpec:
 
 def parse_player_spec(s: str) -> PlayerSpec:
     # "1:local:qwen3-coder:30b", "2:cli-claude:", "2:cli-codex:gpt-5.5", or a local civ
-    # pinned to its own gateway: "3:local:gemma4-26b@http://192.168.20.196:11440/v1".
+    # pinned to its own gateway: "3:local:gemma4-26b@riz-gpu0-cpp" or
+    # "3:local:gemma4-26b@http://192.168.20.196:11440/v1".
     parts = s.split(":", 2)
     if len(parts) != 3:
         raise ValueError(f"bad --player spec {s!r}; want '<id>:<provider>:<model>[@<gateway>]'")
@@ -210,11 +211,11 @@ def parse_player_spec(s: str) -> PlayerSpec:
         raise ValueError(
             f"unknown provider {provider!r} in --player spec {s!r}; "
             f"want one of {sorted(_VALID_PROVIDERS)}")
-    # A trailing '@<url>' pins this local civ to a specific gateway (e.g. a per-GPU
-    # llama-swap instance). URLs contain ':' but not '@', so rsplit is unambiguous.
     gateway = ""
     if "@" in model:
         model, gateway = model.rsplit("@", 1)
+        if gateway and "://" not in gateway:
+            gateway = resolve_gateway(gateway)
     return PlayerSpec(int(pid), provider, model, gateway)
 
 @dataclass
@@ -222,7 +223,8 @@ class ArenaConfig:
     players: list[PlayerSpec]
     max_puppet_turns: int = 1
     max_game_turns: int = 0  # caps ALL captured turns (played+slept+failed); 0 = uncapped
-    gateway_url: str = DEFAULT_GATEWAY_URL  # overridden by CLI
+    gateway_url: str = field(
+        default_factory=lambda: resolve_gateway(DEFAULT_GATEWAY_ENDPOINT))
     api_key_env: str = "LITELLM_OPENAI_API_KEY"
     dry_run: bool = False
     max_agent_steps: int = 6

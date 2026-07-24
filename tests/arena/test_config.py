@@ -17,7 +17,9 @@ from civ_mcp.arena.config import (
     parse_player_spec,
     resolved_puppet_ids,
     validate_arena_config,
+    DEFAULT_GATEWAY_ENDPOINT,
 )
+from civ_mcp.arena.endpoint_registry import resolve_gateway
 from civ_mcp.arena.live_gate import ScenarioMeta
 
 def test_parse_player_spec_local():
@@ -30,6 +32,12 @@ def test_parse_player_spec_per_civ_gateway():
     """A trailing '@<url>' pins a local civ to its own gateway (e.g. a per-GPU llama-swap)."""
     s = parse_player_spec("3:local:gemma4-26b@http://192.168.20.196:11440/v1")
     assert s == PlayerSpec(3, "local", "gemma4-26b", "http://192.168.20.196:11440/v1")
+    assert s.model == "gemma4-26b"
+    assert s.gateway == "http://192.168.20.196:11440/v1"
+
+
+def test_parse_player_spec_per_civ_endpoint_id():
+    s = parse_player_spec("3:local:gemma4-26b@riz-gpu0-cpp")
     assert s.model == "gemma4-26b"
     assert s.gateway == "http://192.168.20.196:11440/v1"
 
@@ -78,7 +86,8 @@ def test_rejects_unknown_provider():
         parse_player_spec("1:typo:model")
 
 def test_arena_config_gateway_url_default():
-    assert ArenaConfig(players=[]).gateway_url == "http://192.168.20.196:11444/v1"
+    assert ArenaConfig(players=[]).gateway_url == resolve_gateway(
+        DEFAULT_GATEWAY_ENDPOINT)
 
 def test_arena_config_idle_poll_limit_default():
     assert ArenaConfig(players=[]).idle_poll_limit == 600
@@ -317,6 +326,9 @@ def _gate_config(
 
 @pytest.fixture
 def gate_registry(monkeypatch):
+    # Register lazy builtins before temporarily replacing the registry, so
+    # monkeypatch restoration leaves the process-wide registry intact.
+    live_gate._ensure_builtin_scenarios()
     meta = ScenarioMeta(
         name="fake_gate_v1",
         revision=1,

@@ -14,13 +14,14 @@ from civ_mcp.arena.config import (
     ArenaConfig,
     ChannelOptions,
     CivOptions,
-    DEFAULT_GATEWAY_URL,
+    DEFAULT_GATEWAY_ENDPOINT,
     LiveGateOptions,
     parse_player_spec,
 )
 from civ_mcp.arena.agent import LLMPolicy
 from civ_mcp.arena.cli_agent import CLIAgentPolicy
 from civ_mcp.arena.cost import CostLog
+from civ_mcp.arena.endpoint_registry import resolve_gateway
 from civ_mcp.arena.transcript import NullSink
 
 class FakeCost:
@@ -140,7 +141,7 @@ def test_resolve_config_non_config_uses_arena_defaults():
     cfg = resolve_config(build_args(["--player", "3:local:m"]))
     assert cfg.max_puppet_turns == 1
     assert cfg.idle_poll_limit == 600
-    assert cfg.gateway_url == DEFAULT_GATEWAY_URL
+    assert cfg.gateway_url == resolve_gateway(DEFAULT_GATEWAY_ENDPOINT)
     assert cfg.max_agent_steps == 6
 
 
@@ -184,7 +185,7 @@ def test_resolve_config_rejects_non_default_config_owned_flags(tmp_path, argv_ta
     ("argv_tail", "flag"),
     [
         (["--max-puppet-turns", "1"], "--max-puppet-turns"),
-        (["--gateway-url", DEFAULT_GATEWAY_URL], "--gateway-url"),
+        (["--gateway-url", resolve_gateway(DEFAULT_GATEWAY_ENDPOINT)], "--gateway-url"),
         (["--idle-poll-limit", "600"], "--idle-poll-limit"),
         (["--max-agent-steps", "6"], "--max-agent-steps"),
     ],
@@ -196,6 +197,18 @@ def test_resolve_config_rejects_config_owned_flags_even_when_default_value_passe
     p.write_text("civs:\n  - {player: 3, provider: local, model: m}\n")
     with pytest.raises(SystemExit, match=flag):
         resolve_config(build_args(["--config", str(p), *argv_tail]))
+
+
+def test_explicit_cli_gateway_does_not_resolve_default(monkeypatch):
+    def unexpected(endpoint_id):
+        raise AssertionError(f"resolved default despite explicit URL: {endpoint_id}")
+
+    monkeypatch.setattr(arena_module, "resolve_gateway", unexpected)
+    cfg = resolve_config(build_args([
+        "--player", "3:local:m",
+        "--gateway-url", "http://explicit.example/v1",
+    ]))
+    assert cfg.gateway_url == "http://explicit.example/v1"
 
 
 def test_build_policies_threads_options(tmp_path):

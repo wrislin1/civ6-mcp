@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from civ_mcp.arena.config import (
-    DEFAULT_GATEWAY_URL,
+    DEFAULT_GATEWAY_ENDPOINT,
     VALID_PLAYBOOKS,
     VALID_SECTIONS,
     ArenaConfig,
@@ -24,6 +24,7 @@ from civ_mcp.arena.config import (
     _VALID_PROVIDERS,
     validate_arena_config,
 )
+from civ_mcp.arena.endpoint_registry import resolve_gateway
 from civ_mcp.arena.registry import resolve_tools
 from civ_mcp.run_id import is_safe_run_id
 
@@ -55,7 +56,8 @@ _CHANNEL_DEFAULTS = ChannelOptions()
 _CHANNEL_RULE_DEFAULTS = ChannelRules()
 _LIVE_GATE_DEFAULTS = LiveGateOptions()
 _CIV_DEFAULTS = CivOptions()
-_ARENA_DEFAULTS = ArenaConfig(players=[])
+# Import-safe sentinel; load_experiment resolves only when YAML/defaults omit a URL.
+_ARENA_DEFAULTS = ArenaConfig(players=[], gateway_url="")
 
 
 class _UniqueKeySafeLoader(yaml.SafeLoader):
@@ -504,9 +506,13 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
             data.get("max_game_turns", arena_defaults.max_game_turns)
         ),
         gateway_url=(
-            arena_defaults.gateway_url
-            if "gateway_url" not in data
-            else _non_blank_string(str(config_path), "gateway_url", data["gateway_url"])
+            _non_blank_string(
+                str(config_path), "gateway_url", data["gateway_url"])
+            if "gateway_url" in data
+            else (
+                arena_defaults.gateway_url
+                or resolve_gateway(DEFAULT_GATEWAY_ENDPOINT)
+            )
         ),
         idle_poll_limit=_top_int(
             config_path,

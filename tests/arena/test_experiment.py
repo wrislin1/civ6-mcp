@@ -51,6 +51,21 @@ def _write(tmp_path, text):
     return p
 
 
+def test_explicit_yaml_gateway_does_not_resolve_default(tmp_path, monkeypatch):
+    from civ_mcp.arena import experiment as experiment_module
+
+    def unexpected(endpoint_id):
+        raise AssertionError(f"resolved default despite explicit YAML: {endpoint_id}")
+
+    monkeypatch.setattr(experiment_module, "resolve_gateway", unexpected)
+    cfg = load_experiment(_write(tmp_path, """
+gateway_url: http://yaml.example/v1
+civs:
+  - {player: 3, provider: local, model: m}
+"""))
+    assert cfg.gateway_url == "http://yaml.example/v1"
+
+
 def test_loads_gemma_strategy_ab_slice1_artifact():
     cfg = load_experiment(SLICE1_GEMMA_STRATEGY_AB)
 

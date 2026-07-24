@@ -10,11 +10,12 @@ from civ_mcp.arena.config import (
     CivOptions,
     CLI_PROVIDER_COMMANDS,
     parse_player_spec,
-    DEFAULT_GATEWAY_URL,
+    DEFAULT_GATEWAY_ENDPOINT,
     validate_arena_config,
 )
 from civ_mcp.arena.cost import CostLog
 from civ_mcp.arena.coordinator import run_arena, ScriptedPolicy
+from civ_mcp.arena.endpoint_registry import resolve_gateway
 
 def build_policies(specs, cost, cfg):
     """Pure: specs -> ({player_id: policy}, local_backends). No network on construct."""
@@ -49,7 +50,7 @@ def build_policies(specs, cost, cfg):
 def build_args(argv=None):
     ap = argparse.ArgumentParser(prog="civ-arena")
     ap.add_argument("--player", action="append", default=[],
-                    help="'<id>:<provider>:<model>[@<gateway>]' (local civ may pin its own gateway)")
+                    help="'<id>:<provider>:<model>[@<gateway>]' (local civ may pin @riz-gpu0-cpp or a raw gateway URL)")
     ap.add_argument("--config", default="",
                     help="YAML experiment file (mutually exclusive with --player)")
     ap.add_argument("--max-puppet-turns", type=int, default=None,
@@ -73,9 +74,8 @@ def build_args(argv=None):
     ap.add_argument("--config-default-gateway-url", default=None, help=argparse.SUPPRESS)
     return ap.parse_args(argv)
 
-# Field defaults come from the ArenaConfig dataclass itself; one shared instance
-# avoids rebuilding it on every resolve_config call.
-_ARENA_DEFAULTS = ArenaConfig(players=[])
+# Import-safe sentinel: runtime paths resolve a gateway only if no URL is supplied.
+_ARENA_DEFAULTS = ArenaConfig(players=[], gateway_url="")
 
 def _value_or_default(value, default):
     return default if value is None else value
@@ -170,7 +170,11 @@ def resolve_config(args) -> ArenaConfig:
         players=specs,
         max_puppet_turns=_value_or_default(max_puppet_turns_arg, defaults.max_puppet_turns),
         max_game_turns=_value_or_default(max_game_turns_arg, defaults.max_game_turns),
-        gateway_url=_value_or_default(gateway_url_arg, defaults.gateway_url),
+        gateway_url=(
+            gateway_url_arg
+            if gateway_url_arg is not None
+            else resolve_gateway(DEFAULT_GATEWAY_ENDPOINT)
+        ),
         api_key_env=args.api_key_env,
         dry_run=args.dry_run, max_agent_steps=max_agent_steps,
         idle_poll_limit=_value_or_default(idle_poll_limit_arg, defaults.idle_poll_limit),

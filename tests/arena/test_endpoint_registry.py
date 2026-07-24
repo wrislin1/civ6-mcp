@@ -33,3 +33,31 @@ def test_offline_mode_never_calls_live_loader(monkeypatch):
     monkeypatch.setattr(
         endpoint_registry.brothereye_registry, "load", unexpected)
     assert resolve_gateway("riz-gpu0-cpp") == "http://192.168.20.196:11440/v1"
+
+
+def test_arena_modules_do_not_load_registry_at_import(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env.pop("CIV6_REGISTRY_OFFLINE", None)
+    code = """
+import urllib.request
+calls = []
+def blocked(*args, **kwargs):
+    calls.append((args, kwargs))
+    raise AssertionError("network at import")
+urllib.request.urlopen = blocked
+import civ_mcp.arena.arena
+import civ_mcp.arena.experiment
+assert calls == [], calls
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
