@@ -51,9 +51,20 @@ runs remain interpretable via the commit recorded in findings.
 
 ### Config (`config.py`, `experiment.py`)
 
-`ChannelOptions` gains `script: tuple[ChannelScriptStep, ...] = ()` where
-`ChannelScriptStep` is a frozen dataclass `{turn: int, action: str,
-args: dict}`. YAML shape:
+`src/civ_mcp/arena/config.py` defines `ChannelScriptStep` immediately
+above `ChannelOptions`:
+
+```python
+@dataclass(frozen=True)
+class ChannelScriptStep:
+    turn: int
+    action: str
+    args: dict[str, object]
+```
+
+`ChannelOptions` gains `script: tuple[ChannelScriptStep, ...] = ()`.
+The stored `args` mapping is a deep copy of the YAML mapping; runtime
+dispatch treats it as read-only. YAML shape:
 
 ```yaml
 channels:
@@ -67,50 +78,67 @@ channels:
 Parse-time validation (in `_parse_channels`):
 - `script` optional; when present must be a list of mappings with exactly
   the keys `{turn, action, args}`.
-- `turn`: int ≥ 1 (strict — booleans rejected, matching the existing
-  strict-bool discipline).
-- `action`: one of the channel tool names from
-  `channel_tool_schemas()` (`send_message`, `propose_deal`,
-  `respond_to_deal`, `fund_deal`, `respond_to_payment`).
+- `turn`: int ≥ 1, interpreted as the game turn passed to that policy
+  call; booleans are rejected explicitly.
+- `action`: one of `CHANNEL_ACTION_NAMES` from
+  `src/civ_mcp/arena/channel_protocol.py` (`send_message`,
+  `propose_deal`, `respond_to_deal`, `fund_deal`,
+  `respond_to_payment`).
 - `args`: a mapping; deep validation is NOT duplicated at parse time —
   the runtime dispatcher (`ChannelTurnContext.dispatch`) already
   validates and folds rejections into acknowledgements.
-- `script` on a spec whose `channels.enabled` is false is a parse error.
+- `script` on a spec whose `channels.enabled` is false or omitted is a
+  parse error.
 
-Fingerprint treatment mirrors `guidance`: `script` appears in
-`CivOptions.fingerprint()["channels"]` (transcript metadata) and is
-excluded from `channel_config_fingerprint()` and
-`ChannelState.rules_fingerprint` — journal identity is untouched, and the
-scripted actions themselves are journaled as ordinary staged-action
-events.
+Fingerprint treatment mirrors `guidance` but preserves script order:
+`script` appears in `CivOptions.fingerprint()["channels"]` as a list of
+`{"turn": int, "action": str, "args": dict}` mappings. It is excluded
+from `channel_config_fingerprint()` and `ChannelState.rules_fingerprint`
+— journal identity is untouched, and the scripted actions themselves are
+journaled as ordinary staged-action events.
 
 ### ScriptedPolicy (`scripted_policy.py`)
 
-`ScriptedPolicy.__call__` gains channel awareness. The coordinator
-already passes `channel_context` (the `ChannelTurnContext`) and
-`channel_block` to any policy whose signature accepts them
-(`coordinator.py:1841`, gated by `_policy_accepts_kwarg`); the
-coordinator additionally passes `channel_projection`
-(`ChannelAdmission.projection`) at the same site so a policy can read
-deal state. LLM policies do not accept the new kwarg; only
-`ScriptedPolicy` declares it.
+`ScriptedPolicy.__call__` gains channel awareness with explicit
+keyword-only parameters:
 
-On each NORMAL call with a non-None `channel_context`, after the existing
-observe/skip behavior:
+```python
+channel_context: ChannelTurnContext | None = None
+channel_block: str = ""
+channel_projection: ChannelProjection | None = None
+```
+
+The coordinator already passes `channel_context` and `channel_block` to
+any policy whose signature accepts them (`coordinator.py:680` for seat 0
+capture and `coordinator.py:1841` for normal puppet turns, gated by
+`_policy_accepts_kwarg`). The coordinator passes
+`channel_projection=ChannelAdmission.projection` in both places. The
+production LLM policies do not declare the new kwarg; signature-flexible
+test/custom policies may receive it through the existing `**kwargs`
+rule. `channel_projection` is also added to
+`_PRIVATE_CHANNEL_RESULT_FIELDS` so echoed private projection objects are
+removed from public result logs just like `channel_context` and
+`channel_block`.
+
+On each NORMAL call with a non-None `channel_context`, after the
+overview/units observations and the best-effort `skip_unit(0)` attempt:
 
 1. **Script steps:** dispatch every `script` entry whose `turn` equals
    the current turn, in list order, via `channel_context.dispatch(action,
    args)`.
 2. **Auto-fund:** for each deal in the projection where this player is
-   the proposer, the deal is accepted/active, and the payment is due for
-   funding, dispatch `fund_deal({"deal_id": ...})`. This is a standing
+   the proposer, `deal.state is DealState.ACTIVE`,
+   `deal.payment_status is PaymentStatus.DUE`, and
+   `deal.fund_by_turn is not None`, and `turn <= deal.fund_by_turn`,
+   dispatch `fund_deal({"deal_id": deal.id})`. This is a standing
    deterministic rule, not a script entry, because the deal id is not
    knowable when the yaml is written.
 
 Each dispatch outcome (or exception, caught per-dispatch) is appended to
 the returned summary/actions — the policy never raises, matching its
-existing error discipline. Repair calls (`blocker_block` non-empty) do
-not run channel logic.
+existing error discipline. A `skip_unit(0)` failure is reported in the
+summary but does not short-circuit scripted channel dispatch. Repair
+calls (`blocker_block` non-empty) do not run channel logic.
 
 ### v3 artifact (`experiments/arena-channels-behavior-v3.yaml`)
 
@@ -188,9 +216,9 @@ fund it.
 
 Identical to v1b/v2: operator loads `CHANNELS_GATE_V1_T157`; preflight
 (FireTuner slot free, both gateways answer a thinking-off generation, run
-dir absent); arm one detached watcher with the v3 config and idle-poll
-override 1800; operator ends turns; afterwards `civ-arena-analyze` +
-findings update.
+dir absent, P3 has at least 100 gold for two 50g opener deals); arm one
+detached watcher with the v3 config and idle-poll override 1800; operator
+ends turns; afterwards `civ-arena-analyze` + findings update.
 
 ## Testing
 
@@ -200,13 +228,16 @@ findings update.
   without `enabled: true` rejected; fingerprint includes `script`,
   channel-rules fingerprints unchanged; v3 loader test pinning the
   artifact (including both script steps).
-- `test_scripted_policy.py` (or the existing scripted-policy test home):
-  script step dispatched on matching turn only; multiple same-turn steps
-  dispatched in order; auto-fund dispatches `fund_deal` for exactly the
-  proposer's accepted+due deals; dispatch exceptions folded into summary,
-  never raised; repair calls skip channel logic.
-- `test_coordinator.py`: `channel_projection` kwarg passed to policies
-  that accept it, absent for those that don't.
+- `test_coordinator.py` scripted-policy section: script step dispatched
+  on matching turn only; multiple same-turn steps dispatched in order;
+  `skip_unit(0)` failure does not block script dispatch; auto-fund
+  dispatches `fund_deal` for exactly the proposer's active+due deals;
+  dispatch exceptions are folded into the summary and never raised;
+  repair calls skip channel logic.
+- `test_coordinator.py` channel-wiring section: `channel_projection` kwarg
+  passed to policies that accept it in both seat-0 capture and normal
+  puppet paths, absent for policies that don't; public-result sanitizing
+  drops echoed `channel_projection`.
 
 ## Out of scope
 
