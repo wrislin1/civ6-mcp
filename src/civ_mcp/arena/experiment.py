@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, replace
 from math import isfinite
 from numbers import Integral, Real
@@ -16,6 +17,7 @@ from civ_mcp.arena.config import (
     BriefingOptions,
     ChannelOptions,
     ChannelRules,
+    ChannelScriptStep,
     CivOptions,
     LiveGateOptions,
     MemoryOptions,
@@ -24,6 +26,7 @@ from civ_mcp.arena.config import (
     _VALID_PROVIDERS,
     validate_arena_config,
 )
+from civ_mcp.arena.channel_protocol import CHANNEL_ACTION_NAMES
 from civ_mcp.arena.endpoint_registry import resolve_gateway
 from civ_mcp.arena.registry import resolve_tools
 from civ_mcp.run_id import is_safe_run_id
@@ -259,17 +262,62 @@ def _parse_attention(civ_label: str, raw: object) -> AttentionOptions:
     )
 
 
+def _parse_channel_script_step(
+    civ_label: str,
+    index: int,
+    raw: object,
+) -> ChannelScriptStep:
+    label = f"channels.script[{index}]"
+    if not isinstance(raw, dict):
+        raise _err(civ_label, f"{label} must be a mapping, got {raw!r}")
+    _validate_mapping_keys(civ_label, raw, {"turn", "action", "args"}, label)
+    if "turn" not in raw:
+        raise _err(civ_label, f"{label}.turn is required")
+    if "action" not in raw:
+        raise _err(civ_label, f"{label}.action is required")
+    if "args" not in raw:
+        raise _err(civ_label, f"{label}.args is required")
+
+    turn = _positive_int(civ_label, f"{label}.turn", raw["turn"])
+    action = raw["action"]
+    if not isinstance(action, str) or action not in CHANNEL_ACTION_NAMES:
+        raise _err(
+            civ_label,
+            f"{label}.action must be one of {CHANNEL_ACTION_NAMES}, got {action!r}",
+        )
+    args = raw["args"]
+    if not isinstance(args, dict):
+        raise _err(civ_label, f"{label}.args must be a mapping, got {args!r}")
+    return ChannelScriptStep(
+        turn=turn,
+        action=action,
+        args=copy.deepcopy(args),
+    )
+
+
 def _parse_channels(civ_label: str, raw: object) -> ChannelOptions:
     if not isinstance(raw, dict):
         raise _err(civ_label, f"channels must be a mapping, got {raw!r}")
-    _validate_mapping_keys(civ_label, raw, {"enabled", "guidance"}, "channels")
+    _validate_mapping_keys(civ_label, raw, {"enabled", "guidance", "script"}, "channels")
     enabled = raw.get("enabled", _CHANNEL_DEFAULTS.enabled)
     if not isinstance(enabled, bool):
         raise _err(civ_label, f"channels.enabled must be a boolean, got {enabled!r}")
     guidance = raw.get("guidance", _CHANNEL_DEFAULTS.guidance)
     if not isinstance(guidance, bool):
         raise _err(civ_label, f"channels.guidance must be a boolean, got {guidance!r}")
-    return ChannelOptions(enabled=enabled, guidance=guidance)
+    script_raw = raw.get("script", ())
+    if "script" in raw and enabled is not True:
+        raise _err(civ_label, "channels.script requires channels.enabled true")
+    if script_raw == ():
+        script = ()
+    else:
+        if not isinstance(script_raw, list):
+            raise _err(civ_label, f"channels.script must be a list, got {script_raw!r}")
+        script = tuple(
+            _parse_channel_script_step(civ_label, index, step)
+            for index, step in enumerate(script_raw)
+        )
+    return ChannelOptions(enabled=enabled, guidance=guidance, script=script)
 
 
 def _parse_channel_rules(raw: object) -> ChannelRules:

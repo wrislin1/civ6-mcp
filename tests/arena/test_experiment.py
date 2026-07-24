@@ -5,7 +5,9 @@ import pytest
 from civ_mcp.arena import live_gate as live_gate_module
 from civ_mcp.arena import endpoint_registry
 from civ_mcp.arena.config import (
+    ChannelOptions,
     ChannelRules,
+    ChannelScriptStep,
     CivOptions,
     LiveGateOptions,
     MemoryOptions,
@@ -1365,6 +1367,36 @@ civs:
     assert cfg.channel_rules == ChannelRules()
 
 
+def test_loads_per_civ_channel_script(tmp_path):
+    path = tmp_path / "channels-script.yaml"
+    path.write_text("""
+civs:
+  - player: 3
+    provider: scripted
+    channels:
+      enabled: true
+      guidance: true
+      script:
+        - turn: 157
+          action: send_message
+          args:
+            to_player: 1
+            text: opener
+        - turn: 158
+          action: fund_deal
+          args:
+            deal_id: deal-000001
+""")
+    cfg = load_experiment(path)
+
+    assert cfg.players[0].options.channels.enabled is True
+    assert cfg.players[0].options.channels.guidance is True
+    assert cfg.players[0].options.channels.script == (
+        ChannelScriptStep(157, "send_message", {"to_player": 1, "text": "opener"}),
+        ChannelScriptStep(158, "fund_deal", {"deal_id": "deal-000001"}),
+    )
+
+
 @pytest.mark.parametrize("fragment, match", [
     ("channels: {enabled: yes}", "channels.enabled must be a boolean"),
     ("channels: {enabled: true, guidance: yes}", "channels.guidance must be a boolean"),
@@ -1379,6 +1411,55 @@ def test_rejects_invalid_channel_config(tmp_path, fragment, match):
     else:
         text = f"{fragment}\ncivs:\n  - {{player: 1, provider: local, model: m}}\n"
     path.write_text(text)
+    with pytest.raises(ValueError, match=match):
+        load_experiment(path)
+
+
+@pytest.mark.parametrize(
+    "fragment, match",
+    [
+        (
+            "channels: {enabled: true, script: not-a-list}",
+            "channels.script must be a list",
+        ),
+        (
+            "channels: {enabled: false, script: []}",
+            "channels.script requires channels.enabled true",
+        ),
+        (
+            "channels: {script: []}",
+            "channels.script requires channels.enabled true",
+        ),
+        (
+            "channels: {enabled: true, script: [{turn: true, action: send_message, args: {}}]}",
+            "channels.script\\[0\\].turn must be an integer",
+        ),
+        (
+            "channels: {enabled: true, script: [{turn: 0, action: send_message, args: {}}]}",
+            "channels.script\\[0\\].turn must be positive",
+        ),
+        (
+            "channels: {enabled: true, script: [{turn: 1, action: trade_gold, args: {}}]}",
+            "channels.script\\[0\\].action must be one of",
+        ),
+        (
+            "channels: {enabled: true, script: [{turn: 1, action: send_message, args: []}]}",
+            "channels.script\\[0\\].args must be a mapping",
+        ),
+        (
+            "channels: {enabled: true, script: [{turn: 1, action: send_message, args: {}, note: bad}]}",
+            "channels.script\\[0\\]: unknown key",
+        ),
+    ],
+)
+def test_rejects_invalid_channel_script_config(tmp_path, fragment, match):
+    path = tmp_path / "bad-channel-script.yaml"
+    path.write_text(
+        "civs:\n"
+        "  - player: 3\n"
+        "    provider: scripted\n"
+        f"    {fragment}\n"
+    )
     with pytest.raises(ValueError, match=match):
         load_experiment(path)
 

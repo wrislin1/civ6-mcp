@@ -1,4 +1,5 @@
 from __future__ import annotations
+import copy
 from dataclasses import dataclass, field
 
 from civ_mcp.arena.endpoint_registry import resolve_gateway
@@ -63,9 +64,17 @@ class AttentionOptions:
 
 
 @dataclass(frozen=True)
+class ChannelScriptStep:
+    turn: int
+    action: str
+    args: dict[str, object]
+
+
+@dataclass(frozen=True)
 class ChannelOptions:
     enabled: bool = False
     guidance: bool = False
+    script: tuple[ChannelScriptStep, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -143,6 +152,14 @@ class CivOptions:
             "channels": {
                 "enabled": self.channels.enabled,
                 "guidance": self.channels.guidance,
+                "script": [
+                    {
+                        "turn": step.turn,
+                        "action": step.action,
+                        "args": copy.deepcopy(step.args),
+                    }
+                    for step in self.channels.script
+                ],
             },
         }
 
