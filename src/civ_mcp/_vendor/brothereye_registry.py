@@ -14,6 +14,9 @@ DEFAULT_URL = "https://calculator.brothereye.net/endpoints.json"
 SUPPORTED_VERSION = 1
 ENDPOINT_NETWORKS = {"lan", "host_loopback", "litellm"}
 GATEWAY_NETWORKS = {"lan", "host_loopback", "compose"}
+OPENAI_ENDPOINT_KINDS = frozenset(
+    {"ollama", "llamacpp", "llamacpp-session"}
+)
 
 
 class RegistryLoadError(RuntimeError):
@@ -60,6 +63,36 @@ class Registry:
     def endpoint_ids(self) -> tuple[str, ...]:
         """Return the known endpoint ids in deterministic order."""
         return tuple(sorted(self._endpoints))
+
+    def openai_endpoint_ids(self) -> tuple[str, ...]:
+        """Return endpoint ids usable as OpenAI-compatible API bases."""
+        return tuple(sorted(
+            endpoint_id
+            for endpoint_id, endpoint in self._endpoints.items()
+            if endpoint.kind in OPENAI_ENDPOINT_KINDS
+        ))
+
+    def openai_url(
+        self,
+        endpoint_id: str,
+        *,
+        network: str,
+        caller_host_id: str | None = None,
+    ) -> str:
+        """Return an OpenAI-compatible API base URL for an endpoint."""
+        endpoint = self.endpoint(endpoint_id)
+        if endpoint.kind not in OPENAI_ENDPOINT_KINDS:
+            raise ValueError(
+                f"endpoint {endpoint_id!r} is not OpenAI-compatible"
+            )
+        url = self.url(
+            endpoint_id,
+            network=network,
+            caller_host_id=caller_host_id,
+        )
+        if endpoint.kind == "ollama":
+            return f"{url.rstrip('/')}/v1"
+        return url
 
     def gpu(self, host_id: str, index: int) -> Gpu:
         return self._gpus[(host_id, index)]

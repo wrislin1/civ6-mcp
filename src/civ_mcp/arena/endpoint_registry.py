@@ -20,9 +20,9 @@ def _registry() -> brothereye_registry.Registry:
 def resolve_gateway(endpoint_id: str) -> str:
     registry = _registry()
     try:
-        return registry.url(endpoint_id, network="lan")
+        return registry.openai_url(endpoint_id, network="lan")
     except KeyError:
-        available = ", ".join(registry.endpoint_ids())
+        available = ", ".join(registry.openai_endpoint_ids())
         raise SystemExit(
             f"unknown registry endpoint id {endpoint_id!r}; "
             f"available ids: {available}") from None
