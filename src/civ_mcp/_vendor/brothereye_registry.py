@@ -261,6 +261,11 @@ def _parse(payload: Any) -> Registry:
         normalized_urls = {}
         for key, value in urls.items():
             value = _string(value, "endpoint URL")
+            if not value.isascii() or any(
+                ord(character) <= 0x20 or ord(character) == 0x7F
+                for character in value
+            ):
+                raise RegistryLoadError("invalid endpoint URL")
             parsed = urllib.parse.urlparse(value)
             try:
                 parsed_port = parsed.port
