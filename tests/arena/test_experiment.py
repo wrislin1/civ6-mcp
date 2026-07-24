@@ -160,7 +160,7 @@ def test_loads_arena_channels_behavior_v1_artifact():
 
     assert cfg.run_id == "arena-channels-behavior-v1"
     assert cfg.max_puppet_turns == 30
-    assert cfg.max_game_turns == 12
+    assert cfg.max_game_turns == 36
     assert cfg.live_gate == LiveGateOptions()
     assert cfg.channel_rules.acceptance_turns == 3
     assert cfg.channel_rules.funding_turns == 2
