@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import sys
 
 from civ_mcp.arena.channel_protocol import ChannelTurnContext
 from civ_mcp.arena.channels import ChannelProjection, DealState, PaymentStatus
@@ -81,6 +82,18 @@ class ScriptedPolicy:
             )
             actions.extend(channel_actions)
             summary_parts.extend(channel_summaries)
+        elif self.options.channels.script:
+            # A configured script exists but this seat has no channel context
+            # this turn (e.g. channel admission failed) -- the script cannot
+            # run at all. This is the case a live-run operator most needs to
+            # see tailing stderr: silence here means the treatment never
+            # fires, indistinguishable from an armed-too-late watcher.
+            print(
+                f"[scripted-policy] channel script present but no "
+                f"channel_context: player={player_id} turn={turn} "
+                f"cannot dispatch",
+                file=sys.stderr,
+            )
 
         return {"summary": "; ".join(summary_parts), "actions": actions}
 
@@ -103,6 +116,19 @@ class ScriptedPolicy:
                 step.action,
                 copy.deepcopy(step.args),
             )
+            if "error" in action:
+                print(
+                    f"[scripted-policy] channel dispatch FAILED: "
+                    f"player={player_id} turn={turn} action={step.action} "
+                    f"error={action['error']}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"[scripted-policy] channel dispatch OK: "
+                    f"player={player_id} turn={turn} action={step.action}",
+                    file=sys.stderr,
+                )
             actions.append(action)
             summaries.append(summary)
 
@@ -116,8 +142,7 @@ class ScriptedPolicy:
                 "fund_deal",
                 {"deal_id": deal_id},
             )
-            if "error" not in action:
-                action["deal_id"] = deal_id
+            action["deal_id"] = deal_id
             actions.append(action)
             summaries.append(summary)
 

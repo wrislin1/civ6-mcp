@@ -4671,6 +4671,119 @@ async def test_scripted_repair_skips_channel_script_and_auto_fund():
 
 
 @pytest.mark.asyncio
+async def test_scripted_normal_channel_dispatch_success_writes_stderr_line(capsys):
+    """A live-run operator tails stderr to confirm the treatment actually
+    fired (Finding 1). A successful script-step dispatch must be visible
+    there, naming the player, turn, and action."""
+    ctx = _RecordingChannelContext()
+    policy = ScriptedPolicy(
+        options=_scripted_channel_options(
+            _script_step(157, "propose_deal", {"to_player": 1, "text": "hi"})
+        )
+    )
+
+    await policy(
+        _ScriptedGS(),
+        3,
+        157,
+        channel_context=ctx,
+        channel_projection=_channel_projection_with_deals(3),
+    )
+
+    err = capsys.readouterr().err
+    assert "3" in err
+    assert "157" in err
+    assert "propose_deal" in err
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_channel_dispatch_failure_writes_stderr_line(capsys):
+    """A silently-failing script-step dispatch is the exact scenario Finding
+    1 exists to prevent -- the error must be attributable from stderr alone
+    without a run artifact."""
+    ctx = _RecordingChannelContext(fail_actions={"propose_deal"})
+    policy = ScriptedPolicy(
+        options=_scripted_channel_options(
+            _script_step(157, "propose_deal", {"to_player": 1, "text": "hi"})
+        )
+    )
+
+    await policy(
+        _ScriptedGS(),
+        3,
+        157,
+        channel_context=ctx,
+        channel_projection=_channel_projection_with_deals(3),
+    )
+
+    err = capsys.readouterr().err
+    assert "3" in err
+    assert "157" in err
+    assert "propose_deal" in err
+    assert "propose_deal boom" in err
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_no_channel_context_with_script_warns_on_stderr(capsys):
+    """If channel admission fails for this seat on the scripted turn,
+    channel_context is None and the script silently never runs. That must
+    be visible on stderr, naming the player and turn."""
+    policy = ScriptedPolicy(
+        options=_scripted_channel_options(
+            _script_step(157, "propose_deal", {"to_player": 1, "text": "hi"})
+        )
+    )
+
+    await policy(_ScriptedGS(), 3, 157)
+
+    err = capsys.readouterr().err
+    assert "3" in err
+    assert "157" in err
+    assert "channel_context" in err
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_no_channel_context_with_empty_script_is_silent(capsys):
+    """The overwhelmingly common case -- an ordinary scripted seat with no
+    configured script -- must NOT emit the no-context warning, or every
+    unrelated run's logs fill with noise."""
+    await ScriptedPolicy()(_ScriptedGS(), 3, 157)
+
+    err = capsys.readouterr().err
+    assert err == ""
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_auto_fund_failure_action_carries_deal_id():
+    """An auto-fund dispatch error must be attributable to a specific deal_id
+    (Finding 2), matching the success-case attribution already asserted in
+    test_scripted_normal_auto_funds_only_own_active_due_deals."""
+    ctx = _RecordingChannelContext(fail_actions={"fund_deal"})
+    projection = _channel_projection_with_deals(
+        3,
+        _projection_deal("deal-000001", proposer=3, fund_by_turn=7),
+    )
+
+    result = await ScriptedPolicy(options=_scripted_channel_options())(
+        _ScriptedGS(),
+        3,
+        7,
+        channel_context=ctx,
+        channel_projection=projection,
+    )
+
+    assert ctx.dispatched == [("fund_deal", {"deal_id": "deal-000001"})]
+    assert result["actions"] == [
+        {"tool": "skip_unit"},
+        {
+            "tool": "channel:fund_deal",
+            "deal_id": "deal-000001",
+            "error": "RuntimeError('fund_deal boom')",
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_seat0_transient_mechanical_failure_reconnects_and_continues(
     monkeypatch, tmp_path
 ):

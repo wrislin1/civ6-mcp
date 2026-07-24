@@ -323,6 +323,12 @@ def test_loads_arena_channels_behavior_v3_artifact():
         }
         for step in script
     )
+    # Both propose_deal steps must show identical text to both LLM seats, or
+    # the two seats receive different treatments and the experiment is
+    # confounded. Pin sameness, not the literal string.
+    texts = {step.args["text"] for step in script}
+    assert len(texts) == 1
+    assert next(iter(texts)) != ""
 
 
 def test_slice1_treatment_full_tier_has_diplomacy_tools_and_control_does_not():
