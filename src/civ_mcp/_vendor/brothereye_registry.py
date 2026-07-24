@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import sys
 import types
@@ -149,6 +150,28 @@ def _mapping(value: Any, label: str) -> dict[str, Any]:
     return value
 
 
+def _valid_hostname(hostname: str) -> bool:
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        normalized = hostname[:-1] if hostname.endswith(".") else hostname
+        if not normalized or len(normalized) > 253:
+            return False
+        labels = normalized.split(".")
+        return all(
+            0 < len(label) <= 63
+            and not label.startswith("-")
+            and not label.endswith("-")
+            and all(
+                character.isascii()
+                and (character.isalnum() or character == "-")
+                for character in label
+            )
+            for label in labels
+        )
+    return True
+
+
 def _parse(payload: Any) -> Registry:
     root = _mapping(payload, "registry object")
     version = root.get("registry_version")
@@ -246,10 +269,12 @@ def _parse(payload: Any) -> Registry:
             if (
                 parsed.scheme not in {"http", "https"}
                 or parsed.hostname is None
+                or not _valid_hostname(parsed.hostname)
                 or parsed_port is None
                 or not 1 <= parsed_port <= 65535
                 or parsed.username is not None
                 or parsed.password is not None
+                or any(delimiter in value for delimiter in "?#;")
                 or parsed.params
                 or parsed.query
                 or parsed.fragment

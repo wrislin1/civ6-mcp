@@ -47,12 +47,12 @@ def test_arena_modules_do_not_load_registry_at_import(tmp_path):
     env = os.environ.copy()
     env.pop("CIV6_REGISTRY_OFFLINE", None)
     code = """
-import urllib.request
+from civ_mcp._vendor import brothereye_registry
 calls = []
 def blocked(*args, **kwargs):
     calls.append((args, kwargs))
     raise AssertionError("network at import")
-urllib.request.urlopen = blocked
+brothereye_registry._open_registry_url = blocked
 import civ_mcp.arena.arena
 import civ_mcp.arena.experiment
 assert calls == [], calls
