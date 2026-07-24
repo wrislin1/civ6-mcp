@@ -362,6 +362,16 @@ def _parse_tools(civ_label: str, raw: object) -> str | tuple[str, ...]:
     return selector
 
 
+def _gateway_value(label: str, key: str, value: object) -> str:
+    gateway = _non_blank_string(label, key, value)
+    if ":" in gateway:
+        return gateway
+    try:
+        return resolve_gateway(gateway, snapshot_only=True)
+    except ValueError as exc:
+        raise _err(label, str(exc)) from None
+
+
 def _parse_civ(raw: dict[object, object]) -> PlayerSpec:
     label = f"player {raw.get('player', '?')}"
     if "player" not in raw:
@@ -372,7 +382,7 @@ def _parse_civ(raw: dict[object, object]) -> PlayerSpec:
         raise _err(label, f"unknown provider {provider!r}; want {sorted(_VALID_PROVIDERS)}")
     player_id = _int(label, "player", raw["player"])
     model = "" if "model" not in raw else _string(label, "model", raw["model"])
-    gateway = "" if "gateway" not in raw else _non_blank_string(label, "gateway", raw["gateway"])
+    gateway = "" if "gateway" not in raw else _gateway_value(label, "gateway", raw["gateway"])
     if provider != "local":
         present = [key for key in (*_LOCAL_KNOBS, "gateway") if key in raw]
         if present:
@@ -506,12 +516,14 @@ def load_experiment(path: str | Path, defaults: ArenaConfig | None = None) -> Ar
             data.get("max_game_turns", arena_defaults.max_game_turns)
         ),
         gateway_url=(
-            _non_blank_string(
+            _gateway_value(
                 str(config_path), "gateway_url", data["gateway_url"])
             if "gateway_url" in data
             else (
                 arena_defaults.gateway_url
-                or resolve_gateway(DEFAULT_GATEWAY_ENDPOINT)
+                or resolve_gateway(
+                    DEFAULT_GATEWAY_ENDPOINT, snapshot_only=True
+                )
             )
         ),
         idle_poll_limit=_top_int(

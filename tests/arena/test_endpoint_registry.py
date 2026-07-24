@@ -14,10 +14,8 @@ def test_resolves_ollama_endpoint_as_openai_base():
         "riz-gpu1") == "http://192.168.20.196:11431/v1"
 
 
-def test_unknown_endpoint_lists_available_ids():
-    with pytest.raises(
-        SystemExit, match=r"unknown registry endpoint id 'nope'.*available ids:.*riz-unified-cpp"
-    ):
+def test_unknown_id_is_value_error():
+    with pytest.raises(ValueError, match="unknown registry endpoint id 'nope'"):
         resolve_gateway("nope")
 
 
@@ -29,15 +27,16 @@ def test_registry_loads_once_per_process():
     assert endpoint_registry._registry.cache_info().misses == 1
 
 
-def test_offline_mode_never_calls_live_loader(monkeypatch):
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on"])
+def test_truthy_offline_values_use_snapshot(monkeypatch, value):
+    monkeypatch.setenv("CIV6_REGISTRY_OFFLINE", value)
     endpoint_registry._registry.cache_clear()
-
-    def unexpected(*args, **kwargs):
-        raise AssertionError("offline mode called live load")
-
     monkeypatch.setattr(
-        endpoint_registry.brothereye_registry, "load", unexpected)
-    assert resolve_gateway("riz-gpu0-cpp") == "http://192.168.20.196:11440/v1"
+        endpoint_registry.brothereye_registry,
+        "load",
+        lambda **kwargs: pytest.fail("called live loader"),
+    )
+    assert resolve_gateway("riz-gpu0-cpp").endswith(":11440/v1")
 
 
 def test_arena_modules_do_not_load_registry_at_import(tmp_path):

@@ -7,6 +7,7 @@ import shutil
 import pytest
 
 from civ_mcp.arena import arena as arena_module
+from civ_mcp.arena import endpoint_registry
 from civ_mcp.arena import live_gate as live_gate_module
 from civ_mcp.arena.arena import build_args, build_policies, resolve_config, _run
 from civ_mcp.arena.config import (
@@ -143,6 +144,20 @@ def test_resolve_config_non_config_uses_arena_defaults():
     assert cfg.idle_poll_limit == 600
     assert cfg.gateway_url == resolve_gateway(DEFAULT_GATEWAY_ENDPOINT)
     assert cfg.max_agent_steps == 6
+
+
+def test_resolve_config_dry_run_default_gateway_is_snapshot_only(monkeypatch):
+    monkeypatch.delenv("CIV6_REGISTRY_OFFLINE")
+    endpoint_registry._registry.cache_clear()
+    monkeypatch.setattr(
+        endpoint_registry.brothereye_registry,
+        "load",
+        lambda **kwargs: pytest.fail("called live loader"),
+    )
+    cfg = resolve_config(build_args([
+        "--player", "3:local:m", "--dry-run",
+    ]))
+    assert cfg.gateway_url.endswith(":11444/v1")
 
 
 def test_build_args_accepts_config():

@@ -8,21 +8,23 @@ from pathlib import Path
 from civ_mcp._vendor import brothereye_registry
 
 _SNAPSHOT = Path(__file__).resolve().parents[1] / "_vendor" / "endpoints.json"
+_FALSE_ENV_VALUES = frozenset({"0", "false", "no", "off"})
 
 
-@lru_cache(maxsize=1)
-def _registry() -> brothereye_registry.Registry:
-    if os.environ.get("CIV6_REGISTRY_OFFLINE") == "1":
-        return brothereye_registry.load_snapshot(_SNAPSHOT)
-    return brothereye_registry.load(fallback=_SNAPSHOT)
+def _env_flag(name: str) -> bool:
+    raw = os.environ.get(name)
+    return raw is not None and raw.strip().lower() not in _FALSE_ENV_VALUES
 
 
-def resolve_gateway(endpoint_id: str) -> str:
-    registry = _registry()
-    try:
-        return registry.openai_url(endpoint_id, network="lan")
-    except KeyError:
-        available = ", ".join(registry.openai_endpoint_ids())
-        raise SystemExit(
-            f"unknown registry endpoint id {endpoint_id!r}; "
-            f"available ids: {available}") from None
+@lru_cache(maxsize=2)
+def _registry(snapshot_only: bool = False) -> brothereye_registry.Registry:
+    return brothereye_registry.load_for_resolution(
+        fallback=_SNAPSHOT,
+        snapshot_only=(snapshot_only or _env_flag("CIV6_REGISTRY_OFFLINE")),
+    )
+
+
+def resolve_gateway(endpoint_id: str, *, snapshot_only: bool = False) -> str:
+    return brothereye_registry.resolve_openai_url(
+        _registry(snapshot_only), endpoint_id, network="lan"
+    )

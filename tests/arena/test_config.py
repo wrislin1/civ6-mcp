@@ -42,6 +42,13 @@ def test_parse_player_spec_per_civ_endpoint_id():
     assert s.gateway == "http://192.168.20.196:11440/v1"
 
 
+def test_scheme_less_gateway_pin_remains_raw():
+    spec = parse_player_spec(
+        "3:local:gemma4-26b@192.168.20.196:11440/v1"
+    )
+    assert spec.gateway == "192.168.20.196:11440/v1"
+
+
 def test_parse_player_spec_gateway_with_colon_model():
     """Model names may contain ':'; the gateway split is on the last '@' only."""
     s = parse_player_spec("4:local:qwen3.6:27b@http://192.168.20.196:11441/v1")

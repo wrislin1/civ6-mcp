@@ -156,7 +156,7 @@ def resolve_config(args) -> ArenaConfig:
         validate_arena_config(cfg)
         return cfg
 
-    specs = [parse_player_spec(s) for s in args.player]
+    specs = [parse_player_spec(s, snapshot_only=args.dry_run) for s in args.player]
     max_agent_steps = _value_or_default(max_agent_steps_arg, defaults.max_agent_steps)
     if max_agent_steps_arg is not None:
         updated = []
@@ -173,7 +173,9 @@ def resolve_config(args) -> ArenaConfig:
         gateway_url=(
             gateway_url_arg
             if gateway_url_arg is not None
-            else resolve_gateway(DEFAULT_GATEWAY_ENDPOINT)
+            else resolve_gateway(
+                DEFAULT_GATEWAY_ENDPOINT, snapshot_only=args.dry_run
+            )
         ),
         api_key_env=args.api_key_env,
         dry_run=args.dry_run, max_agent_steps=max_agent_steps,

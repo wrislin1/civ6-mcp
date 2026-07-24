@@ -199,7 +199,7 @@ class PlayerSpec:
             return "scripted"
         return "cli" if self.provider in _CLI_PROVIDERS else "in_process"
 
-def parse_player_spec(s: str) -> PlayerSpec:
+def parse_player_spec(s: str, *, snapshot_only: bool = False) -> PlayerSpec:
     # "1:local:qwen3-coder:30b", "2:cli-claude:", "2:cli-codex:gpt-5.5", or a local civ
     # pinned to its own gateway: "3:local:gemma4-26b@riz-gpu0-cpp" or
     # "3:local:gemma4-26b@http://192.168.20.196:11440/v1".
@@ -214,8 +214,8 @@ def parse_player_spec(s: str) -> PlayerSpec:
     gateway = ""
     if "@" in model:
         model, gateway = model.rsplit("@", 1)
-        if gateway and "://" not in gateway:
-            gateway = resolve_gateway(gateway)
+        if gateway and ":" not in gateway:
+            gateway = resolve_gateway(gateway, snapshot_only=snapshot_only)
     return PlayerSpec(int(pid), provider, model, gateway)
 
 @dataclass
@@ -224,7 +224,9 @@ class ArenaConfig:
     max_puppet_turns: int = 1
     max_game_turns: int = 0  # caps ALL captured turns (played+slept+failed); 0 = uncapped
     gateway_url: str = field(
-        default_factory=lambda: resolve_gateway(DEFAULT_GATEWAY_ENDPOINT))
+        default_factory=lambda: resolve_gateway(
+            DEFAULT_GATEWAY_ENDPOINT, snapshot_only=True
+        ))
     api_key_env: str = "LITELLM_OPENAI_API_KEY"
     dry_run: bool = False
     max_agent_steps: int = 6

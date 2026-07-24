@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from civ_mcp.arena import live_gate as live_gate_module
+from civ_mcp.arena import endpoint_registry
 from civ_mcp.arena.config import (
     ChannelRules,
     CivOptions,
@@ -64,6 +65,41 @@ civs:
   - {player: 3, provider: local, model: m}
 """))
     assert cfg.gateway_url == "http://yaml.example/v1"
+
+
+def test_yaml_registry_ids_resolve_snapshot_only(tmp_path, monkeypatch):
+    monkeypatch.delenv("CIV6_REGISTRY_OFFLINE")
+    endpoint_registry._registry.cache_clear()
+    monkeypatch.setattr(
+        endpoint_registry.brothereye_registry,
+        "load",
+        lambda **kwargs: pytest.fail("called live loader"),
+    )
+    path = tmp_path / "experiment.yaml"
+    path.write_text(
+        "gateway_url: riz-unified-cpp\n"
+        "civs:\n"
+        "  - player: 1\n"
+        "    provider: local\n"
+        "    model: gemma4-26b\n"
+        "    gateway: riz-gpu0-cpp\n"
+    )
+    cfg = load_experiment(path)
+    assert cfg.gateway_url.endswith(":11444/v1")
+    assert cfg.players[0].gateway.endswith(":11440/v1")
+
+
+def test_omitted_yaml_gateway_is_snapshot_only(tmp_path, monkeypatch):
+    monkeypatch.delenv("CIV6_REGISTRY_OFFLINE")
+    endpoint_registry._registry.cache_clear()
+    monkeypatch.setattr(
+        endpoint_registry.brothereye_registry,
+        "load",
+        lambda **kwargs: pytest.fail("called live loader"),
+    )
+    path = tmp_path / "experiment.yaml"
+    path.write_text("civs:\n  - player: 1\n    provider: scripted\n")
+    assert load_experiment(path).gateway_url.endswith(":11444/v1")
 
 
 def test_loads_gemma_strategy_ab_slice1_artifact():

@@ -227,7 +227,7 @@ def _parse(payload: Any) -> Registry:
         if any((host_id, index) not in gpus for index in indexes):
             raise RegistryLoadError("endpoint references unknown host/GPU")
         kind = _string(row.get("kind"), "endpoint kind")
-        if kind not in {"ollama", "llamacpp", "llamacpp-session"}:
+        if kind not in OPENAI_ENDPOINT_KINDS:
             raise RegistryLoadError("invalid endpoint kind")
         urls = _mapping(row.get("urls"), "endpoint urls")
         required_urls = {"lan", "host_loopback"}
@@ -241,6 +241,12 @@ def _parse(payload: Any) -> Registry:
             parsed = urllib.parse.urlparse(value)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise RegistryLoadError("invalid endpoint URL")
+            path = parsed.path.rstrip("/")
+            if kind == "ollama":
+                if path:
+                    raise RegistryLoadError("invalid Ollama endpoint URL path")
+            elif path != "/v1":
+                raise RegistryLoadError("invalid OpenAI endpoint URL path")
             normalized_urls[key] = value
         immutable_urls = types.MappingProxyType(normalized_urls)
         drains = _string_tuple(
@@ -336,3 +342,36 @@ def load_snapshot(path: Path) -> Registry:
         raise
     except Exception:
         raise RegistryLoadError("registry snapshot is missing or invalid") from None
+
+
+def load_for_resolution(
+    *,
+    fallback: Path,
+    snapshot_only: bool,
+    url: str = DEFAULT_URL,
+    timeout_s: float = 2.0,
+) -> Registry:
+    if snapshot_only:
+        return load_snapshot(fallback)
+    return load(url=url, fallback=fallback, timeout_s=timeout_s)
+
+
+def resolve_openai_url(
+    registry: Registry,
+    endpoint_id: str,
+    *,
+    network: str,
+    caller_host_id: str | None = None,
+) -> str:
+    try:
+        return registry.openai_url(
+            endpoint_id,
+            network=network,
+            caller_host_id=caller_host_id,
+        )
+    except KeyError:
+        available = ", ".join(registry.openai_endpoint_ids())
+        raise ValueError(
+            f"unknown registry endpoint id {endpoint_id!r}; "
+            f"available ids: {available}"
+        ) from None
