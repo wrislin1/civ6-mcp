@@ -258,6 +258,7 @@ _PRIVATE_CHANNEL_RESULT_FIELDS = frozenset({
     "channel_actions",
     "channel_block",
     "channel_context",
+    "channel_projection",
     "master_block",
     "staged_action",
     "staged_actions",
@@ -679,6 +680,7 @@ async def run_arena(
             for name, value in (
                 ("channel_context", admission.context),
                 ("channel_block", admission.block),
+                ("channel_projection", admission.projection),
                 ("master_block", ""),
             )
             if _policy_accepts_kwarg(pol, name)
@@ -1846,6 +1848,11 @@ async def run_arena(
                             "channel_block",
                             channel_admission.block
                             if channel_admission is not None else "",
+                        ),
+                        (
+                            "channel_projection",
+                            channel_admission.projection
+                            if channel_admission is not None else None,
                         ),
                         ("master_block", ""),
                     ):

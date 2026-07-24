@@ -5163,6 +5163,7 @@ class FakeChannelRuntime:
     async def admit_player(self, gs, player_id, turn, *, guidance=False):
         from types import SimpleNamespace
         from civ_mcp.arena.channel_protocol import ChannelTurnContext
+        from civ_mcp.arena.channels import ChannelProjection
 
         self._record(f"admit:{player_id}:{turn}")
         self.admissions.append(
@@ -5177,9 +5178,15 @@ class FakeChannelRuntime:
             self.state.enabled_players,
             self.rules,
         )
+        projection = ChannelProjection(
+            player_id=player_id,
+            guidance=guidance,
+        )
         return SimpleNamespace(
             player_id=player_id,
             turn=turn,
+            observation_id=None,
+            projection=projection,
             block="CHANNEL BLOCK",
             context=context,
             wake_reasons=self.wake_reasons,
@@ -5243,6 +5250,7 @@ class ChannelRecordingPolicy:
         *,
         channel_context=None,
         channel_block="",
+        channel_projection=None,
         master_block="",
     ):
         self.runtime._record(f"policy:{player_id}:{turn}")
@@ -5250,6 +5258,7 @@ class ChannelRecordingPolicy:
             {
                 "channel_context": channel_context,
                 "channel_block": channel_block,
+                "channel_projection": channel_projection,
                 "master_block": master_block,
             }
         )
@@ -5426,6 +5435,10 @@ def _privacy_channel_result(canary: str, *, driver: str) -> dict:
                 },
             }
         ],
+        "channel_projection": {
+            "player_id": 1,
+            "secret": f"{canary}-projection",
+        },
         "transcript": {
             "steps": [
                 assistant_step,
@@ -5452,6 +5465,10 @@ def _privacy_channel_result(canary: str, *, driver: str) -> dict:
             "staged_channel_actions": [
                 {"action": "fund_deal", "deal_id": f"{canary}-deal"}
             ],
+            "channel_projection": {
+                "player_id": 1,
+                "secret": f"{canary}-transcript-projection",
+            },
             "final_summary": raw_text,
         },
     }
@@ -5528,6 +5545,8 @@ async def test_channels_open_admit_policy_finish_with_run_identity(
     assert len(policy.calls) == 1
     assert policy.calls[0]["channel_block"] == "CHANNEL BLOCK"
     assert policy.calls[0]["channel_context"].player_id == 1
+    assert policy.calls[0]["channel_projection"].player_id == 1
+    assert policy.calls[0]["channel_projection"].guidance is False
     assert policy.calls[0]["master_block"] == ""
     assert runtime.finish_results[0]["transcript"]["final_summary"].startswith(
         "CHANNEL "
@@ -5557,6 +5576,60 @@ async def test_channel_guidance_option_is_passed_to_runtime(monkeypatch, tmp_pat
 
     assert runtime.admissions == [
         {"player_id": 1, "turn": 7, "guidance": True}
+    ]
+    assert policy.calls[0]["channel_projection"].guidance is True
+
+
+@pytest.mark.asyncio
+async def test_channel_projection_kwarg_is_signature_gated(monkeypatch, tmp_path):
+    runtime = FakeChannelRuntime()
+    _patch_channel_open(monkeypatch, runtime)
+
+    class NoProjectionPolicy:
+        provider = "local"
+        model = "no-projection"
+        options = _channel_options()
+
+        def __init__(self):
+            self.calls = []
+
+        async def __call__(
+            self,
+            gs,
+            player_id,
+            turn,
+            *,
+            channel_context=None,
+            channel_block="",
+            master_block="",
+        ):
+            self.calls.append(
+                {
+                    "channel_context": channel_context,
+                    "channel_block": channel_block,
+                    "master_block": master_block,
+                }
+            )
+            return {"summary": "ok", "actions": []}
+
+    policy = NoProjectionPolicy()
+    conn = FakeConn()
+    conn._polls = iter([["LOCAL|1", "TURN|7", "ACTIVE|true", "LAST|0"]])
+
+    await run_arena(
+        conn,
+        FakeGS(),
+        _channel_config(tmp_path),
+        policy=policy,
+        transcript=FakeSink(),
+    )
+
+    assert policy.calls == [
+        {
+            "channel_context": runtime.finish_admissions[0].context,
+            "channel_block": "CHANNEL BLOCK",
+            "master_block": "",
+        }
     ]
 
 
@@ -5776,6 +5849,7 @@ async def test_channel_admission_exception_fails_open_with_safe_telemetry(
         {
             "channel_context": None,
             "channel_block": "",
+            "channel_projection": None,
             "master_block": "",
         }
     ]
