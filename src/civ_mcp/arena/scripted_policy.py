@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import copy
+
+from civ_mcp.arena.channel_protocol import ChannelTurnContext
+from civ_mcp.arena.channels import ChannelProjection, DealState, PaymentStatus
 from civ_mcp.arena.config import CivOptions
 
 
@@ -43,18 +47,119 @@ class ScriptedPolicy:
         self.options = options if options is not None else CivOptions()
 
     async def __call__(
-        self, gs, player_id: int, turn: int, *, blocker_block: str = "", **kwargs
+        self,
+        gs,
+        player_id: int,
+        turn: int,
+        *,
+        blocker_block: str = "",
+        channel_context: ChannelTurnContext | None = None,
+        channel_block: str = "",
+        channel_projection: ChannelProjection | None = None,
+        **_ignored,
     ) -> dict:
         if blocker_block:
             return await self._repair(gs, blocker_block)
         # NORMAL / dry-run: observe, skip unit 0, choose nothing strategic.
         await gs.get_game_overview()
         await gs.get_units()
+        actions: list[dict] = []
+        summary_parts: list[str] = ["scripted: observed"]
         try:
             await gs.skip_unit(0)
+            actions.append({"tool": "skip_unit"})
+            summary_parts.append("skipped unit 0")
         except Exception as e:
-            return {"summary": f"scripted: skip failed {e!r}", "actions": []}
-        return {"summary": "scripted: observed + skipped unit 0", "actions": [{"tool": "skip_unit"}]}
+            summary_parts.append(f"skip failed {e!r}")
+
+        if channel_context is not None:
+            channel_actions, channel_summaries = self._run_channel_actions(
+                player_id=player_id,
+                turn=turn,
+                channel_context=channel_context,
+                channel_projection=channel_projection,
+            )
+            actions.extend(channel_actions)
+            summary_parts.extend(channel_summaries)
+
+        return {"summary": "; ".join(summary_parts), "actions": actions}
+
+    def _run_channel_actions(
+        self,
+        *,
+        player_id: int,
+        turn: int,
+        channel_context: ChannelTurnContext,
+        channel_projection: ChannelProjection | None,
+    ) -> tuple[list[dict], list[str]]:
+        actions: list[dict] = []
+        summaries: list[str] = []
+
+        for step in self.options.channels.script:
+            if step.turn != turn:
+                continue
+            action, summary = self._dispatch_channel_action(
+                channel_context,
+                step.action,
+                copy.deepcopy(step.args),
+            )
+            actions.append(action)
+            summaries.append(summary)
+
+        for deal_id in self._auto_fund_deal_ids(
+            player_id=player_id,
+            turn=turn,
+            channel_projection=channel_projection,
+        ):
+            action, summary = self._dispatch_channel_action(
+                channel_context,
+                "fund_deal",
+                {"deal_id": deal_id},
+            )
+            if "error" not in action:
+                action["deal_id"] = deal_id
+            actions.append(action)
+            summaries.append(summary)
+
+        return actions, summaries
+
+    @staticmethod
+    def _dispatch_channel_action(
+        channel_context: ChannelTurnContext,
+        action_name: str,
+        args: dict,
+    ) -> tuple[dict, str]:
+        try:
+            result = channel_context.dispatch(action_name, args)
+        except Exception as exc:
+            error = repr(exc)
+            return (
+                {"tool": f"channel:{action_name}", "error": error},
+                f"channel {action_name} failed {error}",
+            )
+        return (
+            {"tool": f"channel:{action_name}", "result": result},
+            f"channel {action_name} queued",
+        )
+
+    @staticmethod
+    def _auto_fund_deal_ids(
+        *,
+        player_id: int,
+        turn: int,
+        channel_projection: ChannelProjection | None,
+    ) -> tuple[str, ...]:
+        if channel_projection is None:
+            return ()
+        return tuple(
+            deal.id
+            for deal in channel_projection.deals
+            if deal.proposer == player_id
+            and deal.state is DealState.ACTIVE
+            and deal.payment_status is PaymentStatus.DUE
+            and deal.fund_by_turn is not None
+            and turn <= deal.fund_by_turn
+        )
 
     async def _repair(self, gs, blocker_block: str) -> dict:
         """Resolve only the blocker types named in ``blocker_block``. Any type

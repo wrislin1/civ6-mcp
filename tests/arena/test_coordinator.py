@@ -4184,6 +4184,74 @@ def _prod_block(*types):
     return seat0_mod.build_blocker_block([_blocker(t, f"choose {t}") for t in types])
 
 
+class _RecordingChannelContext:
+    def __init__(self, *, fail_actions=()):
+        self.dispatched = []
+        self.fail_actions = set(fail_actions)
+
+    def dispatch(self, action, args):
+        self.dispatched.append((action, copy.deepcopy(args)))
+        if action in self.fail_actions:
+            raise RuntimeError(f"{action} boom")
+        return f"QUEUED {action}"
+
+
+def _script_step(turn, action, args):
+    from civ_mcp.arena.config import ChannelScriptStep
+
+    return ChannelScriptStep(turn=turn, action=action, args=args)
+
+
+def _scripted_channel_options(*steps):
+    from civ_mcp.arena.config import ChannelOptions
+
+    return CivOptions(channels=ChannelOptions(enabled=True, script=tuple(steps)))
+
+
+def _channel_projection_with_deals(player_id, *deals):
+    from civ_mcp.arena.channels import ChannelProjection
+
+    return ChannelProjection(player_id=player_id, deals=tuple(deals))
+
+
+def _projection_deal(
+    deal_id,
+    *,
+    proposer,
+    counterparty=1,
+    state=None,
+    payment_status=None,
+    fund_by_turn=9,
+):
+    from civ_mcp.arena.channels import (
+        Deal,
+        DealState,
+        FavorStatus,
+        FavorTerm,
+        PaymentStatus,
+    )
+
+    return Deal(
+        id=deal_id,
+        proposer=proposer,
+        counterparty=counterparty,
+        created_turn=7,
+        accepted_turn=7,
+        accept_by_turn=10,
+        completion_window_turns=5,
+        favor=FavorTerm("keep_units_away", {"player_id": 3, "min_distance": 3, "unit_scope": "military"}),
+        payment_gold=50,
+        timing="on_delivery",
+        state=state or DealState.ACTIVE,
+        favor_status=FavorStatus.SATISFIED,
+        payment_status=payment_status or PaymentStatus.DUE,
+        fund_by_turn=fund_by_turn,
+        payment_response_by_turn=None,
+        favor_due_turn=12,
+        terminal=None,
+    )
+
+
 _ALLOWED_TOOLS = {"skip_unit", "set_research", "set_civic", "set_city_production"}
 
 
@@ -4441,6 +4509,165 @@ def test_scripted_policy_identity_is_scripted_seat0_smoke():
     pol = ScriptedPolicy()
     assert pol.provider == "scripted"
     assert pol.model == "seat0-smoke"
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_dispatches_matching_channel_script_steps_in_order():
+    ctx = _RecordingChannelContext()
+    policy = ScriptedPolicy(
+        options=_scripted_channel_options(
+            _script_step(7, "send_message", {"to_player": 1, "text": "first"}),
+            _script_step(8, "send_message", {"to_player": 1, "text": "wrong turn"}),
+            _script_step(7, "propose_deal", {
+                "to_player": 1,
+                "text": "second",
+                "favor": {
+                    "term_type": "keep_units_away",
+                    "params": {"player_id": 3, "min_distance": 3, "unit_scope": "military"},
+                },
+                "payment_gold": 50,
+                "timing": "on_delivery",
+                "within": 5,
+            }),
+        )
+    )
+
+    result = await policy(
+        _ScriptedGS(),
+        3,
+        7,
+        channel_context=ctx,
+        channel_projection=_channel_projection_with_deals(3),
+    )
+
+    assert ctx.dispatched == [
+        ("send_message", {"to_player": 1, "text": "first"}),
+        ("propose_deal", {
+            "to_player": 1,
+            "text": "second",
+            "favor": {
+                "term_type": "keep_units_away",
+                "params": {"player_id": 3, "min_distance": 3, "unit_scope": "military"},
+            },
+            "payment_gold": 50,
+            "timing": "on_delivery",
+            "within": 5,
+        }),
+    ]
+    assert result["actions"] == [
+        {"tool": "skip_unit"},
+        {"tool": "channel:send_message", "result": "QUEUED send_message"},
+        {"tool": "channel:propose_deal", "result": "QUEUED propose_deal"},
+    ]
+    assert "channel send_message queued" in result["summary"]
+    assert "channel propose_deal queued" in result["summary"]
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_skip_failure_does_not_block_channel_script():
+    class _NoUnitGS(_ScriptedGS):
+        async def skip_unit(self, i):
+            raise RuntimeError("no unit 0")
+
+    ctx = _RecordingChannelContext()
+    policy = ScriptedPolicy(
+        options=_scripted_channel_options(
+            _script_step(7, "send_message", {"to_player": 1, "text": "still runs"})
+        )
+    )
+
+    result = await policy(
+        _NoUnitGS(),
+        3,
+        7,
+        channel_context=ctx,
+        channel_projection=_channel_projection_with_deals(3),
+    )
+
+    assert ctx.dispatched == [("send_message", {"to_player": 1, "text": "still runs"})]
+    assert result["actions"] == [
+        {"tool": "channel:send_message", "result": "QUEUED send_message"}
+    ]
+    assert "skip failed RuntimeError('no unit 0')" in result["summary"]
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_channel_dispatch_exception_is_summary_only():
+    ctx = _RecordingChannelContext(fail_actions={"send_message"})
+    policy = ScriptedPolicy(
+        options=_scripted_channel_options(
+            _script_step(7, "send_message", {"to_player": 1, "text": "bad"})
+        )
+    )
+
+    result = await policy(
+        _ScriptedGS(),
+        3,
+        7,
+        channel_context=ctx,
+        channel_projection=_channel_projection_with_deals(3),
+    )
+
+    assert ctx.dispatched == [("send_message", {"to_player": 1, "text": "bad"})]
+    assert result["actions"] == [
+        {"tool": "skip_unit"},
+        {"tool": "channel:send_message", "error": "RuntimeError('send_message boom')"},
+    ]
+    assert "channel send_message failed RuntimeError('send_message boom')" in result["summary"]
+
+
+@pytest.mark.asyncio
+async def test_scripted_normal_auto_funds_only_own_active_due_deals():
+    from civ_mcp.arena.channels import DealState, PaymentStatus
+
+    ctx = _RecordingChannelContext()
+    projection = _channel_projection_with_deals(
+        3,
+        _projection_deal("deal-000001", proposer=3, fund_by_turn=7),
+        _projection_deal("deal-000002", proposer=2, fund_by_turn=7),
+        _projection_deal("deal-000003", proposer=3, state=DealState.PROPOSED, fund_by_turn=7),
+        _projection_deal("deal-000004", proposer=3, payment_status=PaymentStatus.OFFERED, fund_by_turn=7),
+        _projection_deal("deal-000005", proposer=3, fund_by_turn=None),
+        _projection_deal("deal-000006", proposer=3, fund_by_turn=6),
+    )
+
+    result = await ScriptedPolicy(options=_scripted_channel_options())(
+        _ScriptedGS(),
+        3,
+        7,
+        channel_context=ctx,
+        channel_projection=projection,
+    )
+
+    assert ctx.dispatched == [("fund_deal", {"deal_id": "deal-000001"})]
+    assert result["actions"] == [
+        {"tool": "skip_unit"},
+        {"tool": "channel:fund_deal", "deal_id": "deal-000001", "result": "QUEUED fund_deal"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_skips_channel_script_and_auto_fund():
+    ctx = _RecordingChannelContext()
+    policy = ScriptedPolicy(
+        options=_scripted_channel_options(
+            _script_step(7, "send_message", {"to_player": 1, "text": "blocked"})
+        )
+    )
+
+    await policy(
+        _ScriptedGS(),
+        3,
+        7,
+        blocker_block=_prod_block("ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT"),
+        channel_context=ctx,
+        channel_projection=_channel_projection_with_deals(
+            3,
+            _projection_deal("deal-000001", proposer=3, fund_by_turn=7),
+        ),
+    )
+
+    assert ctx.dispatched == []
 
 
 @pytest.mark.asyncio
