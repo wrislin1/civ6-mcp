@@ -1,0 +1,25 @@
+run_id: arena-channels-behavior-v1b
+max_puppet_turns: 30
+max_game_turns: 36
+channel_rules:
+  acceptance_turns: 3
+  funding_turns: 2
+  payment_response_turns: 2
+civs:
+  - player: 1
+    provider: local
+    model: gemma4-26b
+    gateway: http://192.168.20.196:11440/v1
+    tools: minimal
+    max_steps: 15
+    channels: {enabled: true, guidance: true}
+  - player: 2
+    provider: local
+    model: qwen3.6-27b
+    gateway: http://192.168.20.196:11441/v1
+    tools: minimal
+    max_steps: 15
+    channels: {enabled: true, guidance: true}
+  - player: 3
+    provider: scripted
+    channels: {enabled: true}
