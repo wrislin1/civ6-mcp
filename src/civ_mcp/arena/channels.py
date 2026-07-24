@@ -22,7 +22,12 @@ CHANNEL_GUIDANCE_TEXT = (
     "lasting grievance the wronged player remembers. Used well, deals can earn "
     "you gold, remove threats, or buy cooperation you cannot get openly. Review "
     "the channel state below every turn and weigh whether a message or deal "
-    "would advance your position."
+    "would advance your position. Important: messages alone are NOT binding — a "
+    "deal exists only once it is created with the propose_deal action and "
+    "answered with respond_to_deal. When you and a rival converge on terms, turn "
+    "them into a propose_deal immediately; when a proposal is pending for you, "
+    "answer it with respond_to_deal before it expires; fund deals you owe with "
+    "fund_deal."
 )
 
 

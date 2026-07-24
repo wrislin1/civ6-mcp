@@ -27,6 +27,7 @@ CHANNELS_CORE_SMOKE = REPO_ROOT / "experiments" / "arena-channels-core-smoke.yam
 ARENA_CHANNELS_BEHAVIOR_V1 = REPO_ROOT / "experiments" / "arena-channels-behavior-v1.yaml"
 ARENA_CHANNELS_BEHAVIOR_V1B = REPO_ROOT / "experiments" / "arena-channels-behavior-v1b.yaml"
 ARENA_CHANNELS_BEHAVIOR_V2 = REPO_ROOT / "experiments" / "arena-channels-behavior-v2.yaml"
+ARENA_CHANNELS_BEHAVIOR_V3 = REPO_ROOT / "experiments" / "arena-channels-behavior-v3.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -271,6 +272,57 @@ def test_loads_arena_channels_behavior_v2_artifact():
     assert p3.provider == "scripted"
     assert p3.options.channels.enabled is True
     assert p3.options.channels.guidance is False
+
+
+def test_loads_arena_channels_behavior_v3_artifact():
+    cfg = load_experiment(ARENA_CHANNELS_BEHAVIOR_V3)
+
+    assert cfg.run_id == "arena-channels-behavior-v3"
+    assert cfg.max_puppet_turns == 90
+    assert cfg.max_game_turns == 108
+    assert cfg.channel_rules.acceptance_turns == 3
+    assert cfg.channel_rules.funding_turns == 2
+    assert cfg.channel_rules.payment_response_turns == 2
+    assert cfg.live_gate == LiveGateOptions()
+
+    by_player = {player.player_id: player for player in cfg.players}
+    assert set(by_player) == {1, 2, 3}
+
+    assert by_player[1].provider == "local"
+    assert by_player[1].model == "gemma4-26b"
+    assert by_player[1].gateway == "http://192.168.20.196:11440/v1"
+    assert by_player[1].options.tools == "minimal"
+    assert by_player[1].options.max_steps == 15
+    assert by_player[1].options.channels.enabled is True
+    assert by_player[1].options.channels.guidance is True
+    assert by_player[1].options.channels.script == ()
+
+    assert by_player[2].provider == "local"
+    assert by_player[2].model == "qwen3.6-27b"
+    assert by_player[2].gateway == "http://192.168.20.196:11441/v1"
+    assert by_player[2].options.tools == "minimal"
+    assert by_player[2].options.max_steps == 15
+    assert by_player[2].options.channels.enabled is True
+    assert by_player[2].options.channels.guidance is True
+    assert by_player[2].options.channels.script == ()
+
+    script = by_player[3].options.channels.script
+    assert by_player[3].provider == "scripted"
+    assert by_player[3].options.channels.enabled is True
+    assert by_player[3].options.channels.guidance is False
+    assert tuple(step.action for step in script) == ("propose_deal", "propose_deal")
+    assert tuple(step.turn for step in script) == (157, 157)
+    assert tuple(step.args["to_player"] for step in script) == (1, 2)
+    assert all(step.args["payment_gold"] == 50 for step in script)
+    assert all(step.args["timing"] == "on_delivery" for step in script)
+    assert all(step.args["within"] == 5 for step in script)
+    assert all(
+        step.args["favor"] == {
+            "term_type": "keep_units_away",
+            "params": {"player_id": 3, "min_distance": 3, "unit_scope": "military"},
+        }
+        for step in script
+    )
 
 
 def test_slice1_treatment_full_tier_has_diplomacy_tools_and_control_does_not():

@@ -856,3 +856,10 @@ def test_channel_guidance_renders_immediately_after_header_only_when_enabled():
     lines = guided.splitlines()
     assert lines[0] == "== PRIVATE UNOFFICIAL CHANNELS =="
     assert lines[1] == CHANNEL_GUIDANCE_TEXT
+
+
+def test_channel_guidance_names_binding_deal_actions():
+    assert "messages alone are NOT binding" in CHANNEL_GUIDANCE_TEXT
+    assert "propose_deal action" in CHANNEL_GUIDANCE_TEXT
+    assert "respond_to_deal before it expires" in CHANNEL_GUIDANCE_TEXT
+    assert "fund deals you owe with fund_deal" in CHANNEL_GUIDANCE_TEXT
