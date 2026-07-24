@@ -152,7 +152,7 @@ def _mapping(value: Any, label: str) -> dict[str, Any]:
 def _parse(payload: Any) -> Registry:
     root = _mapping(payload, "registry object")
     version = root.get("registry_version")
-    if version != SUPPORTED_VERSION:
+    if type(version) is not int or version != SUPPORTED_VERSION:
         raise UnsupportedRegistryVersion(
             f"unsupported registry version {version!r}"
         )
@@ -239,7 +239,21 @@ def _parse(payload: Any) -> Registry:
         for key, value in urls.items():
             value = _string(value, "endpoint URL")
             parsed = urllib.parse.urlparse(value)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            try:
+                parsed_port = parsed.port
+            except ValueError:
+                raise RegistryLoadError("invalid endpoint URL") from None
+            if (
+                parsed.scheme not in {"http", "https"}
+                or parsed.hostname is None
+                or parsed_port is None
+                or not 1 <= parsed_port <= 65535
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.params
+                or parsed.query
+                or parsed.fragment
+            ):
                 raise RegistryLoadError("invalid endpoint URL")
             path = parsed.path.rstrip("/")
             if kind == "ollama":
@@ -304,6 +318,20 @@ def _decode(body: bytes) -> Registry:
         raise RegistryLoadError("invalid registry payload") from None
 
 
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlparse(newurl).scheme != "https":
+            raise urllib.error.URLError(
+                "registry redirect target must use HTTPS"
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _open_registry_url(request: urllib.request.Request, timeout_s: float):
+    opener = urllib.request.build_opener(_HttpsOnlyRedirectHandler())
+    return opener.open(request, timeout=timeout_s)
+
+
 def load(
     *,
     url: str = DEFAULT_URL,
@@ -317,7 +345,7 @@ def load(
         request = urllib.request.Request(
             url, headers={"Accept": "application/json", "User-Agent": "brothereye-registry/1"}
         )
-        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+        with _open_registry_url(request, timeout_s) as response:
             body = response.read()
         return _decode(body)
     except UnsupportedRegistryVersion:
