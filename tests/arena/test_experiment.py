@@ -24,6 +24,7 @@ SEAT0_LLM_SMOKE = REPO_ROOT / "experiments" / "arena-seat0-llm-smoke.yaml"
 CHANNELS_CORE_SMOKE = REPO_ROOT / "experiments" / "arena-channels-core-smoke.yaml"
 ARENA_CHANNELS_BEHAVIOR_V1 = REPO_ROOT / "experiments" / "arena-channels-behavior-v1.yaml"
 ARENA_CHANNELS_BEHAVIOR_V1B = REPO_ROOT / "experiments" / "arena-channels-behavior-v1b.yaml"
+ARENA_CHANNELS_BEHAVIOR_V2 = REPO_ROOT / "experiments" / "arena-channels-behavior-v2.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -200,6 +201,44 @@ def test_loads_arena_channels_behavior_v1b_artifact():
     assert cfg.run_id == "arena-channels-behavior-v1b"
     assert cfg.max_puppet_turns == 30
     assert cfg.max_game_turns == 36
+    assert cfg.live_gate == LiveGateOptions()
+    assert cfg.channel_rules.acceptance_turns == 3
+    assert cfg.channel_rules.funding_turns == 2
+    assert cfg.channel_rules.payment_response_turns == 2
+
+    by_player = {player.player_id: player for player in cfg.players}
+    assert set(by_player) == {1, 2, 3}
+
+    p1 = by_player[1]
+    assert p1.provider == "local"
+    assert p1.model == "gemma4-26b"
+    assert p1.gateway == "http://192.168.20.196:11440/v1"
+    assert p1.options.tools == "minimal"
+    assert p1.options.max_steps == 15
+    assert p1.options.channels.enabled is True
+    assert p1.options.channels.guidance is True
+
+    p2 = by_player[2]
+    assert p2.provider == "local"
+    assert p2.model == "qwen3.6-27b"
+    assert p2.gateway == "http://192.168.20.196:11441/v1"
+    assert p2.options.tools == "minimal"
+    assert p2.options.max_steps == 15
+    assert p2.options.channels.enabled is True
+    assert p2.options.channels.guidance is True
+
+    p3 = by_player[3]
+    assert p3.provider == "scripted"
+    assert p3.options.channels.enabled is True
+    assert p3.options.channels.guidance is False
+
+
+def test_loads_arena_channels_behavior_v2_artifact():
+    cfg = load_experiment(ARENA_CHANNELS_BEHAVIOR_V2)
+
+    assert cfg.run_id == "arena-channels-behavior-v2"
+    assert cfg.max_puppet_turns == 90
+    assert cfg.max_game_turns == 108
     assert cfg.live_gate == LiveGateOptions()
     assert cfg.channel_rules.acceptance_turns == 3
     assert cfg.channel_rules.funding_turns == 2
