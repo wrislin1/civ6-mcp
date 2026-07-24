@@ -1,4 +1,4 @@
-# arena-channels-behavior-v1 — Findings
+# arena-channels-behavior-v1 / v1b — Findings
 
 **Date:** 2026-07-24 · **Run:** `arena_runs/arena-channels-behavior-v1` ·
 **Config:** `experiments/arena-channels-behavior-v1.yaml` ·
@@ -61,7 +61,7 @@ The negative is behavioral, not mechanical:
 - Both attempts ran entirely on local gateways (`:11440` GPU0 gemma,
   `:11441` GPU1 qwen), $0.00, no 502s, no GPU contention.
 
-## Recommendations for behavior-v2
+## Recommendations after v1
 
 Ordered by expected information per unit of change:
 
@@ -76,3 +76,53 @@ Ordered by expected information per unit of change:
    budget.
 4. Only after 1–3: try larger local models (qwen3.6-35b, gemma4-31b) if
    26/27B still won't engage.
+
+---
+
+# v1b: step headroom alone flips the result
+
+**Date:** 2026-07-24 · **Run:** `arena_runs/arena-channels-behavior-v1b` ·
+**Config:** `experiments/arena-channels-behavior-v1b.yaml` (commit
+`8f98479`) · same save, same roster; the single changed variable is
+`max_steps` 10 → 15 on both LLM seats (recommendation 3 above).
+
+## Result: primary criterion met
+
+- 30/30 puppet turns over game turns 157–166, zero failures, $0.00.
+- **3 channel messages, both LLM seats engaged:**
+  - T165, qwen → gemma: "Greetings! I'm interested in peaceful relations
+    and potential trade opportunities. What are your thoughts?"
+  - T166, gemma → qwen: "I am also open to peaceful relations and trade.
+    I'll keep an eye out for opportunities to work together."
+  - T166, qwen → gemma: proposes exploring "gold-for-favor deals that
+    benefit us both."
+- 3 acknowledgements delivered; gemma's turn summary explicitly reasons
+  about "Player 2's private message," so the reply was deliberate, not
+  noise.
+- Secondary criterion (deal with lifecycle tracking): **not met** — the
+  run's turn budget expired at T166, right as qwen pivoted from greeting to
+  concrete deal terms. No `deal` object was created.
+
+## Interpretation
+
+- **Step-budget crowding was the binding constraint** (v1 hypothesis 1
+  confirmed). At 10 steps qwen saturated every turn and never touched
+  channels; at 15 it satisfied empire micro first, then initiated channel
+  contact unprompted. No guidance change, no scripted opener, no bigger
+  model was needed.
+- Engagement arrived **late** (turn 9 of 10): agents only reach for
+  channels after their per-turn task list is comfortably covered. Deal
+  formation needs more wall-clock turns, not more prodding.
+- Channel sends ride the dedicated channel dispatch path (`agent.py:250`),
+  not the game-tool step list — the channel ledger, not the step log, is
+  the source of truth for engagement.
+
+## Recommendations for v2
+
+1. **Longer run:** raise `max_puppet_turns` to 60–90 (20–30 game turns,
+   `max_game_turns` scaled to match) so a negotiation that starts around
+   turn 9 has room to reach a proposed, accepted, and funded deal.
+2. Keep `max_steps: 15` and the current guidance — they are now a validated
+   baseline; change nothing else so turn count stays the single variable.
+3. Hold the scripted-opener and directive-guidance levers in reserve for a
+   v3 if a long v2 stalls at chat without deal objects.
