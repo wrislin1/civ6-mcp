@@ -70,7 +70,7 @@
   - `_parse_channels` rejects boolean/nonpositive `turn`, unknown `action`, non-mapping `args`, extra step keys, and script without `enabled: true`.
   - `CivOptions.fingerprint()["channels"]` includes `script` as a list of dicts.
 
-- [ ] **Step 1: Write the failing config tests**
+- [x] **Step 1: Write the failing config tests**
 
 In `tests/arena/test_config.py`, add `ChannelScriptStep` to the import from `civ_mcp.arena.config`:
 
@@ -151,7 +151,7 @@ Replace the first `PlayerSpec` in `test_channel_rules_defaults_and_enabled_set_a
 
 Leave the existing `channel_config_fingerprint` expectations unchanged so the test proves script metadata does not change channel ledger identity.
 
-- [ ] **Step 2: Write the failing experiment parser tests**
+- [x] **Step 2: Write the failing experiment parser tests**
 
 In `tests/arena/test_experiment.py`, add `ChannelScriptStep` to the config import:
 
@@ -256,7 +256,7 @@ def test_rejects_invalid_channel_script_config(tmp_path, fragment, match):
         load_experiment(path)
 ```
 
-- [ ] **Step 3: Run the new tests and verify the expected failures**
+- [x] **Step 3: Run the new tests and verify the expected failures**
 
 Run:
 
@@ -271,7 +271,7 @@ uv run --extra test pytest \
 
 Expected: import or assertion failures mentioning missing `ChannelScriptStep`, unexpected `ChannelOptions.script`, or rejected `channels.script` keys.
 
-- [ ] **Step 4: Add `ChannelScriptStep` and fingerprint support**
+- [x] **Step 4: Add `ChannelScriptStep` and fingerprint support**
 
 In `src/civ_mcp/arena/config.py`, add this dataclass immediately above `ChannelOptions`:
 
@@ -318,7 +318,7 @@ import copy
 from dataclasses import dataclass, field
 ```
 
-- [ ] **Step 5: Add parser support for script**
+- [x] **Step 5: Add parser support for script**
 
 In `src/civ_mcp/arena/experiment.py`, update the imports:
 
@@ -403,7 +403,7 @@ def _parse_channels(civ_label: str, raw: object) -> ChannelOptions:
     return ChannelOptions(enabled=enabled, guidance=guidance, script=script)
 ```
 
-- [ ] **Step 6: Run the targeted config/parser tests**
+- [x] **Step 6: Run the targeted config/parser tests**
 
 Run:
 
@@ -413,7 +413,7 @@ uv run --extra test pytest tests/arena/test_config.py tests/arena/test_experimen
 
 Expected: all tests in both files pass.
 
-- [ ] **Step 7: Check the diff and commit**
+- [x] **Step 7: Check the diff and commit**
 
 Run:
 
@@ -444,7 +444,7 @@ Expected: `git diff --check` prints no output, and the commit succeeds.
   - Policies that do not accept `channel_projection` keep running without the kwarg.
   - Public log/transcript sanitizing removes any `channel_projection` object echoed in policy results.
 
-- [ ] **Step 1: Extend the fake channel runtime and recording policy**
+- [x] **Step 1: Extend the fake channel runtime and recording policy**
 
 In `tests/arena/test_coordinator.py`, modify `FakeChannelRuntime.admit_player` to import and include `ChannelProjection`:
 
@@ -515,7 +515,7 @@ Modify `ChannelRecordingPolicy.__call__` to accept and record `channel_projectio
         }
 ```
 
-- [ ] **Step 2: Write the failing normal puppet projection injection assertions**
+- [x] **Step 2: Write the failing normal puppet projection injection assertions**
 
 In `test_channels_open_admit_policy_finish_with_run_identity`, add:
 
@@ -586,7 +586,7 @@ async def test_channel_projection_kwarg_is_signature_gated(monkeypatch, tmp_path
     ]
 ```
 
-- [ ] **Step 3: Write the failing privacy sanitizer test case**
+- [x] **Step 3: Write the failing privacy sanitizer test case**
 
 Inside `_privacy_channel_result`, add `channel_projection` both at the top level and inside `transcript`:
 
@@ -608,7 +608,7 @@ and inside the returned `transcript` dict:
 
 No assertion changes are needed because `_assert_public_channel_result_is_private_free` already fails when the canary leaks.
 
-- [ ] **Step 4: Run the coordinator channel tests and verify the expected failures**
+- [x] **Step 4: Run the coordinator channel tests and verify the expected failures**
 
 Run:
 
@@ -623,7 +623,7 @@ uv run --extra test pytest \
 
 Expected: projection assertions fail because `channel_projection` is not passed yet, and the privacy test leaks the projection canary.
 
-- [ ] **Step 5: Inject `channel_projection` for seat 0 capture**
+- [x] **Step 5: Inject `channel_projection` for seat 0 capture**
 
 In `src/civ_mcp/arena/coordinator.py`, add `"channel_projection"` to `_PRIVATE_CHANNEL_RESULT_FIELDS`:
 
@@ -643,7 +643,7 @@ In `_seat0_channel_policy_kwargs`, add `channel_projection` to the kwarg tuple:
             if _policy_accepts_kwarg(pol, name)
 ```
 
-- [ ] **Step 6: Inject `channel_projection` for normal puppet turns**
+- [x] **Step 6: Inject `channel_projection` for normal puppet turns**
 
 In the normal puppet channel kwarg block, add `channel_projection` beside the existing context/block/master entries:
 
@@ -657,7 +657,7 @@ In the normal puppet channel kwarg block, add `channel_projection` beside the ex
 
 The complete tuple should now inject `channel_context`, `channel_block`, `channel_projection`, and `master_block`, each gated by `_policy_accepts_kwarg`.
 
-- [ ] **Step 7: Run the targeted coordinator tests**
+- [x] **Step 7: Run the targeted coordinator tests**
 
 Run:
 
@@ -672,7 +672,7 @@ uv run --extra test pytest \
 
 Expected: all four tests pass.
 
-- [ ] **Step 8: Check the diff and commit**
+- [x] **Step 8: Check the diff and commit**
 
 Run:
 
@@ -706,7 +706,7 @@ Expected: `git diff --check` prints no output, and the commit succeeds.
   - Auto-fund appends `{"tool": "channel:fund_deal", "deal_id": <deal_id>, "result": <outcome>}` on success.
   - Repair calls do not dispatch script steps or auto-fund deals.
 
-- [ ] **Step 1: Add scripted channel test helpers**
+- [x] **Step 1: Add scripted channel test helpers**
 
 In `tests/arena/test_coordinator.py`, add these helpers below `_prod_block`:
 
@@ -779,7 +779,7 @@ def _projection_deal(
     )
 ```
 
-- [ ] **Step 2: Write failing script dispatch tests**
+- [x] **Step 2: Write failing script dispatch tests**
 
 Add these tests in the existing `Task 9 - ScriptedPolicy normal/repair determinism` section:
 
@@ -891,7 +891,7 @@ async def test_scripted_normal_channel_dispatch_exception_is_summary_only():
     assert "channel send_message failed RuntimeError('send_message boom')" in result["summary"]
 ```
 
-- [ ] **Step 3: Write failing auto-fund and repair-skip tests**
+- [x] **Step 3: Write failing auto-fund and repair-skip tests**
 
 Add:
 
@@ -951,7 +951,7 @@ async def test_scripted_repair_skips_channel_script_and_auto_fund():
     assert ctx.dispatched == []
 ```
 
-- [ ] **Step 4: Run the ScriptedPolicy channel tests and verify the expected failures**
+- [x] **Step 4: Run the ScriptedPolicy channel tests and verify the expected failures**
 
 Run:
 
@@ -967,7 +967,7 @@ uv run --extra test pytest \
 
 Expected: tests fail because `ScriptedPolicy` ignores `channel_context`, `channel_projection`, and `ChannelOptions.script`.
 
-- [ ] **Step 5: Add explicit channel parameters and helper imports**
+- [x] **Step 5: Add explicit channel parameters and helper imports**
 
 In `src/civ_mcp/arena/scripted_policy.py`, replace the import block with:
 
@@ -998,7 +998,7 @@ Replace the `__call__` signature with:
     ) -> dict:
 ```
 
-- [ ] **Step 6: Replace the normal path implementation**
+- [x] **Step 6: Replace the normal path implementation**
 
 Intentional format change: the no-context normal summary becomes
 `"scripted: observed; skipped unit 0"` (was `"scripted: observed + skipped
@@ -1034,7 +1034,7 @@ Inside `ScriptedPolicy.__call__`, keep the repair branch first, then replace the
         return {"summary": "; ".join(summary_parts), "actions": actions}
 ```
 
-- [ ] **Step 7: Add channel dispatch helpers**
+- [x] **Step 7: Add channel dispatch helpers**
 
 Add these methods inside `ScriptedPolicy`, below `__call__` and above `_repair`:
 
@@ -1117,7 +1117,7 @@ Add these methods inside `ScriptedPolicy`, below `__call__` and above `_repair`:
         )
 ```
 
-- [ ] **Step 8: Run the ScriptedPolicy tests**
+- [x] **Step 8: Run the ScriptedPolicy tests**
 
 Run:
 
@@ -1127,7 +1127,7 @@ uv run --extra test pytest tests/arena/test_coordinator.py -k 'scripted' -v
 
 Expected: all selected scripted-policy tests pass.
 
-- [ ] **Step 9: Check the diff and commit**
+- [x] **Step 9: Check the diff and commit**
 
 Run:
 
@@ -1159,7 +1159,7 @@ Expected: `git diff --check` prints no output, and the commit succeeds.
   - `experiments/arena-channels-behavior-v3.yaml` matching the approved spec.
   - Loader test pinning v3 run budgets, roster, guidance flags, and both P3 script steps.
 
-- [ ] **Step 1: Add the failing guidance assertion**
+- [x] **Step 1: Add the failing guidance assertion**
 
 In `tests/arena/test_channels.py`, add this test near the existing guidance rendering tests:
 
@@ -1171,7 +1171,7 @@ def test_channel_guidance_names_binding_deal_actions():
     assert "fund deals you owe with fund_deal" in CHANNEL_GUIDANCE_TEXT
 ```
 
-- [ ] **Step 2: Add the v3 artifact loader test**
+- [x] **Step 2: Add the v3 artifact loader test**
 
 In `tests/arena/test_experiment.py`, add the v3 constant below the v2 constant:
 
@@ -1233,7 +1233,7 @@ def test_loads_arena_channels_behavior_v3_artifact():
     )
 ```
 
-- [ ] **Step 3: Run the new tests and verify the expected failures**
+- [x] **Step 3: Run the new tests and verify the expected failures**
 
 Run:
 
@@ -1246,7 +1246,7 @@ uv run --extra test pytest \
 
 Expected: guidance assertion fails and the v3 artifact path is missing.
 
-- [ ] **Step 4: Append the v3 directive to guidance text**
+- [x] **Step 4: Append the v3 directive to guidance text**
 
 In `src/civ_mcp/arena/channels.py`, replace `CHANNEL_GUIDANCE_TEXT` with:
 
@@ -1270,7 +1270,7 @@ CHANNEL_GUIDANCE_TEXT = (
 )
 ```
 
-- [ ] **Step 5: Create the v3 experiment artifact**
+- [x] **Step 5: Create the v3 experiment artifact**
 
 Create `experiments/arena-channels-behavior-v3.yaml` with exactly:
 
@@ -1326,7 +1326,7 @@ civs:
             within: 5
 ```
 
-- [ ] **Step 6: Run the channel guidance and artifact tests**
+- [x] **Step 6: Run the channel guidance and artifact tests**
 
 Run:
 
@@ -1340,7 +1340,7 @@ uv run --extra test pytest \
 
 Expected: all selected tests pass.
 
-- [ ] **Step 7: Run the focused regression set**
+- [x] **Step 7: Run the focused regression set**
 
 Run:
 
@@ -1356,7 +1356,7 @@ uv run --extra test pytest \
 
 Expected: all selected tests pass.
 
-- [ ] **Step 8: Check the diff and commit**
+- [x] **Step 8: Check the diff and commit**
 
 Run:
 
@@ -1376,7 +1376,7 @@ Expected: `git diff --check` prints no output, and the commit succeeds.
 
 ## Final Verification
 
-- [ ] **Step 1: Run the complete targeted arena suite**
+- [x] **Step 1: Run the complete targeted arena suite**
 
 Run:
 
@@ -1393,7 +1393,7 @@ uv run --extra test pytest \
 
 Expected: all selected tests pass.
 
-- [ ] **Step 2: Run the full arena suite**
+- [x] **Step 2: Run the full arena suite**
 
 Run:
 
@@ -1403,7 +1403,7 @@ uv run --extra test pytest tests/arena -q
 
 Expected: all tests pass (~1900+, roughly 2-3 minutes). This catches any regression outside the targeted channel/scripted selections — the coordinator and experiment parser are shared infrastructure.
 
-- [ ] **Step 3: Inspect git state**
+- [x] **Step 3: Inspect git state**
 
 Run:
 
