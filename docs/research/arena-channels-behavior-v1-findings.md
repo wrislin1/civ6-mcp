@@ -1,4 +1,4 @@
-# arena-channels-behavior-v1 / v1b — Findings
+# arena-channels-behavior-v1 / v1b / v2 — Findings
 
 **Date:** 2026-07-24 · **Run:** `arena_runs/arena-channels-behavior-v1` ·
 **Config:** `experiments/arena-channels-behavior-v1.yaml` ·
@@ -126,3 +126,69 @@ Ordered by expected information per unit of change:
    baseline; change nothing else so turn count stays the single variable.
 3. Hold the scripted-opener and directive-guidance levers in reserve for a
    v3 if a long v2 stalls at chat without deal objects.
+
+---
+
+# v2: models negotiate in text but never touch the deal machinery
+
+**Date:** 2026-07-24 · **Run:** `arena_runs/arena-channels-behavior-v2` ·
+**Config:** `experiments/arena-channels-behavior-v2.yaml` (commit
+`c422a33`) · v1b baseline with `max_puppet_turns` 90 / `max_game_turns`
+108; turn count the single changed variable.
+
+## Result
+
+- 90/90 puppet turns over game turns 157–186 (30 game turns), zero
+  failures, $0.00 (gemma 10.9k / qwen 36.8k completion tokens).
+- **5 messages, all applied, zero rejected or invalid channel actions.**
+- **0 deals.** The exact v1-recommendation-3 outcome materialized: the run
+  "stalls at chat without deal objects."
+
+## The negotiation that happened
+
+A genuinely grounded exchange, not small talk:
+
+- T165 qwen → gemma: offers **100 gold** for removing a skirmisher near
+  its units — a payment-for-military-action proposal referencing a real
+  board state.
+- T166 gemma → qwen: **declines accurately** — "it is not my unit" (true;
+  the skirmisher was a barbarian). Honest, factually grounded refusal.
+- T179–T180 (13 turns later): the thread resumes around clearing a
+  barbarian camp for "a gold payment or other assistance," then fizzles in
+  mutual uncertainty — neither model knows the camp's coordinates, and
+  qwen backs out ("not in a position to offer military…").
+
+## Interpretation
+
+- **Turn count is no longer the constraint.** With 3× the runway,
+  engagement still started at T165 (identical to v1b) and produced only 2
+  more messages than v1b. The models treat channels as an occasional
+  side-channel, not a standing workstream.
+- **The deal machinery is invisible to them in practice.** Both models
+  negotiated terms (gold amounts, services) purely in message text and
+  never attempted a deal-proposal action — not even an invalid one (zero
+  rejections in the ledger). Free-text chat is the path of least
+  resistance; nothing pushes them from "discussing a deal" to "creating a
+  deal object."
+- Negotiation quality is bounded by game-state grounding: the camp thread
+  died specifically because neither side could name coordinates —
+  information a `get_map_area`-style query could have supplied, but neither
+  model thought to fetch in service of the negotiation.
+
+## Recommendations for v3
+
+Turn count and step headroom are now both validated as non-binding. The
+remaining levers target deal-object creation directly:
+
+1. **Directive guidance about the deal action:** extend the guidance text
+   to name the concrete mechanism — "to make a binding agreement, propose
+   a deal with the deal action; message text alone is not binding." The
+   models demonstrably want to trade gold for services; they lack the
+   bridge from intent to mechanism.
+2. **Scripted opener proposing a formal deal:** the scripted seat opens
+   with an actual deal object, so both LLMs see the machinery in use and
+   must respond to it through the deal lifecycle (accept/decline), not
+   chat.
+3. Keep roster, steps (15), and 90-turn budget fixed so guidance is the
+   isolated variable (or guidance + opener as a combined treatment if we
+   accept two levers for a faster answer).
