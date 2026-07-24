@@ -92,9 +92,11 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
     "matplotlib>=3.10.8",
     "pytest>=8.0",
+    "pytest-asyncio",
 ]

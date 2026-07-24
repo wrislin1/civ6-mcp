@@ -553,6 +553,7 @@ test = [
 dev = [
     { name = "matplotlib" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
@@ -599,6 +600,7 @@ provides-extras = ["test", "evals", "scout", "cloud", "launcher-macos", "launche
 dev = [
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio" },
 ]
 
 [[package]]
