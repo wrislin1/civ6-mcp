@@ -740,7 +740,12 @@ def test_render_markdown_has_experiment_config_table() -> None:
     md = render_markdown(report)
 
     assert "## Experiment config" in md
-    assert "| player | model | tools | max_steps | n_ctx | avg briefing tok | avg steps | invalid rate | avg Δscore |" in md
+    # `max_steps` caps model round-trips; the transcript records one step per
+    # tool call and a reply may carry several, so the two are reported apart.
+    assert (
+        "| player | model | tools | max_steps | n_ctx | avg briefing tok | "
+        "avg model turns | avg tool calls | invalid rate | avg Δscore |"
+    ) in md
     assert "gemma4-26b" in md
 
 
@@ -2433,3 +2438,80 @@ def test_render_markdown_shows_failed_turns_count():
     md = render_markdown(report)
 
     assert "Failed turns" in md
+
+
+def test_config_summary_separates_model_turns_from_tool_calls() -> None:
+    # `max_steps` caps model round-trips (agent.py loops over replies) but the
+    # transcript appends one step per tool call, and one reply can carry
+    # several. v3/v4 read as a max_steps overrun purely from this mismatch.
+    from civ_mcp.arena.analyze import config_summary
+
+    rec = {
+        "player_id": 5,
+        "civ_options": {"tools": "minimal", "max_steps": 15},
+        "model": "qwen3.6-27b",
+        "provider": "local",
+        "steps": [
+            {"ts_start": 100.0, "tool_name": "get_units"},
+            {"ts_start": 100.0, "tool_name": "get_cities"},
+            {"ts_start": 100.0, "tool_name": "get_tech_civics"},
+            {"ts_start": 200.0, "tool_name": "skip_unit"},
+        ],
+    }
+
+    summary = config_summary([rec])["5"]
+
+    assert summary["avg_steps"] == 4.0
+    assert summary["avg_model_turns"] == 2.0
+
+
+def test_analyze_channels_counts_rejected_actions_by_player_and_reason() -> None:
+    # The per-player invalid_call_rate never sees these: channel dispatch does
+    # not reach the tool layer, so v3/v4 both reported 0.0% invalid while every
+    # deal died on a rejected channel action.
+    from civ_mcp.arena.analyze import analyze_channels
+
+    payload = channel_state_fixture()
+    payload["acknowledgements"] = [
+        {
+            "player_id": 1,
+            "turn": 8,
+            "source_id": "src-1",
+            "status": "rejected",
+            "message": "only the proposer may fund a deal",
+            "deal_id": None,
+        },
+        {
+            "player_id": 1,
+            "turn": 9,
+            "source_id": "src-2",
+            "status": "rejected",
+            "message": "only the proposer may fund a deal",
+            "deal_id": None,
+        },
+        {
+            "player_id": 2,
+            "turn": 9,
+            "source_id": "src-3",
+            "status": "applied",
+            "message": "sent private message msg-000001 to player 1",
+            "deal_id": None,
+        },
+        {
+            "player_id": 2,
+            "turn": 10,
+            "source_id": "src-4",
+            "status": "rejected",
+            "message": "deal has no linked payment awaiting response",
+            "deal_id": None,
+        },
+    ]
+
+    rejected = analyze_channels(payload, current_turn=60)["rejected_actions"]
+
+    assert rejected["total"] == 3
+    assert rejected["by_player"] == {"1": 2, "2": 1}
+    assert rejected["by_reason"] == {
+        "only the proposer may fund a deal": 2,
+        "deal has no linked payment awaiting response": 1,
+    }

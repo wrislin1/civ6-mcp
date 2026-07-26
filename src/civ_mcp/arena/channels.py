@@ -174,6 +174,17 @@ class ChannelProjection:
     cli_instructions: bool = False
 
 
+_TERMINAL_DEAL_STATES = frozenset(
+    {
+        DealState.HONORED,
+        DealState.BROKEN,
+        DealState.DECLINED,
+        DealState.EXPIRED,
+        DealState.UNVERIFIABLE,
+    }
+)
+
+
 _DEAL_TRANSITIONS = {
     DealState.PROPOSED: frozenset(
         {
@@ -1277,6 +1288,80 @@ def _compact_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
+def deal_action_hint(deal: Deal, viewer: int) -> str:
+    """Render the viewer's role on `deal` and what it can do about it now.
+
+    v3 and v4 both failed at the payment step: the models could be told which
+    action to use but never inferred *when* it became available, and one
+    constructed a deal whose object inverted the roles its own message
+    described. Prose in the guidance paragraph cannot carry state; this line
+    states the role and the currently-legal action explicitly, every turn.
+    """
+    if deal.proposer == viewer:
+        role = f"YOU PROPOSED THIS — you are the payer, you owe {deal.payment_gold} gold"
+    elif deal.counterparty == viewer and deal.state is DealState.PROPOSED:
+        role = (
+            f"PROPOSED TO YOU — accept and you become the payee: you receive "
+            f"{deal.payment_gold} gold and owe the favor"
+        )
+    elif deal.counterparty == viewer:
+        role = (
+            f"YOU ACCEPTED THIS — you are the payee, you receive "
+            f"{deal.payment_gold} gold and owe the favor"
+        )
+    else:  # pragma: no cover - projections only carry the viewer's own deals
+        role = "you are not a party to this deal"
+
+    if deal.terminal is not None or deal.state in _TERMINAL_DEAL_STATES:
+        return f"{role}; AVAILABLE NOW: nothing — this deal is closed ({deal.state.value})"
+
+    if deal.state is DealState.PROPOSED:
+        if deal.counterparty == viewer:
+            action = (
+                f"respond_to_deal (accept or decline) by turn {deal.accept_by_turn}"
+            )
+        else:
+            action = (
+                f"nothing — waiting for Player {deal.counterparty} to respond "
+                f"by turn {deal.accept_by_turn}"
+            )
+        return f"{role}; AVAILABLE NOW: {action}"
+
+    if deal.payment_status is PaymentStatus.DUE:
+        if deal.proposer == viewer:
+            action = f"fund_deal — send the {deal.payment_gold} gold"
+            if deal.fund_by_turn is not None:
+                action += f" by turn {deal.fund_by_turn}"
+        else:
+            action = (
+                f"nothing — waiting for Player {deal.proposer} to fund the payment"
+            )
+        return f"{role}; AVAILABLE NOW: {action}"
+
+    if deal.payment_status is PaymentStatus.OFFERED:
+        if deal.counterparty == viewer:
+            action = f"respond_to_payment — the {deal.payment_gold} gold is waiting for you"
+            if deal.payment_response_by_turn is not None:
+                action += f", accept it by turn {deal.payment_response_by_turn}"
+        else:
+            action = (
+                f"nothing — waiting for Player {deal.counterparty} to accept "
+                f"the payment you sent"
+            )
+        return f"{role}; AVAILABLE NOW: {action}"
+
+    if deal.favor_status is FavorStatus.DUE:
+        owing = "you owe the favor" if deal.counterparty == viewer else (
+            f"Player {deal.counterparty} owes the favor"
+        )
+        action = f"nothing — {owing}"
+        if deal.favor_due_turn is not None:
+            action += f", due turn {deal.favor_due_turn}"
+        return f"{role}; AVAILABLE NOW: {action}"
+
+    return f"{role}; AVAILABLE NOW: nothing yet"
+
+
 def format_channel_block(projection: ChannelProjection) -> str:
     lines = ["== PRIVATE UNOFFICIAL CHANNELS =="]
     if projection.guidance:
@@ -1308,6 +1393,7 @@ def format_channel_block(projection: ChannelProjection) -> str:
                 f"payment={deal.payment_gold} gold/{deal.timing} "
                 f"({deal.payment_status.value}); {', '.join(deadline_parts)}"
             )
+            lines.append(f"  {deal_action_hint(deal, projection.player_id)}")
     if projection.grievances:
         lines.append("Grievances:")
         lines.extend(

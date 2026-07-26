@@ -4202,10 +4202,14 @@ def _script_step(turn, action, args):
     return ChannelScriptStep(turn=turn, action=action, args=args)
 
 
-def _scripted_channel_options(*steps):
+def _scripted_channel_options(*steps, auto_accept=False):
     from civ_mcp.arena.config import ChannelOptions
 
-    return CivOptions(channels=ChannelOptions(enabled=True, script=tuple(steps)))
+    return CivOptions(
+        channels=ChannelOptions(
+            enabled=True, script=tuple(steps), auto_accept=auto_accept
+        )
+    )
 
 
 def _channel_projection_with_deals(player_id, *deals):
@@ -4222,6 +4226,8 @@ def _projection_deal(
     state=None,
     payment_status=None,
     fund_by_turn=9,
+    payment_response_by_turn=None,
+    terminal=None,
 ):
     from civ_mcp.arena.channels import (
         Deal,
@@ -4246,9 +4252,9 @@ def _projection_deal(
         favor_status=FavorStatus.SATISFIED,
         payment_status=payment_status or PaymentStatus.DUE,
         fund_by_turn=fund_by_turn,
-        payment_response_by_turn=None,
+        payment_response_by_turn=payment_response_by_turn,
         favor_due_turn=12,
-        terminal=None,
+        terminal=terminal,
     )
 
 
@@ -4644,6 +4650,113 @@ async def test_scripted_normal_auto_funds_only_own_active_due_deals():
         {"tool": "skip_unit"},
         {"tool": "channel:fund_deal", "deal_id": "deal-000001", "result": "QUEUED fund_deal"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_scripted_auto_accept_off_by_default_leaves_proposals_unanswered():
+    # v4 deal-000003: an LLM proposed to the scripted seat and the deal expired
+    # because ScriptedPolicy has no respond path. Default must stay unchanged.
+    ctx = _RecordingChannelContext()
+    projection = _channel_projection_with_deals(
+        3,
+        _projection_deal("deal-000001", proposer=2, counterparty=3, state=None),
+    )
+
+    await ScriptedPolicy(options=_scripted_channel_options())(
+        _ScriptedGS(), 3, 7, channel_context=ctx, channel_projection=projection,
+    )
+
+    assert ctx.dispatched == []
+
+
+@pytest.mark.asyncio
+async def test_scripted_auto_accept_accepts_proposals_aimed_at_this_seat():
+    from civ_mcp.arena.channels import DealState
+
+    ctx = _RecordingChannelContext()
+    projection = _channel_projection_with_deals(
+        3,
+        _projection_deal(
+            "deal-000001", proposer=2, counterparty=3, state=DealState.PROPOSED
+        ),
+        # Not ours to answer: we proposed it.
+        _projection_deal(
+            "deal-000002", proposer=3, counterparty=2, state=DealState.PROPOSED
+        ),
+    )
+
+    result = await ScriptedPolicy(
+        options=_scripted_channel_options(auto_accept=True)
+    )(_ScriptedGS(), 3, 7, channel_context=ctx, channel_projection=projection)
+
+    assert ctx.dispatched == [
+        ("respond_to_deal", {"deal_id": "deal-000001", "accept": True})
+    ]
+    assert {
+        "tool": "channel:respond_to_deal",
+        "result": "QUEUED respond_to_deal",
+        "deal_id": "deal-000001",
+    } in result["actions"]
+
+
+@pytest.mark.asyncio
+async def test_scripted_auto_accept_accepts_offered_payments_and_respects_deadline():
+    from civ_mcp.arena.channels import DealState, PaymentStatus
+
+    ctx = _RecordingChannelContext()
+    projection = _channel_projection_with_deals(
+        3,
+        _projection_deal(
+            "deal-000001",
+            proposer=2,
+            counterparty=3,
+            state=DealState.ACTIVE,
+            payment_status=PaymentStatus.OFFERED,
+            payment_response_by_turn=9,
+        ),
+        # Deadline already passed: do not dispatch a call the runtime rejects.
+        _projection_deal(
+            "deal-000002",
+            proposer=2,
+            counterparty=3,
+            state=DealState.ACTIVE,
+            payment_status=PaymentStatus.OFFERED,
+            payment_response_by_turn=6,
+        ),
+    )
+
+    await ScriptedPolicy(options=_scripted_channel_options(auto_accept=True))(
+        _ScriptedGS(), 3, 7, channel_context=ctx, channel_projection=projection,
+    )
+
+    assert ctx.dispatched == [
+        ("respond_to_payment", {"deal_id": "deal-000001", "accept": True})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_scripted_auto_accept_skips_terminal_deals():
+    from civ_mcp.arena.channels import DealState, PaymentStatus
+
+    ctx = _RecordingChannelContext()
+    projection = _channel_projection_with_deals(
+        3,
+        _projection_deal(
+            "deal-000001",
+            proposer=2,
+            counterparty=3,
+            state=DealState.ACTIVE,
+            payment_status=PaymentStatus.OFFERED,
+            payment_response_by_turn=9,
+            terminal={"reason": "already closed"},
+        ),
+    )
+
+    await ScriptedPolicy(options=_scripted_channel_options(auto_accept=True))(
+        _ScriptedGS(), 3, 7, channel_context=ctx, channel_projection=projection,
+    )
+
+    assert ctx.dispatched == []
 
 
 @pytest.mark.asyncio

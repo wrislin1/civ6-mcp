@@ -276,6 +276,7 @@ def test_channel_defaults_are_off_and_fingerprinted():
         "enabled": False,
         "guidance": False,
         "script": [],
+        "auto_accept": False,
     }
 
     step = ChannelScriptStep(
@@ -294,7 +295,13 @@ def test_channel_defaults_are_off_and_fingerprinted():
                 "args": {"to_player": 2, "text": "hello"},
             }
         ],
+        "auto_accept": False,
     }
+
+    # auto_accept is per-civ transcript metadata like guidance/script: it must
+    # appear in the civ fingerprint but never in channel ledger identity.
+    accepting = CivOptions(channels=ChannelOptions(enabled=True, auto_accept=True))
+    assert accepting.fingerprint()["channels"]["auto_accept"] is True
 
 
 def test_channel_rules_defaults_and_enabled_set_are_canonical():

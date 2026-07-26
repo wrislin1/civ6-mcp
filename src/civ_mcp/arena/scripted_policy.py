@@ -132,6 +132,19 @@ class ScriptedPolicy:
             actions.append(action)
             summaries.append(summary)
 
+        if self.options.channels.auto_accept:
+            for action_name, args in self._auto_accept_dispatches(
+                player_id=player_id,
+                turn=turn,
+                channel_projection=channel_projection,
+            ):
+                action, summary = self._dispatch_channel_action(
+                    channel_context, action_name, dict(args)
+                )
+                action["deal_id"] = args["deal_id"]
+                actions.append(action)
+                summaries.append(summary)
+
         for deal_id in self._auto_fund_deal_ids(
             player_id=player_id,
             turn=turn,
@@ -147,6 +160,41 @@ class ScriptedPolicy:
             summaries.append(summary)
 
         return actions, summaries
+
+    @staticmethod
+    def _auto_accept_dispatches(
+        *,
+        player_id: int,
+        turn: int,
+        channel_projection: ChannelProjection | None,
+    ) -> tuple[tuple[str, dict], ...]:
+        """Accept deals proposed to this seat and payments offered to it.
+
+        A scripted seat has no respond path of its own, so an LLM-initiated
+        deal aimed at one expires unanswered (v4 `deal-000003`). Accepting is
+        deterministic and unconditional by design: the scripted seat is a
+        fixture for exercising the lifecycle, not a strategic agent.
+        """
+        if channel_projection is None:
+            return ()
+        dispatches: list[tuple[str, dict]] = []
+        for deal in channel_projection.deals:
+            if deal.counterparty != player_id or deal.terminal is not None:
+                continue
+            if deal.state is DealState.PROPOSED and turn <= deal.accept_by_turn:
+                dispatches.append(
+                    ("respond_to_deal", {"deal_id": deal.id, "accept": True})
+                )
+            elif (
+                deal.state is DealState.ACTIVE
+                and deal.payment_status is PaymentStatus.OFFERED
+                and deal.payment_response_by_turn is not None
+                and turn <= deal.payment_response_by_turn
+            ):
+                dispatches.append(
+                    ("respond_to_payment", {"deal_id": deal.id, "accept": True})
+                )
+        return tuple(dispatches)
 
     @staticmethod
     def _dispatch_channel_action(

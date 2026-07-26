@@ -16,6 +16,7 @@ from civ_mcp.arena.channels import (
     Grievance,
     Message,
     PaymentStatus,
+    deal_action_hint,
     effective_magnitude,
     event_from_dict,
     event_to_dict,
@@ -870,3 +871,110 @@ def test_channel_guidance_names_binding_deal_actions():
     assert "fund deals you owe" not in CHANNEL_GUIDANCE_TEXT
     assert "you are the payer" in CHANNEL_GUIDANCE_TEXT
     assert "you are the payee" in CHANNEL_GUIDANCE_TEXT
+
+
+def _hint_deal(**overrides):
+    """Deal fixture for deal_action_hint; overrides drive the state under test."""
+    base = dict(
+        id="deal-000001",
+        proposer=3,
+        counterparty=1,
+        created_turn=7,
+        accepted_turn=None,
+        accept_by_turn=10,
+        completion_window_turns=5,
+        favor=FavorTerm("keep_units_away", {"player_id": 3, "min_distance": 3}),
+        payment_gold=50,
+        timing="on_delivery",
+        state=DealState.PROPOSED,
+        favor_status=FavorStatus.NOT_DUE,
+        payment_status=PaymentStatus.NOT_DUE,
+        fund_by_turn=None,
+        payment_response_by_turn=None,
+        favor_due_turn=None,
+        terminal=None,
+    )
+    base.update(overrides)
+    return Deal(**base)
+
+
+def test_deal_action_hint_names_role_and_only_the_currently_legal_action():
+    proposed = _hint_deal()
+    # Counterparty may respond; proposer must wait. v3 lost six actions to
+    # players reaching for the other side's verb.
+    counterparty_hint = deal_action_hint(proposed, 1)
+    # Not yet accepted, so the role line must be conditional, not past-tense.
+    assert "YOU ACCEPTED THIS" not in counterparty_hint
+    assert "PROPOSED TO YOU — accept and you become the payee" in counterparty_hint
+    assert "respond_to_deal (accept or decline) by turn 10" in counterparty_hint
+    proposer_hint = deal_action_hint(proposed, 3)
+    assert "YOU PROPOSED THIS — you are the payer, you owe 50 gold" in proposer_hint
+    assert "waiting for Player 1 to respond" in proposer_hint
+    assert "respond_to_deal" not in proposer_hint.split("AVAILABLE NOW:")[1]
+
+
+def test_deal_action_hint_payment_due_is_proposer_only():
+    due = _hint_deal(
+        state=DealState.ACTIVE,
+        accepted_turn=8,
+        favor_status=FavorStatus.SATISFIED,
+        payment_status=PaymentStatus.DUE,
+        fund_by_turn=12,
+    )
+    assert "fund_deal — send the 50 gold by turn 12" in deal_action_hint(due, 3)
+    payee = deal_action_hint(due, 1)
+    assert "waiting for Player 3 to fund the payment" in payee
+    assert "fund_deal" not in payee.split("AVAILABLE NOW:")[1]
+
+
+def test_deal_action_hint_offered_payment_tells_payee_it_is_claimable_now():
+    # v4's whole failure: both models fired respond_to_payment before the
+    # payment existed, then went silent in the two turns it was valid.
+    offered = _hint_deal(
+        state=DealState.ACTIVE,
+        accepted_turn=8,
+        favor_status=FavorStatus.SATISFIED,
+        payment_status=PaymentStatus.OFFERED,
+        payment_response_by_turn=14,
+    )
+    payee = deal_action_hint(offered, 1)
+    assert "respond_to_payment — the 50 gold is waiting for you" in payee
+    assert "accept it by turn 14" in payee
+    assert "waiting for Player 1 to accept the payment you sent" in deal_action_hint(offered, 3)
+
+
+def test_deal_action_hint_before_payment_exists_says_nothing_is_available():
+    pending_favor = _hint_deal(
+        state=DealState.ACTIVE,
+        accepted_turn=8,
+        favor_status=FavorStatus.DUE,
+        payment_status=PaymentStatus.NOT_DUE,
+        favor_due_turn=13,
+    )
+    payee = deal_action_hint(pending_favor, 1)
+    assert "AVAILABLE NOW: nothing — you owe the favor, due turn 13" in payee
+    assert "respond_to_payment" not in payee
+
+
+def test_deal_action_hint_closed_deal_offers_nothing():
+    broken = _hint_deal(
+        state=DealState.BROKEN,
+        payment_status=PaymentStatus.FAILED,
+        terminal={"reason": "exact linked payment was not accepted by the deadline"},
+    )
+    assert "AVAILABLE NOW: nothing — this deal is closed (broken)" in deal_action_hint(broken, 1)
+
+
+def test_channel_block_renders_the_action_hint_under_each_deal():
+    offered = _hint_deal(
+        state=DealState.ACTIVE,
+        accepted_turn=8,
+        favor_status=FavorStatus.SATISFIED,
+        payment_status=PaymentStatus.OFFERED,
+        payment_response_by_turn=14,
+    )
+    block = format_channel_block(ChannelProjection(player_id=1, deals=(offered,)))
+    lines = block.splitlines()
+    deal_line = next(i for i, line in enumerate(lines) if line.startswith("- [deal-000001]"))
+    assert lines[deal_line + 1].startswith("  YOU ACCEPTED THIS")
+    assert "respond_to_payment" in lines[deal_line + 1]

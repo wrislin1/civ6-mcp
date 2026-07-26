@@ -298,7 +298,9 @@ def _parse_channel_script_step(
 def _parse_channels(civ_label: str, raw: object) -> ChannelOptions:
     if not isinstance(raw, dict):
         raise _err(civ_label, f"channels must be a mapping, got {raw!r}")
-    _validate_mapping_keys(civ_label, raw, {"enabled", "guidance", "script"}, "channels")
+    _validate_mapping_keys(
+        civ_label, raw, {"enabled", "guidance", "script", "auto_accept"}, "channels"
+    )
     enabled = raw.get("enabled", _CHANNEL_DEFAULTS.enabled)
     if not isinstance(enabled, bool):
         raise _err(civ_label, f"channels.enabled must be a boolean, got {enabled!r}")
@@ -317,7 +319,16 @@ def _parse_channels(civ_label: str, raw: object) -> ChannelOptions:
             _parse_channel_script_step(civ_label, index, step)
             for index, step in enumerate(script_raw)
         )
-    return ChannelOptions(enabled=enabled, guidance=guidance, script=script)
+    auto_accept = raw.get("auto_accept", _CHANNEL_DEFAULTS.auto_accept)
+    if not isinstance(auto_accept, bool):
+        raise _err(
+            civ_label, f"channels.auto_accept must be a boolean, got {auto_accept!r}"
+        )
+    if "auto_accept" in raw and enabled is not True:
+        raise _err(civ_label, "channels.auto_accept requires channels.enabled true")
+    return ChannelOptions(
+        enabled=enabled, guidance=guidance, script=script, auto_accept=auto_accept
+    )
 
 
 def _parse_channel_rules(raw: object) -> ChannelRules:

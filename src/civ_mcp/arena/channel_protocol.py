@@ -441,7 +441,10 @@ def channel_tool_schemas(*, narrative_allowed: bool = False) -> list[dict]:
         ),
         _tool_schema(
             "propose_deal",
-            "Propose an unofficial favor-for-gold deal.",
+            "Propose an unofficial favor-for-gold deal. YOU are the payer: you "
+            "pay payment_gold and to_player performs the favor. If you want to "
+            "be PAID for a favor you perform, do not use this — send a message "
+            "asking the other player to propose the deal to you.",
             {
                 "to_player": player,
                 "text": message,
@@ -467,13 +470,18 @@ def channel_tool_schemas(*, narrative_allowed: bool = False) -> list[dict]:
         ),
         _tool_schema(
             "fund_deal",
-            "Offer the exact official gold payment for a due unofficial deal.",
+            "Offer the exact official gold payment for a due unofficial deal. "
+            "Only the player who PROPOSED the deal may fund it, and only once "
+            "the payment status is 'due'.",
             {"deal_id": deal_id},
             ("deal_id",),
         ),
         _tool_schema(
             "respond_to_payment",
-            "Accept or reject the exact linked official gold payment.",
+            "Accept or reject the exact linked official gold payment. Only the "
+            "player who ACCEPTED the deal may respond, and only once the "
+            "payment status is 'offered' — before then there is nothing to "
+            "respond to and the call is rejected.",
             {"deal_id": deal_id, "accept": accept},
             ("deal_id", "accept"),
         ),

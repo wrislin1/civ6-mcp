@@ -123,6 +123,19 @@ _RELIGION_WC_TOOLS: frozenset[str] = frozenset({
 })
 
 
+def _model_turns_of(rec: dict) -> int:
+    """Count model round-trips, which is what `max_steps` actually caps.
+
+    `agent.py` loops `for _ in range(max_steps)` over model replies but appends
+    one transcript step per *tool call*, and a reply can carry several. v3/v4
+    both showed qwen at ~20 "steps" against `max_steps: 15`, which read as an
+    overrun and was only a metric mismatch. All tool calls from one reply share
+    a `ts_start`, so distinct `ts_start` values count replies.
+    """
+    starts = {s.get("ts_start") for s in _steps_of(rec) if s.get("ts_start") is not None}
+    return len(starts)
+
+
 def _count_tool_calls(steps: list[dict], tool_bases: "frozenset[str]") -> int:
     """Count behavior tool calls after normalizing local and CLI tool vocabularies."""
     count = 0
@@ -363,6 +376,7 @@ def config_summary(records: list[dict]) -> dict:
             summary_key = pid if len(ordered_groups) == 1 else f"{pid}#{index}"
             fingerprint = fingerprints[(pid, fingerprint_key)]
             total_steps = 0
+            total_model_turns = 0
             total_invalid = 0
             total_briefing_tokens = 0
             total_score_delta = 0
@@ -372,6 +386,7 @@ def config_summary(records: list[dict]) -> dict:
                 if step_count is None:
                     step_count = len(_steps_of(rec))
                 total_steps += step_count or 0
+                total_model_turns += _model_turns_of(rec)
                 total_invalid += len(_counted_invalid_calls(rec))
                 total_briefing_tokens += rec.get("briefing_tokens") or 0
                 total_score_delta += (rec.get("state_delta") or {}).get("score", 0) or 0
@@ -384,6 +399,7 @@ def config_summary(records: list[dict]) -> dict:
                 "n_ctx": _representative_n_ctx(recs),
                 "turns": turns,
                 "avg_steps": total_steps / turns,
+                "avg_model_turns": total_model_turns / turns,
                 "invalid_call_rate": (total_invalid / total_steps) if total_steps else 0.0,
                 "avg_briefing_tokens": total_briefing_tokens / turns,
                 "avg_score_delta": total_score_delta / turns,
@@ -827,6 +843,22 @@ def _new_grievance_summary() -> dict:
     }
 
 
+def _rejected_channel_actions(state: ChannelState) -> dict:
+    """Count rejected channel acknowledgements, total and by player/reason."""
+    by_player: dict[str, int] = {}
+    by_reason: dict[str, int] = {}
+    total = 0
+    for acknowledgement in state.acknowledgements:
+        if acknowledgement.status != "rejected":
+            continue
+        total += 1
+        key = str(acknowledgement.player_id)
+        by_player[key] = by_player.get(key, 0) + 1
+        reason = str(acknowledgement.message)
+        by_reason[reason] = by_reason.get(reason, 0) + 1
+    return {"total": total, "by_player": by_player, "by_reason": by_reason}
+
+
 def _new_player_summary() -> dict:
     return {
         "messages": 0,
@@ -1017,6 +1049,11 @@ def _analyze_channel_state(state: ChannelState, current_turn: int) -> dict:
         "current_turn": current_turn,
         "messages": len(state.messages),
         "deals": len(state.deals),
+        # v3/v4's central failure mode was rejected channel actions, which the
+        # per-player `invalid_call_rate` does not count (channel dispatch never
+        # reaches the tool layer). Surface them here or a run reads as 0% error
+        # while every deal dies.
+        "rejected_actions": _rejected_channel_actions(state),
         "messages_by_player": messages_by_player,
         "players": players,
         "pairs": pairs,
@@ -1260,10 +1297,10 @@ def render_markdown(report: dict) -> str:
     if config:
         lines.append("## Experiment config\n")
         lines.append(
-            "| player | model | tools | max_steps | n_ctx | avg briefing tok | avg steps | invalid rate | avg Δscore |"
+            "| player | model | tools | max_steps | n_ctx | avg briefing tok | avg model turns | avg tool calls | invalid rate | avg Δscore |"
         )
         lines.append(
-            "|--------|-------|-------|-----------|-------|------------------|-----------|--------------|------------|"
+            "|--------|-------|-------|-----------|-------|------------------|-----------------|----------------|--------------|------------|"
         )
         for pid, data in sorted(config.items(), key=lambda item: _config_summary_sort_key(item[0])):
             civ_options = data.get("civ_options") or {}
@@ -1275,11 +1312,13 @@ def render_markdown(report: dict) -> str:
             n_ctx = data.get("n_ctx")
             avg_briefing = data.get("avg_briefing_tokens", 0.0)
             avg_steps = data.get("avg_steps", 0.0)
+            avg_model_turns = data.get("avg_model_turns", 0.0)
             invalid_rate = data.get("invalid_call_rate", 0.0)
             avg_score_delta = data.get("avg_score_delta", 0.0)
             lines.append(
                 f"| {pid} | {model} | {tools} | {max_steps} | {'' if n_ctx is None else n_ctx} | "
-                f"{avg_briefing:.1f} | {avg_steps:.1f} | {invalid_rate:.1%} | "
+                f"{avg_briefing:.1f} | {avg_model_turns:.1f} | {avg_steps:.1f} | "
+                f"{invalid_rate:.1%} | "
                 f"{avg_score_delta:.1f} |"
             )
         lines.append("")
@@ -1367,7 +1406,19 @@ def render_markdown(report: dict) -> str:
         lines.append("## Unofficial Channels\n")
         lines.append(f"- **Current turn**: {channels.get('current_turn', 0)}")
         lines.append(f"- **Messages**: {channels.get('messages', 0)}")
-        lines.append(f"- **Deals**: {channels.get('deals', 0)}\n")
+        lines.append(f"- **Deals**: {channels.get('deals', 0)}")
+        rejected = channels.get("rejected_actions") or {}
+        lines.append(f"- **Rejected channel actions**: {rejected.get('total', 0)}\n")
+        by_reason = rejected.get("by_reason") or {}
+        if by_reason:
+            lines.append("### Rejected channel actions\n")
+            lines.append("| reason | count |")
+            lines.append("|--------|-------|")
+            for reason, count in sorted(
+                by_reason.items(), key=lambda item: (-item[1], item[0])
+            ):
+                lines.append(f"| {reason} | {count} |")
+            lines.append("")
 
         lines.append("### Outcomes\n")
         lines.append("| outcome | count |")

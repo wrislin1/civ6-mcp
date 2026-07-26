@@ -75,6 +75,11 @@ class ChannelOptions:
     enabled: bool = False
     guidance: bool = False
     script: tuple[ChannelScriptStep, ...] = ()
+    # Scripted seats have no respond path, so an LLM-initiated deal aimed at
+    # one expires unanswered (v4 deal-000003). Opt-in makes a scripted seat
+    # accept deals proposed to it and accept payments offered to it, so
+    # LLM-initiated deals can reach a terminal state.
+    auto_accept: bool = False
 
 
 @dataclass(frozen=True)
@@ -160,6 +165,7 @@ class CivOptions:
                     }
                     for step in self.channels.script
                 ],
+                "auto_accept": self.channels.auto_accept,
             },
         }
 

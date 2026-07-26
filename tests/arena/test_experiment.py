@@ -30,6 +30,7 @@ ARENA_CHANNELS_BEHAVIOR_V1B = REPO_ROOT / "experiments" / "arena-channels-behavi
 ARENA_CHANNELS_BEHAVIOR_V2 = REPO_ROOT / "experiments" / "arena-channels-behavior-v2.yaml"
 ARENA_CHANNELS_BEHAVIOR_V3 = REPO_ROOT / "experiments" / "arena-channels-behavior-v3.yaml"
 ARENA_CHANNELS_BEHAVIOR_V4 = REPO_ROOT / "experiments" / "arena-channels-behavior-v4.yaml"
+ARENA_CHANNELS_BEHAVIOR_V5 = REPO_ROOT / "experiments" / "arena-channels-behavior-v5.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -343,6 +344,57 @@ def test_arena_channels_behavior_v4_differs_from_v3_only_in_run_id():
     assert v4.run_id == "arena-channels-behavior-v4"
     assert v3.run_id == "arena-channels-behavior-v3"
     assert replace(v4, run_id=v3.run_id) == v3
+
+
+def test_arena_channels_behavior_v5_differs_from_v4_only_in_run_id_and_auto_accept():
+    # v5 isolates the projection/affordance change: the only config delta is
+    # P3's auto_accept, which exists so LLM-initiated deals aimed at the
+    # scripted seat can reach a terminal state instead of expiring (v4
+    # deal-000003). Roster, budgets, and the P3 script stay at the baseline.
+    v4 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V4)
+    v5 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V5)
+
+    assert v5.run_id == "arena-channels-behavior-v5"
+    by_player = {player.player_id: player for player in v5.players}
+    assert by_player[3].options.channels.auto_accept is True
+    assert by_player[1].options.channels.auto_accept is False
+    assert by_player[2].options.channels.auto_accept is False
+
+    normalized = [
+        replace(
+            player,
+            options=replace(
+                player.options,
+                channels=replace(player.options.channels, auto_accept=False),
+            ),
+        )
+        for player in v5.players
+    ]
+    assert replace(v5, run_id=v4.run_id, players=normalized) == v4
+
+
+def test_rejects_auto_accept_without_channels_enabled(tmp_path):
+    path = tmp_path / "bad-auto-accept.yaml"
+    path.write_text(
+        "civs:\n"
+        "  - player: 3\n"
+        "    provider: scripted\n"
+        "    channels: {enabled: false, auto_accept: true}\n"
+    )
+    with pytest.raises(ValueError, match="channels.auto_accept requires channels.enabled true"):
+        load_experiment(path)
+
+
+def test_rejects_non_boolean_auto_accept(tmp_path):
+    path = tmp_path / "bad-auto-accept-type.yaml"
+    path.write_text(
+        "civs:\n"
+        "  - player: 3\n"
+        "    provider: scripted\n"
+        "    channels: {enabled: true, auto_accept: yes-please}\n"
+    )
+    with pytest.raises(ValueError, match="channels.auto_accept must be a boolean"):
+        load_experiment(path)
 
 
 def test_slice1_treatment_full_tier_has_diplomacy_tools_and_control_does_not():
