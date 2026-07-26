@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,7 @@ ARENA_CHANNELS_BEHAVIOR_V1 = REPO_ROOT / "experiments" / "arena-channels-behavio
 ARENA_CHANNELS_BEHAVIOR_V1B = REPO_ROOT / "experiments" / "arena-channels-behavior-v1b.yaml"
 ARENA_CHANNELS_BEHAVIOR_V2 = REPO_ROOT / "experiments" / "arena-channels-behavior-v2.yaml"
 ARENA_CHANNELS_BEHAVIOR_V3 = REPO_ROOT / "experiments" / "arena-channels-behavior-v3.yaml"
+ARENA_CHANNELS_BEHAVIOR_V4 = REPO_ROOT / "experiments" / "arena-channels-behavior-v4.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -329,6 +331,18 @@ def test_loads_arena_channels_behavior_v3_artifact():
     texts = {step.args["text"] for step in script}
     assert len(texts) == 1
     assert next(iter(texts)) != ""
+
+
+def test_arena_channels_behavior_v4_differs_from_v3_only_in_run_id():
+    # v4 isolates the guidance-text fix: the config must be byte-equivalent to
+    # v3 apart from run_id, so the revised CHANNEL_GUIDANCE_TEXT is the single
+    # changed variable between the two runs.
+    v3 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V3)
+    v4 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V4)
+
+    assert v4.run_id == "arena-channels-behavior-v4"
+    assert v3.run_id == "arena-channels-behavior-v3"
+    assert replace(v4, run_id=v3.run_id) == v3
 
 
 def test_slice1_treatment_full_tier_has_diplomacy_tools_and_control_does_not():

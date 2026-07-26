@@ -26,8 +26,12 @@ CHANNEL_GUIDANCE_TEXT = (
     "deal exists only once it is created with the propose_deal action and "
     "answered with respond_to_deal. When you and a rival converge on terms, turn "
     "them into a propose_deal immediately; when a proposal is pending for you, "
-    "answer it with respond_to_deal before it expires; fund deals you owe with "
-    "fund_deal."
+    "answer it with respond_to_deal before it expires. Payment has two sides and "
+    "only one of them is yours: if you proposed the deal, you are the payer — "
+    "send the gold with fund_deal when payment is due. If you accepted someone "
+    "else's deal, you are the payee — the gold is offered to you and you must "
+    "take it with respond_to_payment before its deadline. A payment left "
+    "unaccepted breaks the deal and earns you a grievance."
 )
 
 

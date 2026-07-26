@@ -862,4 +862,11 @@ def test_channel_guidance_names_binding_deal_actions():
     assert "messages alone are NOT binding" in CHANNEL_GUIDANCE_TEXT
     assert "propose_deal action" in CHANNEL_GUIDANCE_TEXT
     assert "respond_to_deal before it expires" in CHANNEL_GUIDANCE_TEXT
-    assert "fund deals you owe with fund_deal" in CHANNEL_GUIDANCE_TEXT
+    assert "send the gold with fund_deal when payment is due" in CHANNEL_GUIDANCE_TEXT
+    assert "take it with respond_to_payment before its deadline" in CHANNEL_GUIDANCE_TEXT
+    # v3 broke both LLM-side deals on the payment step: the old wording
+    # ("fund deals you owe with fund_deal") drew six wrong-role fund_deal
+    # attempts, all from non-proposers, and never named respond_to_payment.
+    assert "fund deals you owe" not in CHANNEL_GUIDANCE_TEXT
+    assert "you are the payer" in CHANNEL_GUIDANCE_TEXT
+    assert "you are the payee" in CHANNEL_GUIDANCE_TEXT
