@@ -324,3 +324,137 @@ Single-variable change, everything else held at the v3 baseline:
    variable from (1) if we want clean attribution.
 3. Investigate the `max_steps` overrun before relying on step budget as a
    controlled variable.
+
+---
+
+# v4: the guidance fix corrected action choice and broke action timing
+
+**Date:** 2026-07-26 · **Run:** `arena_runs/arena-channels-behavior-v4` ·
+**Config:** `experiments/arena-channels-behavior-v4.yaml` (commit `d70b490`)
+· byte-identical to v3 apart from `run_id` (pinned by
+`test_arena_channels_behavior_v4_differs_from_v3_only_in_run_id`), so the
+revised `CHANNEL_GUIDANCE_TEXT` is the single changed variable.
+
+The v3 closing clause ("fund deals you owe with fund_deal") was replaced
+with role-split payment instructions naming `respond_to_payment`:
+
+> "Payment has two sides and only one of them is yours: if you proposed the
+> deal, you are the payer — send the gold with fund_deal when payment is
+> due. If you accepted someone else's deal, you are the payee — the gold is
+> offered to you and you must take it with respond_to_payment before its
+> deadline. A payment left unaccepted breaks the deal and earns you a
+> grievance."
+
+## Result: outcomes got worse
+
+| metric | v3 | v4 |
+|--------|----|----|
+| deals | 3 | 3 |
+| honored | **1** | **0** |
+| broken | 2 | 2 |
+| expired | 0 | 1 |
+| rejected channel actions | 7 | 4 |
+| messages | 12 | 8 |
+| grievances | 2 | 2 |
+
+90/90 puppet turns over game turns 157–186, zero failed turns, $0.00.
+
+## The fix worked on action choice and failed on timing
+
+v3's dominant error was six wrong-role `fund_deal` attempts, every one from
+a non-proposer. **v4 produced zero of those.** Both models selected
+`respond_to_payment` — the correct action for their role — on the first
+try. Naming the action and anchoring it to a role did exactly what it was
+meant to do.
+
+But all four v4 rejections are the same new error: `respond_to_payment`
+fired *before the payment existed* ("deal has no linked payment awaiting
+response"). gemma's full attempt history on `deal-000001`:
+
+| turn | payment state | attempt |
+|------|---------------|---------|
+| T161 | not offered | rejected |
+| T162 | not offered | rejected |
+| T163 | not offered (P3 funded later in the turn) | rejected |
+| T164 | **offered** | none |
+| T165 | **offered** | none — deal broke at deadline |
+
+qwen repeated the pattern with a single premature attempt at T163 and
+silence through T164–165. Both models exhausted their persistence before
+the window opened, and three consecutive rejections evidently taught them
+the action was unavailable.
+
+The revised text tells the payee what to do and that a deadline exists, but
+never says the gold becomes claimable only *after* the proposer funds it.
+Both models treated their own acceptance as the trigger. In v3, gemma's
+wrong-action flailing at least kept it engaged into the valid window and it
+settled `deal-000001` at T165; in v4 both models had given up by then.
+
+**Prose cannot convey state transitions.** Two runs now show the models can
+be told *which* action to use but not *when* it becomes available. That is
+the case for rendering per-deal available actions in the projection
+(v3 recommendation 2) — only the projection can say "now".
+
+## A third role-confusion class: the inverted deal object
+
+qwen met the stretch criterion again (`deal-000003`, T176), and preceded it
+at T175 with an unprompted apology to the party it had wronged — "I
+apologize for the broken deal earlier - it was an oversight on my part" —
+with the grievance visible in its projection. Emergent reputational repair.
+
+The deal object contradicted its own message:
+
+- **Message:** "I'll keep my military units at least 3 tiles away from your
+  lands for 10 turns in exchange for 100 gold, paid up front."
+- **Object:** `proposer: 2`, `payment_gold: 100`, `timing: up_front`,
+  favor `keep_units_away {player_id: 2}` — i.e. qwen *pays* 100 gold and
+  P3 keeps units away from *qwen's* lands.
+
+It meant to sell a service and instead offered to buy one, at double the
+scripted rate. The series now has three distinct role-confusion classes:
+
+1. **v3** — wrong role when *selecting* an action (`fund_deal` as payee).
+2. **v4** — right action, wrong *moment*.
+3. **v4** — correct action, but the *constructed object* inverts the roles
+   its own message describes.
+
+The first two are self-correcting in principle: a rejection carries
+information. The third produces a valid deal meaning the opposite of the
+intent, and nothing flags it.
+
+## Design limitation: the scripted seat cannot accept
+
+`deal-000003` targeted P3, whose `ScriptedPolicy` only dispatches its
+turn-157 script and auto-funds deals it proposed — there is no
+`respond_to_deal` path. The proposal expired unanswered at T179 (payment
+waived, correctly no grievance). v3's LLM-initiated deal went qwen→gemma
+and reached funding; v4's went to a structurally mute seat.
+
+Any future artifact testing LLM-initiated deals should either script an
+acceptance path for P3 or expect only LLM→LLM proposals to complete.
+
+## Other observations
+
+- Messaging collapsed toward the scripted seat: v3 had 9 qwen→gemma
+  messages; v4 had **zero**. All 6 of qwen's messages went to P3. gemma
+  sent none in either run.
+- `max_steps: 15` overrun reproduced: qwen averaged 19.7 steps (v3: 20.4),
+  gemma 10.7 (v3: 8.3). This is now a confirmed two-run pattern and should
+  be resolved before step budget is treated as controlled.
+- Truncation: gemma 12.2% (v3: 15.6%), qwen 6.3% (v3: 6.0%).
+- Invalid tool-call rate again 0.0% for both seats despite 4 rejected
+  channel actions — the analyzer still does not surface channel-layer
+  rejections.
+
+## Recommendations for v5
+
+1. **Render per-deal available actions in the channel projection**, with
+   explicit role labels and current state — "deal-000001: a payment of 50
+   gold is waiting for you; accept it with respond_to_payment by T165" and,
+   at proposal time, "you would PAY 50 gold". This addresses all three
+   role-confusion classes and the timing failure in one change, and it is a
+   projection change, not a guidance change.
+2. Keep the v4 guidance text. It demonstrably fixed action selection; the
+   remaining failures are state-visibility problems, not vocabulary ones.
+3. Give P3 a scripted acceptance path so LLM-initiated deals can complete.
+4. Investigate the `max_steps` overrun (now confirmed across two runs).
