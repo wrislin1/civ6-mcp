@@ -192,3 +192,135 @@ remaining levers target deal-object creation directly:
 3. Keep roster, steps (15), and 90-turn budget fixed so guidance is the
    isolated variable (or guidance + opener as a combined treatment if we
    accept two levers for a faster answer).
+
+---
+
+# v3: both levers land — deal machinery engages, payment step is the wall
+
+**Date:** 2026-07-26 · **Run:** `arena_runs/arena-channels-behavior-v3` ·
+**Config:** `experiments/arena-channels-behavior-v3.yaml` (implementation
+`49f9903..02fbfa2`) · v2 baseline plus the two reserved levers applied
+together: directive guidance naming the deal actions, and a scripted P3
+opener proposing a formal deal to each LLM seat on turn 157.
+
+## Result: all three criteria met
+
+- 90/90 puppet turns over game turns 157–186, zero failed turns, $0.00
+  (gemma 1.22M prompt / 9.6k completion; qwen 2.56M / 50.6k).
+- **3 deal objects, 12 messages, 26 acknowledgements, 2 grievances.**
+- **Primary** (≥1 `respond_to_deal` per LLM seat): met at T158 — both seats
+  accepted the scripted opener one turn after it landed.
+- **Secondary** (≥1 deal terminal honored/settled): met at T165 —
+  `deal-000001` completed the full lifecycle.
+- **Stretch** (LLM-initiated `propose_deal`): met at T166 — qwen proposed
+  `deal-000003` to gemma unprompted.
+
+v2 produced zero deal actions in 30 game turns, not even an invalid one.
+v3 produced 14 applied deal actions and 7 rejected ones in the same span.
+
+## The three deals
+
+| Deal | Parties | Arc | Outcome |
+|------|---------|-----|---------|
+| `deal-000001` | P3 → gemma | proposed T157, accepted T158, favor satisfied T163, auto-funded T163, payment accepted T165 | **honored / settled** |
+| `deal-000002` | P3 → qwen | proposed T157, accepted T158, favor satisfied T163, auto-funded T163, no payment response | **broken** (grv-000001) |
+| `deal-000003` | qwen → gemma | proposed T166, accepted T167, funded T169, no payment response | **broken** (grv-000002) |
+
+`deal-000003` is the notable one: qwen proposed, gemma accepted, qwen
+funded — a complete LLM-to-LLM negotiation with no scripted involvement at
+any step. It failed only at the counterparty's payment acknowledgement.
+
+Both favors were verified deterministically from real unit observations
+(`keep_units_away`, evidence `obs-000038`), not self-report. Both LLM civs
+genuinely kept military units ≥3 tiles from P3 for the full window.
+
+## The payment step is the single point of failure
+
+Both LLM-side deals died on the same action, and it is the one action the
+v3 directive never names:
+
+| Grievance | Turn | Offender | Reason |
+|-----------|------|----------|--------|
+| `grv-000001` | T165 | qwen | exact linked payment not accepted by deadline |
+| `grv-000002` | T171 | gemma | exact linked payment not accepted by deadline |
+
+All 7 rejected channel actions cluster around this gap:
+
+- **6 × wrong-role `fund_deal`** (gemma 4, qwen 1, plus qwen's inverse
+  error) — every one from a player who was *not* the proposer. Not one
+  came from a player who actually owed a payment.
+- **1 × `respond_to_deal` by the proposer** (qwen, T167, on its own deal).
+- **1 × hallucinated deal id** (gemma, T166, `deal-000010` — never existed).
+
+The guidance sentence is the likely cause. It ends:
+
+> "...fund deals you owe with fund_deal."
+
+"Deals you owe" is ambiguous between owing a *favor* and owing a *payment*.
+Both models resolved it toward the favor reading: gemma owed only favors
+across all three deals and reached for `fund_deal` on four separate turns.
+Meanwhile nothing in the directive tells a proposer with `up_front` timing
+to pay before the favor begins, and nothing names `respond_to_payment` at
+all — so the receiving side has no vocabulary for the step that terminates
+the deal.
+
+Two behaviors qualify the "models can't operate payments" reading:
+
+- gemma **did** find `respond_to_payment` at T165 on `deal-000001`, after
+  three rejections — then reverted to `fund_deal` on `deal-000003` four
+  turns later and let it break. The success did not transfer to the next
+  instance; it was situational search, not learning.
+- qwen **did** use `fund_deal` correctly as proposer at T169, on the
+  deadline turn, after having misfired it as counterparty at T164.
+
+Both models act at the deadline rather than before it, and both burn
+rejections finding the right action.
+
+## Engagement shifted earlier and then collapsed
+
+- First LLM channel action at **T157** (qwen → gemma), versus **T165** in
+  both v1b and v2 with the identical roster, save, and step budget. The
+  directive guidance appears to remove the warm-up delay.
+- All channel activity finished by **T177**. The final 9 game turns
+  (178–186) produced zero channel actions — the same burst-then-lull shape
+  v2 showed, but with the burst carrying real mechanism instead of chat.
+- qwen sent 10 of the 12 messages; 9 went to gemma, which never replied to
+  any of them. qwen looped on an unanswered non-aggression thread from
+  T157–T163 while handling its actual deals correctly, then at T165
+  drafted a deal proposal *as prose* to gemma — and reissued the same
+  intent as a real `propose_deal` action one turn later.
+
+## Tooling observations
+
+- The scripted-dispatch stderr instrumentation added before this run
+  (`02fbfa2`) worked as designed: two `channel dispatch OK: player=3
+  turn=157 action=propose_deal` lines confirmed the treatment fired within
+  seconds of arming, rather than after the run.
+- **`max_steps: 15` was not binding for qwen.** The analyzer reports an
+  average of 20.4 steps and per-turn peaks of 29–32. gemma stayed under at
+  8.3 average. Worth investigating before treating step budget as a
+  controlled variable again — v1b's step-headroom conclusion may need
+  re-examination.
+- Truncation incident rate: gemma **15.6%**, qwen 6.0%. gemma truncated on
+  roughly one turn in six; its higher error rate may be related.
+- Invalid tool-call rate was 0.0% for both seats — channel-layer rejections
+  are not counted as invalid tool calls, so the analyzer's invalid-rate
+  metric does not surface this run's central failure mode.
+
+## Recommendations for v4
+
+Single-variable change, everything else held at the v3 baseline:
+
+1. **Name every action in the directive**, including `respond_to_payment`,
+   and disambiguate the payment sentence — "if you proposed a deal with
+   up-front payment, fund it with fund_deal; when a payment is offered to
+   you, accept it with respond_to_payment" — replacing "fund deals you owe
+   with fund_deal", which misrouted six actions.
+2. **Surface per-deal available actions in the channel block.** The
+   projection already knows each deal's id, both party ids, and its state;
+   rendering "your available actions" per open deal would address the
+   wrong-role class and gemma's hallucinated deal id together. This is a
+   projection change, not a guidance change, so it should be a separate
+   variable from (1) if we want clean attribution.
+3. Investigate the `max_steps` overrun before relying on step budget as a
+   controlled variable.
