@@ -438,9 +438,10 @@ acceptance path for P3 or expect only LLM→LLM proposals to complete.
 - Messaging collapsed toward the scripted seat: v3 had 9 qwen→gemma
   messages; v4 had **zero**. All 6 of qwen's messages went to P3. gemma
   sent none in either run.
-- `max_steps: 15` overrun reproduced: qwen averaged 19.7 steps (v3: 20.4),
-  gemma 10.7 (v3: 8.3). This is now a confirmed two-run pattern and should
-  be resolved before step budget is treated as controlled.
+- `max_steps: 15` "overrun" (qwen 19.7 steps, v3: 20.4) was investigated
+  after the run and is **not** an overrun — see the v5 section. `max_steps`
+  caps model round-trips; the transcript records one step per tool call.
+  v1b's step-headroom conclusion stands.
 - Truncation: gemma 12.2% (v3: 15.6%), qwen 6.3% (v3: 6.0%).
 - Invalid tool-call rate again 0.0% for both seats despite 4 rejected
   channel actions — the analyzer still does not surface channel-layer
@@ -458,3 +459,94 @@ acceptance path for P3 or expect only LLM→LLM proposals to complete.
    remaining failures are state-visibility problems, not vocabulary ones.
 3. Give P3 a scripted acceptance path so LLM-initiated deals can complete.
 4. Investigate the `max_steps` overrun (now confirmed across two runs).
+
+---
+
+# v5: implementing the v4 recommendations
+
+**Date:** 2026-07-26 · **Config:** `experiments/arena-channels-behavior-v5.yaml`
+· implementation `588eb91`. Not yet run.
+
+All four v4 recommendations are implemented. v5 differs from v4 only by
+P3's `auto_accept` flag (pinned by
+`test_arena_channels_behavior_v5_differs_from_v4_only_in_run_id_and_auto_accept`);
+the behavioral change under test is the projection rendering, which applies
+to every channels-enabled run.
+
+## 1. Per-deal affordances in the projection
+
+`deal_action_hint(deal, viewer)` (`channels.py`) renders, under every deal
+in the channel block, the viewer's role and the single currently-legal
+action. The v4 state that both models failed to act on now reads:
+
+```
+- [deal-000001] Player 3 -> Player 1: active; ... payment=50 gold/on_delivery
+  (offered); accept by 160, fund by 165, payment response by 165, favor due 163
+  YOU ACCEPTED THIS — you are the payee, you receive 50 gold and owe the
+  favor; AVAILABLE NOW: respond_to_payment — the 50 gold is waiting for you,
+  accept it by turn 165
+```
+
+Before the payment is funded the same deal reads `AVAILABLE NOW: nothing —
+waiting for Player 3 to fund the payment`, which is the state v4's models
+misread as "act now". The role line is conditional before acceptance
+(`PROPOSED TO YOU — accept and you become the payee`) and past-tense after.
+
+This targets all three failure classes at once: role (v3), timing (v4), and
+the payer/payee direction that v4's `deal-000003` inverted.
+
+## 2. Tool schemas state who may call them
+
+`propose_deal` now says "YOU are the payer: you pay payment_gold and
+to_player performs the favor. If you want to be PAID for a favor you
+perform, do not use this." `fund_deal` and `respond_to_payment` name the
+eligible role and the required payment status. v4's inverted deal object
+was constructed against a schema whose description was "Propose an
+unofficial favor-for-gold deal" — silent on direction.
+
+## 3. Scripted seats can answer (`channels.auto_accept`)
+
+Opt-in per civ. When set, `ScriptedPolicy` accepts deals proposed to it
+(within `accept_by_turn`) and accepts payments offered to it (within
+`payment_response_by_turn`), skipping terminal deals. Default `False`
+leaves every existing artifact unchanged. This exists because v4's
+`deal-000003` — the only LLM-initiated deal of the run — expired
+unanswered: the scripted seat had no respond path at all.
+
+## 4. `max_steps` resolved: a metric mismatch, not an overrun
+
+`agent.py:198` loops `for _ in range(max_steps)` over **model replies**,
+while `agent.py:285` appends one transcript step per **tool call**, inside
+a loop over `reply.tool_calls`. One reply can carry several calls, so
+qwen's ~15 round-trips were recorded as ~20 "steps".
+
+The analyzer now reports both. On the real v4 run:
+
+| player | model | max_steps | avg model turns | avg tool calls |
+|--------|-------|-----------|-----------------|----------------|
+| 1 | gemma4-26b | 15 | 10.7 | 10.7 |
+| 2 | qwen3.6-27b | 15 | **12.4** | 19.7 |
+
+qwen never exceeded the cap. **v1b's step-headroom conclusion stands** —
+raising 10→15 gave real additional round-trips. The v4 findings entry above
+has been corrected.
+
+## Also: the analyzer now counts rejected channel actions
+
+Both v3 and v4 reported `invalid call rate: 0.0%` while every LLM-side deal
+died on a rejected channel action — channel dispatch never reaches the tool
+layer, so the per-player metric could not see it. The channels section now
+reports `Rejected channel actions` with a by-reason breakdown, which for v4
+is the four premature `respond_to_payment` calls.
+
+## What v5 tests
+
+Whether state-explicit affordances succeed where vocabulary alone did not.
+The specific prediction: the four premature `respond_to_payment` calls
+should disappear, both scripted deals should reach honored/settled, and any
+LLM-initiated deal aimed at P3 should now terminate rather than expire.
+
+If the payment step still fails with the role, the action, the deadline,
+and the current legality all stated explicitly on every turn, the
+constraint is not prompt-side and the next lever is model capability
+(the v1 recommendation 4 that has never been tried: larger local models).
