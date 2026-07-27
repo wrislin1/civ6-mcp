@@ -51,6 +51,8 @@ STANDARD_TIER_SNAPSHOT = (
     "improve_tile",
     "remove_feature",
     "repair_improvement",
+    "get_great_people",
+    "activate_great_person",
     "purchase_item",
     "heal_unit",
     "alert_unit",
@@ -123,6 +125,19 @@ def test_resolve_tools_full_tracks_registry_additions(monkeypatch):
 
 def test_standard_tier_is_pinned_for_empire_behavior():
     assert TIERS["standard"] == STANDARD_TIER_SNAPSHOT
+
+
+def test_standard_gp_activation_is_capability_gated():
+    assert filter_tools(
+        TIERS["standard"], {"gp_unit": False}
+    ) == tuple(
+        name
+        for name in TIERS["standard"]
+        if name != "activate_great_person"
+    )
+    visible = filter_tools(TIERS["standard"], {"gp_unit": True})
+    assert "get_great_people" in visible
+    assert "activate_great_person" in visible
 
 
 def test_forbidden_tools_never_defined():

@@ -136,6 +136,17 @@ def _unit_actions(server_tree: ast.Module) -> set[str]:
     }
 
 
+def _tier_action_verbs_absent(tier: str) -> list[str]:
+    names = set(TIERS[tier])
+    return sorted(
+        {
+            tool.verb
+            for name, tool in TOOL_REGISTRY.items()
+            if tool.verb and name not in names
+        }
+    )
+
+
 def collect_evidence() -> dict[str, object]:
     server_tree = _parse(SERVER_PATH)
     registry_tree = _parse(REGISTRY_PATH)
@@ -176,6 +187,10 @@ def collect_evidence() -> dict[str, object]:
         "mcp_gamestate_methods_absent_from_arena": sorted(
             mcp_methods - registry_methods
         ),
+        "tier_action_verbs_absent": {
+            "minimal": _tier_action_verbs_absent("minimal"),
+            "standard": _tier_action_verbs_absent("standard"),
+        },
     }
 
 
@@ -201,6 +216,9 @@ def _print_human(evidence: dict[str, object]) -> None:
         "MCP-reached GameState methods absent from arena registry:",
         evidence["mcp_gamestate_methods_absent_from_arena"],
     )
+    tier_absent = evidence["tier_action_verbs_absent"]
+    print("Minimal action verbs absent:", tier_absent["minimal"])
+    print("Standard action verbs absent:", tier_absent["standard"])
     print()
     print(
         "| tool | minimal | minimal disposition | standard | "

@@ -4,11 +4,11 @@
 
 This audit compares three surfaces: MCP tools exposed in `src/civ_mcp/server.py`, the arena registry in `src/civ_mcp/arena/registry.py`, and the unit-action reference in `CLAUDE.md`. The registry increased from 89 tools before this change to 90 after it. `scripts/audit_arena_tool_coverage.py` collects every `gs` attribute referenced by public MCP tools, intersects those references with actual `GameState` methods, and therefore includes direct calls and bound methods passed as callbacks. The executable `unit_action` match cases define the direct gameplay-action set; those cases are compared with the action verbs exposed by the arena registry and documented in `CLAUDE.md`.
 
-The deterministic registry snapshot after this change is: `registry=90`, `minimal=15`, `standard=26`, and `full=90`.
+The deterministic registry snapshot after this change is: `registry=90`, `minimal=15`, `standard=28`, and `full=90`.
 
 ## Fixed This Cycle
 
-`repair_improvement` is `add-to-standard-now`: it is a routine, non-destructive builder action that restores a pillaged improvement on the builder's current tile. `get_builder_tasks` is also `add-to-standard-now`, so a standard-tier pilot can identify routine builder work before acting.
+`repair_improvement` is `add-to-standard-now`: it is a routine, non-destructive builder action that restores a pillaged improvement on the builder's current tile. `get_builder_tasks` is also `add-to-standard-now`, so a standard-tier pilot can identify routine builder work before acting. The standard tier now also includes Great Person discovery and activation.
 
 The MCP unit-action reference now documents the three previously omitted actions: `repair`, `remove_improvement`, and `sacrifice_charges`.
 
@@ -81,7 +81,7 @@ Every absence from `minimal` is intentional because the historical tier is froze
 | `get_pending_trades` | yes | present | yes | present | yes |
 | `get_trade_options` | no | intentionally-excluded | no | listed-for-later | yes |
 | `get_city_states` | no | intentionally-excluded | no | listed-for-later | yes |
-| `get_great_people` | no | intentionally-excluded | no | listed-for-later | yes |
+| `get_great_people` | no | intentionally-excluded | yes | present | yes |
 | `get_empire_resources` | no | intentionally-excluded | no | listed-for-later | yes |
 | `get_victory_progress` | no | intentionally-excluded | no | listed-for-later | yes |
 | `get_pathing_estimate` | no | intentionally-excluded | no | listed-for-later | yes |
@@ -133,7 +133,7 @@ Every absence from `minimal` is intentional because the historical tier is froze
 | `spy_action` | no | intentionally-excluded | no | listed-for-later | yes |
 | `change_government` | no | intentionally-excluded | no | listed-for-later | yes |
 | `spread_religion` | no | intentionally-excluded | no | listed-for-later | yes |
-| `activate_great_person` | no | intentionally-excluded | no | listed-for-later | yes |
+| `activate_great_person` | no | intentionally-excluded | yes | present | yes |
 | `get_gossip` | no | intentionally-excluded | no | listed-for-later | yes |
 | `get_loyalty` | no | intentionally-excluded | no | listed-for-later | yes |
 | `get_climate` | no | intentionally-excluded | no | listed-for-later | yes |
@@ -146,4 +146,4 @@ Every absence from `minimal` is intentional because the historical tier is froze
 
 ## Decision Record
 
-Routine repair belongs in `standard` because it restores existing empire infrastructure without destroying player state. `remove_improvement` and `delete` remain deferred because they are destructive. `sacrifice_charges` and `build_route` remain deferred because they are specialized actions with material or strategic costs. Passive `sleep` remains deferred because the standard tier already provides explicit active orders and does not need a second passive hold behavior.
+Routine repair belongs in `standard` because it restores existing empire infrastructure without destroying player state. Great Person activation is capability-gated and paired with its read-only discovery tool. `remove_improvement` and `delete` remain deferred because they are destructive. `sacrifice_charges` and `build_route` remain deferred because they are specialized actions with material or strategic costs. Passive `sleep` remains deferred because the standard tier already provides explicit active orders and does not need a second passive hold behavior.

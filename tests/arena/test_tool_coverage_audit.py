@@ -87,3 +87,30 @@ def test_coverage_audit_accounts_for_callbacks_and_executable_unit_actions():
         "sleep_unit",
         "submit_congress",
     ]
+
+
+def test_tier_action_verbs_are_raw_and_reachability_aware():
+    evidence = _audit_module().collect_evidence()
+    absent = evidence["tier_action_verbs_absent"]
+
+    assert "improve" in absent["minimal"]
+    assert "activate_great_person" in absent["minimal"]
+    assert "improve" not in absent["standard"]
+    assert "activate_great_person" not in absent["standard"]
+    assert "activate" not in absent["minimal"]
+
+
+def test_checked_in_audit_tracks_gp_tier_rows():
+    text = (
+        REPO_ROOT / "docs" / "research" / "arena-tool-coverage-audit.md"
+    ).read_text(encoding="utf-8")
+
+    assert "standard=28" in text
+    assert (
+        "| `get_great_people` | no | intentionally-excluded | "
+        "yes | present | yes |"
+    ) in text
+    assert (
+        "| `activate_great_person` | no | intentionally-excluded | "
+        "yes | present | yes |"
+    ) in text
