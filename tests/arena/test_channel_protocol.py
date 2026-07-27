@@ -289,3 +289,12 @@ def test_tool_schemas_expose_only_bound_strict_action_arguments():
     assert "narrative" not in favor["properties"]["term_type"]["enum"]
     narrative_favor = channel_tool_schemas(narrative_allowed=True)[1]["function"]["parameters"]["properties"]["favor"]
     assert "narrative" in narrative_favor["properties"]["term_type"]["enum"]
+
+
+def test_propose_deal_description_states_payer_without_discouraging_use():
+    schemas = {schema["function"]["name"]: schema for schema in channel_tool_schemas()}
+
+    assert schemas["propose_deal"]["function"]["description"] == (
+        "Propose an unofficial favor-for-gold deal. YOU are the payer: you "
+        "pay payment_gold and to_player performs the favor."
+    )

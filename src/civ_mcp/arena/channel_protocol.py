@@ -442,9 +442,7 @@ def channel_tool_schemas(*, narrative_allowed: bool = False) -> list[dict]:
         _tool_schema(
             "propose_deal",
             "Propose an unofficial favor-for-gold deal. YOU are the payer: you "
-            "pay payment_gold and to_player performs the favor. If you want to "
-            "be PAID for a favor you perform, do not use this — send a message "
-            "asking the other player to propose the deal to you.",
+            "pay payment_gold and to_player performs the favor.",
             {
                 "to_player": player,
                 "text": message,

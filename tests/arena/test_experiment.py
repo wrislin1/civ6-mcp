@@ -31,6 +31,7 @@ ARENA_CHANNELS_BEHAVIOR_V2 = REPO_ROOT / "experiments" / "arena-channels-behavio
 ARENA_CHANNELS_BEHAVIOR_V3 = REPO_ROOT / "experiments" / "arena-channels-behavior-v3.yaml"
 ARENA_CHANNELS_BEHAVIOR_V4 = REPO_ROOT / "experiments" / "arena-channels-behavior-v4.yaml"
 ARENA_CHANNELS_BEHAVIOR_V5 = REPO_ROOT / "experiments" / "arena-channels-behavior-v5.yaml"
+ARENA_CHANNELS_BEHAVIOR_V6 = REPO_ROOT / "experiments" / "arena-channels-behavior-v6.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -371,6 +372,24 @@ def test_arena_channels_behavior_v5_differs_from_v4_only_in_run_id_and_auto_acce
         for player in v5.players
     ]
     assert replace(v5, run_id=v4.run_id, players=normalized) == v4
+
+
+def test_arena_channels_behavior_v6_differs_from_v5_only_in_run_id():
+    v5_bytes = ARENA_CHANNELS_BEHAVIOR_V5.read_bytes()
+    old_run_id = b"run_id: arena-channels-behavior-v5\n"
+    new_run_id = b"run_id: arena-channels-behavior-v6\n"
+
+    assert v5_bytes.count(old_run_id) == 1
+    assert ARENA_CHANNELS_BEHAVIOR_V6.read_bytes() == v5_bytes.replace(
+        old_run_id,
+        new_run_id,
+        1,
+    )
+    v5 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V5)
+    v6 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V6)
+
+    assert v6.run_id == "arena-channels-behavior-v6"
+    assert replace(v6, run_id=v5.run_id) == v5
 
 
 def test_rejects_auto_accept_without_channels_enabled(tmp_path):
