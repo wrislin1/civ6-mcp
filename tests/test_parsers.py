@@ -206,6 +206,22 @@ class TestParseUnits:
         assert "if plotIndex == currentIndex then" in activation_probe
         assert "CanStartOperation" not in activation_probe
 
+    def test_activation_probe_reads_great_person_class_inside_pcall(self):
+        """A raise from the column read must not abort the whole unit loop.
+
+        The loop's sentinel print is the only end-of-output marker, so an
+        uncaught error mid-iteration truncates the roster silently instead of
+        failing loudly.
+        """
+        query = build_units_query()
+        activation_probe = query.split("local canActivateHere", 1)[1].split(
+            "print(uid", 1
+        )[0]
+        before_pcall = activation_probe.split("pcall(", 1)[0]
+
+        assert "GreatPersonClass" in activation_probe
+        assert "GreatPersonClass" not in before_pcall
+
 
 # ---------------------------------------------------------------------------
 # parse_combat_estimate

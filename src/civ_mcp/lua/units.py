@@ -180,8 +180,12 @@ for i, u in Players[id]:GetUnits():Members() do
             if #meList > 0 then validImps = table.concat(meList, ";") end
         end
         local canActivateHere = "0"
-        if gp and entry and entry.GreatPersonClass then
+        if gp then
+            -- Every read here is inside the pcall on purpose: a raise from the
+            -- great-person column would kill the unit loop before the sentinel
+            -- print and truncate the whole roster.
             pcall(function()
+                if not (entry and entry.GreatPersonClass) then return end
                 local currentPlot = Map.GetPlot(x, y)
                 local plots = gp:GetActivationHighlightPlots()
                 if currentPlot and plots then
