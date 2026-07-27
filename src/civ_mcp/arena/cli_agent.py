@@ -118,6 +118,9 @@ def _clamp_final_summary(text: str, max_summary_chars: int) -> str:
 
 class CLIAgentPolicy:
     needs_exclusive_tuner = True   # the CLI's civ6 MCP needs the single tuner slot
+    # The subprocess calls the MCP server, not the arena registry, so every
+    # rendered call hint must use MCP syntax.
+    tool_surface = "mcp"
 
     def __init__(self, provider, cost, project_dir, model="", timeout_s=900, max_turns=40, options=None):
         self.provider, self.cost, self.project_dir = provider, cost, project_dir

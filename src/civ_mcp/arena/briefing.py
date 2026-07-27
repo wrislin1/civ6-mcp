@@ -342,7 +342,7 @@ async def build_briefing(
     opts: BriefingOptions,
     budget_tokens: int,
     *,
-    surface: nr.ToolSurface = "mcp",
+    surface: nr.ToolSurface,
     available_tools: Collection[str] | None = None,
 ) -> Briefing:
     surface = nr.validate_surface(surface)

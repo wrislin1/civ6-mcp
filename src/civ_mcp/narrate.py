@@ -1643,7 +1643,12 @@ def narrate_trade_routes(status: lq.TradeRouteStatus) -> str:
     return "\n".join(lines)
 
 
-def narrate_trade_destinations(dests: list[lq.TradeDestination]) -> str:
+def narrate_trade_destinations(
+    dests: list[lq.TradeDestination],
+    *,
+    surface: str = "mcp",
+) -> str:
+    surface = validate_surface(surface)
     if not dests:
         return "No valid trade route destinations. Check that your trader is in a city and has moves."
     domestic = [d for d in dests if d.is_domestic]
@@ -1689,7 +1694,16 @@ def narrate_trade_destinations(dests: list[lq.TradeDestination]) -> str:
         lines.append(
             f"\nCity-state quests (send trade route for envoy): {', '.join(quest_cs)}"
         )
-    lines.append("\nUse unit_action with action='trade_route', target_x=X, target_y=Y")
+    # The arena registry has no unit_action tool -- naming it there costs the
+    # model a step on an invalid call before it rediscovers start_trade_route.
+    if surface == "arena":
+        lines.append(
+            "\nUse start_trade_route with unit_id, target_x=X, target_y=Y"
+        )
+    else:
+        lines.append(
+            "\nUse unit_action with action='trade_route', target_x=X, target_y=Y"
+        )
     return "\n".join(lines)
 
 

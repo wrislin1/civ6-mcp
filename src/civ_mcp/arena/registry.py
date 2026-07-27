@@ -14,7 +14,9 @@ class ToolDef:
     description: str
     params: dict[str, dict[str, Any]]
     required: tuple[str, ...]
-    call: Callable[[Any, dict[str, Any]], Awaitable[str]]
+    # Most tools take (gs, args). Tools with needs_tool_context=True also take
+    # an ``available_tools`` keyword that dispatch supplies; see below.
+    call: Callable[..., Awaitable[str]]
     # Analysis verb for action tools (e.g. "move" for move_unit); "" for query
     # tools. The registry is the single source of truth for the tool->verb map;
     # arena.vocab.LOCAL_TOOL_VERBS mirrors it (test-enforced) to stay import-light.
@@ -22,6 +24,12 @@ class ToolDef:
     # Capability-snapshot flag gating this tool's exposure (spec §1);
     # None = always exposed. Flag names live in arena.capabilities.CAP_FLAGS.
     requires: str | None = None
+    # True for narrators that render surface-specific call syntax and so need
+    # the seat's resolved tool tuple. dispatch passes it as ``available_tools``.
+    # Declaring it here rather than name-matching in dispatch keeps ``call``
+    # the single invocation path -- a name-based special case leaves the
+    # ToolDef's own ``call`` as a second, divergent path.
+    needs_tool_context: bool = False
 
 
 def _int_param(
@@ -70,7 +78,7 @@ async def _builder_tasks_text(
     gs: Any,
     args: dict[str, Any],
     *,
-    available_tools: Collection[str] | None = None,
+    available_tools: Collection[str],
 ) -> str:
     del args
     tasks, builders = await gs.get_builder_tasks()
@@ -256,7 +264,7 @@ async def _trade_destinations_text(gs: Any, args: dict[str, Any]) -> str:
     unit_index = _unit_index(args["unit_id"])
     return _render(
         await gs.get_trade_destinations(unit_index),
-        nr.narrate_trade_destinations,
+        lambda dests: nr.narrate_trade_destinations(dests, surface="arena"),
     )
 
 
@@ -343,10 +351,11 @@ def _tool(
     description: str,
     params: dict[str, dict[str, Any]] | None,
     required: Sequence[str],
-    call: Callable[[Any, dict[str, Any]], Awaitable[str]],
+    call: Callable[..., Awaitable[str]],
     *,
     verb: str = "",
     requires: str | None = None,
+    needs_tool_context: bool = False,
 ) -> ToolDef:
     return ToolDef(
         name=name,
@@ -356,6 +365,7 @@ def _tool(
         call=call,
         verb=verb,
         requires=requires,
+        needs_tool_context=needs_tool_context,
     )
 
 
@@ -505,7 +515,12 @@ TOOL_REGISTRY: dict[str, ToolDef] = {
         "List your units with positions and movement.",
         None,
         (),
-        lambda gs, args: _narrate_units(gs, args),
+        # _narrate_units is defined below TOOL_REGISTRY; the lambda defers the
+        # lookup without reordering the module.
+        lambda gs, args, *, available_tools: _narrate_units(
+            gs, args, available_tools=available_tools
+        ),
+        needs_tool_context=True,
     ),
     "get_cities": _tool(
         "get_cities",
@@ -713,6 +728,7 @@ TOOL_REGISTRY: dict[str, ToolDef] = {
         None,
         (),
         _builder_tasks_text,
+        needs_tool_context=True,
     ),
     "get_diplomacy": _tool(
         "get_diplomacy",
@@ -1490,20 +1506,9 @@ async def dispatch(
     if allowed is not None and name not in allowed:
         raise KeyError(name)
     tool = TOOL_REGISTRY[name]
-    if name == "get_units":
+    if tool.needs_tool_context:
         visible = tuple(TOOL_REGISTRY) if allowed is None else tuple(allowed)
-        return await _narrate_units(
-            gs,
-            args,
-            available_tools=visible,
-        )
-    if name == "get_builder_tasks":
-        visible = tuple(TOOL_REGISTRY) if allowed is None else tuple(allowed)
-        return await _builder_tasks_text(
-            gs,
-            args,
-            available_tools=visible,
-        )
+        return await tool.call(gs, args, available_tools=visible)
     return await tool.call(gs, args)
 
 
@@ -1516,7 +1521,7 @@ async def _narrate_units(
     gs: Any,
     args: dict[str, Any],
     *,
-    available_tools: Collection[str] | None = None,
+    available_tools: Collection[str],
 ) -> str:
     del args
     result = await gs.get_units()

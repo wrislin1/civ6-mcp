@@ -680,10 +680,19 @@ class RecordingPolicy:
 
     provider = "local"
 
-    def __init__(self, result, options=None, needs_exclusive_tuner=False):
+    def __init__(
+        self,
+        result,
+        options=None,
+        needs_exclusive_tuner=False,
+        tool_surface="mcp",
+    ):
         self.result = result
         self.options = options or CivOptions()
         self.needs_exclusive_tuner = needs_exclusive_tuner
+        # Real policies declare this; the coordinator reads it to pick call
+        # syntax and skips the briefing entirely when it is missing.
+        self.tool_surface = tool_surface
         self.calls = []
 
     async def __call__(self, gs, player_id, turn, **kwargs):
@@ -1066,6 +1075,50 @@ async def test_exclusive_cli_briefing_built_before_disconnect(monkeypatch):
 
     assert result["puppet_turns_played"] == 1
     assert built_connected == [True]
+
+
+@pytest.mark.asyncio
+async def test_prebuilt_briefing_takes_its_surface_from_the_policy(monkeypatch):
+    """The exclusive path must not assume its seat is always a CLI seat.
+
+    surface is read from the policy rather than inferred from
+    needs_exclusive_tuner, so an arena-surface policy that ever needs the
+    tuner slot still gets registry call syntax.
+    """
+    from civ_mcp.arena.briefing import Briefing
+
+    seen_surfaces = []
+
+    async def fake_build_briefing(gs, opts, budget, *, surface, available_tools):
+        seen_surfaces.append(surface)
+        return Briefing(text="PREBUILT", tokens=2, sections=["overview"])
+
+    class ExclusiveArenaPolicy(RecordingPolicy):
+        needs_exclusive_tuner = True
+
+    monkeypatch.setattr(
+        "civ_mcp.arena.prompt_context.build_briefing",
+        fake_build_briefing,
+    )
+    conn = FakeConn()
+    gs = FakeGS()
+    opts = CivOptions(briefing=BriefingOptions(enabled=True))
+    cfg = ArenaConfig(
+        players=[PlayerSpec(7, "local", "gemma4-26b")],
+        max_puppet_turns=1,
+        puppet_ids=[7],
+    )
+    conn._polls = iter([["LOCAL|7", "TURN|2", "ACTIVE|true", "LAST|1"]])
+    pol = ExclusiveArenaPolicy(
+        {"summary": "ran"},
+        options=opts,
+        needs_exclusive_tuner=True,
+        tool_surface="arena",
+    )
+
+    await run_arena(conn, gs, cfg, policy=pol)
+
+    assert seen_surfaces == ["arena"]
 
 
 @pytest.mark.asyncio

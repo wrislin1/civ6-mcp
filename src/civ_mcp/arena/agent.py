@@ -77,6 +77,10 @@ def _should_resolve_n_ctx(
 
 
 class LLMPolicy:
+    # This seat dispatches through the arena registry, so rendered call hints
+    # must use registry syntax and respect its resolved tool tuple.
+    tool_surface = "arena"
+
     def __init__(self, backend, cost, max_steps: int = 6, options: CivOptions | None = None):
         self.backend, self.cost = backend, cost
         self.options = options or CivOptions(max_steps=max_steps)

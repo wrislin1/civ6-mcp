@@ -231,6 +231,7 @@ async def test_disabled_briefing_returns_empty_without_calling_game_state():
         NoCallGS(),
         BriefingOptions(enabled=False, sections=ALL),
         100_000,
+        surface="mcp",
     )
 
     assert b == Briefing()
@@ -271,6 +272,7 @@ async def test_promotions_builds_action_header():
         gs,
         BriefingOptions(enabled=True, sections=("promotions",)),
         100_000,
+        surface="mcp",
     )
 
     assert b.sections == ["promotions"]
@@ -290,6 +292,7 @@ async def test_promotions_and_units_reuse_cached_units():
         gs,
         BriefingOptions(enabled=True, sections=("promotions", "units")),
         100_000,
+        surface="mcp",
     )
 
     assert gs.get_units_calls == 1
@@ -427,7 +430,9 @@ async def test_units_briefing_rejects_invalid_surface():
 async def test_sections_in_priority_order_and_meta():
     gs = FakeGS()
 
-    b = await build_briefing(gs, BriefingOptions(enabled=True, sections=ALL), 100_000)
+    b = await build_briefing(
+        gs, BriefingOptions(enabled=True, sections=ALL), 100_000, surface="mcp"
+    )
 
     assert isinstance(b, Briefing)
     assert b.sections == [
@@ -460,6 +465,7 @@ async def test_production_options_fetches_cities_when_city_section_absent():
         gs,
         BriefingOptions(enabled=True, sections=("production_options",)),
         100_000,
+        surface="mcp",
     )
 
     assert b.sections == ["production_options"]
@@ -475,6 +481,7 @@ async def test_map_radius_expands_with_budget():
         gs,
         BriefingOptions(enabled=True, map_radius=2, sections=ALL),
         100_000,
+        surface="mcp",
     )
 
     assert b.radius == 5
@@ -511,6 +518,7 @@ async def test_map_expansion_accounts_for_header_and_separator(monkeypatch):
         OneCenterGS(),
         BriefingOptions(enabled=True, map_radius=2, sections=("map",)),
         10,  # 30 chars; radius 3 text plus the 10-char header would overflow
+        surface="mcp",
     )
 
     assert b.radius == 2
@@ -541,6 +549,7 @@ async def test_map_expansion_accounts_for_join_separator_after_prior_section(mon
         PriorSectionGS(),
         BriefingOptions(enabled=True, map_radius=2, sections=("overview", "map")),
         14,
+        surface="mcp",
     )
 
     assert len(b.text) <= 42
@@ -555,6 +564,7 @@ async def test_map_tiles_deduplicated():
         gs,
         BriefingOptions(enabled=True, map_radius=2, sections=("map",)),
         100_000,
+        surface="mcp",
     )
 
     assert b.text.count("(10,10):") == 1
@@ -568,6 +578,7 @@ async def test_map_radius_capped_at_five():
         gs,
         BriefingOptions(enabled=True, map_radius=9, sections=("map",)),
         100_000,
+        surface="mcp",
     )
 
     assert max(c[2] for c in gs.map_calls) <= 5
@@ -582,6 +593,7 @@ async def test_map_radius_stays_zero_when_map_not_included():
         gs,
         BriefingOptions(enabled=True, map_radius=2, sections=("map",)),
         10,
+        surface="mcp",
     )
 
     assert b.text == ""
@@ -598,6 +610,7 @@ async def test_partial_map_section_reports_rendered_radius():
         gs,
         BriefingOptions(enabled=True, map_radius=5, sections=("map",)),
         70,
+        surface="mcp",
     )
 
     assert "map" in b.sections
@@ -614,6 +627,7 @@ async def test_map_skipped_when_radius_nonpositive():
         gs,
         BriefingOptions(enabled=True, map_radius=0, sections=("map",)),
         100_000,
+        surface="mcp",
     )
 
     assert b.text == ""
@@ -630,6 +644,7 @@ async def test_extended_sections_render_real_dataclasses():
         gs,
         BriefingOptions(enabled=True, sections=("empire_resources", "victory")),
         100_000,
+        surface="mcp",
     )
 
     assert b.errors == []
@@ -687,6 +702,7 @@ async def test_rivals_and_threats_render_real_dataclasses():
         gs,
         BriefingOptions(enabled=True, sections=("rivals", "threats")),
         100_000,
+        surface="mcp",
     )
 
     assert b.errors == []
@@ -699,7 +715,9 @@ async def test_rivals_and_threats_render_real_dataclasses():
 async def test_hard_truncation_at_budget():
     gs = FakeGS()
 
-    b = await build_briefing(gs, BriefingOptions(enabled=True, sections=ALL), 50)
+    b = await build_briefing(
+        gs, BriefingOptions(enabled=True, sections=ALL), 50, surface="mcp"
+    )
 
     assert len(b.text) <= 50 * 3
     assert b.tokens == len(b.text) // 3
@@ -714,7 +732,9 @@ async def test_failing_section_skipped_and_logged():
 
     gs.get_tech_civics = boom
 
-    b = await build_briefing(gs, BriefingOptions(enabled=True, sections=ALL), 100_000)
+    b = await build_briefing(
+        gs, BriefingOptions(enabled=True, sections=ALL), 100_000, surface="mcp"
+    )
 
     assert "research" not in b.sections
     assert any("research" in e and "no tuner" in e for e in b.errors)
@@ -814,6 +834,7 @@ async def test_great_people_section_renders_when_configured():
         gs,
         BriefingOptions(enabled=True, sections=("empire_resources", "great_people")),
         100_000,
+        surface="mcp",
     )
 
     assert "great_people" in b.sections
@@ -833,6 +854,7 @@ async def test_great_people_omitted_when_not_configured():
         gs,
         BriefingOptions(enabled=True, sections=("empire_resources",)),
         100_000,
+        surface="mcp",
     )
 
     assert "great_people" not in b.sections

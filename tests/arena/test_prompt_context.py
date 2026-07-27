@@ -103,6 +103,7 @@ async def test_maybe_build_briefing_returns_empty_when_disabled(monkeypatch):
         n_ctx=8192,
         playbook_chars=0,
         tool_schema_chars=0,
+        surface="mcp",
     )
 
     assert result == Briefing()

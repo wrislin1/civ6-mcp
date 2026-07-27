@@ -1896,12 +1896,19 @@ async def run_arena(
                         playbook_chars = (
                             len(load_playbook()) if opts.playbook == "condensed" else 0
                         )
+                        # The policy declares its own call syntax; reading it
+                        # from the policy (rather than assuming the exclusive
+                        # path is always a CLI seat) keeps this correct if an
+                        # arena-surface policy ever needs the tuner slot. A
+                        # policy without the attribute raises here and degrades
+                        # to no briefing, which beats wrong call syntax.
                         policy_kwargs["briefing"] = await maybe_build_briefing(
                             gs,
                             opts,
                             n_ctx=explicit_n_ctx(opts.context_budget),
                             playbook_chars=playbook_chars,
                             tool_schema_chars=0,
+                            surface=pol.tool_surface,
                         )
                     except Exception as e:
                         # A per-civ briefing-build failure (a missing playbook

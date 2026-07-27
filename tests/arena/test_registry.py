@@ -887,6 +887,27 @@ async def test_get_units_narration_respects_allowed_tool_reachability():
     assert "upgrade_unit with" in full
 
 
+def test_tool_context_is_declared_not_name_matched():
+    """dispatch must route every tool through ToolDef.call.
+
+    A name-based special case leaves ``TOOL_REGISTRY[name].call`` as a second
+    path that silently renders no call hints; requiring available_tools makes
+    that path fail loudly instead.
+    """
+    import inspect
+
+    context_tools = {
+        name for name, tool in TOOL_REGISTRY.items() if tool.needs_tool_context
+    }
+    assert context_tools == {"get_units", "get_builder_tasks"}
+
+    for name in context_tools:
+        signature = inspect.signature(TOOL_REGISTRY[name].call)
+        parameter = signature.parameters["available_tools"]
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        assert parameter.default is inspect.Parameter.empty
+
+
 @pytest.mark.asyncio
 async def test_get_units_narration_respects_capability_filtered_tools():
     from civ_mcp import lua as lq
