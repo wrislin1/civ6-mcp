@@ -452,7 +452,14 @@ for node in server_tree.body:
     )
 
 registry_methods = set(re.findall(r"gs\.([a-z_]+)\(", registry_text))
-action_line = re.search(r"action: One of: ([^\n]+)", server_text)
+unit_action_node = next(
+    node
+    for node in server_tree.body
+    if isinstance(node, ast.AsyncFunctionDef) and node.name == "unit_action"
+)
+unit_action_doc = ast.get_docstring(unit_action_node)
+assert unit_action_doc is not None
+action_line = re.search(r"action: One of: ([^\n]+)", unit_action_doc)
 assert action_line is not None
 server_actions = {value.strip() for value in action_line.group(1).split(",")}
 

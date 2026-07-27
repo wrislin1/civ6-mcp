@@ -10,7 +10,7 @@ from civ_mcp.arena.registry import (
 )
 
 
-MINIMAL_15 = {
+MINIMAL_TIER_SNAPSHOT = (
     "get_overview",
     "get_units",
     "get_cities",
@@ -26,11 +26,42 @@ MINIMAL_15 = {
     "respond_to_diplomacy",
     "get_pending_trades",
     "respond_to_trade",
-}
+)
+MINIMAL_15 = set(MINIMAL_TIER_SNAPSHOT)
+
+STANDARD_TIER_SNAPSHOT = (
+    "get_overview",
+    "get_units",
+    "get_cities",
+    "move_unit",
+    "found_city",
+    "set_city_production",
+    "set_research",
+    "fortify_unit",
+    "skip_unit",
+    "get_unit_promotions",
+    "promote_unit",
+    "get_map_area",
+    "get_tech_civics",
+    "attack_unit",
+    "get_builder_tasks",
+    "improve_tile",
+    "remove_feature",
+    "repair_improvement",
+    "purchase_item",
+    "heal_unit",
+    "alert_unit",
+    "set_civic",
+    "get_pending_diplomacy",
+    "respond_to_diplomacy",
+    "get_pending_trades",
+    "respond_to_trade",
+)
 
 
-def test_minimal_tier_is_todays_fifteen():
-    assert set(TIERS["minimal"]) == MINIMAL_15
+def test_minimal_tier_is_frozen_for_historical_artifact_comparability():
+    """Historical artifacts must retain the exact tool order they ran with."""
+    assert TIERS["minimal"] == MINIMAL_TIER_SNAPSHOT
 
 
 def test_diplomacy_responders_present_in_every_tier():
@@ -87,15 +118,8 @@ def test_resolve_tools_full_tracks_registry_additions(monkeypatch):
     assert "__probe_tool__" in resolve_tools("full")
 
 
-def test_standard_adds_map_and_combat():
-    extra = set(TIERS["standard"]) - set(TIERS["minimal"])
-    assert {
-        "get_map_area",
-        "get_tech_civics",
-        "attack_unit",
-        "improve_tile",
-        "purchase_item",
-    } <= extra
+def test_standard_tier_is_pinned_for_empire_behavior():
+    assert TIERS["standard"] == STANDARD_TIER_SNAPSHOT
 
 
 def test_forbidden_tools_never_defined():
@@ -167,6 +191,43 @@ async def test_dispatch_maps_args():
         == "ATTACKED"
     )
     assert calls == [(1, 4, 5), ("atk", 2)]
+
+
+def test_repair_improvement_tool_metadata():
+    tool = TOOL_REGISTRY["repair_improvement"]
+
+    assert tool.verb == "repair"
+    assert tool.required == ("unit_index",)
+
+
+@pytest.mark.asyncio
+async def test_repair_improvement_rejects_non_numeric_unit_index():
+    class FakeGS:
+        async def repair_improvement(self, unit_index):
+            raise AssertionError("must not reach GameState")
+
+    with pytest.raises((TypeError, ValueError)):
+        await dispatch(FakeGS(), "repair_improvement", {"unit_index": "z"})
+
+
+@pytest.mark.asyncio
+async def test_repair_improvement_dispatches_numeric_unit_index():
+    class FakeGS:
+        def __init__(self):
+            self.calls = []
+
+        async def repair_improvement(self, unit_index):
+            self.calls.append(("repair_improvement", unit_index))
+            return "OK"
+
+    gs = FakeGS()
+
+    assert await dispatch(
+        gs,
+        "repair_improvement",
+        {"unit_index": "5"},
+    ) == "OK"
+    assert gs.calls == [("repair_improvement", 5)]
 
 
 @pytest.mark.asyncio

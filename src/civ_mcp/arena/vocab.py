@@ -21,6 +21,7 @@ LOCAL_TOOL_VERBS: dict[str, str] = {
     "attack_unit": "attack",
     "improve_tile": "improve",
     "remove_feature": "remove_feature",
+    "repair_improvement": "repair",
     "purchase_item": "purchase",
     "heal_unit": "heal",
     "alert_unit": "alert",

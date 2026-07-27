@@ -163,11 +163,14 @@ Some paths close. It's worth checking periodically via `get_victory_progress`:
 | `delete` | Disband unit | Removes maintenance |
 | `found_city` | Settle | Settlers only |
 | `improve` | Build improvement | Builders and Military Engineers; see improvements below |
+| `repair` | Repair pillaged improvement | Builders only; no improvement name required |
+| `remove_improvement` | Demolish intact improvement | Builders only; costs one charge |
 | `remove_feature` | Chop/harvest feature | Builders only; removes forest, jungle, or marsh from tile |
 | `build_route` | Build road/railroad | Military Engineers only; on current tile; no charges used |
 | `trade_route` | Start route | Traders; target_x/y of destination city |
 | `teleport` | Move idle trader | Traders only; target_x/y of city |
 | `activate` | Use Great Person | Must be on completed matching district |
+| `sacrifice_charges` | Boost district project | Royal Society builders; spends all charges |
 | `spread_religion` | Spread religion | Missionaries/Apostles |
 
 Common improvements: `IMPROVEMENT_FARM`, `IMPROVEMENT_MINE`, `IMPROVEMENT_QUARRY`, `IMPROVEMENT_PLANTATION`, `IMPROVEMENT_PASTURE`, `IMPROVEMENT_CAMP`, `IMPROVEMENT_FISHING_BOATS`, `IMPROVEMENT_LUMBER_MILL`
