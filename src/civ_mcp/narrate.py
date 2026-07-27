@@ -5,6 +5,8 @@ All functions are pure: data in, string out. No side effects, no I/O.
 
 from __future__ import annotations
 
+import json
+
 from civ_mcp import lua as lq
 
 
@@ -249,6 +251,8 @@ def narrate_builder_tasks(
         _append_builder_list(lines, builders)
         return "\n".join(lines)
 
+    builders_by_id = {builder.unit_id: builder for builder in builders}
+
     # Group by priority
     by_priority: dict[str, list[lq.BuilderTask]] = {
         "urgent": [],
@@ -268,19 +272,37 @@ def narrate_builder_tasks(
         for t in sorted(group, key=lambda t: t.distance):
             if t.resource_class == "pillaged":
                 action = f"repair {t.resource}"
+                tool_name = "repair_improvement"
             else:
-                imp_label = t.improvement.replace("IMPROVEMENT_", "")
                 suffix = ""
                 if t.resource_class == "luxury":
                     suffix = "+"
                 elif t.resource_class == "strategic":
                     suffix = "*"
                 res_prefix = f"{t.resource}{suffix} — " if t.resource else ""
-                action = f"{res_prefix}build {imp_label}"
+                action = f"{res_prefix}build {t.improvement}"
+                tool_name = "improve_tile"
 
             builder_str = ""
             if t.nearest_builder_id >= 0:
-                builder_str = f" — nearest builder id:{t.nearest_builder_id}, {t.distance} tile{'s' if t.distance != 1 else ''}"
+                builder = builders_by_id.get(t.nearest_builder_id)
+                builder_index = (
+                    f", unit_index:{builder.unit_index}" if builder is not None else ""
+                )
+                builder_str = (
+                    f" — nearest builder id:{t.nearest_builder_id}{builder_index}, "
+                    f"{t.distance} tile{'s' if t.distance != 1 else ''}"
+                )
+                if builder is not None:
+                    call_args: dict[str, int | str] = {
+                        "unit_index": builder.unit_index
+                    }
+                    if tool_name == "improve_tile":
+                        call_args["improvement_name"] = t.improvement
+                    builder_str += (
+                        f" — on that tile call {tool_name} with "
+                        f"{json.dumps(call_args)}"
+                    )
             lines.append(
                 f"  ({t.x},{t.y}): {action} [city: {t.city_name}]{builder_str}"
             )
@@ -296,13 +318,15 @@ def _append_builder_list(lines: list[str], builders: list[lq.BuilderInfo]) -> No
     lines.append(f"IDLE BUILDERS ({len(idle)}):")
     for b in idle:
         lines.append(
-            f"  id:{b.unit_id} at ({b.x},{b.y}) — {b.charges} charges, {b.moves:.0f} moves"
+            f"  id:{b.unit_id}, unit_index:{b.unit_index} at ({b.x},{b.y}) — "
+            f"{b.charges} charges, {b.moves:.0f} moves"
         )
     if busy:
         lines.append(f"BUSY BUILDERS ({len(busy)}):")
         for b in busy:
             lines.append(
-                f"  id:{b.unit_id} at ({b.x},{b.y}) — {b.charges} charges (no moves)"
+                f"  id:{b.unit_id}, unit_index:{b.unit_index} at ({b.x},{b.y}) — "
+                f"{b.charges} charges (no moves)"
             )
 
 

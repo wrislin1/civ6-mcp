@@ -203,6 +203,8 @@ Expected: the full arena suite passes, `git diff --check` prints nothing, and th
 - Modify: `src/civ_mcp/arena/vocab.py`
 - Modify: `CLAUDE.md`
 - Create: `docs/research/arena-tool-coverage-audit.md`
+- Create: `scripts/audit_arena_tool_coverage.py`
+- Create: `tests/arena/test_tool_coverage_audit.py`
 
 **Interfaces:**
 - Consumes: `GameState.repair_improvement(unit_index: int) -> str`, `_tool`, `_int_param`, `TOOL_REGISTRY`, `TIERS`, and `LOCAL_TOOL_VERBS`.
@@ -406,120 +408,17 @@ Expected: all tests pass. In particular, the tier tuples match exactly, repair c
 
 - [ ] **Step 8: Generate deterministic audit evidence**
 
-Run this read-only script from the repository root:
+Run the read-only audit command from the repository root:
 
 ```bash
-uv run python - <<'PY'
-import ast
-import re
-from pathlib import Path
-
-from civ_mcp.arena.registry import TIERS, TOOL_REGISTRY
-
-server_text = Path("src/civ_mcp/server.py").read_text()
-registry_text = Path("src/civ_mcp/arena/registry.py").read_text()
-claude_text = Path("CLAUDE.md").read_text()
-
-server_tree = ast.parse(server_text)
-
-
-def is_mcp_tool(node):
-    for decorator in node.decorator_list:
-        target = decorator.func if isinstance(decorator, ast.Call) else decorator
-        if (
-            isinstance(target, ast.Attribute)
-            and isinstance(target.value, ast.Name)
-            and target.value.id == "mcp"
-            and target.attr == "tool"
-        ):
-            return True
-    return False
-
-
-exposed_methods = set()
-for node in server_tree.body:
-    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        continue
-    if not is_mcp_tool(node):
-        continue
-    exposed_methods.update(
-        call.func.attr
-        for call in ast.walk(node)
-        if isinstance(call, ast.Call)
-        and isinstance(call.func, ast.Attribute)
-        and isinstance(call.func.value, ast.Name)
-        and call.func.value.id == "gs"
-    )
-
-registry_methods = set(re.findall(r"gs\.([a-z_]+)\(", registry_text))
-unit_action_node = next(
-    node
-    for node in server_tree.body
-    if isinstance(node, ast.AsyncFunctionDef) and node.name == "unit_action"
-)
-unit_action_doc = ast.get_docstring(unit_action_node)
-assert unit_action_doc is not None
-action_line = re.search(r"action: One of: ([^\n]+)", unit_action_doc)
-assert action_line is not None
-server_actions = {value.strip() for value in action_line.group(1).split(",")}
-
-table = claude_text.split("## Unit Actions Reference", 1)[1].split(
-    "Common improvements:",
-    1,
-)[0]
-documented_actions = set(re.findall(r"^\| `([^`]+)` \|", table, re.MULTILINE))
-
-aliases = {
-    "activate_great_person": "activate",
-    "start_trade_route": "trade_route",
-    "teleport_trader": "teleport",
-}
-arena_actions = {
-    aliases.get(tool.verb, tool.verb)
-    for tool in TOOL_REGISTRY.values()
-    if tool.verb
-}
-
-print(
-    "counts:",
-    f"registry={len(TOOL_REGISTRY)}",
-    f"minimal={len(TIERS['minimal'])}",
-    f"standard={len(TIERS['standard'])}",
-    f"full={len(TIERS['full'])}",
-)
-print("MCP unit actions absent from CLAUDE.md:", sorted(server_actions - documented_actions))
-print("MCP unit actions absent from arena:", sorted(server_actions - arena_actions))
-print(
-    "Exposed GameState calls absent from arena registry:",
-    sorted(exposed_methods - registry_methods),
-)
-print()
-print(
-    "| tool | minimal | minimal disposition | standard | "
-    "standard disposition | full |"
-)
-print("|---|---:|---|---:|---|---:|")
-for name in TOOL_REGISTRY:
-    in_minimal = name in TIERS["minimal"]
-    in_standard = name in TIERS["standard"]
-    minimal_disposition = (
-        "present"
-        if in_minimal
-        else "intentionally-excluded"
-    )
-    standard_disposition = (
-        "present"
-        if in_standard
-        else "listed-for-later"
-    )
-    print(
-        f"| `{name}` | {'yes' if in_minimal else 'no'} | "
-        f"{minimal_disposition} | "
-        f"{'yes' if in_standard else 'no'} | "
-        f"{standard_disposition} | yes |"
-    )
-PY
+uv run python scripts/audit_arena_tool_coverage.py
 ```
+
+The command collects every `gs` attribute referenced by a public MCP tool,
+intersects those attributes with methods actually declared on `GameState`, and
+does the same for arena registry references. This includes bound methods passed
+as callbacks, not only direct calls. It derives `unit_action` values from the
+executable `match` cases rather than the docstring.
 
 Expected evidence after the change:
 
@@ -527,7 +426,7 @@ Expected evidence after the change:
 counts: registry=90 minimal=15 standard=26 full=90
 MCP unit actions absent from CLAUDE.md: []
 MCP unit actions absent from arena: ['build_route', 'delete', 'remove_improvement', 'sacrifice_charges', 'sleep']
-Exposed GameState calls absent from arena registry: ['build_route', 'check_game_over', 'delete_unit', 'end_turn', 'execute_lua', 'get_diary_snapshot', 'get_game_identity', 'get_threat_scan', 'load_game_save', 'load_save', 'remove_improvement', 'sacrifice_builder_charges', 'sleep_unit', 'submit_congress']
+MCP-reached GameState methods absent from arena registry: ['build_route', 'check_game_over', 'delete_unit', 'dismiss_popup', 'end_turn', 'execute_lua', 'get_diary_snapshot', 'get_game_identity', 'get_threat_scan', 'list_saves', 'load_game_save', 'load_save', 'remove_improvement', 'sacrifice_builder_charges', 'sleep_unit', 'submit_congress']
 ```
 
 The script also prints exactly 90 tier-membership rows. Preserve those rows in registry order in the audit document.
@@ -551,8 +450,9 @@ facts:
 4. **Non-action exposed helpers:** classify `check_game_over`,
    `get_diary_snapshot`, `get_game_identity`, `get_threat_scan`, and
    `submit_congress` as composed/internal and `intentionally-excluded`.
-   Classify `end_turn`, `execute_lua`, `load_game_save`, and `load_save` as
-   lifecycle/ops and `intentionally-excluded`.
+   Classify `dismiss_popup`, `end_turn`, `execute_lua`, `list_saves`,
+   `load_game_save`, and `load_save` as lifecycle/ops and
+   `intentionally-excluded`.
 5. **Tier membership:** include all 90 generated rows. Explain that every
    absence from `minimal` is intentional because the historical tier is
    frozen; every absence from `standard` is `listed-for-later`; `full`
@@ -562,7 +462,7 @@ facts:
    specialized `sacrifice_charges`/`build_route`, and passive `sleep`
    remain deferred.
 
-Do not use placeholder rows or ellipses. The five unit-action gaps and nine
+Do not use placeholder rows or ellipses. The five unit-action gaps and eleven
 composed/lifecycle exclusions above account for every post-change
 `GameState` method reported by Step 8.
 

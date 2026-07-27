@@ -1,3 +1,6 @@
+import json
+import re
+
 import pytest
 
 from civ_mcp.arena.registry import (
@@ -228,6 +231,88 @@ async def test_repair_improvement_dispatches_numeric_unit_index():
         {"unit_index": "5"},
     ) == "OK"
     assert gs.calls == [("repair_improvement", 5)]
+
+
+@pytest.mark.asyncio
+async def test_builder_task_narration_supplies_callable_arena_action_arguments():
+    from civ_mcp import lua as lq
+
+    class FakeGS:
+        def __init__(self):
+            self.calls = []
+
+        async def get_builder_tasks(self):
+            return (
+                [
+                    lq.BuilderTask(
+                        priority="high",
+                        x=12,
+                        y=19,
+                        improvement="IMPROVEMENT_MINE",
+                        resource="IRON",
+                        resource_class="strategic",
+                        city_name="Capital",
+                        nearest_builder_id=65541,
+                        distance=2,
+                    ),
+                    lq.BuilderTask(
+                        priority="urgent",
+                        x=9,
+                        y=17,
+                        improvement="IMPROVEMENT_FARM",
+                        resource="WHEAT",
+                        resource_class="pillaged",
+                        city_name="Capital",
+                        nearest_builder_id=65542,
+                        distance=1,
+                    ),
+                ],
+                [
+                    lq.BuilderInfo(
+                        unit_id=65541,
+                        unit_index=5,
+                        x=10,
+                        y=18,
+                        charges=2,
+                        moves=2,
+                    ),
+                    lq.BuilderInfo(
+                        unit_id=65542,
+                        unit_index=6,
+                        x=9,
+                        y=18,
+                        charges=1,
+                        moves=2,
+                    ),
+                ],
+            )
+
+        async def improve_tile(self, unit_index, improvement_name):
+            self.calls.append(("improve_tile", unit_index, improvement_name))
+            return "OK:IMPROVING"
+
+        async def repair_improvement(self, unit_index):
+            self.calls.append(("repair_improvement", unit_index))
+            return "OK:REPAIRING"
+
+    gs = FakeGS()
+    task_board = await dispatch(gs, "get_builder_tasks", {})
+    narrated_calls = re.findall(
+        r"call (improve_tile|repair_improvement) with (\{[^}]+\})",
+        task_board,
+    )
+
+    assert [name for name, _ in narrated_calls] == [
+        "repair_improvement",
+        "improve_tile",
+    ]
+    for tool_name, encoded_args in narrated_calls:
+        await dispatch(gs, tool_name, json.loads(encoded_args))
+
+    assert gs.calls == [
+        ("repair_improvement", 6),
+        ("improve_tile", 5, "IMPROVEMENT_MINE"),
+    ]
 
 
 @pytest.mark.asyncio

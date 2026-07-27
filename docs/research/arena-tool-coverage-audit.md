@@ -2,7 +2,7 @@
 
 ## Scope and Method
 
-This audit compares three surfaces: MCP tools exposed in `src/civ_mcp/server.py`, the arena registry in `src/civ_mcp/arena/registry.py`, and the unit-action reference in `CLAUDE.md`. The registry increased from 89 tools before this change to 90 after it. The `unit_action` cases define the direct gameplay-action set; those cases are compared with the action verbs exposed by the arena registry and documented in `CLAUDE.md`.
+This audit compares three surfaces: MCP tools exposed in `src/civ_mcp/server.py`, the arena registry in `src/civ_mcp/arena/registry.py`, and the unit-action reference in `CLAUDE.md`. The registry increased from 89 tools before this change to 90 after it. `scripts/audit_arena_tool_coverage.py` collects every `gs` attribute referenced by public MCP tools, intersects those references with actual `GameState` methods, and therefore includes direct calls and bound methods passed as callbacks. The executable `unit_action` match cases define the direct gameplay-action set; those cases are compared with the action verbs exposed by the arena registry and documented in `CLAUDE.md`.
 
 The deterministic registry snapshot after this change is: `registry=90`, `minimal=15`, `standard=26`, and `full=90`.
 
@@ -43,9 +43,9 @@ The five post-change arena gaps are `build_route`, `delete`, `remove_improvement
 
 ## Non-Action Exposed Helpers
 
-`check_game_over`, `get_diary_snapshot`, `get_game_identity`, `get_threat_scan`, and `submit_congress` are composed/internal helpers and are `intentionally-excluded` from the arena registry. `end_turn`, `execute_lua`, `load_game_save`, and `load_save` are lifecycle/ops helpers and are likewise `intentionally-excluded`.
+`check_game_over`, `get_diary_snapshot`, `get_game_identity`, `get_threat_scan`, and `submit_congress` are composed/internal helpers and are `intentionally-excluded` from the arena registry. `dismiss_popup`, `end_turn`, `execute_lua`, `list_saves`, `load_game_save`, and `load_save` are lifecycle/ops helpers and are likewise `intentionally-excluded`.
 
-Together with the five deferred direct actions, these nine composed/lifecycle exclusions account for every post-change `GameState` method reported outside the arena registry.
+Together with the five deferred direct actions, these eleven composed/lifecycle exclusions account for every post-change `GameState` method reported outside the arena registry.
 
 ## Tier Membership
 
