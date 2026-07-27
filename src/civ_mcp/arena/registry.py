@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
@@ -68,7 +69,7 @@ async def _empire_resources_text(gs: Any, args: dict[str, Any]) -> str:
 async def _builder_tasks_text(gs: Any, args: dict[str, Any]) -> str:
     del args
     tasks, builders = await gs.get_builder_tasks()
-    return nr.narrate_builder_tasks(tasks, builders, tool_hints=True)
+    return nr.narrate_builder_tasks(tasks, builders, surface="arena")
 
 
 async def _pending_diplomacy_text(gs: Any, args: dict[str, Any]) -> str:
@@ -1478,6 +1479,13 @@ async def dispatch(
     if allowed is not None and name not in allowed:
         raise KeyError(name)
     tool = TOOL_REGISTRY[name]
+    if name == "get_units":
+        visible = tuple(TOOL_REGISTRY) if allowed is None else tuple(allowed)
+        return await _narrate_units(
+            gs,
+            args,
+            available_tools=visible,
+        )
     return await tool.call(gs, args)
 
 
@@ -1486,9 +1494,21 @@ async def _narrate_overview(gs: Any, args: dict[str, Any]) -> str:
     return _render(await gs.get_game_overview(), nr.narrate_overview)
 
 
-async def _narrate_units(gs: Any, args: dict[str, Any]) -> str:
+async def _narrate_units(
+    gs: Any,
+    args: dict[str, Any],
+    *,
+    available_tools: Collection[str] | None = None,
+) -> str:
     del args
-    return _render(await gs.get_units(), nr.narrate_units)
+    result = await gs.get_units()
+    if isinstance(result, str):
+        return result
+    return nr.narrate_units(
+        result,
+        surface="arena",
+        available_tools=available_tools,
+    )
 
 
 async def _narrate_map(gs: Any, args: dict[str, Any]) -> str:

@@ -221,6 +221,7 @@ class UnitInfo:
     upgrade_cost: int = 0
     valid_improvements: list[str] = field(default_factory=list)
     religion: str = ""
+    can_activate_here: bool = False
 
 
 @dataclass

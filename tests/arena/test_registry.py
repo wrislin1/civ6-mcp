@@ -769,6 +769,74 @@ async def test_read_tools_narrate_not_repr():
     assert "at (10,10)" in out
 
 
+@pytest.mark.asyncio
+async def test_get_units_narration_respects_allowed_tool_reachability():
+    from civ_mcp import lua as lq
+
+    class FakeGS:
+        async def get_units(self):
+            return [
+                lq.UnitInfo(
+                    unit_id=65541,
+                    unit_index=5,
+                    name="Bhasa",
+                    unit_type="UNIT_GREAT_WRITER",
+                    x=12,
+                    y=19,
+                    moves_remaining=2,
+                    max_moves=2,
+                    health=100,
+                    max_health=100,
+                    valid_improvements=["IMPROVEMENT_MINE"],
+                    can_activate_here=True,
+                    can_upgrade=True,
+                )
+            ]
+
+    gs = FakeGS()
+    minimal = await dispatch(gs, "get_units", {}, allowed=TIERS["minimal"])
+    standard = await dispatch(gs, "get_units", {}, allowed=TIERS["standard"])
+    full = await dispatch(gs, "get_units", {}, allowed=None)
+
+    assert "improve_tile with" not in minimal
+    assert "activate_great_person with" not in minimal
+    assert "upgrade_unit with" not in minimal
+    assert "improve_tile with" in standard
+    assert "activate_great_person with" in standard
+    assert "upgrade_unit with" not in standard
+    assert "upgrade_unit with" in full
+
+
+@pytest.mark.asyncio
+async def test_get_units_narration_respects_capability_filtered_tools():
+    from civ_mcp import lua as lq
+
+    class FakeGS:
+        async def get_units(self):
+            return [
+                lq.UnitInfo(
+                    unit_id=65541,
+                    unit_index=5,
+                    name="Bhasa",
+                    unit_type="UNIT_GREAT_WRITER",
+                    x=12,
+                    y=19,
+                    moves_remaining=2,
+                    max_moves=2,
+                    health=100,
+                    max_health=100,
+                    valid_improvements=["IMPROVEMENT_MINE"],
+                    can_activate_here=True,
+                )
+            ]
+
+    allowed = filter_tools(TIERS["standard"], {"gp_unit": False})
+    out = await dispatch(FakeGS(), "get_units", {}, allowed=allowed)
+
+    assert "improve_tile with" in out
+    assert "activate_great_person with" not in out
+
+
 def test_agent_module_still_exposes_tools():
     from civ_mcp.arena.agent import TOOLS
 

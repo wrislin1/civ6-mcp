@@ -1,10 +1,6 @@
-"""Builder task board narration.
+"""Builder task board narration across the MCP and arena tool surfaces."""
 
-The board is shared by two tool surfaces with different call syntax: the MCP
-server (`unit_action(unit_id, action="improve", improvement=...)`) and the
-arena registry (`improve_tile(unit_index, improvement_name)`). Only the arena
-surface gets call hints.
-"""
+import pytest
 
 from civ_mcp import lua as lq
 from civ_mcp.narrate import narrate_builder_tasks
@@ -39,24 +35,36 @@ def _builder(**overrides) -> lq.BuilderInfo:
     return lq.BuilderInfo(**fields)
 
 
-def test_mcp_surface_omits_arena_call_syntax():
+def test_default_mcp_surface_renders_callable_mcp_form():
     board = narrate_builder_tasks([_task()], [_builder()])
 
     assert "improve_tile" not in board
     assert "repair_improvement" not in board
     assert "unit_index" not in board
     assert "nearest builder id:65541, 2 tiles" in board
+    assert (
+        'on that tile call unit_action(unit_id=65541, action="improve")'
+        in board
+    )
 
 
-def test_mcp_surface_keeps_the_short_improvement_label():
-    board = narrate_builder_tasks([_task()], [_builder()])
+def test_explicit_mcp_surface_renders_callable_repair_form():
+    board = narrate_builder_tasks(
+        [_task(resource_class="pillaged")],
+        [_builder()],
+        surface="mcp",
+    )
 
-    assert "build MINE" in board
+    assert "repair IRON" in board
     assert "IMPROVEMENT_MINE" not in board
+    assert (
+        'on that tile call unit_action(unit_id=65541, action="repair")'
+        in board
+    )
 
 
 def test_arena_surface_hints_the_call_with_the_full_improvement_name():
-    board = narrate_builder_tasks([_task()], [_builder()], tool_hints=True)
+    board = narrate_builder_tasks([_task()], [_builder()], surface="arena")
 
     assert "build MINE" in board
     assert (
@@ -72,7 +80,7 @@ def test_arena_surface_skips_the_hint_for_an_unmapped_improvement():
     board = narrate_builder_tasks(
         [_task(improvement="UNKNOWN", resource="ANTIQUITY")],
         [_builder()],
-        tool_hints=True,
+        surface="arena",
     )
 
     assert "call improve_tile" not in board
@@ -83,8 +91,23 @@ def test_arena_surface_skips_the_hint_for_a_builder_with_no_moves():
     board = narrate_builder_tasks(
         [_task(resource_class="pillaged", nearest_builder_id=65542)],
         [_builder(unit_id=65542, unit_index=6, moves=0)],
-        tool_hints=True,
+        surface="arena",
     )
 
     assert "call repair_improvement" not in board
     assert "BUSY BUILDERS (1):" in board
+
+
+def test_mcp_surface_skips_the_hint_for_a_builder_with_no_moves():
+    board = narrate_builder_tasks(
+        [_task(nearest_builder_id=65542)],
+        [_builder(unit_id=65542, unit_index=6, moves=0)],
+        surface="mcp",
+    )
+
+    assert "call unit_action" not in board
+
+
+def test_invalid_surface_is_rejected():
+    with pytest.raises(ValueError, match="surface"):
+        narrate_builder_tasks([_task()], [_builder()], surface="browser")

@@ -6,8 +6,19 @@ All functions are pure: data in, string out. No side effects, no I/O.
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
+from typing import Literal, cast
 
 from civ_mcp import lua as lq
+
+
+ToolSurface = Literal["mcp", "arena"]
+
+
+def validate_surface(surface: str) -> ToolSurface:
+    if surface not in {"mcp", "arena"}:
+        raise ValueError(f"unknown tool surface: {surface!r}")
+    return cast(ToolSurface, surface)
 
 
 def narrate_overview(ov: lq.GameOverview) -> str:
@@ -153,9 +164,14 @@ def narrate_units(
     units: list[lq.UnitInfo],
     threats: list[lq.ThreatInfo] | None = None,
     trade_status: lq.TradeRouteStatus | None = None,
+    *,
+    surface: ToolSurface = "mcp",
+    available_tools: Collection[str] | None = None,
 ) -> str:
+    surface = validate_surface(surface)
     if not units:
         return "No units."
+    reachable = set(available_tools or ())
     # Build trader route lookup: unit_id -> TraderInfo
     trader_routes: dict[int, lq.TraderInfo] = {}
     if trade_status:
@@ -206,6 +222,48 @@ def narrate_units(
                 lines.append(f"    >> CAN ATTACK: {t}")
         if u.valid_improvements:
             lines.append(f"    >> Can build: {', '.join(u.valid_improvements)}")
+        if u.moves_remaining > 0:
+            if u.can_activate_here and (
+                surface == "mcp" or "activate_great_person" in reachable
+            ):
+                if surface == "arena":
+                    call = (
+                        "activate_great_person with "
+                        + json.dumps({"unit_id": u.unit_id})
+                    )
+                else:
+                    call = (
+                        f'unit_action(unit_id={u.unit_id}, action="activate")'
+                    )
+                lines.append(f"    >> AVAILABLE NOW: {call}")
+            for improvement in u.valid_improvements:
+                if improvement == "UNKNOWN":
+                    continue
+                if surface == "arena":
+                    if "improve_tile" not in reachable:
+                        continue
+                    call = "improve_tile with " + json.dumps(
+                        {
+                            "unit_index": u.unit_index,
+                            "improvement_name": improvement,
+                        }
+                    )
+                else:
+                    call = (
+                        f'unit_action(unit_id={u.unit_id}, action="improve", '
+                        f'improvement="{improvement}")'
+                    )
+                lines.append(f"    >> AVAILABLE NOW: {call}")
+            if u.can_upgrade and (
+                surface == "mcp" or "upgrade_unit" in reachable
+            ):
+                if surface == "arena":
+                    call = "upgrade_unit with " + json.dumps(
+                        {"unit_id": u.unit_id}
+                    )
+                else:
+                    call = f"upgrade_unit(unit_id={u.unit_id})"
+                lines.append(f"    >> AVAILABLE NOW: {call}")
     if threats:
         lines.append("")
         lines.append(f"Nearby threats ({len(threats)}):")
@@ -241,15 +299,10 @@ def narrate_builder_tasks(
     tasks: list[lq.BuilderTask],
     builders: list[lq.BuilderInfo],
     *,
-    tool_hints: bool = False,
+    surface: ToolSurface = "mcp",
 ) -> str:
-    """Render the builder task board.
-
-    ``tool_hints`` appends arena-registry call syntax (``improve_tile`` /
-    ``repair_improvement`` with a ``unit_index``) to each actionable task. The
-    MCP server exposes those actions as ``unit_action(unit_id, action=...)``
-    instead, so it leaves the hints off.
-    """
+    """Render the builder task board with calls for the selected tool surface."""
+    surface = validate_surface(surface)
     if not builders:
         return "No builders with charges available."
     idle = [b for b in builders if b.moves > 0]
@@ -258,7 +311,7 @@ def narrate_builder_tasks(
         lines.append("")
         lines.append("No tiles need improvement in your territory.")
         lines.append("")
-        _append_builder_list(lines, builders, tool_hints=tool_hints)
+        _append_builder_list(lines, builders, surface=surface)
         return "\n".join(lines)
 
     builders_by_id = {builder.unit_id: builder for builder in builders}
@@ -299,7 +352,7 @@ def narrate_builder_tasks(
                 builder = builders_by_id.get(t.nearest_builder_id)
                 builder_index = (
                     f", unit_index:{builder.unit_index}"
-                    if tool_hints and builder is not None
+                    if surface == "arena" and builder is not None
                     else ""
                 )
                 builder_str = (
@@ -311,39 +364,47 @@ def narrate_builder_tasks(
                 # improvement name (the Lua scan emits UNKNOWN for resources
                 # with no mapped improvement).
                 if (
-                    tool_hints
-                    and builder is not None
+                    builder is not None
                     and builder.moves > 0
                     and not (
                         tool_name == "improve_tile" and t.improvement == "UNKNOWN"
                     )
                 ):
-                    call_args: dict[str, int | str] = {
-                        "unit_index": builder.unit_index
-                    }
-                    if tool_name == "improve_tile":
-                        call_args["improvement_name"] = t.improvement
-                    builder_str += (
-                        f" — on that tile call {tool_name} with "
-                        f"{json.dumps(call_args)}"
-                    )
+                    if surface == "arena":
+                        call_args: dict[str, int | str] = {
+                            "unit_index": builder.unit_index
+                        }
+                        if tool_name == "improve_tile":
+                            call_args["improvement_name"] = t.improvement
+                        call = f"{tool_name} with {json.dumps(call_args)}"
+                    else:
+                        action_name = (
+                            "repair"
+                            if tool_name == "repair_improvement"
+                            else "improve"
+                        )
+                        call = (
+                            f"unit_action(unit_id={builder.unit_id}, "
+                            f'action="{action_name}")'
+                        )
+                    builder_str += f" — on that tile call {call}"
             lines.append(
                 f"  ({t.x},{t.y}): {action} [city: {t.city_name}]{builder_str}"
             )
 
     lines.append("")
-    _append_builder_list(lines, builders, tool_hints=tool_hints)
+    _append_builder_list(lines, builders, surface=surface)
     return "\n".join(lines)
 
 
 def _append_builder_list(
-    lines: list[str], builders: list[lq.BuilderInfo], *, tool_hints: bool = False
+    lines: list[str], builders: list[lq.BuilderInfo], *, surface: ToolSurface = "mcp"
 ) -> None:
     idle = [b for b in builders if b.moves > 0]
     busy = [b for b in builders if b.moves <= 0]
 
     def _ident(b: lq.BuilderInfo) -> str:
-        if tool_hints:
+        if surface == "arena":
             return f"id:{b.unit_id}, unit_index:{b.unit_index}"
         return f"id:{b.unit_id}"
 

@@ -635,7 +635,12 @@ async def get_units(ctx: Context) -> str:
             trade_status = await gs.get_trade_routes()
         except Exception:
             pass
-        return nr.narrate_units(units, threats, trade_status)
+        return nr.narrate_units(
+            units,
+            threats,
+            trade_status,
+            surface="mcp",
+        )
 
     return await _logged(ctx, "get_units", {}, _run, tiles=unit_tiles)
 
@@ -861,7 +866,7 @@ async def get_builder_tasks(ctx: Context) -> str:
 
     async def _run():
         tasks, builders = await gs.get_builder_tasks()
-        return nr.narrate_builder_tasks(tasks, builders)
+        return nr.narrate_builder_tasks(tasks, builders, surface="mcp")
 
     return await _logged(ctx, "get_builder_tasks", {}, _run)
 

@@ -179,7 +179,23 @@ for i, u in Players[id]:GetUnits():Members() do
             end
             if #meList > 0 then validImps = table.concat(meList, ";") end
         end
-        print(uid .. "|" .. (uid % 65536) .. "|" .. nm .. "|" .. ut .. "|" .. x .. "," .. y .. "|" .. u:GetMovesRemaining() .. "/" .. u:GetMaxMoves() .. "|" .. (u:GetMaxDamage() - u:GetDamage()) .. "/" .. u:GetMaxDamage() .. "|" .. cs .. "|" .. rs .. "|" .. charges .. "|" .. targets .. "|" .. promo .. "|" .. canUp .. "|" .. upName .. "|" .. upCost .. "|" .. validImps .. "|" .. relName)
+        local canActivateHere = "0"
+        if gp and entry and entry.GreatPersonClass then
+            pcall(function()
+                local currentPlot = Map.GetPlot(x, y)
+                local plots = gp:GetActivationHighlightPlots()
+                if currentPlot and plots then
+                    local currentIndex = currentPlot:GetIndex()
+                    for _, plotIndex in ipairs(plots) do
+                        if plotIndex == currentIndex then
+                            canActivateHere = "1"
+                            break
+                        end
+                    end
+                end
+            end)
+        end
+        print(uid .. "|" .. (uid % 65536) .. "|" .. nm .. "|" .. ut .. "|" .. x .. "," .. y .. "|" .. u:GetMovesRemaining() .. "/" .. u:GetMaxMoves() .. "|" .. (u:GetMaxDamage() - u:GetDamage()) .. "/" .. u:GetMaxDamage() .. "|" .. cs .. "|" .. rs .. "|" .. charges .. "|" .. targets .. "|" .. promo .. "|" .. canUp .. "|" .. upName .. "|" .. upCost .. "|" .. validImps .. "|" .. relName .. "|" .. canActivateHere)
     end
 end
 print("{SENTINEL}")
@@ -1452,6 +1468,7 @@ def parse_units_response(lines: list[str]) -> list[UnitInfo]:
             [v for v in valid_imps_raw.split(";") if v] if valid_imps_raw else []
         )
         religion = parts[16] if len(parts) > 16 else ""
+        can_activate_here = len(parts) > 17 and parts[17] == "1"
         units.append(
             UnitInfo(
                 unit_id=int(parts[0]),
@@ -1474,6 +1491,7 @@ def parse_units_response(lines: list[str]) -> list[UnitInfo]:
                 upgrade_cost=upgrade_cost,
                 valid_improvements=valid_imps,
                 religion=religion,
+                can_activate_here=can_activate_here,
             )
         )
     return units

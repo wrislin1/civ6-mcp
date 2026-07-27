@@ -8,6 +8,7 @@ import pytest
 
 from civ_mcp.lua.overview import parse_gameover_response, parse_overview_response
 from civ_mcp.lua.units import (
+    build_units_query,
     parse_combat_estimate,
     parse_threat_scan_response,
     parse_units_response,
@@ -176,6 +177,34 @@ class TestParseUnits:
         line = "2|2|Archer|UNIT_ARCHER|5,5|2.0/2.0|100/100|25|25|0|14,6;15,7|0|0|||"
         units = parse_units_response([line])
         assert units[0].targets == ["14,6", "15,7"]
+
+    def test_can_activate_here_appended_field(self):
+        line = (
+            "65541|5|Bhasa|UNIT_GREAT_WRITER|12,19|2/2|100/100|"
+            "0|0|1||0|0||||RELIGION_CATHOLICISM|1"
+        )
+        unit = parse_units_response([line])[0]
+        assert unit.can_activate_here is True
+
+    @pytest.mark.parametrize("suffix", ["", "|", "|bad", "|0"])
+    def test_can_activate_here_absent_or_malformed_is_false(self, suffix):
+        line = (
+            "65541|5|Bhasa|UNIT_GREAT_WRITER|12,19|2/2|100/100|"
+            f"0|0|1||0|0||||RELIGION_CATHOLICISM{suffix}"
+        )
+        unit = parse_units_response([line])[0]
+        assert unit.can_activate_here is False
+
+    def test_units_query_checks_only_the_current_activation_plot(self):
+        query = build_units_query()
+        activation_probe = query.split("local canActivateHere", 1)[1].split(
+            "print(uid", 1
+        )[0]
+
+        assert "GetActivationHighlightPlots" in activation_probe
+        assert "local currentIndex = currentPlot:GetIndex()" in activation_probe
+        assert "if plotIndex == currentIndex then" in activation_probe
+        assert "CanStartOperation" not in activation_probe
 
 
 # ---------------------------------------------------------------------------
