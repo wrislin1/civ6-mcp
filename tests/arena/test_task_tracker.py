@@ -1907,6 +1907,19 @@ def test_great_person_activate_rejects_empty_quoted_improvement_argument():
     ) == []
 
 
+def test_settle_rejects_misplaced_improvement_argument():
+    """A stray improvement on settle would poison the restatement key.
+
+    merge_tasks compares (target, improvement) to detect a restatement, so a
+    stored stray token makes the same order restated cleanly look like a
+    changed directive -- resetting the failure budget.
+    """
+    assert parse_task_lines(
+        "TASK settle unit_id=65537 target=18,24 improvement=Farm",
+        turn=7,
+    ) == []
+
+
 def test_great_person_placeholder_example_does_not_parse():
     assert parse_task_lines(
         "TASK great_person_activate unit_id=<unit_id> target=<x>,<y>",

@@ -228,8 +228,8 @@ def parse_task_lines(plan_text: str, turn: int) -> list[UnitTask]:
     """Parse explicit ``TASK``/``CANCEL`` lines out of a puppet's plan text.
 
     Invalid lines (missing fields, unknown kind, missing ``improvement`` for
-    ``builder_improve``, or an ``improvement`` on ``great_person_activate``)
-    are silently ignored rather than raising.
+    ``builder_improve``, or an ``improvement`` on any other kind) are silently
+    ignored rather than raising.
 
     ``CANCEL`` lines produce a placeholder ``UnitTask`` with ``kind="cancel"``
     and ``status="cancelled"`` carrying only the ``unit_id`` to cancel --
@@ -243,7 +243,12 @@ def parse_task_lines(plan_text: str, turn: int) -> list[UnitTask]:
             kind = match.group("kind").lower()
             unit_id = int(match.group("unit_id"))
             raw_improvement = match.group("improvement")
-            if kind == "great_person_activate" and raw_improvement is not None:
+            # Only builder_improve carries an improvement. A stray one on any
+            # other kind would land in the stored task and participate in
+            # merge_tasks' restatement key, so the same order restated without
+            # the stray token would read as a changed directive and reset the
+            # failure budget.
+            if kind != "builder_improve" and raw_improvement is not None:
                 continue
             # Improvement names are game-DB enums the Lua layer compares
             # case-sensitively (e.g. "IMPROVEMENT_FARM"); the TASK regex is
