@@ -50,7 +50,12 @@ def build_capture_lua() -> str:
 
 
 def parse_capture_lines(lines: Sequence[str]) -> dict[str, object]:
-    records = list(lines)
+    # LuaEvent callbacks (e.g. ShowIngameUI -> BulkHide debug prints) inject
+    # spurious output into tuner responses; game_state._action_result scans
+    # past them for the same reason. Anything that does not claim to be one of
+    # our records is noise and is dropped -- a line that does claim to be one
+    # and is malformed is still an error.
+    records = [line for line in lines if line.startswith(f"{RECORD_PREFIX}|")]
     found = {name: set() for name in TABLE_FIELDS}
     completion_count = 0
     for index, line in enumerate(records):

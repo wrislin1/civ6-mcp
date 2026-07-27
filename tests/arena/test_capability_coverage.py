@@ -79,6 +79,25 @@ def test_parse_capture_lines_builds_sorted_schema_v1_snapshot():
     }
 
 
+def test_parse_capture_lines_drops_injected_tuner_noise():
+    """Debug output from LuaEvent callbacks must not abort a live capture.
+
+    game_state._action_result documents the same injection and scans past it;
+    build_capture_lua emits no sentinel, so execute_read always waits out its
+    full timeout, widening the window for noise to arrive.
+    """
+    noisy = [
+        "BulkHide: true",
+        COMPLETE_CAPTURE[0],
+        "[ShowIngameUI] hiding",
+        *COMPLETE_CAPTURE[1:-1],
+        COMPLETE_CAPTURE[-1],
+        "LuaEvents.trailing debug",
+    ]
+
+    assert parse_capture_lines(noisy) == parse_capture_lines(COMPLETE_CAPTURE)
+
+
 @pytest.mark.parametrize(
     "lines, message",
     [
@@ -479,6 +498,57 @@ def test_report_evidence_is_counted_and_ranked():
         evidence["missing"],
         key=lambda row: (priorities[row["priority"]], row["action"]),
     )
+
+
+def test_report_evidence_counts_and_rows_stay_in_the_same_scope():
+    """Counts and the missing list must describe the same set of actions.
+
+    build_report_evidence is public and does not validate, so a stale map
+    entry (an action a game update removed from the snapshot) must not be
+    counted in one place and listed in the other.
+    """
+    snapshot = {
+        "schema_version": 1,
+        "tables": {
+            "UnitOperations": ["UNITOPERATION_PILLAGE"],
+            "UnitCommands": [],
+            "DiplomaticActions": [],
+        },
+    }
+    coverage = {
+        "UNITOPERATION_PILLAGE": Coverage(
+            status="missing", priority="high", note="in snapshot"
+        ),
+        "UNITOPERATION_GONE": Coverage(
+            status="missing", priority="low", note="removed by a game update"
+        ),
+    }
+
+    evidence = build_report_evidence(snapshot, coverage)
+
+    assert evidence["counts"]["missing"] == len(evidence["missing"]) == 1
+    assert [row["action"] for row in evidence["missing"]] == [
+        "UNITOPERATION_PILLAGE"
+    ]
+
+
+def test_report_evidence_rejects_an_unknown_priority():
+    snapshot = {
+        "schema_version": 1,
+        "tables": {
+            "UnitOperations": ["UNITOPERATION_PILLAGE"],
+            "UnitCommands": [],
+            "DiplomaticActions": [],
+        },
+    }
+    coverage = {
+        "UNITOPERATION_PILLAGE": Coverage(
+            status="missing", priority="urgent", note="bad priority"
+        )
+    }
+
+    with pytest.raises(ValueError, match="incomplete missing coverage entry"):
+        build_report_evidence(snapshot, coverage)
 
 
 def test_report_cli_human_and_json():

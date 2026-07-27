@@ -627,15 +627,18 @@ def build_report_evidence(
     coverage: Mapping[str, Coverage],
 ) -> ReportEvidence:
     actions = _snapshot_actions(snapshot)
-    counts: Counter[CoverageStatus] = Counter(
-        coverage[action].status for action in actions if action in coverage
-    )
+    # Counts and the missing list are derived from the same snapshot-scoped
+    # view. Walking the whole coverage map for one and the snapshot for the
+    # other lets a stale map entry make len(evidence["missing"]) disagree with
+    # counts["missing"] instead of failing.
+    scoped = [(action, coverage[action]) for action in actions if action in coverage]
+    counts: Counter[CoverageStatus] = Counter(item.status for _, item in scoped)
     missing: list[MissingCoverageRow] = []
-    for action, item in coverage.items():
+    for action, item in scoped:
         if item.status == "missing":
             priority = item.priority
             note = item.note
-            if priority is None or note is None:
+            if priority is None or note is None or priority not in _PRIORITY_ORDER:
                 raise ValueError(f"{action}: incomplete missing coverage entry")
             missing.append(
                 {
