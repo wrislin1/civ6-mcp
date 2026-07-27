@@ -10,7 +10,7 @@ import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import cast
+from typing import Any, cast
 
 from civ_mcp.connection import GameConnection
 
@@ -100,6 +100,57 @@ async def capture_action_space() -> dict[str, object]:
     return parse_capture_lines(lines)
 
 
+def _load_snapshot(path: Path = SNAPSHOT_PATH) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _arena_audit_evidence() -> dict[str, object]:
+    import importlib.util
+
+    path = REPO_ROOT / "scripts" / "audit_arena_tool_coverage.py"
+    spec = importlib.util.spec_from_file_location(
+        "_arena_tool_coverage_audit",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load arena audit: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.collect_evidence()
+
+
+def _validated_report() -> dict[str, object]:
+    from civ_mcp.arena.registry import TOOL_REGISTRY
+    from civ_mcp.capability_map import (
+        ACTION_COVERAGE,
+        build_report_evidence,
+        validate_coverage,
+    )
+
+    snapshot = _load_snapshot()
+    unit_actions = set(_arena_audit_evidence()["mcp_unit_actions"])
+    validate_coverage(
+        snapshot,
+        ACTION_COVERAGE,
+        arena_tools=set(TOOL_REGISTRY),
+        unit_action_verbs=unit_actions,
+    )
+    return build_report_evidence(snapshot, ACTION_COVERAGE)
+
+
+def _print_human(evidence: Mapping[str, object]) -> None:
+    counts = evidence["counts"]
+    print(
+        "counts:",
+        f"covered={counts['covered']}",
+        f"missing={counts['missing']}",
+        f"excluded={counts['excluded']}",
+        f"total={counts['total']}",
+    )
+    for row in evidence["missing"]:
+        print(f"{row['priority']:>6}  {row['action']}  {row['note']}")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     modes = parser.add_mutually_exclusive_group()
@@ -122,9 +173,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
         print("captured:", " ".join(f"{k}={v}" for k, v in counts.items()))
         return 0
-    raise SystemExit(
-        "offline report is added in Task 2; use --capture for the capture task"
-    )
+    evidence = _validated_report()
+    if args.as_json:
+        print(json.dumps(evidence, sort_keys=True))
+    else:
+        _print_human(evidence)
+    return 0
 
 
 if __name__ == "__main__":
