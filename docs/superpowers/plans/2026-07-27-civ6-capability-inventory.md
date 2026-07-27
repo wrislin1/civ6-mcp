@@ -1,6 +1,6 @@
 # Civ 6 Capability Inventory Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Capture Civ 6's engine-owned action tables, classify every action against real tool surfaces, and fail offline tests whenever an action is unclassified or stale.
 
@@ -50,7 +50,7 @@
 - Produces: `main(argv: Sequence[str] | None = None) -> int`
 - Consumes later: Task 2 imports `parse_capture_lines`, `SNAPSHOT_PATH`, and the committed JSON.
 
-- [ ] **Step 1: Write failing parser and CLI-contract tests**
+- [x] **Step 1: Write failing parser and CLI-contract tests**
 
 Add these imports and tests to `tests/arena/test_capability_coverage.py`:
 
@@ -123,7 +123,7 @@ def test_write_snapshot_atomic_replaces_only_after_serialization(tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 ```
 
-- [ ] **Step 2: Run the focused tests and verify the expected import failure**
+- [x] **Step 2: Run the focused tests and verify the expected import failure**
 
 Run:
 
@@ -133,7 +133,7 @@ uv run --extra test pytest tests/arena/test_capability_coverage.py -q
 
 Expected: collection fails because `scripts.audit_civ6_capabilities` does not exist.
 
-- [ ] **Step 3: Implement the capture parser and atomic writer**
+- [x] **Step 3: Implement the capture parser and atomic writer**
 
 Create `scripts/audit_civ6_capabilities.py` with these constants and core functions:
 
@@ -245,7 +245,7 @@ async def capture_action_space() -> dict[str, object]:
 
 The parser intentionally fails on unrelated output. A noisy or partial tuner read must preserve the old snapshot instead of silently accepting uncertain evidence.
 
-- [ ] **Step 4: Add the exact CLI mode contract**
+- [x] **Step 4: Add the exact CLI mode contract**
 
 In the same script, add:
 
@@ -283,7 +283,7 @@ if __name__ == "__main__":
 
 Add a test that `_build_parser().parse_args(["--capture", "--report"])` raises `SystemExit(2)` and `main(["--capture", "--json"])` raises `SystemExit(2)`.
 
-- [ ] **Step 5: Run parser tests**
+- [x] **Step 5: Run parser tests**
 
 Run:
 
@@ -293,7 +293,7 @@ uv run --extra test pytest tests/arena/test_capability_coverage.py -q
 
 Expected: all Task 1 offline tests pass.
 
-- [ ] **Step 6: Perform the attended live capture**
+- [x] **Step 6: Perform the attended live capture**
 
 Prerequisite: Civ 6 is running in a loaded game with FireTuner enabled and no other process owns the single tuner connection.
 
@@ -311,7 +311,7 @@ captured: UnitOperations=63 UnitCommands=28 DiplomaticActions=42
 
 Inspect `git diff -- docs/research/civ6-action-space.json`. Confirm the three arrays are sorted, contain exactly 63/28/42 unique values, and the file has only `schema_version` plus `tables`.
 
-- [ ] **Step 7: Record `EMBARK` / `DISEMBARK` evidence**
+- [x] **Step 7: Record `EMBARK` / `DISEMBARK` evidence**
 
 Use an embarked-capable unit and the existing `move_unit` path for one land-to-water move and one water-to-land move. Record the exact observed result for Task 2:
 
@@ -322,7 +322,7 @@ Use an embarked-capable unit and the existing `move_unit` path for one land-to-w
 
 Do not add a dedicated embark tool in this plan.
 
-- [ ] **Step 8: Run the full arena suite**
+- [x] **Step 8: Run the full arena suite**
 
 Run:
 
@@ -332,7 +332,7 @@ uv run --extra test pytest tests/arena -q
 
 Expected: all tests pass.
 
-- [ ] **Step 9: Commit Task 1**
+- [x] **Step 9: Commit Task 1**
 
 ```bash
 git add scripts/audit_civ6_capabilities.py docs/research/civ6-action-space.json tests/arena/test_capability_coverage.py
@@ -353,7 +353,7 @@ git commit -m "feat(audit): capture Civ 6 action-space snapshot"
 - Produces: `validate_coverage(snapshot, coverage, *, arena_tools, unit_action_verbs) -> None`.
 - Produces: `build_report_evidence(snapshot, coverage) -> dict[str, object]`.
 
-- [ ] **Step 1: Write failing synthetic validation tests**
+- [x] **Step 1: Write failing synthetic validation tests**
 
 Append:
 
@@ -438,7 +438,7 @@ Also add focused cases proving:
 - covered entries require `tool` and reject `priority`;
 - snapshot `schema_version != 1` is rejected.
 
-- [ ] **Step 2: Run the focused tests and verify the expected import failure**
+- [x] **Step 2: Run the focused tests and verify the expected import failure**
 
 Run:
 
@@ -448,7 +448,7 @@ uv run --extra test pytest tests/arena/test_capability_coverage.py -q
 
 Expected: collection fails because `civ_mcp.capability_map` does not exist.
 
-- [ ] **Step 3: Implement the coverage model and validator**
+- [x] **Step 3: Implement the coverage model and validator**
 
 Create `src/civ_mcp/capability_map.py`:
 
@@ -543,7 +543,7 @@ def validate_coverage(
         raise ValueError("\n".join(errors))
 ```
 
-- [ ] **Step 4: Populate the complete hand-maintained map**
+- [x] **Step 4: Populate the complete hand-maintained map**
 
 In the same module, define one literal `ACTION_COVERAGE` entry for every action in the committed snapshot. Do not generate defaults or derive statuses from prefixes.
 
@@ -588,7 +588,7 @@ ACTION_COVERAGE = {
 
 For every other action, inspect the actual registry/MCP implementation before marking it covered. Similar names are insufficient evidence: record `missing` when no existing call performs the action, and use `excluded` only for engine-internal, debug, cosmetic, or verified implicit behavior.
 
-- [ ] **Step 5: Add real-map enforcement and report-evidence tests**
+- [x] **Step 5: Add real-map enforcement and report-evidence tests**
 
 Append:
 
@@ -669,7 +669,7 @@ def build_report_evidence(
     }
 ```
 
-- [ ] **Step 6: Implement offline human and JSON reporting**
+- [x] **Step 6: Implement offline human and JSON reporting**
 
 Replace Task 1's offline `SystemExit` with:
 
@@ -727,7 +727,7 @@ def _print_human(evidence: Mapping[str, object]) -> None:
 
 In `main`, make no mode and `--report` call `_validated_report`; emit `json.dumps(evidence, sort_keys=True)` for `--json`, otherwise call `_print_human`.
 
-- [ ] **Step 7: Add subprocess CLI tests**
+- [x] **Step 7: Add subprocess CLI tests**
 
 Add tests using `subprocess.run` from the repository root:
 
@@ -766,7 +766,7 @@ def test_report_cli_human_and_json():
     assert evidence["missing"][0]["priority"] == "high"
 ```
 
-- [ ] **Step 8: Run focused tests and inspect the report**
+- [x] **Step 8: Run focused tests and inspect the report**
 
 Run:
 
@@ -777,7 +777,7 @@ uv run python scripts/audit_civ6_capabilities.py --json
 
 Expected: tests pass; JSON has `total=133`, internally consistent counts, and priority-sorted missing entries.
 
-- [ ] **Step 9: Run the full arena suite**
+- [x] **Step 9: Run the full arena suite**
 
 Run:
 
@@ -787,7 +787,7 @@ uv run --extra test pytest tests/arena -q
 
 Expected: all tests pass.
 
-- [ ] **Step 10: Commit Task 2**
+- [x] **Step 10: Commit Task 2**
 
 ```bash
 git add src/civ_mcp/capability_map.py scripts/audit_civ6_capabilities.py tests/arena/test_capability_coverage.py
@@ -796,7 +796,7 @@ git commit -m "feat(audit): enforce Civ 6 action coverage"
 
 ## Final Verification
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 uv run --extra test pytest tests/arena -q
@@ -806,4 +806,4 @@ git diff --check
 git status --short
 ```
 
-- [ ] Confirm no missing gameplay verb was implemented, the snapshot has 133 unique actions, every action has exactly one explicit classification, and the tracked worktree is clean.
+- [x] Confirm no missing gameplay verb was implemented, the snapshot has 133 unique actions, every action has exactly one explicit classification, and the tracked worktree is clean.

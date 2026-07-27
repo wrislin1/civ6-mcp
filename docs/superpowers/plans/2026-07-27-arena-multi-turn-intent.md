@@ -1,6 +1,6 @@
 # Arena Multi-Turn Intent Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Persist and deterministically execute Great Person activation intent across turns, then add a v7 artifact that isolates task-tracker follow-through from tool-tier changes.
 
@@ -52,7 +52,7 @@
 - Produces: a third inert example in `STANDING_PLAN_INSTRUCTION`.
 - Consumed by Task 2: enabling the tracker in v7 exposes this prompt and execution path.
 
-- [ ] **Step 1: Write failing grammar tests**
+- [x] **Step 1: Write failing grammar tests**
 
 Append to `tests/arena/test_task_tracker.py`:
 
@@ -94,7 +94,7 @@ def test_great_person_placeholder_example_does_not_parse():
     ) == []
 ```
 
-- [ ] **Step 2: Extend the tracker fake and write failing execution tests**
+- [x] **Step 2: Extend the tracker fake and write failing execution tests**
 
 Add `activate_result="GP_ACTIVATED|Bhasa at 12,19"` to `FakeGS.__init__`,
 store `self.activate_result`, initialize `self.activate_calls = []`, and add:
@@ -170,7 +170,7 @@ async def test_raw_ok_gp_prefix_is_not_tracker_success():
     assert updated[0].failure_count == 1
 ```
 
-- [ ] **Step 3: Write failing retry and missing-unit tests**
+- [x] **Step 3: Write failing retry and missing-unit tests**
 
 Parameterize activation failures over:
 
@@ -206,7 +206,7 @@ async def test_missing_great_person_is_lost():
     assert results[0]["result"] == "unit_missing"
 ```
 
-- [ ] **Step 4: Write the failing prompt test**
+- [x] **Step 4: Write the failing prompt test**
 
 In `tests/arena/test_prompting.py`, strengthen the placeholder test:
 
@@ -226,7 +226,7 @@ def test_every_standing_plan_task_example_is_inert():
     assert all(parse_task_lines(line, turn=1) == [] for line in examples)
 ```
 
-- [ ] **Step 5: Run focused tests and verify failures**
+- [x] **Step 5: Run focused tests and verify failures**
 
 Run:
 
@@ -237,7 +237,7 @@ uv run --extra test pytest tests/arena/test_task_tracker.py tests/arena/test_pro
 Expected: the new kind does not parse or execute and the prompt lists only two
 kinds.
 
-- [ ] **Step 6: Extend constants, grammar, and parser validation**
+- [x] **Step 6: Extend constants, grammar, and parser validation**
 
 In `task_tracker.py`, change:
 
@@ -275,7 +275,7 @@ After improvement normalization in `parse_task_lines`, enforce:
 Update the parser and `run_pre_model_tasks` docstrings to name all three
 low-risk kinds.
 
-- [ ] **Step 7: Add the explicit execution branch**
+- [x] **Step 7: Add the explicit execution branch**
 
 In `_run_single_task`, insert this branch after `settle` and before the
 builder fallback:
@@ -308,7 +308,7 @@ builder fallback:
 Do not add unit-type probing. As with existing settle/builder tasks, a
 mismatched unit receives the GameState error and uses the normal retry budget.
 
-- [ ] **Step 8: Add the inert prompt example**
+- [x] **Step 8: Add the inert prompt example**
 
 Append inside `STANDING_PLAN_INSTRUCTION`:
 
@@ -318,7 +318,7 @@ Append inside `STANDING_PLAN_INSTRUCTION`:
 
 Keep the literal placeholders and existing comment unchanged.
 
-- [ ] **Step 9: Run focused and full tests**
+- [x] **Step 9: Run focused and full tests**
 
 Run:
 
@@ -329,7 +329,7 @@ uv run --extra test pytest tests/arena -q
 
 Expected: all tests pass.
 
-- [ ] **Step 10: Commit Task 1**
+- [x] **Step 10: Commit Task 1**
 
 ```bash
 git add src/civ_mcp/arena/task_tracker.py src/civ_mcp/arena/prompting.py tests/arena/test_task_tracker.py tests/arena/test_prompting.py
@@ -347,7 +347,7 @@ git commit -m "feat(arena): track great-person activation intent"
 - Produces: run ID `arena-channels-behavior-v7`.
 - Produces: tracker-enabled players 1 and 2 with unchanged minimal tools.
 
-- [ ] **Step 1: Write the failing loader equality test**
+- [x] **Step 1: Write the failing loader equality test**
 
 Add:
 
@@ -394,7 +394,7 @@ def test_arena_channels_behavior_v7_is_tracker_only_delta_from_v6():
     ) == v6
 ```
 
-- [ ] **Step 2: Run the focused test and verify the missing artifact failure**
+- [x] **Step 2: Run the focused test and verify the missing artifact failure**
 
 Run:
 
@@ -404,7 +404,7 @@ uv run --extra test pytest tests/arena/test_experiment.py::test_arena_channels_b
 
 Expected: fail because the v7 YAML file does not exist.
 
-- [ ] **Step 3: Create v7 from v6 with only the approved YAML edits**
+- [x] **Step 3: Create v7 from v6 with only the approved YAML edits**
 
 Copy `experiments/arena-channels-behavior-v6.yaml` to
 `experiments/arena-channels-behavior-v7.yaml`.
@@ -425,7 +425,7 @@ Add the identical line under player 2. Do not add it to player 3. Do not
 change tools, model, gateway, channel settings, scripts, turn limits, or deal
 text.
 
-- [ ] **Step 4: Run the focused test**
+- [x] **Step 4: Run the focused test**
 
 Run:
 
@@ -435,7 +435,7 @@ uv run --extra test pytest tests/arena/test_experiment.py::test_arena_channels_b
 
 Expected: pass.
 
-- [ ] **Step 5: Inspect the raw YAML diff**
+- [x] **Step 5: Inspect the raw YAML diff**
 
 Run:
 
@@ -446,7 +446,7 @@ git diff --no-index experiments/arena-channels-behavior-v6.yaml experiments/aren
 Expected: one run ID replacement and exactly two identical
 `task_tracker: {enabled: true}` additions.
 
-- [ ] **Step 6: Run the full arena suite**
+- [x] **Step 6: Run the full arena suite**
 
 Run:
 
@@ -456,7 +456,7 @@ uv run --extra test pytest tests/arena -q
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 ```bash
 git add experiments/arena-channels-behavior-v7.yaml tests/arena/test_experiment.py
@@ -465,7 +465,7 @@ git commit -m "test(arena): add channels behavior v7 tracker ablation"
 
 ## Final Verification
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 uv run --extra test pytest tests/arena/test_task_tracker.py tests/arena/test_prompting.py tests/arena/test_experiment.py -q
@@ -474,6 +474,6 @@ git diff --check
 git status --short
 ```
 
-- [ ] Confirm `GP_ACTIVATED|` is the only GP success prefix, v7's two LLM
+- [x] Confirm `GP_ACTIVATED|` is the only GP success prefix, v7's two LLM
 seats remain minimal, the scripted seat remains tracker-disabled, no
 analyzer/retry-limit changes were made, and the tracked worktree is clean.

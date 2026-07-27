@@ -1,6 +1,6 @@
 # Arena Unit-Action Visibility Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make Great Person activation reachable in the standard tier and render exact, legal-now unit calls without leaking the wrong surface syntax or tools outside a seat's filtered tier.
 
@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - `TIERS["minimal"]` remains the exact ordered 15-tool tuple.
-- `TIERS["standard"]` becomes an exact ordered 28-tool tuple.
+- `TIERS["standard"]` becomes an exact ordered 29-tool tuple.
 - Insert `get_great_people`, then `activate_great_person`, immediately after `repair_improvement`.
 - `activate_great_person` remains gated by `requires="gp_unit"`; `get_great_people` remains ungated.
 - Tier audit JSON field is exactly `tier_action_verbs_absent`.
@@ -62,11 +62,11 @@
 - Modify: `tests/arena/test_tool_coverage_audit.py`
 
 **Interfaces:**
-- Produces: exact `TIERS["standard"]` 28-tuple.
+- Produces: exact `TIERS["standard"]` 29-tuple.
 - Produces: `collect_evidence()["tier_action_verbs_absent"]`.
 - Consumed by Tasks 2-3: filtered tier names define which arena hints may render.
 
-- [ ] **Step 1: Update the exact standard-tier snapshot test first**
+- [x] **Step 1: Update the exact standard-tier snapshot test first**
 
 In `tests/arena/test_registry.py`, update `STANDARD_TIER_SNAPSHOT` so this segment is exact:
 
@@ -96,7 +96,7 @@ def test_standard_gp_activation_is_capability_gated():
     assert "activate_great_person" in visible
 ```
 
-- [ ] **Step 2: Write failing tier-audit tests**
+- [x] **Step 2: Write failing tier-audit tests**
 
 In `tests/arena/test_tool_coverage_audit.py`, append:
 
@@ -117,7 +117,7 @@ def test_checked_in_audit_tracks_gp_tier_rows():
         REPO_ROOT / "docs" / "research" / "arena-tool-coverage-audit.md"
     ).read_text(encoding="utf-8")
 
-    assert "standard=28" in text
+    assert "standard=29" in text
     assert (
         "| `get_great_people` | no | intentionally-excluded | "
         "yes | present | yes |"
@@ -128,7 +128,7 @@ def test_checked_in_audit_tracks_gp_tier_rows():
     ) in text
 ```
 
-- [ ] **Step 3: Run focused tests and verify failures**
+- [x] **Step 3: Run focused tests and verify failures**
 
 Run:
 
@@ -138,7 +138,7 @@ uv run --extra test pytest tests/arena/test_registry.py tests/arena/test_tool_co
 
 Expected: the standard snapshot remains 26 and the audit evidence lacks `tier_action_verbs_absent`.
 
-- [ ] **Step 4: Extend the standard tier**
+- [x] **Step 4: Extend the standard tier**
 
 In `TIERS["standard"]`, insert:
 
@@ -149,7 +149,7 @@ In `TIERS["standard"]`, insert:
 
 immediately after `repair_improvement`. Do not change `minimal`, `full`, registry order, tool definitions, or capability flags.
 
-- [ ] **Step 5: Add raw per-tier action-verb evidence**
+- [x] **Step 5: Add raw per-tier action-verb evidence**
 
 In `scripts/audit_arena_tool_coverage.py`, add:
 
@@ -184,7 +184,7 @@ In `_print_human`, print both lists after the existing three delta lines:
 
 Keep `ACTION_ALIASES` only for the existing MCP-vs-arena comparison.
 
-- [ ] **Step 6: Refresh the checked-in audit**
+- [x] **Step 6: Refresh the checked-in audit**
 
 Run:
 
@@ -194,7 +194,7 @@ uv run python scripts/audit_arena_tool_coverage.py
 
 Update `docs/research/arena-tool-coverage-audit.md`:
 
-- counts line: `registry=90`, `minimal=15`, `standard=28`, `full=90`;
+- counts line: `registry=90`, `minimal=15`, `standard=29`, `full=90`;
 - fixed-this-cycle text: standard now includes GP discovery and activation;
 - `get_great_people` row: standard `yes | present`;
 - `activate_great_person` row: standard `yes | present`;
@@ -202,7 +202,7 @@ Update `docs/research/arena-tool-coverage-audit.md`:
 
 Do not rewrite unrelated dispositions.
 
-- [ ] **Step 7: Run focused and full tests**
+- [x] **Step 7: Run focused and full tests**
 
 Run:
 
@@ -213,7 +213,7 @@ uv run --extra test pytest tests/arena -q
 
 Expected: all tests pass.
 
-- [ ] **Step 8: Commit Task 1**
+- [x] **Step 8: Commit Task 1**
 
 ```bash
 git add src/civ_mcp/arena/registry.py scripts/audit_arena_tool_coverage.py docs/research/arena-tool-coverage-audit.md tests/arena/test_registry.py tests/arena/test_tool_coverage_audit.py
@@ -240,7 +240,7 @@ git commit -m "feat(arena): expose great-person activation in standard tier"
 - Produces: arena dispatch behavior that passes `allowed` to direct `get_units` rendering.
 - Consumed by Task 3: briefing renderers call the same `narrate_units` interface.
 
-- [ ] **Step 1: Write failing parser tests**
+- [x] **Step 1: Write failing parser tests**
 
 In `tests/test_parsers.py`, append to `TestParseUnits`:
 
@@ -266,7 +266,7 @@ In `tests/test_parsers.py`, append to `TestParseUnits`:
 Add a query-string test asserting `build_units_query()` contains
 `GetActivationHighlightPlots`, compares against the current plot index, and does not add any new remote-tile `CanStartOperation` loop.
 
-- [ ] **Step 2: Write failing narration tests**
+- [x] **Step 2: Write failing narration tests**
 
 Create `tests/test_narrate_units.py` with a helper returning a `UnitInfo` whose moves are positive, `valid_improvements=["IMPROVEMENT_MINE"]`, `can_activate_here=True`, and `can_upgrade=True`.
 
@@ -314,7 +314,7 @@ def test_invalid_surface_is_rejected():
 
 Add tests for multiple improvements (one line each, input order), zero moves, `"UNKNOWN"`, and `needs_promotion=True` producing no promotion call.
 
-- [ ] **Step 3: Replace builder `tool_hints` tests with surface tests**
+- [x] **Step 3: Replace builder `tool_hints` tests with surface tests**
 
 In `tests/test_narrate_builder_tasks.py`:
 
@@ -331,7 +331,7 @@ The MCP repair call is:
 unit_action(unit_id=65541, action="repair")
 ```
 
-- [ ] **Step 4: Run focused tests and verify failures**
+- [x] **Step 4: Run focused tests and verify failures**
 
 Run:
 
@@ -341,7 +341,7 @@ uv run --extra test pytest tests/test_parsers.py tests/test_narrate_units.py tes
 
 Expected: missing model/parser field and unsupported narration arguments.
 
-- [ ] **Step 5: Add and parse the safe Lua activation bit**
+- [x] **Step 5: Add and parse the safe Lua activation bit**
 
 In `UnitInfo`, append:
 
@@ -382,7 +382,7 @@ In `parse_units_response`:
 
 Pass it to `UnitInfo`.
 
-- [ ] **Step 6: Implement shared surface validation and exact call formatting**
+- [x] **Step 6: Implement shared surface validation and exact call formatting**
 
 In `narrate.py`, add:
 
@@ -415,7 +415,7 @@ Extend `narrate_builder_tasks` and `_append_builder_list` with
 `unit_index`; MCP uses `unit_action` calls and shows only the composite ID.
 Remove `tool_hints` completely.
 
-- [ ] **Step 7: Select explicit surfaces at server and registry callers**
+- [x] **Step 7: Select explicit surfaces at server and registry callers**
 
 In `server.py`:
 
@@ -476,7 +476,7 @@ In `dispatch`, preserve the allowlist check, then special-case only `get_units`:
 
 This bypass is intentionally narrow; do not change all 90 `ToolDef.call` signatures.
 
-- [ ] **Step 8: Add dispatch-level reachability tests**
+- [x] **Step 8: Add dispatch-level reachability tests**
 
 In `tests/arena/test_registry.py`, use a fake `get_units` result with all three signals true and assert:
 
@@ -497,7 +497,7 @@ assert "upgrade_unit with" in full
 Also assert `filter_tools(TIERS["standard"], {"gp_unit": False})` passed as
 `allowed` suppresses only the activation hint while retaining improvement.
 
-- [ ] **Step 9: Run focused and full tests**
+- [x] **Step 9: Run focused and full tests**
 
 Run:
 
@@ -508,7 +508,7 @@ uv run --extra test pytest tests/arena -q
 
 Expected: all tests pass.
 
-- [ ] **Step 10: Commit Task 2**
+- [x] **Step 10: Commit Task 2**
 
 ```bash
 git add src/civ_mcp/lua/models.py src/civ_mcp/lua/units.py src/civ_mcp/narrate.py src/civ_mcp/server.py src/civ_mcp/arena/registry.py tests/test_parsers.py tests/test_narrate_units.py tests/test_narrate_builder_tasks.py tests/arena/test_registry.py
@@ -534,7 +534,7 @@ git commit -m "feat(arena): narrate reachable unit actions by surface"
 - Local `LLMPolicy` supplies arena surface plus `visible_names`.
 - `CLIAgentPolicy` supplies MCP surface and no arena allowlist.
 
-- [ ] **Step 1: Write failing briefing surface tests**
+- [x] **Step 1: Write failing briefing surface tests**
 
 In `tests/arena/test_briefing.py`, construct a units-only briefing fake whose
 unit has all Task 2 signals true. Add:
@@ -570,7 +570,7 @@ async def test_units_briefing_uses_mcp_surface_for_cli_policy():
 
 Add invalid-surface and arena-without-allowlist fail-closed tests.
 
-- [ ] **Step 2: Write failing prompt-context forwarding tests**
+- [x] **Step 2: Write failing prompt-context forwarding tests**
 
 Update the fake in
 `test_maybe_build_briefing_builds_with_shared_budget` to accept keyword-only
@@ -592,7 +592,7 @@ Assert both values reached `build_briefing`. Keep the supplied-briefing test:
 when `supplied` is non-`None`, the builder is not called regardless of the
 surface arguments.
 
-- [ ] **Step 3: Write policy-level forwarding tests**
+- [x] **Step 3: Write policy-level forwarding tests**
 
 In `tests/arena/test_agent.py`, monkeypatch `maybe_build_briefing`, call a
 local `LLMPolicy` with standard tools and `caps={"gp_unit": False}`, and assert:
@@ -611,7 +611,7 @@ assert captured["surface"] == "mcp"
 assert captured["available_tools"] is None
 ```
 
-- [ ] **Step 4: Run focused tests and verify signature failures**
+- [x] **Step 4: Run focused tests and verify signature failures**
 
 Run:
 
@@ -622,7 +622,7 @@ uv run --extra test pytest tests/arena/test_briefing.py tests/arena/test_prompt_
 Expected: `build_briefing` / `maybe_build_briefing` do not yet accept the new
 surface context.
 
-- [ ] **Step 5: Thread the rendering context through briefing construction**
+- [x] **Step 5: Thread the rendering context through briefing construction**
 
 In `briefing.py`:
 
@@ -672,7 +672,7 @@ In `prompt_context.py`, add keyword-only defaults:
 
 and pass them to `build_briefing`. Keep the early `supplied` return unchanged.
 
-- [ ] **Step 6: Select the correct policy surface**
+- [x] **Step 6: Select the correct policy surface**
 
 In local `LLMPolicy.__call__`, where `visible_names` already feeds schema and
 dispatch, pass:
@@ -694,7 +694,7 @@ available_tools=None,
 The CLI subprocess uses the MCP server, so do not resolve arena tiers in
 `cli_agent.py`.
 
-- [ ] **Step 7: Update existing test fakes for the new keyword arguments**
+- [x] **Step 7: Update existing test fakes for the new keyword arguments**
 
 Search:
 
@@ -707,7 +707,7 @@ and `available_tools`. For fakes replacing `maybe_build_briefing`, accept
 `**kwargs` unless the test explicitly asserts the new contract. Do not weaken
 production signatures to accommodate stale fakes.
 
-- [ ] **Step 8: Run focused and full tests**
+- [x] **Step 8: Run focused and full tests**
 
 Run:
 
@@ -718,7 +718,7 @@ uv run --extra test pytest tests/arena -q
 
 Expected: all tests pass.
 
-- [ ] **Step 9: Commit Task 3**
+- [x] **Step 9: Commit Task 3**
 
 ```bash
 git add src/civ_mcp/arena/briefing.py src/civ_mcp/arena/prompt_context.py src/civ_mcp/arena/agent.py src/civ_mcp/arena/cli_agent.py tests/arena/test_briefing.py tests/arena/test_prompt_context.py tests/arena/test_agent.py tests/arena/test_cli_agent.py
@@ -727,7 +727,7 @@ git commit -m "fix(arena): preserve tool surface in unit briefings"
 
 ## Final Verification
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 uv run --extra test pytest tests/test_parsers.py tests/test_narrate_units.py tests/test_narrate_builder_tasks.py tests/arena/test_registry.py tests/arena/test_tool_coverage_audit.py tests/arena/test_briefing.py tests/arena/test_prompt_context.py tests/arena/test_agent.py tests/arena/test_cli_agent.py -q
@@ -737,6 +737,6 @@ git diff --check
 git status --short
 ```
 
-- [ ] Confirm minimal remains 15, standard is 28, local arena hints never name
+- [x] Confirm minimal remains 15, standard is 29, local arena hints never name
 out-of-tier/gated tools, CLI briefings use MCP syntax, and the tracked
 worktree is clean.
