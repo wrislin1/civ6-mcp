@@ -52,6 +52,7 @@ STANDARD_TIER_SNAPSHOT = (
     "remove_feature",
     "repair_improvement",
     "get_great_people",
+    "recruit_great_person",
     "activate_great_person",
     "purchase_item",
     "heal_unit",
@@ -125,6 +126,21 @@ def test_resolve_tools_full_tracks_registry_additions(monkeypatch):
 
 def test_standard_tier_is_pinned_for_empire_behavior():
     assert TIERS["standard"] == STANDARD_TIER_SNAPSHOT
+
+
+def test_standard_carries_the_whole_great_person_chain():
+    """Activation is unreachable without recruitment.
+
+    Recruiting is an explicit PlayerOperation gated on CanRecruitPerson, and
+    end_turn has no Great-Person blocker to resolve it, so a tier that can
+    activate but not recruit can never acquire the unit it would activate.
+    """
+    for name in ("get_great_people", "recruit_great_person", "activate_great_person"):
+        assert name in TIERS["standard"]
+
+    order = [TIERS["standard"].index(n) for n in
+             ("get_great_people", "recruit_great_person", "activate_great_person")]
+    assert order == sorted(order)
 
 
 def test_standard_gp_activation_is_capability_gated():
@@ -976,7 +992,6 @@ BEHAVIOR_CRITICAL_TOOL_NAMES = {
     "promote_governor",
     "choose_dedication",
     "found_religion",
-    "recruit_great_person",
     "patronize_great_person",
     "reject_great_person",
     "start_trade_route",
@@ -990,7 +1005,6 @@ BEHAVIOR_CRITICAL_ACTION_VERBS = (
     "promote_governor",
     "choose_dedication",
     "found_religion",
-    "recruit_great_person",
     "patronize_great_person",
     "reject_great_person",
     "start_trade_route",

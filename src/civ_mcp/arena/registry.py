@@ -1408,6 +1408,7 @@ TIERS: dict[str, tuple[str, ...]] = {
         "remove_feature",
         "repair_improvement",
         "get_great_people",
+        "recruit_great_person",
         "activate_great_person",
         "purchase_item",
         "heal_unit",

@@ -35,23 +35,29 @@ and the units scan already visits every unit.
 
 ### 1. Tier reachability
 
-`TIERS["standard"]` gains exactly `get_great_people` and
-`activate_great_person`, going from 26 to 28 tools. `minimal` stays frozen at
+`TIERS["standard"]` gains `get_great_people`, `recruit_great_person`, and
+`activate_great_person`, going from 26 to 29 tools. `minimal` stays frozen at
 its 15, pinned by the existing snapshot test — historical artifacts must
 re-run against the same world.
 
-The exact standard ordering inserts `get_great_people` followed by
-`activate_great_person` immediately after `repair_improvement`. The activation
-tool is self-limiting: it carries `requires="gp_unit"` (`registry.py:1249`),
-and `filter_tools` (`registry.py:1451`) drops it from the schema for any seat
-that owns no Great Person. `get_great_people` is an ungated read, so a seat
-without a Great Person still gains that one discovery tool but no unavailable
-activation action.
+The exact standard ordering inserts those three, in that order, immediately
+after `repair_improvement`. The activation tool is self-limiting: it carries
+`requires="gp_unit"` (`registry.py:1249`), and `filter_tools`
+(`registry.py:1451`) drops it from the schema for any seat that owns no Great
+Person. `get_great_people` and `recruit_great_person` are ungated, so a seat
+without a Great Person still gains discovery and recruitment but no
+unavailable activation action.
 
-`recruit_great_person` and `patronize_great_person` stay `listed-for-later`:
-recruiting claims a point pool and patronizing spends gold, neither of which
-the audit's disposition rule ("routine workflow discovery and non-destructive
-actions with existing `GameState` support") covers.
+Recruitment was `listed-for-later` in the first draft of this spec and was
+promoted during review: recruiting is an explicit
+`PlayerOperations.RECRUIT_GREAT_PERSON` gated on `CanRecruitPerson`, and
+`end_turn` has no Great-Person blocker to resolve it. A tier that can activate
+but not recruit can therefore never acquire the unit it would activate, which
+would make the whole reachability change inert.
+
+`patronize_great_person` stays `listed-for-later`: it spends gold or faith,
+which the audit's disposition rule ("routine workflow discovery and
+non-destructive actions with existing `GameState` support") does not cover.
 
 ### 2. Tier-aware coverage audit
 
@@ -68,7 +74,8 @@ The machine-readable field is
 the registry's raw verbs, without MCP alias normalization, so the list uses
 `activate_great_person`, not `activate`. The human report and
 `docs/research/arena-tool-coverage-audit.md` are refreshed to the new
-`standard=28` count and exact tier membership.
+`standard=29` count and exact tier membership, and a test pins the doc's
+generated absent-verb blocks against generator output so they cannot drift.
 
 ### 3. Reachability-aware AVAILABLE NOW affordances
 
@@ -152,7 +159,8 @@ left, and no hint naming an improvement the Lua scan could not map
 ## Testing
 
 - Tier pins: `minimal` exact ordered 15-tuple (frozen), `standard` exact
-  ordered 28-tuple.
+  ordered 29-tuple, with the Great Person chain in discovery -> recruit ->
+  activate order.
 - `filter_tools` drops `activate_great_person` when `caps["gp_unit"]` is
   false and keeps it when true.
 - Parser test: a units response line with the new field yields
@@ -173,15 +181,15 @@ left, and no hint naming an improvement the Lua scan could not map
   `improve` and `activate_great_person`, and the `standard` list contains
   neither.
 - A deterministic audit-doc test confirms the checked-in
-  `docs/research/arena-tool-coverage-audit.md` count and the
-  `get_great_people` / `activate_great_person` tier rows match script output.
+  `docs/research/arena-tool-coverage-audit.md` count, the three Great Person
+  tier rows, and the generated absent-verb blocks match script output.
 - Full arena suite green before each commit.
 
 ## Out of scope
 
 - Adding any verb the capability inventory ranks as missing; that spec
   produces the list, and closing it is separate work.
-- `recruit_great_person` / `patronize_great_person` tier changes.
+- `patronize_great_person` tier changes.
 - Affordances requiring a new legality probe — settle-site validity, trade
   destinations, missionary spread targets. Each needs an engine call this
   codebase does not currently make safely.

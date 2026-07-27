@@ -107,12 +107,25 @@ def test_checked_in_audit_tracks_gp_tier_rows():
         REPO_ROOT / "docs" / "research" / "arena-tool-coverage-audit.md"
     ).read_text(encoding="utf-8")
 
-    assert "standard=28" in text
-    assert (
-        "| `get_great_people` | no | intentionally-excluded | "
-        "yes | present | yes |"
-    ) in text
-    assert (
-        "| `activate_great_person` | no | intentionally-excluded | "
-        "yes | present | yes |"
-    ) in text
+    assert "standard=29" in text
+    for tool in ("get_great_people", "recruit_great_person", "activate_great_person"):
+        assert (
+            f"| `{tool}` | no | intentionally-excluded | yes | present | yes |"
+        ) in text
+
+
+def test_checked_in_audit_absent_verb_lists_match_the_generator():
+    """The doc's absent-verb blocks are generator output, not prose.
+
+    Adding a tool to a tier or a verb to a ToolDef changes what the generator
+    produces; without this pin the checked-in block silently goes stale while
+    every other test stays green, and the audit doc is the artifact cited as
+    evidence of tier coverage.
+    """
+    text = (
+        REPO_ROOT / "docs" / "research" / "arena-tool-coverage-audit.md"
+    ).read_text(encoding="utf-8")
+    absent = _audit_module().collect_evidence()["tier_action_verbs_absent"]
+
+    for label, tier in (("Minimal", "minimal"), ("Standard", "standard")):
+        assert f"{label} action verbs absent: {absent[tier]}" in text

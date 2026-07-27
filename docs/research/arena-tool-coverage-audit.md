@@ -4,11 +4,11 @@
 
 This audit compares three surfaces: MCP tools exposed in `src/civ_mcp/server.py`, the arena registry in `src/civ_mcp/arena/registry.py`, and the unit-action reference in `CLAUDE.md`. The registry increased from 89 tools before this change to 90 after it. `scripts/audit_arena_tool_coverage.py` collects every `gs` attribute referenced by public MCP tools, intersects those references with actual `GameState` methods, and therefore includes direct calls and bound methods passed as callbacks. The executable `unit_action` match cases define the direct gameplay-action set; those cases are compared with the action verbs exposed by the arena registry and documented in `CLAUDE.md`.
 
-The deterministic registry snapshot after this change is: `registry=90`, `minimal=15`, `standard=28`, and `full=90`.
+The deterministic registry snapshot after this change is: `registry=90`, `minimal=15`, `standard=29`, and `full=90`.
 
 ## Fixed This Cycle
 
-`repair_improvement` is `add-to-standard-now`: it is a routine, non-destructive builder action that restores a pillaged improvement on the builder's current tile. `get_builder_tasks` is also `add-to-standard-now`, so a standard-tier pilot can identify routine builder work before acting. The standard tier now also includes Great Person discovery and activation.
+`repair_improvement` is `add-to-standard-now`: it is a routine, non-destructive builder action that restores a pillaged improvement on the builder's current tile. `get_builder_tasks` is also `add-to-standard-now`, so a standard-tier pilot can identify routine builder work before acting. The standard tier now also includes the whole Great Person chain: discovery, recruitment, and activation.
 
 The MCP unit-action reference now documents the three previously omitted actions: `repair`, `remove_improvement`, and `sacrifice_charges`.
 
@@ -59,7 +59,7 @@ provides it; for example, `skip_unit` keeps `skip` reachable even though
 
 ```text
 Minimal action verbs absent: ['activate_great_person', 'alert', 'appoint_governor', 'assign_governor', 'attack', 'automate', 'change_government', 'choose_dedication', 'choose_pantheon', 'city_attack', 'excavate_artifact', 'form_alliance', 'form_army', 'form_corps', 'found_religion', 'heal', 'improve', 'move_great_work', 'patronize_great_person', 'promote_governor', 'propose_peace', 'propose_trade', 'purchase', 'purchase_tile', 'queue_wc_votes', 'rebase_unit', 'recruit_great_person', 'reject_great_person', 'remove_feature', 'repair', 'resolve_city_capture', 'send_diplomatic_action', 'send_envoy', 'set_city_focus', 'set_civic', 'set_policies', 'spread_religion', 'spy_action', 'start_trade_route', 'teleport_trader', 'upgrade']
-Standard action verbs absent: ['appoint_governor', 'assign_governor', 'automate', 'change_government', 'choose_dedication', 'choose_pantheon', 'city_attack', 'excavate_artifact', 'form_alliance', 'form_army', 'form_corps', 'found_religion', 'move_great_work', 'patronize_great_person', 'promote_governor', 'propose_peace', 'propose_trade', 'purchase_tile', 'queue_wc_votes', 'rebase_unit', 'recruit_great_person', 'reject_great_person', 'resolve_city_capture', 'send_diplomatic_action', 'send_envoy', 'set_city_focus', 'set_policies', 'spread_religion', 'spy_action', 'start_trade_route', 'teleport_trader', 'upgrade']
+Standard action verbs absent: ['appoint_governor', 'assign_governor', 'automate', 'change_government', 'choose_dedication', 'choose_pantheon', 'city_attack', 'excavate_artifact', 'form_alliance', 'form_army', 'form_corps', 'found_religion', 'move_great_work', 'patronize_great_person', 'promote_governor', 'propose_peace', 'propose_trade', 'purchase_tile', 'queue_wc_votes', 'rebase_unit', 'reject_great_person', 'resolve_city_capture', 'send_diplomatic_action', 'send_envoy', 'set_city_focus', 'set_policies', 'spread_religion', 'spy_action', 'start_trade_route', 'teleport_trader', 'upgrade']
 ```
 
 | tool | minimal | minimal disposition | standard | standard disposition | full |
@@ -130,7 +130,7 @@ Standard action verbs absent: ['appoint_governor', 'assign_governor', 'automate'
 | `promote_governor` | no | intentionally-excluded | no | listed-for-later | yes |
 | `choose_dedication` | no | intentionally-excluded | no | listed-for-later | yes |
 | `found_religion` | no | intentionally-excluded | no | listed-for-later | yes |
-| `recruit_great_person` | no | intentionally-excluded | no | listed-for-later | yes |
+| `recruit_great_person` | no | intentionally-excluded | yes | present | yes |
 | `patronize_great_person` | no | intentionally-excluded | no | listed-for-later | yes |
 | `reject_great_person` | no | intentionally-excluded | no | listed-for-later | yes |
 | `start_trade_route` | no | intentionally-excluded | no | listed-for-later | yes |
@@ -157,4 +157,4 @@ Standard action verbs absent: ['appoint_governor', 'assign_governor', 'automate'
 
 ## Decision Record
 
-Routine repair belongs in `standard` because it restores existing empire infrastructure without destroying player state. Great Person activation is capability-gated and paired with its read-only discovery tool. `remove_improvement` and `delete` remain deferred because they are destructive. `sacrifice_charges` and `build_route` remain deferred because they are specialized actions with material or strategic costs. Passive `sleep` remains deferred because the standard tier already provides explicit active orders and does not need a second passive hold behavior.
+Routine repair belongs in `standard` because it restores existing empire infrastructure without destroying player state. Great Person activation is capability-gated and paired with its read-only discovery tool. `recruit_great_person` joins it because activation is otherwise unreachable: recruiting is an explicit `PlayerOperations.RECRUIT_GREAT_PERSON` gated on `CanRecruitPerson`, and `end_turn` has no Great-Person blocker, so a tier that can activate but not recruit can never acquire the unit it would activate. `patronize_great_person` stays deferred because it spends gold or faith. `remove_improvement` and `delete` remain deferred because they are destructive. `sacrifice_charges` and `build_route` remain deferred because they are specialized actions with material or strategic costs. Passive `sleep` remains deferred because the standard tier already provides explicit active orders and does not need a second passive hold behavior.
