@@ -91,12 +91,15 @@ so reachability and narration cannot disagree. The dispatcher translates
 `narrate_units(surface="arena", available_tools=None)` call fails closed and
 emits no exact action calls.
 
-The arena opening briefing is a second units-rendering path and follows the
-same rule. `LLMPolicy` passes its filtered `visible_names` through
-`maybe_build_briefing` / `build_briefing` to the units section renderer. A
-supplied briefing is already rendered and is not rewritten. This prevents an
-arena briefing from falling back to the default MCP syntax or advertising a
-tool outside the seat's tier.
+The opening briefing is a second units-rendering path and must preserve the
+policy's actual tool surface. `LLMPolicy` (local OpenAI-compatible models)
+passes `surface="arena"` and its filtered `visible_names` through
+`maybe_build_briefing` / `build_briefing` to the units section renderer.
+`CLIAgentPolicy` (`cli-claude` / `cli-codex`) passes `surface="mcp"` because
+those subprocesses use the MCP server rather than the arena registry. A
+supplied briefing is already rendered and is not rewritten. This prevents a
+briefing from falling back to the wrong call syntax or advertising a tool
+outside a local seat's tier.
 
 The existing `>> CAN ATTACK:` and generic `>> Can build:` lines remain
 unchanged. After them, `narrate_units` renders one line per reachable,
@@ -136,9 +139,10 @@ MCP board. Any other value raises `ValueError`.
 on MCP entirely — an MCP agent gets the affordance too, in its own syntax.
 Callers: `server.py:864` and `server.py` `get_units` pass `surface="mcp"`;
 `arena/registry.py:71`, its units renderer, and
-`arena/briefing.py` pass `surface="arena"`. Arena `get_units` and newly built
-briefings additionally receive the filtered tool tuple as `available_tools`;
-direct MCP callers do not need that arena-only context.
+`arena/briefing.py` pass an explicit surface. Local arena-registry
+`get_units` and newly built `LLMPolicy` briefings additionally receive the
+filtered tool tuple as `available_tools`; MCP server and `CLIAgentPolicy`
+callers use `surface="mcp"` without arena-only reachability context.
 
 Suppression rules already established for the builder board carry over
 unchanged and apply to every affordance: no hint for a unit with no moves
@@ -161,7 +165,8 @@ left, and no hint naming an improvement the Lua scan could not map
   contains improvement and activation calls when their signals are true but
   not upgrade; full contains all signaled calls.
 - Briefing tests assert arena syntax and the same minimal/standard/full
-  reachability behavior, including the fail-closed no-context case.
+  reachability behavior for `LLMPolicy`, including the fail-closed no-context
+  case, while CLI policy briefings retain MCP syntax.
 - Suppression tests: no affordance for a zero-move unit, none for
   `"UNKNOWN"`, and no promotion affordance from `needs_promotion`.
 - Audit test: after the change, the `minimal` absent-verb list contains both
