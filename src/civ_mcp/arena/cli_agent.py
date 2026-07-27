@@ -530,6 +530,8 @@ class CLIAgentPolicy:
                 playbook_chars=playbook_chars,
                 tool_schema_chars=0,
                 supplied=briefing,
+                surface="mcp",
+                available_tools=None,
             )
         opening = build_opening_prompt(
             player_id=player_id,

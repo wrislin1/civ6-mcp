@@ -1394,11 +1394,23 @@ async def test_cli_policy_uses_explicit_context_budget_for_briefing(monkeypatch)
 
     captured = {}
 
-    async def fake_briefing(gs, options, *, n_ctx, playbook_chars, tool_schema_chars, supplied=None):
+    async def fake_briefing(
+        gs,
+        options,
+        *,
+        n_ctx,
+        playbook_chars,
+        tool_schema_chars,
+        supplied=None,
+        surface,
+        available_tools,
+    ):
         captured["n_ctx"] = n_ctx
         captured["playbook_chars"] = playbook_chars
         captured["tool_schema_chars"] = tool_schema_chars
         captured["supplied"] = supplied
+        captured["surface"] = surface
+        captured["available_tools"] = available_tools
         return Briefing(text="", tokens=0, sections=[])
 
     class FakeProc:
@@ -1440,6 +1452,8 @@ async def test_cli_policy_uses_explicit_context_budget_for_briefing(monkeypatch)
 
     assert captured["n_ctx"] == 8192
     assert captured["tool_schema_chars"] == 0
+    assert captured["surface"] == "mcp"
+    assert captured["available_tools"] is None
 
 
 def test_clamp_final_summary_preserves_bullet_point_standing_plan_marker():

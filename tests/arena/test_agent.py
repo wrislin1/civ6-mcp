@@ -2,6 +2,7 @@ import pytest
 import civ_mcp.arena.agent as agent
 from civ_mcp.arena.agent import LLMPolicy
 from civ_mcp.arena.backends import Reply
+from civ_mcp.arena.briefing import Briefing
 from civ_mcp.arena.config import AttentionOptions, BriefingOptions, CivOptions
 from civ_mcp.arena.agent import load_playbook
 
@@ -375,7 +376,14 @@ async def test_briefing_prepended_and_telemetry(monkeypatch):
         assert budget == "auto"
         return 131072, "upstream_props"
 
-    async def fake_build(gs, opts, budget_tokens):
+    async def fake_build(
+        gs,
+        opts,
+        budget_tokens,
+        *,
+        surface,
+        available_tools,
+    ):
         assert budget_tokens > 100_000
         return Briefing(
             text="BRIEFING BODY",
@@ -449,7 +457,7 @@ async def test_n_ctx_resolved_once_across_turns(monkeypatch):
         calls.append((args, kwargs))
         return 32768, "props"
 
-    async def fake_build(gs, opts, budget):
+    async def fake_build(gs, opts, budget, *, surface, available_tools):
         return Briefing(text="B", tokens=1)
 
     monkeypatch.setattr(agent_mod, "resolve_n_ctx", fake_resolve)
@@ -480,7 +488,7 @@ async def test_n_ctx_default_fallback_retries_on_next_turn(monkeypatch):
             return 16384, "default"
         return 131072, "upstream_props"
 
-    async def fake_build(gs, opts, budget):
+    async def fake_build(gs, opts, budget, *, surface, available_tools):
         return Briefing(text="B", tokens=1)
 
     monkeypatch.setattr(agent_mod, "resolve_n_ctx", fake_resolve)
@@ -734,6 +742,32 @@ async def test_caps_gate_schema_classification_and_dispatch():
     # classification: recorded as gated, not unknown/out_of_tier
     invalid = out["transcript"]["invalid_tool_calls"]
     assert invalid == [{"tool_name": "get_spies", "arguments": "{}", "reason": "gated"}]
+
+
+@pytest.mark.asyncio
+async def test_policy_briefing_uses_filtered_arena_tools(monkeypatch):
+    captured = {}
+
+    async def fake_briefing(gs, options, **kwargs):
+        captured.update(kwargs)
+        return Briefing()
+
+    monkeypatch.setattr(agent, "maybe_build_briefing", fake_briefing)
+    policy = LLMPolicy(
+        SpyBackend([_no_tool_reply()]),
+        FakeCost(),
+        options=CivOptions(
+            tools="standard",
+            context_budget=8192,
+            briefing=BriefingOptions(enabled=True, sections=("units",)),
+        ),
+    )
+
+    await policy(object(), player_id=1, turn=2, caps={"gp_unit": False})
+
+    assert captured["surface"] == "arena"
+    assert "get_great_people" in captured["available_tools"]
+    assert "activate_great_person" not in captured["available_tools"]
 
 
 @pytest.mark.asyncio

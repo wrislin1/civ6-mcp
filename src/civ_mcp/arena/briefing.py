@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Collection
 
 from civ_mcp import narrate as nr
 from civ_mcp.arena import autoresolve
@@ -71,7 +71,13 @@ async def _overview(gs: Any, ctx: dict[str, Any]) -> str:
 
 async def _units(gs: Any, ctx: dict[str, Any]) -> str:
     result = await _fetch_units_result(gs, ctx)
-    return _render(result, nr.narrate_units)
+    if isinstance(result, str):
+        return result
+    return nr.narrate_units(
+        result,
+        surface=ctx["surface"],
+        available_tools=ctx["available_tools"],
+    )
 
 
 async def _cities(gs: Any, ctx: dict[str, Any]) -> str:
@@ -332,8 +338,14 @@ def _block_header(name: str) -> str:
 
 
 async def build_briefing(
-    gs: Any, opts: BriefingOptions, budget_tokens: int
+    gs: Any,
+    opts: BriefingOptions,
+    budget_tokens: int,
+    *,
+    surface: nr.ToolSurface = "mcp",
+    available_tools: Collection[str] | None = None,
 ) -> Briefing:
+    surface = nr.validate_surface(surface)
     briefing = Briefing()
     if not opts.enabled:
         return briefing
@@ -342,7 +354,10 @@ async def build_briefing(
     if char_budget <= 0:
         return briefing
 
-    ctx: dict[str, Any] = {}
+    ctx: dict[str, Any] = {
+        "surface": surface,
+        "available_tools": available_tools,
+    }
     parts: list[str] = []
     wanted = {section for section in opts.sections}
 

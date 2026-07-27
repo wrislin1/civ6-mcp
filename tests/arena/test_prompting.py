@@ -236,7 +236,14 @@ async def test_local_policy_opening_uses_build_opening_prompt(monkeypatch):
     from civ_mcp.arena.briefing import Briefing
     from civ_mcp.arena.config import BriefingOptions, CivOptions
 
-    async def fake_build(gs, opts, budget_tokens):
+    async def fake_build(
+        gs,
+        opts,
+        budget_tokens,
+        *,
+        surface,
+        available_tools,
+    ):
         return Briefing(text="BRIEFING TEXT", tokens=2, sections=["overview"])
 
     monkeypatch.setattr("civ_mcp.arena.prompt_context.build_briefing", fake_build)

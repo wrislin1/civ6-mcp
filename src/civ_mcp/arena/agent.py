@@ -161,6 +161,8 @@ class LLMPolicy:
                 playbook_chars=playbook_chars,
                 tool_schema_chars=tool_schema_chars,
                 supplied=briefing,
+                surface="arena",
+                available_tools=visible_names,
             )
         opening = build_opening_prompt(
             player_id=player_id,

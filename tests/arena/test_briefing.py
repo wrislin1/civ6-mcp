@@ -4,6 +4,7 @@ from civ_mcp import lua as lq
 from civ_mcp.arena import briefing as _briefing
 from civ_mcp.arena.briefing import Briefing, build_briefing
 from civ_mcp.arena.config import BriefingOptions, VALID_SECTIONS
+from civ_mcp.arena.registry import TIERS
 
 
 def _unit(x, y):
@@ -19,6 +20,34 @@ def _unit(x, y):
         health=100,
         max_health=100,
     )
+
+
+def _actionable_unit():
+    return lq.UnitInfo(
+        unit_id=65541,
+        unit_index=5,
+        name="Bhasa",
+        unit_type="UNIT_GREAT_WRITER",
+        x=12,
+        y=19,
+        moves_remaining=2,
+        max_moves=2,
+        health=100,
+        max_health=100,
+        valid_improvements=["IMPROVEMENT_MINE"],
+        can_activate_here=True,
+        can_upgrade=True,
+        upgrade_target="UNIT_TEST_UPGRADE",
+        upgrade_cost=100,
+    )
+
+
+class UnitsGS:
+    def __init__(self, units):
+        self.units = units
+
+    async def get_units(self):
+        return self.units
 
 
 def _city(x, y):
@@ -280,6 +309,57 @@ async def test_units_preserves_string_result_while_caching_empty_units():
 
     assert text == "ERROR: units unavailable"
     assert ctx["units"] == []
+
+
+@pytest.mark.asyncio
+async def test_units_briefing_uses_arena_reachability():
+    standard = await build_briefing(
+        UnitsGS([_actionable_unit()]),
+        BriefingOptions(enabled=True, sections=("units",)),
+        10_000,
+        surface="arena",
+        available_tools=TIERS["standard"],
+    )
+    assert "activate_great_person with" in standard.text
+    assert "improve_tile with" in standard.text
+    assert "upgrade_unit with" not in standard.text
+    assert "unit_action(" not in standard.text
+
+
+@pytest.mark.asyncio
+async def test_units_briefing_uses_mcp_surface_for_cli_policy():
+    briefing = await build_briefing(
+        UnitsGS([_actionable_unit()]),
+        BriefingOptions(enabled=True, sections=("units",)),
+        10_000,
+        surface="mcp",
+    )
+    assert 'unit_action(unit_id=65541, action="activate")' in briefing.text
+    assert "upgrade_unit(unit_id=65541)" in briefing.text
+    assert "activate_great_person with" not in briefing.text
+
+
+@pytest.mark.asyncio
+async def test_units_briefing_arena_without_allowlist_fails_closed():
+    briefing = await build_briefing(
+        UnitsGS([_actionable_unit()]),
+        BriefingOptions(enabled=True, sections=("units",)),
+        10_000,
+        surface="arena",
+    )
+    assert "AVAILABLE NOW" not in briefing.text
+    assert ">> Can build: IMPROVEMENT_MINE" in briefing.text
+
+
+@pytest.mark.asyncio
+async def test_units_briefing_rejects_invalid_surface():
+    with pytest.raises(ValueError, match="surface"):
+        await build_briefing(
+            UnitsGS([_actionable_unit()]),
+            BriefingOptions(enabled=True, sections=("units",)),
+            10_000,
+            surface="browser",
+        )
 
 
 @pytest.mark.asyncio

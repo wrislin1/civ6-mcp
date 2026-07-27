@@ -25,6 +25,8 @@ async def test_maybe_build_briefing_returns_supplied_empty_briefing(monkeypatch)
         playbook_chars=0,
         tool_schema_chars=0,
         supplied=supplied,
+        surface="arena",
+        available_tools=("get_units",),
     )
 
     assert result is supplied
@@ -34,10 +36,19 @@ async def test_maybe_build_briefing_returns_supplied_empty_briefing(monkeypatch)
 async def test_maybe_build_briefing_builds_with_shared_budget(monkeypatch):
     captured = {}
 
-    async def fake_build_briefing(gs, opts, budget):
+    async def fake_build_briefing(
+        gs,
+        opts,
+        budget,
+        *,
+        surface,
+        available_tools,
+    ):
         captured["gs"] = gs
         captured["opts"] = opts
         captured["budget"] = budget
+        captured["surface"] = surface
+        captured["available_tools"] = available_tools
         return Briefing(text="brief", tokens=1, sections=("overview",), radius=3)
 
     monkeypatch.setattr(
@@ -57,6 +68,8 @@ async def test_maybe_build_briefing_builds_with_shared_budget(monkeypatch):
         n_ctx=8192,
         playbook_chars=400,
         tool_schema_chars=800,
+        surface="arena",
+        available_tools=("get_units", "activate_great_person"),
     )
 
     assert result.text == "brief"
@@ -69,6 +82,8 @@ async def test_maybe_build_briefing_builds_with_shared_budget(monkeypatch):
             playbook_chars=400,
             tool_schema_chars=800,
         ),
+        "surface": "arena",
+        "available_tools": ("get_units", "activate_great_person"),
     }
 
 

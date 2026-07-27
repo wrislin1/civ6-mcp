@@ -1028,7 +1028,14 @@ async def test_exclusive_cli_briefing_built_before_disconnect(monkeypatch):
 
     built_connected = []
 
-    async def fake_build_briefing(gs, opts, budget):
+    async def fake_build_briefing(
+        gs,
+        opts,
+        budget,
+        *,
+        surface,
+        available_tools,
+    ):
         built_connected.append(conn.is_connected)
         return Briefing(text="PREBUILT BRIEFING", tokens=4, sections=["overview"])
 
@@ -1354,7 +1361,16 @@ async def test_exclusive_cli_briefing_prebuild_uses_explicit_context_budget(monk
 
     captured = {}
 
-    async def fake_briefing(gs, options, *, n_ctx, playbook_chars, tool_schema_chars, supplied=None):
+    async def fake_briefing(
+        gs,
+        options,
+        *,
+        n_ctx,
+        playbook_chars,
+        tool_schema_chars,
+        supplied=None,
+        **kwargs,
+    ):
         captured["n_ctx"] = n_ctx
         return Briefing(text="PREBUILT", tokens=1, sections=["overview"])
 
