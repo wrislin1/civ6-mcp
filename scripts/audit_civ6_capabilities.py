@@ -27,6 +27,8 @@ TABLE_FIELDS = {
     "DiplomaticActions": "DiplomaticActionType",
 }
 RECORD_PREFIX = "CAPABILITY"
+CAPTURE_COMPLETE_ACTION = "__MCP_CAPTURE_COMPLETE__"
+CAPTURE_COMPLETE_TABLE = "DiplomaticActions"
 
 
 def build_capture_lua() -> str:
@@ -40,12 +42,18 @@ def build_capture_lua() -> str:
                 field=field_name,
             )
         )
+    blocks.append(
+        f'print("{RECORD_PREFIX}|{CAPTURE_COMPLETE_TABLE}|'
+        f'{CAPTURE_COMPLETE_ACTION}")'
+    )
     return "\n".join(blocks)
 
 
 def parse_capture_lines(lines: Sequence[str]) -> dict[str, object]:
+    records = list(lines)
     found = {name: set() for name in TABLE_FIELDS}
-    for line in lines:
+    completion_count = 0
+    for index, line in enumerate(records):
         parts = line.split("|")
         if len(parts) != 3 or parts[0] != RECORD_PREFIX:
             raise ValueError(f"malformed record: {line!r}")
@@ -54,10 +62,24 @@ def parse_capture_lines(lines: Sequence[str]) -> dict[str, object]:
             raise ValueError(f"unknown table: {table_name}")
         if not action:
             raise ValueError(f"empty action in {table_name}")
+        if (
+            table_name == CAPTURE_COMPLETE_TABLE
+            and action == CAPTURE_COMPLETE_ACTION
+        ):
+            completion_count += 1
+            if index != len(records) - 1:
+                raise ValueError(
+                    "capture completion marker must be the final record"
+                )
+            continue
         if action in found[table_name]:
             raise ValueError(f"duplicate action: {table_name}/{action}")
         found[table_name].add(action)
 
+    if completion_count != 1:
+        raise ValueError(
+            "capture completion marker must appear exactly once"
+        )
     missing = [name for name, actions in found.items() if not actions]
     if missing:
         raise ValueError(f"missing tables: {', '.join(missing)}")

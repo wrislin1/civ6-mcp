@@ -8,6 +8,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+import scripts.audit_civ6_capabilities as capability_audit
 from scripts.audit_civ6_capabilities import (
     SNAPSHOT_PATH,
     _build_parser,
@@ -30,10 +31,12 @@ from civ_mcp.lua.units import (
 from scripts.audit_arena_tool_coverage import collect_evidence
 
 
+CAPTURE_COMPLETE_ACTION = "__MCP_CAPTURE_COMPLETE__"
 COMPLETE_CAPTURE = [
     "CAPABILITY|UnitOperations|UNITOPERATION_MOVE_TO",
     "CAPABILITY|UnitCommands|UNITCOMMAND_UPGRADE",
     "CAPABILITY|DiplomaticActions|DIPLOACTION_RESIDENT_EMBASSY",
+    f"CAPABILITY|DiplomaticActions|{CAPTURE_COMPLETE_ACTION}",
 ]
 
 SYNTHETIC_SNAPSHOT = {
@@ -55,11 +58,16 @@ def test_build_capture_lua_queries_all_action_tables_and_fields():
     assert "row.CommandType" in lua
     assert "GameInfo.DiplomaticActions()" in lua
     assert "row.DiplomaticActionType" in lua
-    assert lua.count("CAPABILITY|") == 3
+    assert lua.count("CAPABILITY|") == 4
+    assert lua.rstrip().endswith(
+        f'print("CAPABILITY|DiplomaticActions|{CAPTURE_COMPLETE_ACTION}")'
+    )
 
 
 def test_parse_capture_lines_builds_sorted_schema_v1_snapshot():
-    snapshot = parse_capture_lines(reversed(COMPLETE_CAPTURE))
+    snapshot = parse_capture_lines(
+        [*reversed(COMPLETE_CAPTURE[:-1]), COMPLETE_CAPTURE[-1]]
+    )
 
     assert snapshot == {
         "schema_version": 1,
@@ -74,14 +82,38 @@ def test_parse_capture_lines_builds_sorted_schema_v1_snapshot():
 @pytest.mark.parametrize(
     "lines, message",
     [
-        (COMPLETE_CAPTURE[:-1], "missing tables: DiplomaticActions"),
-        (COMPLETE_CAPTURE + [COMPLETE_CAPTURE[0]], "duplicate action"),
         (
-            COMPLETE_CAPTURE
-            + ["CAPABILITY|CityOperations|CITYOPERATION_RANGE_ATTACK"],
+            COMPLETE_CAPTURE[:-2] + COMPLETE_CAPTURE[-1:],
+            "missing tables: DiplomaticActions",
+        ),
+        (COMPLETE_CAPTURE[:-1], "capture completion marker"),
+        (COMPLETE_CAPTURE + [COMPLETE_CAPTURE[-1]], "capture completion marker"),
+        (
+            COMPLETE_CAPTURE[:-1]
+            + [
+                f"CAPABILITY|DiplomaticActions|{CAPTURE_COMPLETE_ACTION}",
+                "CAPABILITY|DiplomaticActions|DIPLOACTION_DECLARE_WAR",
+            ],
+            "final record",
+        ),
+        (
+            COMPLETE_CAPTURE[:-1]
+            + [COMPLETE_CAPTURE[0]]
+            + COMPLETE_CAPTURE[-1:],
+            "duplicate action",
+        ),
+        (
+            COMPLETE_CAPTURE[:-1]
+            + ["CAPABILITY|CityOperations|CITYOPERATION_RANGE_ATTACK"]
+            + COMPLETE_CAPTURE[-1:],
             "unknown table",
         ),
-        (COMPLETE_CAPTURE + ["CAPABILITY|UnitOperations"], "malformed record"),
+        (
+            COMPLETE_CAPTURE[:-1]
+            + ["CAPABILITY|UnitOperations"]
+            + COMPLETE_CAPTURE[-1:],
+            "malformed record",
+        ),
         (
             [
                 "CAPABILITY|UnitOperations|",
@@ -106,6 +138,37 @@ def test_write_snapshot_atomic_replaces_only_after_serialization(tmp_path):
 
     assert json.loads(target.read_text(encoding="utf-8")) == snapshot
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_capture_cli_leaves_existing_snapshot_untouched_without_completion(
+    tmp_path, monkeypatch
+):
+    target = tmp_path / "snapshot.json"
+    prior = '{"authoritative": true}\n'
+    target.write_text(prior, encoding="utf-8")
+
+    class PartialConnection:
+        async def connect(self):
+            pass
+
+        async def execute_read(self, _lua):
+            return COMPLETE_CAPTURE[:-1]
+
+        async def disconnect(self):
+            pass
+
+    monkeypatch.setattr(capability_audit, "GameConnection", PartialConnection)
+    original_writer = capability_audit.write_snapshot_atomic
+    monkeypatch.setattr(
+        capability_audit,
+        "write_snapshot_atomic",
+        lambda snapshot: original_writer(snapshot, target),
+    )
+
+    with pytest.raises(ValueError, match="capture completion marker"):
+        main(["--capture"])
+
+    assert target.read_text(encoding="utf-8") == prior
 
 
 def test_cli_rejects_conflicting_capture_and_report_modes():
@@ -372,6 +435,22 @@ def test_automate_command_is_not_conflated_with_auto_explore_operation():
     assert "UNITCOMMAND_AUTOMATE" not in lua
 
 
+@pytest.mark.parametrize(
+    "action, priority",
+    [
+        ("UNITCOMMAND_MOVE_JUMP", "low"),
+        ("UNITCOMMAND_PRIORITY_TARGET", "high"),
+    ],
+)
+def test_player_visible_commands_are_ranked_missing(action, priority):
+    item = ACTION_COVERAGE[action]
+
+    assert item.status == "missing"
+    assert item.priority == priority
+    assert item.tool is None
+    assert item.note and item.note.strip()
+
+
 def test_committed_snapshot_has_complete_valid_coverage():
     mcp_actions = set(collect_evidence()["mcp_unit_actions"])
     validate_coverage(
@@ -385,7 +464,12 @@ def test_committed_snapshot_has_complete_valid_coverage():
 def test_report_evidence_is_counted_and_ranked():
     evidence = build_report_evidence(_real_snapshot(), ACTION_COVERAGE)
 
-    assert evidence["counts"]["total"] == 133
+    assert evidence["counts"] == {
+        "covered": 63,
+        "missing": 59,
+        "excluded": 11,
+        "total": 133,
+    }
     assert sum(
         evidence["counts"][status]
         for status in ("covered", "missing", "excluded")

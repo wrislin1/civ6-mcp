@@ -261,7 +261,12 @@ ACTION_COVERAGE: dict[str, Coverage] = {
         note="No tool issues the targeted Great Person wonder-production command.",
     ),
     "UNITCOMMAND_MOVE_JUMP": Coverage(
-        "excluded", note="Debug-engine teleport command, not normal player movement."
+        "missing",
+        priority="low",
+        note=(
+            "The player-visible Expansion 2 Jump movement command is invoked "
+            "by the shipped UI, but no tool issues UNITCOMMAND_MOVE_JUMP."
+        ),
     ),
     "UNITCOMMAND_NAME_UNIT": Coverage(
         "excluded", note="Cosmetic unit naming does not affect gameplay capability."
@@ -280,7 +285,12 @@ ACTION_COVERAGE: dict[str, Coverage] = {
         note="The seat cannot destroy an enemy trade route for wartime yields.",
     ),
     "UNITCOMMAND_PRIORITY_TARGET": Coverage(
-        "excluded", note="Engine-internal targeting command, not a standalone order."
+        "missing",
+        priority="high",
+        note=(
+            "The shipped Expansion 1 UI invokes player-visible Priority Target "
+            "attacks against protected Support units, but no tool issues the command."
+        ),
     ),
     "UNITCOMMAND_PROJECT_PRODUCTION": Coverage(
         "covered", tool="unit_action:sacrifice_charges"

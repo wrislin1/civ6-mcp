@@ -327,6 +327,67 @@ async def test_units_briefing_uses_arena_reachability():
 
 
 @pytest.mark.asyncio
+async def test_units_briefing_minimal_tier_has_no_exact_calls():
+    minimal = await build_briefing(
+        UnitsGS([_actionable_unit()]),
+        BriefingOptions(enabled=True, sections=("units",)),
+        10_000,
+        surface="arena",
+        available_tools=TIERS["minimal"],
+    )
+
+    assert "AVAILABLE NOW" not in minimal.text
+
+
+@pytest.mark.asyncio
+async def test_units_briefing_full_tier_exposes_all_reachable_calls():
+    full = await build_briefing(
+        UnitsGS([_actionable_unit()]),
+        BriefingOptions(enabled=True, sections=("units",)),
+        10_000,
+        surface="arena",
+        available_tools=TIERS["full"],
+    )
+
+    assert "activate_great_person with" in full.text
+    assert "improve_tile with" in full.text
+    assert "upgrade_unit with" in full.text
+    assert "unit_action(" not in full.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("surface", "available_tools", "expected"),
+    [
+        ("mcp", None, 'unit_action(unit_id=65541, action="build_route")'),
+        ("arena", TIERS["full"], None),
+    ],
+)
+async def test_units_briefing_route_affordance_is_truthful(
+    surface, available_tools, expected
+):
+    unit = _actionable_unit()
+    unit.valid_improvements = ["BUILD_ROUTE", "IMPROVEMENT_FORT"]
+
+    briefing = await build_briefing(
+        UnitsGS([unit]),
+        BriefingOptions(enabled=True, sections=("units",)),
+        10_000,
+        surface=surface,
+        available_tools=available_tools,
+    )
+
+    if expected:
+        assert expected in briefing.text
+    assert 'improvement_name": "BUILD_ROUTE"' not in briefing.text
+    assert 'improvement="BUILD_ROUTE"' not in briefing.text
+    if surface == "arena":
+        assert 'improvement_name": "IMPROVEMENT_FORT"' in briefing.text
+    else:
+        assert 'improvement="IMPROVEMENT_FORT"' in briefing.text
+
+
+@pytest.mark.asyncio
 async def test_units_briefing_uses_mcp_surface_for_cli_policy():
     briefing = await build_briefing(
         UnitsGS([_actionable_unit()]),

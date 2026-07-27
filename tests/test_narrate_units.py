@@ -112,6 +112,49 @@ def test_unknown_improvement_has_no_exact_call():
     assert "improve_tile with" not in text
 
 
+def test_mcp_route_affordance_uses_build_route_action():
+    text = narrate_units(
+        [
+            _unit(
+                valid_improvements=[
+                    "BUILD_ROUTE",
+                    "IMPROVEMENT_FORT",
+                ]
+            )
+        ],
+        surface="mcp",
+    )
+
+    assert 'unit_action(unit_id=65541, action="build_route")' in text
+    assert 'improvement="BUILD_ROUTE"' not in text
+    assert (
+        'unit_action(unit_id=65541, action="improve", '
+        'improvement="IMPROVEMENT_FORT")'
+    ) in text
+
+
+def test_arena_route_affordance_has_no_false_exact_call():
+    text = narrate_units(
+        [
+            _unit(
+                valid_improvements=[
+                    "BUILD_ROUTE",
+                    "IMPROVEMENT_FORT",
+                ]
+            )
+        ],
+        surface="arena",
+        available_tools={"improve_tile"},
+    )
+
+    assert "BUILD_ROUTE" in text
+    assert 'improvement_name": "BUILD_ROUTE"' not in text
+    assert (
+        'improve_tile with {"unit_index": 5, '
+        '"improvement_name": "IMPROVEMENT_FORT"}'
+    ) in text
+
+
 def test_needs_promotion_has_no_promotion_call():
     text = narrate_units(
         [

@@ -239,6 +239,14 @@ def narrate_units(
             for improvement in u.valid_improvements:
                 if improvement == "UNKNOWN":
                     continue
+                if improvement == "BUILD_ROUTE":
+                    if surface == "mcp":
+                        call = (
+                            f'unit_action(unit_id={u.unit_id}, '
+                            'action="build_route")'
+                        )
+                        lines.append(f"    >> AVAILABLE NOW: {call}")
+                    continue
                 if surface == "arena":
                     if "improve_tile" not in reachable:
                         continue
