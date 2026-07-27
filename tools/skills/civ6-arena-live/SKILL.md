@@ -73,15 +73,12 @@ After merging new code, restart any already-running `civ-mcp` before expecting
 new tools or code paths. A successful `/api/overview` proves game connectivity,
 not that the process has freshly loaded code.
 
-## Landing code on `.141`
+## Landing code
 
-`origin` is the **`.141` non-bare checkout** with `main` checked out, so `git push origin main` is rejected (`denyCurrentBranch`). To land work:
-
-1. Push the *feature branch* to origin (a non-checked-out ref is accepted).
-2. SSH in and `git merge --ff-only <branch>` inside `~/projects/civ6-mcp` — this advances `main` and updates its working tree in place.
-3. `git fetch origin` on the dev machine (riz-llm) to sync the `origin/main` tracking ref.
-
-`origin` is the gaming PC, not GitHub; there is no GitHub remote on riz-llm.
+`origin` is GitHub (`git@github.com:wrislin1/civ6-mcp.git`). Land work by
+committing to `main` and running `git push origin main`. There is no `.141`
+checkout in the loop anymore; if another machine such as riz-llm needs the
+code, it pulls from GitHub.
 
 ## Scripts
 
