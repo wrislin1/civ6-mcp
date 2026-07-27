@@ -489,6 +489,17 @@ def test_extract_standing_plan_stops_at_unbulleted_planning_without_task_lines()
     assert extract_standing_plan(summary, max_chars=1200) == "settle east"
 
 
+def test_extract_standing_plan_rejects_invalid_gp_task_beneath_planning():
+    summary = (
+        "STANDING PLAN:\n"
+        "- settle east\n"
+        "Planning:\n"
+        'TASK great_person_activate unit_id=65541 target=12,19 improvement=""\n'
+    )
+
+    assert extract_standing_plan(summary, max_chars=1200) == "settle east"
+
+
 # ---------------------------------------------------------------------------
 # High-effort review fixes: no-colon and parenthetical marker forms
 # ---------------------------------------------------------------------------

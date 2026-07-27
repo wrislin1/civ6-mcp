@@ -74,13 +74,13 @@ MAX_TASK_FAILURES = 3
 # site and missed at another.
 RESOLVED_STATUSES = frozenset({"failed", "complete", "lost"})
 
-# Public: memory.py's standing-plan terminator lookahead reuses these so
-# "does a real TASK/CANCEL line follow" and "what actually parses as a task"
-# can never disagree. Bullet-tolerant because they run on raw model summaries,
-# and tolerant of trailing sentence punctuation for the same reason: a model
-# ending its bullet "target=17,22." must not silently lose the task. The
-# improvement token excludes punctuation (instead of \S+) so that trailing
-# period lands in the punctuation tail, not inside the improvement name.
+# These regexes are permissive lexical gates; semantic validation, including
+# task-kind-specific arguments, lives in parse_task_lines. Bullet-tolerant
+# because they run on raw model summaries, and tolerant of trailing sentence
+# punctuation for the same reason: a model ending its bullet "target=17,22."
+# must not silently lose the task. The improvement token excludes punctuation
+# (instead of \S+) so that trailing period lands in the punctuation tail, not
+# inside the improvement name.
 TASK_LINE_RE = re_compile(
     r"^\s*(?:[-*•]+\s+)?TASK\s+"
     r"(?P<kind>settle|builder_improve|great_person_activate)\s+"
@@ -237,6 +237,9 @@ def parse_task_lines(plan_text: str, turn: int) -> list[UnitTask]:
         if match:
             kind = match.group("kind").lower()
             unit_id = int(match.group("unit_id"))
+            raw_improvement = match.group("improvement")
+            if kind == "great_person_activate" and raw_improvement is not None:
+                continue
             # Improvement names are game-DB enums the Lua layer compares
             # case-sensitively (e.g. "IMPROVEMENT_FARM"); the TASK regex is
             # IGNORECASE, so normalize here or a lowercase token never matches
@@ -244,12 +247,10 @@ def parse_task_lines(plan_text: str, turn: int) -> list[UnitTask]:
             # buildable. Models also quote enum values and drop the
             # IMPROVEMENT_ prefix ("Farm", '"IMPROVEMENT_FARM"') -- both
             # normalize to tokens that could never match otherwise.
-            improvement = (match.group("improvement") or "").strip("\"'`").upper()
+            improvement = (raw_improvement or "").strip("\"'`").upper()
             if improvement and not improvement.startswith("IMPROVEMENT_"):
                 improvement = f"IMPROVEMENT_{improvement}"
             if kind == "builder_improve" and not improvement:
-                continue
-            if kind == "great_person_activate" and improvement:
                 continue
             parsed.append(
                 UnitTask(

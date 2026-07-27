@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from civ_mcp.arena.attention import SKIP_LINE_RE, WAKE_IF_LINE_RE
-from civ_mcp.arena.task_tracker import CANCEL_LINE_RE, TASK_LINE_RE
+from civ_mcp.arena.task_tracker import parse_task_lines
 from civ_mcp.json_io import read_json_file, write_json_file_atomic
 
 SCHEMA_VERSION = 1
@@ -249,7 +249,7 @@ def _has_task_line_before_next_header(lines: Sequence[str]) -> bool:
             continue
         # Only a line the task parser would actually accept defers the
         # terminator; prose that merely starts with "Task" must not.
-        if TASK_LINE_RE.match(line) or CANCEL_LINE_RE.match(line):
+        if parse_task_lines(line, turn=0):
             return True
         if _is_section_header(line):
             return False

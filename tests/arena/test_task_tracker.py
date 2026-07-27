@@ -1891,6 +1891,13 @@ def test_great_person_activate_rejects_builder_improvement_argument():
     ) == []
 
 
+def test_great_person_activate_rejects_empty_quoted_improvement_argument():
+    assert parse_task_lines(
+        'TASK great_person_activate unit_id=65541 target=12,19 improvement=""',
+        turn=7,
+    ) == []
+
+
 def test_great_person_placeholder_example_does_not_parse():
     assert parse_task_lines(
         "TASK great_person_activate unit_id=<unit_id> target=<x>,<y>",
