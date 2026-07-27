@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from civ_mcp import lua as lq
+from civ_mcp.game_state import ACTION_NO_RESPONSE
 from civ_mcp.arena.task_tracker import (
     TaskState,
     UnitTask,
@@ -78,6 +79,7 @@ class FakeGS:
         found_city_result="FOUNDED|18,24",
         move_unit_result="MOVING_TO|18,24",
         improve_tile_result="IMPROVING|IMPROVEMENT_FARM|12,19",
+        activate_result="GP_ACTIVATED|Bhasa at 12,19",
         diplomacy=None,
         units_calls=0,
         threat_scan=None,
@@ -89,6 +91,7 @@ class FakeGS:
         self.found_city_result = found_city_result
         self.move_unit_result = move_unit_result
         self.improve_tile_result = improve_tile_result
+        self.activate_result = activate_result
         self.diplomacy = diplomacy if diplomacy is not None else []
         self.units_calls = units_calls
         self.diplomacy_calls = 0
@@ -99,6 +102,7 @@ class FakeGS:
         self.found_city_calls = []
         self.move_unit_calls = []
         self.improve_tile_calls = []
+        self.activate_calls = []
         self.map_area_calls = []
 
     async def get_units(self):
@@ -132,6 +136,10 @@ class FakeGS:
     async def improve_tile(self, unit_index, improvement):
         self.improve_tile_calls.append((unit_index, improvement))
         return self.improve_tile_result
+
+    async def activate_great_person(self, unit_index):
+        self.activate_calls.append(unit_index)
+        return self.activate_result
 
 
 # ---------------------------------------------------------------------------
@@ -1851,3 +1859,150 @@ async def test_at_target_improve_pillaged_improvement_does_not_complete():
 
     assert updated[0].status == "active"
     assert updated[0].last_result == "blocked_improvement_not_valid"
+
+
+def test_parse_valid_great_person_activate_line():
+    tasks = parse_task_lines(
+        "TASK great_person_activate unit_id=65541 target=12,19",
+        turn=7,
+    )
+
+    assert tasks == [
+        UnitTask(
+            task_id="great_person_activate:65541",
+            kind="great_person_activate",
+            unit_id=65541,
+            target_x=12,
+            target_y=19,
+            created_turn=7,
+            updated_turn=7,
+            improvement="",
+            status="active",
+            last_result="",
+        )
+    ]
+
+
+def test_great_person_activate_rejects_builder_improvement_argument():
+    assert parse_task_lines(
+        "TASK great_person_activate unit_id=65541 target=12,19 "
+        "improvement=IMPROVEMENT_FARM",
+        turn=7,
+    ) == []
+
+
+def test_great_person_placeholder_example_does_not_parse():
+    assert parse_task_lines(
+        "TASK great_person_activate unit_id=<unit_id> target=<x>,<y>",
+        turn=7,
+    ) == []
+
+
+@pytest.mark.asyncio
+async def test_great_person_activate_moves_when_away_from_target():
+    unit = _unit(65541, 5, 10, 18)
+    task = _task(
+        task_id="great_person_activate:65541",
+        kind="great_person_activate",
+        unit_id=65541,
+        target_x=12,
+        target_y=19,
+    )
+    gs = FakeGS([unit])
+
+    updated, results = await run_pre_model_tasks(gs, [task], turn=2)
+
+    assert updated[0].status == "active"
+    assert gs.move_unit_calls == [(5, 12, 19)]
+    assert gs.activate_calls == []
+    assert results[0]["action"] == "move"
+
+
+@pytest.mark.asyncio
+async def test_great_person_activate_completes_on_normalized_success():
+    unit = _unit(65541, 5, 12, 19)
+    task = _task(
+        task_id="great_person_activate:65541",
+        kind="great_person_activate",
+        unit_id=65541,
+        target_x=12,
+        target_y=19,
+    )
+    gs = FakeGS([unit], activate_result="GP_ACTIVATED|Bhasa at 12,19")
+
+    updated, results = await run_pre_model_tasks(gs, [task], turn=2)
+
+    assert updated[0].status == "complete"
+    assert updated[0].last_result == "GP_ACTIVATED|Bhasa at 12,19"
+    assert gs.activate_calls == [5]
+    assert results[0]["action"] == "activate_great_person"
+    assert results[0]["status"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_raw_ok_gp_prefix_is_not_tracker_success():
+    unit = _unit(65541, 5, 12, 19)
+    task = _task(
+        task_id="great_person_activate:65541",
+        kind="great_person_activate",
+        unit_id=65541,
+        target_x=12,
+        target_y=19,
+    )
+    gs = FakeGS([unit], activate_result="OK:GP_ACTIVATED|raw-lua-shape")
+
+    updated, _ = await run_pre_model_tasks(gs, [task], turn=2)
+
+    assert updated[0].status == "active"
+    assert updated[0].failure_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("activate_result", "retry_limit"),
+    [
+        ("Error: cannot activate here", "gp_activate_error_retry_limit"),
+        (ACTION_NO_RESPONSE, "gp_activate_no_response_retry_limit"),
+        ("unexpected tuner line", "unrecognized_result_retry_limit"),
+    ],
+)
+async def test_great_person_activate_retries_then_fails(
+    activate_result, retry_limit
+):
+    unit = _unit(65541, 5, 12, 19)
+    task = _task(
+        task_id="great_person_activate:65541",
+        kind="great_person_activate",
+        unit_id=65541,
+        target_x=12,
+        target_y=19,
+    )
+    gs = FakeGS([unit], activate_result=activate_result)
+
+    for attempt in range(1, 4):
+        updated, _ = await run_pre_model_tasks(gs, [task], turn=attempt)
+        task = updated[0]
+
+        if attempt < 3:
+            assert task.status == "active"
+            assert task.failure_count == attempt
+        else:
+            assert task.status == "failed"
+            assert task.last_result == retry_limit
+
+
+@pytest.mark.asyncio
+async def test_missing_great_person_is_lost():
+    task = _task(
+        task_id="great_person_activate:65541",
+        kind="great_person_activate",
+        unit_id=65541,
+        target_x=12,
+        target_y=19,
+    )
+
+    updated, results = await run_pre_model_tasks(FakeGS([]), [task], turn=2)
+
+    assert updated[0].status == "lost"
+    assert updated[0].last_result == "unit_missing"
+    assert results[0]["result"] == "unit_missing"

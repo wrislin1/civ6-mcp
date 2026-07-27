@@ -1,13 +1,14 @@
 """Deterministic low-risk unit task tracker for arena LLM puppets.
 
 An LLM puppet can hand off a small set of explicit, low-risk civilian
-follow-through actions ("settle here", "improve this tile") via short
-``TASK``/``CANCEL`` lines in its turn output. This module persists those
-tasks per-run/per-player and executes them deterministically at the start
-of the *next* turn, before the model is invoked -- so a settler or builder
-keeps marching toward its destination across turns without needing the
-model to re-decide it every time and without ever taking a risky action
-(attack, purchase, diplomacy, etc.) on the model's behalf.
+follow-through actions ("settle here", "improve this tile", "activate this
+Great Person") via short ``TASK``/``CANCEL`` lines in its turn output. This
+module persists those tasks per-run/per-player and executes them
+deterministically at the start of the *next* turn, before the model is
+invoked -- so a settler, builder, or Great Person keeps marching toward its
+destination across turns without needing the model to re-decide it every time
+and without ever taking a risky action (attack, purchase, diplomacy, etc.) on
+the model's behalf.
 
 Deliberately independent of ``civ_mcp.arena.memory``: standing memory is a
 free-text plan blob for the model to read; the task tracker is a strictly
@@ -28,13 +29,16 @@ from civ_mcp.json_io import read_json_file, write_json_file_atomic
 
 SCHEMA_VERSION = 1
 
-TASK_KINDS = {"settle", "builder_improve"}
+TASK_KINDS = {"settle", "builder_improve", "great_person_activate"}
 FOUND_CITY_RETRY_LIMIT = "found_city_failed_retry_limit"
 SETTLE_NO_RESPONSE = "settle_no_response"
 SETTLE_NO_RESPONSE_RETRY_LIMIT = "settle_no_response_retry_limit"
 IMPROVE_NO_RESPONSE = "improve_no_response"
 IMPROVE_NO_RESPONSE_RETRY_LIMIT = "improve_no_response_retry_limit"
 IMPROVE_ERROR_RETRY_LIMIT = "improve_error_retry_limit"
+GP_ACTIVATE_NO_RESPONSE = "gp_activate_no_response"
+GP_ACTIVATE_NO_RESPONSE_RETRY_LIMIT = "gp_activate_no_response_retry_limit"
+GP_ACTIVATE_ERROR_RETRY_LIMIT = "gp_activate_error_retry_limit"
 BLOCKED_IMPROVEMENT_NOT_VALID = "blocked_improvement_not_valid"
 BLOCKED_IMPROVEMENT_NOT_VALID_RETRY_LIMIT = "blocked_improvement_not_valid_retry_limit"
 BLOCKED_VISIBLE_HOSTILE = "blocked_visible_hostile"
@@ -55,6 +59,7 @@ SKIPPED_NO_MOVES = "skipped_no_moves"
 # evidence of success -- only these shapes are.
 SETTLE_SUCCESS_PREFIXES = ("FOUNDED|",)
 IMPROVE_SUCCESS_PREFIXES = ("IMPROVING|", "REPAIRING|")
+GP_ACTIVATE_SUCCESS_PREFIXES = ("GP_ACTIVATED|",)
 
 # Failed attempts (at-target errors/no-responses, move errors, raised
 # exceptions) a task may accumulate before it is marked failed. 3 leaves room
@@ -77,7 +82,8 @@ RESOLVED_STATUSES = frozenset({"failed", "complete", "lost"})
 # improvement token excludes punctuation (instead of \S+) so that trailing
 # period lands in the punctuation tail, not inside the improvement name.
 TASK_LINE_RE = re_compile(
-    r"^\s*(?:[-*•]+\s+)?TASK\s+(?P<kind>settle|builder_improve)\s+"
+    r"^\s*(?:[-*•]+\s+)?TASK\s+"
+    r"(?P<kind>settle|builder_improve|great_person_activate)\s+"
     r"unit_id=(?P<unit_id>-?\d+)\s+"
     r"target=\(?\s*(?P<tx>-?\d+)\s*,\s*(?P<ty>-?\d+)\s*\)?"
     r"(?:\s+improvement=(?P<improvement>[\w\"'`-]+))?[\s.,;:!]*$",
@@ -217,7 +223,8 @@ def parse_task_lines(plan_text: str, turn: int) -> list[UnitTask]:
     """Parse explicit ``TASK``/``CANCEL`` lines out of a puppet's plan text.
 
     Invalid lines (missing fields, unknown kind, missing ``improvement`` for
-    ``builder_improve``) are silently ignored rather than raising.
+    ``builder_improve``, or an ``improvement`` on ``great_person_activate``)
+    are silently ignored rather than raising.
 
     ``CANCEL`` lines produce a placeholder ``UnitTask`` with ``kind="cancel"``
     and ``status="cancelled"`` carrying only the ``unit_id`` to cancel --
@@ -241,6 +248,8 @@ def parse_task_lines(plan_text: str, turn: int) -> list[UnitTask]:
             if improvement and not improvement.startswith("IMPROVEMENT_"):
                 improvement = f"IMPROVEMENT_{improvement}"
             if kind == "builder_improve" and not improvement:
+                continue
+            if kind == "great_person_activate" and improvement:
                 continue
             parsed.append(
                 UnitTask(
@@ -709,6 +718,21 @@ async def _run_single_task(
             )
         return await _advance_toward_target(gs, task, unit, owner_context, turn)
 
+    if task.kind == "great_person_activate":
+        if at_target:
+            result_str = await gs.activate_great_person(unit.unit_index)
+            return _resolve_at_target_action(
+                task,
+                result_str,
+                action="activate_great_person",
+                success_prefixes=GP_ACTIVATE_SUCCESS_PREFIXES,
+                no_response_result=GP_ACTIVATE_NO_RESPONSE,
+                no_response_limit=GP_ACTIVATE_NO_RESPONSE_RETRY_LIMIT,
+                error_limit=GP_ACTIVATE_ERROR_RETRY_LIMIT,
+                turn=turn,
+            )
+        return await _advance_toward_target(gs, task, unit, owner_context, turn)
+
     # task.kind == "builder_improve"
     if at_target:
         if task.improvement in unit.valid_improvements:
@@ -769,9 +793,10 @@ async def run_pre_model_tasks(
 ) -> tuple[tuple[UnitTask, ...], list[dict[str, Any]]]:
     """Execute active, low-risk tasks before the model turn.
 
-    Only ``settle`` and ``builder_improve`` tasks with ``status == "active"``
-    are ever executed -- this function never attacks, fortifies, escorts,
-    purchases, chops, recruits, votes, trades, or makes diplomacy choices.
+    Only ``settle``, ``builder_improve``, and ``great_person_activate`` tasks
+    with ``status == "active"`` are ever executed -- this function never
+    attacks, fortifies, escorts, purchases, chops, recruits, votes, trades, or
+    makes diplomacy choices.
     A per-task exception is caught and recorded as ``error:<repr>`` without
     aborting the remaining tasks; it counts against the task's failure budget.
     """

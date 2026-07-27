@@ -8,11 +8,19 @@ from civ_mcp.arena.prompting import (
 from civ_mcp.arena.task_tracker import parse_task_lines
 
 
-def test_standing_plan_instruction_examples_are_echo_safe():
-    """The instruction is injected into every prompt; a model that echoes the
-    example task lines verbatim must create NO tasks. The examples use
-    non-numeric placeholders (<unit_id>, <x>) that TASK_LINE_RE cannot match."""
-    assert parse_task_lines(STANDING_PLAN_INSTRUCTION, turn=1) == []
+def test_every_standing_plan_task_example_is_inert():
+    examples = [
+        line.strip()
+        for line in STANDING_PLAN_INSTRUCTION.splitlines()
+        if line.strip().startswith("TASK ")
+    ]
+
+    assert [line.split()[1] for line in examples] == [
+        "settle",
+        "builder_improve",
+        "great_person_activate",
+    ]
+    assert all(parse_task_lines(line, turn=1) == [] for line in examples)
 
 
 # ---------------------------------------------------------------------------

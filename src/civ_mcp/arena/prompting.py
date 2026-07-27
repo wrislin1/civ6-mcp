@@ -24,6 +24,7 @@ STANDING PLAN:
 - Optional task lines, using your real unit ids and target coordinates, e.g.:
   TASK settle unit_id=<unit_id> target=<x>,<y>
   TASK builder_improve unit_id=<unit_id> target=<x>,<y> improvement=IMPROVEMENT_FARM
+  TASK great_person_activate unit_id=<unit_id> target=<x>,<y>
 """
 
 # Soft-trigger tokens are duplicated here as literal text on purpose: the
