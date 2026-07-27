@@ -18,8 +18,17 @@ from civ_mcp.arena.task_tracker import (
 )
 
 
-def _unit(unit_id, unit_index, x, y, moves_remaining=2.0, valid_improvements=None):
+def _unit(
+    unit_id,
+    unit_index,
+    x,
+    y,
+    moves_remaining=2.0,
+    valid_improvements=None,
+    can_activate_here=False,
+):
     return lq.UnitInfo(
+        can_activate_here=can_activate_here,
         unit_id=unit_id,
         unit_index=unit_index,
         name="Settler",
@@ -1927,7 +1936,7 @@ async def test_great_person_activate_moves_when_away_from_target():
 
 @pytest.mark.asyncio
 async def test_great_person_activate_completes_on_normalized_success():
-    unit = _unit(65541, 5, 12, 19)
+    unit = _unit(65541, 5, 12, 19, can_activate_here=True)
     task = _task(
         task_id="great_person_activate:65541",
         kind="great_person_activate",
@@ -1948,7 +1957,7 @@ async def test_great_person_activate_completes_on_normalized_success():
 
 @pytest.mark.asyncio
 async def test_raw_ok_gp_prefix_is_not_tracker_success():
-    unit = _unit(65541, 5, 12, 19)
+    unit = _unit(65541, 5, 12, 19, can_activate_here=True)
     task = _task(
         task_id="great_person_activate:65541",
         kind="great_person_activate",
@@ -1976,7 +1985,7 @@ async def test_raw_ok_gp_prefix_is_not_tracker_success():
 async def test_great_person_activate_retries_then_fails(
     activate_result, retry_limit
 ):
-    unit = _unit(65541, 5, 12, 19)
+    unit = _unit(65541, 5, 12, 19, can_activate_here=True)
     task = _task(
         task_id="great_person_activate:65541",
         kind="great_person_activate",
@@ -2013,3 +2022,73 @@ async def test_missing_great_person_is_lost():
     assert updated[0].status == "lost"
     assert updated[0].last_result == "unit_missing"
     assert results[0]["result"] == "unit_missing"
+
+
+@pytest.mark.asyncio
+async def test_ineligible_activation_blocks_without_calling_the_engine():
+    """An ineligible target must not spend attempts on a doomed engine call.
+
+    Without the gate the task strikes out on raw engine errors and
+    merge_tasks tombstones it, so a verbatim restatement can never revive it.
+    """
+    unit = _unit(65541, 5, 12, 19, can_activate_here=False)
+    task = _task(
+        task_id="great_person_activate:65541",
+        kind="great_person_activate",
+        unit_id=65541,
+        target_x=12,
+        target_y=19,
+    )
+    gs = FakeGS([unit])
+
+    updated, results = await run_pre_model_tasks(gs, [task], turn=2)
+
+    assert gs.activate_calls == []
+    assert updated[0].status == "active"
+    assert updated[0].failure_count == 1
+    assert updated[0].last_result == "blocked_activation_not_available"
+    assert results[0]["action"] == "block"
+
+
+@pytest.mark.asyncio
+async def test_ineligible_activation_fails_at_the_retry_limit():
+    unit = _unit(65541, 5, 12, 19, can_activate_here=False)
+    task = _task(
+        task_id="great_person_activate:65541",
+        kind="great_person_activate",
+        unit_id=65541,
+        target_x=12,
+        target_y=19,
+    )
+    gs = FakeGS([unit])
+
+    for attempt in range(1, 4):
+        updated, _ = await run_pre_model_tasks(gs, [task], turn=attempt)
+        task = updated[0]
+
+    assert task.status == "failed"
+    assert task.last_result == "blocked_activation_not_available_retry_limit"
+    assert gs.activate_calls == []
+
+
+@pytest.mark.asyncio
+async def test_missing_great_person_after_no_response_counts_as_activated():
+    """Activation consumes the unit, so this is a silent success, not a loss.
+
+    Mirrors the builder branch's improvement_already_built recovery.
+    """
+    task = _task(
+        task_id="great_person_activate:65541",
+        kind="great_person_activate",
+        unit_id=65541,
+        target_x=12,
+        target_y=19,
+        last_result="gp_activate_no_response",
+    )
+
+    updated, results = await run_pre_model_tasks(FakeGS([]), [task], turn=3)
+
+    assert updated[0].status == "complete"
+    assert updated[0].last_result == "gp_already_activated"
+    assert results[0]["action"] == "activate_great_person"
+    assert results[0]["status"] == "complete"

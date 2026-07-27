@@ -39,8 +39,13 @@ IMPROVE_ERROR_RETRY_LIMIT = "improve_error_retry_limit"
 GP_ACTIVATE_NO_RESPONSE = "gp_activate_no_response"
 GP_ACTIVATE_NO_RESPONSE_RETRY_LIMIT = "gp_activate_no_response_retry_limit"
 GP_ACTIVATE_ERROR_RETRY_LIMIT = "gp_activate_error_retry_limit"
+GP_ALREADY_ACTIVATED = "gp_already_activated"
 BLOCKED_IMPROVEMENT_NOT_VALID = "blocked_improvement_not_valid"
 BLOCKED_IMPROVEMENT_NOT_VALID_RETRY_LIMIT = "blocked_improvement_not_valid_retry_limit"
+BLOCKED_ACTIVATION_NOT_AVAILABLE = "blocked_activation_not_available"
+BLOCKED_ACTIVATION_NOT_AVAILABLE_RETRY_LIMIT = (
+    "blocked_activation_not_available_retry_limit"
+)
 BLOCKED_VISIBLE_HOSTILE = "blocked_visible_hostile"
 BLOCKED_VISIBLE_HOSTILE_RETRY_LIMIT = "blocked_visible_hostile_retry_limit"
 IMPROVEMENT_ALREADY_BUILT = "improvement_already_built"
@@ -691,6 +696,24 @@ async def _run_single_task(
 ) -> tuple[UnitTask, dict[str, Any]]:
     unit = _resolve_task_unit(task, units_by_id, units_by_index)
     if unit is None:
+        # Activation consumes the Great Person, so a unit that vanished after
+        # a no-response attempt is the signature of an activation that landed
+        # while the tuner ate the response -- the same recovery the builder
+        # branch performs by re-reading the target tile. Any other
+        # disappearance is still a loss.
+        if (
+            task.kind == "great_person_activate"
+            and task.last_result == GP_ACTIVATE_NO_RESPONSE
+        ):
+            new_task = replace(
+                task, status="complete", last_result=GP_ALREADY_ACTIVATED
+            )
+            return new_task, _result_dict(
+                task,
+                status="complete",
+                action="activate_great_person",
+                result=GP_ALREADY_ACTIVATED,
+            )
         new_task = replace(task, status="lost", last_result="unit_missing")
         return new_task, _result_dict(
             task, status="lost", action="skip", result="unit_missing"
@@ -721,6 +744,18 @@ async def _run_single_task(
 
     if task.kind == "great_person_activate":
         if at_target:
+            # Same shape as the builder branch below: check the engine's own
+            # eligibility signal before spending an attempt on a call that
+            # cannot succeed, so an ineligible target reports why instead of
+            # burning the failure budget on raw engine errors.
+            if not unit.can_activate_here:
+                return _fail_or_retry(
+                    task,
+                    action="block",
+                    result_str=BLOCKED_ACTIVATION_NOT_AVAILABLE,
+                    limit_result=BLOCKED_ACTIVATION_NOT_AVAILABLE_RETRY_LIMIT,
+                    turn=turn,
+                )
             result_str = await gs.activate_great_person(unit.unit_index)
             return _resolve_at_target_action(
                 task,
