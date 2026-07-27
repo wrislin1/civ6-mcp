@@ -11,6 +11,11 @@ MissingPriority = Literal["high", "medium", "low"]
 _STATUSES = {"covered", "missing", "excluded"}
 _PRIORITIES = {"high", "medium", "low"}
 _PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+_SNAPSHOT_TABLES = {
+    "UnitOperations",
+    "UnitCommands",
+    "DiplomaticActions",
+}
 
 
 @dataclass(frozen=True)
@@ -38,13 +43,17 @@ ACTION_COVERAGE: dict[str, Coverage] = {
         "covered", tool="send_diplomatic_action"
     ),
     "DIPLOACTION_DECLARE_GOLDEN_AGE_WAR": Coverage(
-        "covered", tool="send_diplomatic_action"
+        "missing",
+        priority="low",
+        note="The diplomacy session whitelist has no Golden Age War action.",
     ),
     "DIPLOACTION_DECLARE_HOLY_WAR": Coverage(
         "covered", tool="send_diplomatic_action"
     ),
     "DIPLOACTION_DECLARE_IDEOLOGICAL_WAR": Coverage(
-        "covered", tool="send_diplomatic_action"
+        "missing",
+        priority="low",
+        note="The diplomacy session whitelist has no Ideological War action.",
     ),
     "DIPLOACTION_DECLARE_LIBERATION_WAR": Coverage(
         "covered", tool="send_diplomatic_action"
@@ -62,10 +71,14 @@ ACTION_COVERAGE: dict[str, Coverage] = {
         "covered", tool="send_diplomatic_action"
     ),
     "DIPLOACTION_DECLARE_WAR_MINOR_CIV": Coverage(
-        "covered", tool="send_diplomatic_action"
+        "missing",
+        priority="low",
+        note="The diplomacy session whitelist has no minor-civilization war action.",
     ),
     "DIPLOACTION_DECLARE_WAR_OF_RETRIBUTION": Coverage(
-        "covered", tool="send_diplomatic_action"
+        "missing",
+        priority="low",
+        note="The diplomacy session whitelist has no War of Retribution action.",
     ),
     "DIPLOACTION_DEMAND_TRIBUTE": Coverage(
         "missing",
@@ -86,7 +99,11 @@ ACTION_COVERAGE: dict[str, Coverage] = {
     "DIPLOACTION_GRANT_INFLUENCE_TOKEN": Coverage(
         "covered", tool="send_envoy"
     ),
-    "DIPLOACTION_JOINT_WAR": Coverage("covered", tool="propose_trade"),
+    "DIPLOACTION_JOINT_WAR": Coverage(
+        "missing",
+        priority="medium",
+        note="The trade path discards the required joint-war target player ID.",
+    ),
     "DIPLOACTION_KEEP_PROMISE_DONT_CONVERT": Coverage(
         "missing",
         priority="low",
@@ -121,7 +138,11 @@ ACTION_COVERAGE: dict[str, Coverage] = {
         "covered", tool="propose_peace"
     ),
     "DIPLOACTION_PROPOSE_TRADE": Coverage("covered", tool="propose_trade"),
-    "DIPLOACTION_RENEW_ALLIANCE": Coverage("covered", tool="form_alliance"),
+    "DIPLOACTION_RENEW_ALLIANCE": Coverage(
+        "missing",
+        priority="medium",
+        note="The alliance tool rejects existing alliances instead of renewing them.",
+    ),
     "DIPLOACTION_REQUEST_ASSISTANCE": Coverage(
         "missing",
         priority="low",
@@ -131,7 +152,9 @@ ACTION_COVERAGE: dict[str, Coverage] = {
         "covered", tool="send_diplomatic_action"
     ),
     "DIPLOACTION_THIRD_PARTY_WAR": Coverage(
-        "covered", tool="propose_trade"
+        "missing",
+        priority="medium",
+        note="The trade path discards the required third-party war target ID.",
     ),
     "DIPLOACTION_USE_NUCLEAR_WEAPON": Coverage(
         "missing",
@@ -317,7 +340,7 @@ ACTION_COVERAGE: dict[str, Coverage] = {
     "UNITOPERATION_FORTIFY": Coverage("covered", tool="fortify_unit"),
     "UNITOPERATION_FOUND_CITY": Coverage("covered", tool="found_city"),
     "UNITOPERATION_FOUND_RELIGION": Coverage(
-        "covered", tool="found_religion"
+        "covered", tool="activate_great_person"
     ),
     "UNITOPERATION_HARVEST_RESOURCE": Coverage(
         "missing",
@@ -481,12 +504,23 @@ def _snapshot_actions(snapshot: Mapping[str, object]) -> set[str]:
     tables = snapshot.get("tables")
     if not isinstance(tables, Mapping):
         raise ValueError("snapshot tables must be an object")
+    if set(tables) != _SNAPSHOT_TABLES:
+        raise ValueError(
+            "snapshot tables must contain exactly: "
+            + ", ".join(sorted(_SNAPSHOT_TABLES))
+        )
+    for table_name in sorted(_SNAPSHOT_TABLES):
+        values = tables[table_name]
+        if not isinstance(values, list) or not all(
+            isinstance(action, str) for action in values
+        ):
+            raise ValueError(
+                f"snapshot table {table_name} must be a list of strings"
+            )
     return {
         action
         for values in tables.values()
-        if isinstance(values, list)
         for action in values
-        if isinstance(action, str)
     }
 
 

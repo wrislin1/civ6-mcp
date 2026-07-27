@@ -261,8 +261,89 @@ def test_validate_coverage_rejects_unknown_snapshot_schema():
         )
 
 
+@pytest.mark.parametrize(
+    "tables",
+    [
+        {
+            "UnitOperations": ["UNITOPERATION_MOVE_TO"],
+            "UnitCommands": ["UNITCOMMAND_WAKE"],
+        },
+        {
+            **SYNTHETIC_SNAPSHOT["tables"],
+            "CityOperations": ["CITYOPERATION_RANGE_ATTACK"],
+        },
+    ],
+)
+def test_validate_coverage_requires_exact_snapshot_tables(tables):
+    snapshot = {**SYNTHETIC_SNAPSHOT, "tables": tables}
+
+    with pytest.raises(ValueError, match="snapshot tables must contain exactly"):
+        validate_coverage(
+            snapshot,
+            {},
+            arena_tools=set(),
+            unit_action_verbs=set(),
+        )
+
+
+@pytest.mark.parametrize(
+    "unit_operations",
+    [
+        ("UNITOPERATION_MOVE_TO",),
+        ["UNITOPERATION_MOVE_TO", 42],
+    ],
+)
+def test_validate_coverage_requires_lists_of_string_actions(unit_operations):
+    snapshot = {
+        **SYNTHETIC_SNAPSHOT,
+        "tables": {
+            **SYNTHETIC_SNAPSHOT["tables"],
+            "UnitOperations": unit_operations,
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="snapshot table UnitOperations must be a list of strings",
+    ):
+        validate_coverage(
+            snapshot,
+            {},
+            arena_tools=set(),
+            unit_action_verbs=set(),
+        )
+
+
 def _real_snapshot():
     return json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    "action, priority",
+    [
+        ("DIPLOACTION_DECLARE_GOLDEN_AGE_WAR", "low"),
+        ("DIPLOACTION_DECLARE_IDEOLOGICAL_WAR", "low"),
+        ("DIPLOACTION_DECLARE_WAR_MINOR_CIV", "low"),
+        ("DIPLOACTION_DECLARE_WAR_OF_RETRIBUTION", "low"),
+        ("DIPLOACTION_JOINT_WAR", "medium"),
+        ("DIPLOACTION_RENEW_ALLIANCE", "medium"),
+        ("DIPLOACTION_THIRD_PARTY_WAR", "medium"),
+    ],
+)
+def test_unsupported_diplomatic_paths_are_classified_missing(action, priority):
+    item = ACTION_COVERAGE[action]
+
+    assert item.status == "missing"
+    assert item.priority == priority
+    assert item.tool is None
+    assert item.note and item.note.strip()
+
+
+def test_found_religion_operation_names_activating_tool():
+    item = ACTION_COVERAGE["UNITOPERATION_FOUND_RELIGION"]
+
+    assert item.status == "covered"
+    assert item.tool == "activate_great_person"
 
 
 def test_committed_snapshot_has_complete_valid_coverage():
