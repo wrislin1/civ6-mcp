@@ -137,14 +137,15 @@ def _unit_actions(server_tree: ast.Module) -> set[str]:
 
 
 def _tier_action_verbs_absent(tier: str) -> list[str]:
-    names = set(TIERS[tier])
-    return sorted(
-        {
-            tool.verb
-            for name, tool in TOOL_REGISTRY.items()
-            if tool.verb and name not in names
-        }
-    )
+    all_registry_verbs = {
+        tool.verb for tool in TOOL_REGISTRY.values() if tool.verb
+    }
+    tier_reachable_verbs = {
+        TOOL_REGISTRY[name].verb
+        for name in TIERS[tier]
+        if TOOL_REGISTRY[name].verb
+    }
+    return sorted(all_registry_verbs - tier_reachable_verbs)
 
 
 def collect_evidence() -> dict[str, object]:

@@ -66,10 +66,20 @@ async def _empire_resources_text(gs: Any, args: dict[str, Any]) -> str:
     return nr.narrate_empire_resources(stockpiles, owned, nearby, luxuries)
 
 
-async def _builder_tasks_text(gs: Any, args: dict[str, Any]) -> str:
+async def _builder_tasks_text(
+    gs: Any,
+    args: dict[str, Any],
+    *,
+    available_tools: Collection[str] | None = None,
+) -> str:
     del args
     tasks, builders = await gs.get_builder_tasks()
-    return nr.narrate_builder_tasks(tasks, builders, surface="arena")
+    return nr.narrate_builder_tasks(
+        tasks,
+        builders,
+        surface="arena",
+        available_tools=available_tools,
+    )
 
 
 async def _pending_diplomacy_text(gs: Any, args: dict[str, Any]) -> str:
@@ -1482,6 +1492,13 @@ async def dispatch(
     if name == "get_units":
         visible = tuple(TOOL_REGISTRY) if allowed is None else tuple(allowed)
         return await _narrate_units(
+            gs,
+            args,
+            available_tools=visible,
+        )
+    if name == "get_builder_tasks":
+        visible = tuple(TOOL_REGISTRY) if allowed is None else tuple(allowed)
+        return await _builder_tasks_text(
             gs,
             args,
             available_tools=visible,

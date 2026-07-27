@@ -98,6 +98,8 @@ def test_tier_action_verbs_are_raw_and_reachability_aware():
     assert "improve" not in absent["standard"]
     assert "activate_great_person" not in absent["standard"]
     assert "activate" not in absent["minimal"]
+    assert "skip" not in absent["minimal"]
+    assert "skip" not in absent["standard"]
 
 
 def test_checked_in_audit_tracks_gp_tier_rows():

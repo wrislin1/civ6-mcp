@@ -331,6 +331,70 @@ async def test_builder_task_narration_supplies_callable_arena_action_arguments()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("allowed", "has_improve", "has_repair"),
+    [
+        (("get_builder_tasks",), False, False),
+        (("get_builder_tasks", "improve_tile"), True, False),
+        (("get_builder_tasks", "repair_improvement"), False, True),
+    ],
+)
+async def test_builder_task_narration_respects_allowed_tool_reachability(
+    allowed, has_improve, has_repair
+):
+    from civ_mcp import lua as lq
+
+    class FakeGS:
+        async def get_builder_tasks(self):
+            return (
+                [
+                    lq.BuilderTask(
+                        priority="high",
+                        x=12,
+                        y=19,
+                        improvement="IMPROVEMENT_MINE",
+                        resource="IRON",
+                        resource_class="strategic",
+                        city_name="Capital",
+                        nearest_builder_id=65541,
+                        distance=2,
+                    ),
+                    lq.BuilderTask(
+                        priority="urgent",
+                        x=9,
+                        y=17,
+                        improvement="IMPROVEMENT_FARM",
+                        resource="WHEAT",
+                        resource_class="pillaged",
+                        city_name="Capital",
+                        nearest_builder_id=65541,
+                        distance=1,
+                    ),
+                ],
+                [
+                    lq.BuilderInfo(
+                        unit_id=65541,
+                        unit_index=5,
+                        x=10,
+                        y=18,
+                        charges=2,
+                        moves=2,
+                    )
+                ],
+            )
+
+    text = await dispatch(
+        FakeGS(),
+        "get_builder_tasks",
+        {},
+        allowed=allowed,
+    )
+
+    assert ("call improve_tile" in text) is has_improve
+    assert ("call repair_improvement" in text) is has_repair
+
+
+@pytest.mark.asyncio
 async def test_dispatch_set_policies_coerces_assignment_keys_to_int():
     calls = []
 

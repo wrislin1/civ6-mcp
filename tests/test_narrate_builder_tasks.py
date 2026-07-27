@@ -43,8 +43,8 @@ def test_default_mcp_surface_renders_callable_mcp_form():
     assert "unit_index" not in board
     assert "nearest builder id:65541, 2 tiles" in board
     assert (
-        'on that tile call unit_action(unit_id=65541, action="improve")'
-        in board
+        'on that tile call unit_action(unit_id=65541, action="improve", '
+        'improvement="IMPROVEMENT_MINE")' in board
     )
 
 
@@ -64,7 +64,12 @@ def test_explicit_mcp_surface_renders_callable_repair_form():
 
 
 def test_arena_surface_hints_the_call_with_the_full_improvement_name():
-    board = narrate_builder_tasks([_task()], [_builder()], surface="arena")
+    board = narrate_builder_tasks(
+        [_task()],
+        [_builder()],
+        surface="arena",
+        available_tools={"improve_tile"},
+    )
 
     assert "build MINE" in board
     assert (
@@ -81,6 +86,7 @@ def test_arena_surface_skips_the_hint_for_an_unmapped_improvement():
         [_task(improvement="UNKNOWN", resource="ANTIQUITY")],
         [_builder()],
         surface="arena",
+        available_tools={"improve_tile"},
     )
 
     assert "call improve_tile" not in board
@@ -92,6 +98,7 @@ def test_arena_surface_skips_the_hint_for_a_builder_with_no_moves():
         [_task(resource_class="pillaged", nearest_builder_id=65542)],
         [_builder(unit_id=65542, unit_index=6, moves=0)],
         surface="arena",
+        available_tools={"repair_improvement"},
     )
 
     assert "call repair_improvement" not in board
@@ -106,6 +113,48 @@ def test_mcp_surface_skips_the_hint_for_a_builder_with_no_moves():
     )
 
     assert "call unit_action" not in board
+
+
+def test_arena_surface_without_context_fails_closed():
+    board = narrate_builder_tasks(
+        [
+            _task(),
+            _task(resource_class="pillaged"),
+        ],
+        [_builder()],
+        surface="arena",
+    )
+
+    assert "call improve_tile" not in board
+    assert "call repair_improvement" not in board
+
+
+@pytest.mark.parametrize(
+    ("available_tools", "present", "absent"),
+    [
+        ({"improve_tile"}, "call improve_tile", "call repair_improvement"),
+        (
+            {"repair_improvement"},
+            "call repair_improvement",
+            "call improve_tile",
+        ),
+    ],
+)
+def test_arena_surface_gates_builder_actions_independently(
+    available_tools, present, absent
+):
+    board = narrate_builder_tasks(
+        [
+            _task(),
+            _task(resource_class="pillaged"),
+        ],
+        [_builder()],
+        surface="arena",
+        available_tools=available_tools,
+    )
+
+    assert present in board
+    assert absent not in board
 
 
 def test_invalid_surface_is_rejected():

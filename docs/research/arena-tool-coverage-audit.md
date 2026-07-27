@@ -51,6 +51,17 @@ Together with the five deferred direct actions, these eleven composed/lifecycle 
 
 Every absence from `minimal` is intentional because the historical tier is frozen for artifact comparability. Every absence from `standard` is `listed-for-later`; `full` contains the complete registry.
 
+The raw, alias-free action verbs absent from each tier are regenerated from
+the registry verb set minus the verbs reachable through that tier. A verb
+implemented by multiple registry tools is reachable when any included tool
+provides it; for example, `skip_unit` keeps `skip` reachable even though
+`skip_remaining_units` is excluded.
+
+```text
+Minimal action verbs absent: ['activate_great_person', 'alert', 'appoint_governor', 'assign_governor', 'attack', 'automate', 'change_government', 'choose_dedication', 'choose_pantheon', 'city_attack', 'excavate_artifact', 'form_alliance', 'form_army', 'form_corps', 'found_religion', 'heal', 'improve', 'move_great_work', 'patronize_great_person', 'promote_governor', 'propose_peace', 'propose_trade', 'purchase', 'purchase_tile', 'queue_wc_votes', 'rebase_unit', 'recruit_great_person', 'reject_great_person', 'remove_feature', 'repair', 'resolve_city_capture', 'send_diplomatic_action', 'send_envoy', 'set_city_focus', 'set_civic', 'set_policies', 'spread_religion', 'spy_action', 'start_trade_route', 'teleport_trader', 'upgrade']
+Standard action verbs absent: ['appoint_governor', 'assign_governor', 'automate', 'change_government', 'choose_dedication', 'choose_pantheon', 'city_attack', 'excavate_artifact', 'form_alliance', 'form_army', 'form_corps', 'found_religion', 'move_great_work', 'patronize_great_person', 'promote_governor', 'propose_peace', 'propose_trade', 'purchase_tile', 'queue_wc_votes', 'rebase_unit', 'recruit_great_person', 'reject_great_person', 'resolve_city_capture', 'send_diplomatic_action', 'send_envoy', 'set_city_focus', 'set_policies', 'spread_religion', 'spy_action', 'start_trade_route', 'teleport_trader', 'upgrade']
+```
+
 | tool | minimal | minimal disposition | standard | standard disposition | full |
 |---|---:|---|---:|---|---:|
 | `get_overview` | yes | present | yes | present | yes |

@@ -300,9 +300,11 @@ def narrate_builder_tasks(
     builders: list[lq.BuilderInfo],
     *,
     surface: ToolSurface = "mcp",
+    available_tools: Collection[str] | None = None,
 ) -> str:
     """Render the builder task board with calls for the selected tool surface."""
     surface = validate_surface(surface)
+    reachable = set(available_tools or ())
     if not builders:
         return "No builders with charges available."
     idle = [b for b in builders if b.moves > 0]
@@ -366,6 +368,7 @@ def narrate_builder_tasks(
                 if (
                     builder is not None
                     and builder.moves > 0
+                    and (surface == "mcp" or tool_name in reachable)
                     and not (
                         tool_name == "improve_tile" and t.improvement == "UNKNOWN"
                     )
@@ -377,15 +380,15 @@ def narrate_builder_tasks(
                         if tool_name == "improve_tile":
                             call_args["improvement_name"] = t.improvement
                         call = f"{tool_name} with {json.dumps(call_args)}"
-                    else:
-                        action_name = (
-                            "repair"
-                            if tool_name == "repair_improvement"
-                            else "improve"
-                        )
+                    elif tool_name == "improve_tile":
                         call = (
                             f"unit_action(unit_id={builder.unit_id}, "
-                            f'action="{action_name}")'
+                            f'action="improve", improvement="{t.improvement}")'
+                        )
+                    else:
+                        call = (
+                            f"unit_action(unit_id={builder.unit_id}, "
+                            'action="repair")'
                         )
                     builder_str += f" — on that tile call {call}"
             lines.append(
