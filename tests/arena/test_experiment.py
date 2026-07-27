@@ -32,6 +32,7 @@ ARENA_CHANNELS_BEHAVIOR_V3 = REPO_ROOT / "experiments" / "arena-channels-behavio
 ARENA_CHANNELS_BEHAVIOR_V4 = REPO_ROOT / "experiments" / "arena-channels-behavior-v4.yaml"
 ARENA_CHANNELS_BEHAVIOR_V5 = REPO_ROOT / "experiments" / "arena-channels-behavior-v5.yaml"
 ARENA_CHANNELS_BEHAVIOR_V6 = REPO_ROOT / "experiments" / "arena-channels-behavior-v6.yaml"
+ARENA_CHANNELS_BEHAVIOR_V7 = REPO_ROOT / "experiments" / "arena-channels-behavior-v7.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -390,6 +391,40 @@ def test_arena_channels_behavior_v6_differs_from_v5_only_in_run_id():
 
     assert v6.run_id == "arena-channels-behavior-v6"
     assert replace(v6, run_id=v5.run_id) == v5
+
+
+def test_arena_channels_behavior_v7_is_tracker_only_delta_from_v6():
+    v6 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V6)
+    v7 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V7)
+    by_player = {player.player_id: player for player in v7.players}
+
+    assert v7.run_id == "arena-channels-behavior-v7"
+    assert by_player[1].options.tools == "minimal"
+    assert by_player[2].options.tools == "minimal"
+    assert by_player[1].options.task_tracker.enabled is True
+    assert by_player[2].options.task_tracker.enabled is True
+    assert by_player[3].options.task_tracker.enabled is False
+
+    normalized_players = [
+        replace(
+            player,
+            options=replace(
+                player.options,
+                task_tracker=replace(
+                    player.options.task_tracker,
+                    enabled=False,
+                ),
+            ),
+        )
+        if player.player_id in {1, 2}
+        else player
+        for player in v7.players
+    ]
+    assert replace(
+        v7,
+        run_id=v6.run_id,
+        players=normalized_players,
+    ) == v6
 
 
 def test_rejects_auto_accept_without_channels_enabled(tmp_path):
