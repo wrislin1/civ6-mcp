@@ -102,6 +102,26 @@ def test_zero_moves_suppresses_all_exact_calls():
     assert "AVAILABLE NOW" not in text
 
 
+def test_residual_moves_labelled_no_moves_get_no_exact_calls():
+    """The label and the affordance gate must agree on the same threshold.
+
+    Moves are floats, so a unit can carry an unspendable residual. Rendering
+    "(no moves)" and "AVAILABLE NOW" in the same block is contradictory.
+    """
+    text = narrate_units(
+        [_unit(moves_remaining=0.005)],
+        surface="arena",
+        available_tools={
+            "activate_great_person",
+            "improve_tile",
+            "upgrade_unit",
+        },
+    )
+
+    assert "(no moves)" in text
+    assert "AVAILABLE NOW" not in text
+
+
 def test_unknown_improvement_has_no_exact_call():
     text = narrate_units(
         [_unit(valid_improvements=["UNKNOWN"])],

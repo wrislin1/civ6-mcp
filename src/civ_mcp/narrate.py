@@ -14,6 +14,12 @@ from civ_mcp import lua as lq
 
 ToolSurface = Literal["mcp", "arena"]
 
+# Moves arrive as floats, so a unit can hold a sub-epsilon residual it cannot
+# spend. The "(no moves)" label and the AVAILABLE NOW affordance gate share
+# this threshold: a unit must never be told an action is available on the same
+# line block that reports it has no moves.
+MOVES_EPSILON = 0.01
+
 
 def validate_surface(surface: str) -> ToolSurface:
     if surface not in {"mcp", "arena"}:
@@ -188,7 +194,7 @@ def narrate_units(
         status = ""
         if u.health < u.max_health:
             status = f" [HP: {u.health}/{u.max_health}]"
-        if u.moves_remaining < 0.01:
+        if u.moves_remaining < MOVES_EPSILON:
             status += " (no moves)"
         # Annotate traders on active routes
         route_flag = ""
@@ -222,7 +228,7 @@ def narrate_units(
                 lines.append(f"    >> CAN ATTACK: {t}")
         if u.valid_improvements:
             lines.append(f"    >> Can build: {', '.join(u.valid_improvements)}")
-        if u.moves_remaining > 0:
+        if u.moves_remaining >= MOVES_EPSILON:
             if u.can_activate_here and (
                 surface == "mcp" or "activate_great_person" in reachable
             ):
