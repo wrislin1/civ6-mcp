@@ -40,10 +40,13 @@ and the units scan already visits every unit.
 its 15, pinned by the existing snapshot test — historical artifacts must
 re-run against the same world.
 
-This addition is self-limiting: `activate_great_person` carries
-`requires="gp_unit"` (`registry.py:1249`), and `filter_tools`
-(`registry.py:1451`) drops it from the schema for any seat that owns no Great
-Person. A seat without one sees no extra tool.
+The exact standard ordering inserts `get_great_people` followed by
+`activate_great_person` immediately after `repair_improvement`. The activation
+tool is self-limiting: it carries `requires="gp_unit"` (`registry.py:1249`),
+and `filter_tools` (`registry.py:1451`) drops it from the schema for any seat
+that owns no Great Person. `get_great_people` is an ungated read, so a seat
+without a Great Person still gains that one discovery tool but no unavailable
+activation action.
 
 `recruit_great_person` and `patronize_great_person` stay `listed-for-later`:
 recruiting claims a point pool and patronizing spends gold, neither of which
@@ -60,7 +63,14 @@ reach it?": for `minimal` and `standard`, the list of action verbs
 evidence and in the human report. Both prior discoveries — idle builders and
 the Great Writer — would have appeared in that list before either live run.
 
-### 3. Per-unit AVAILABLE NOW affordance
+The machine-readable field is
+`tier_action_verbs_absent: {"minimal": [...], "standard": [...]}`. These are
+the registry's raw verbs, without MCP alias normalization, so the list uses
+`activate_great_person`, not `activate`. The human report and
+`docs/research/arena-tool-coverage-audit.md` are refreshed to the new
+`standard=28` count and exact tier membership.
+
+### 3. Reachability-aware AVAILABLE NOW affordances
 
 `UnitInfo` gains `can_activate_here: bool`, set by the units Lua scan: for a
 unit whose `GameInfo.Units[…].GreatPersonClass` is non-empty, true when the
@@ -68,41 +78,67 @@ unit's own plot index appears in `gp:GetActivationHighlightPlots()`. The
 lookup is wrapped in `pcall` and defaults false, matching how the units query
 already guards optional engine calls.
 
-`narrate_units` renders one line per unit that can act now, following the
-existing `>>` convention:
+The arena dispatch path passes the already-resolved `allowed` tool tuple to
+the `get_units` renderer as internal context; this adds no user-visible tool
+parameter. `narrate_units` accepts that context as
+`available_tools: Collection[str] | None`. On the arena surface, an exact call
+hint is emitted only when its tool name is in that tuple. This preserves the
+frozen minimal world: minimal sees no calls to unavailable builder, GP, or
+upgrade tools; standard sees improvement and activation calls; full may also
+see upgrade calls. Capability-filtered tools are absent from the same tuple,
+so reachability and narration cannot disagree. The dispatcher translates
+`allowed=None` to the full registry before rendering; a direct
+`narrate_units(surface="arena", available_tools=None)` call fails closed and
+emits no exact action calls.
+
+The arena opening briefing is a second units-rendering path and follows the
+same rule. `LLMPolicy` passes its filtered `visible_names` through
+`maybe_build_briefing` / `build_briefing` to the units section renderer. A
+supplied briefing is already rendered and is not rewritten. This prevents an
+arena briefing from falling back to the default MCP syntax or advertising a
+tool outside the seat's tier.
+
+The existing `>> CAN ATTACK:` and generic `>> Can build:` lines remain
+unchanged. After them, `narrate_units` renders one line per reachable,
+executable non-combat call, following the existing `>>` convention:
 
 ```
   Bhasa (UNIT_GREAT_WRITER) at (12,19) — moves 2/2 [id:65541, idx:5]
     >> AVAILABLE NOW: activate_great_person with {"unit_id": 65541}
 ```
 
-The line is populated only from engine-safe signals already collected or
-newly added here: great-person activation (`can_activate_here`), tile
-improvement (`valid_improvements`), upgrade (`can_upgrade`), and promotion
-(`needs_promotion`). No new legality probe is introduced. In particular
-nothing calls `CanStartOperation` on remote tiles, which the units Lua
-documents as corrupting engine state and crashing `end_turn`
-(`lua/units.py:1954-1956`).
+Multiple valid improvements produce multiple exact call lines. The calls are
+populated only from engine-safe signals already collected or newly added
+here: great-person activation (`can_activate_here`), tile improvement
+(`valid_improvements`), and upgrade (`can_upgrade`). Promotion is deliberately
+not included: the live units query hard-codes `needs_promotion=false` because
+only the end-turn GameCore blocker is authoritative. No new legality probe is
+introduced. In particular nothing calls `CanStartOperation` on remote tiles,
+which the units Lua documents as corrupting engine state and crashing
+`end_turn` (`lua/units.py:1954-1956`).
 
 ### 4. Surface-appropriate call syntax
 
 The affordance names a tool, and the two surfaces have different call syntax.
-`narrate_units` and `narrate_builder_tasks` take `surface: str` — `"mcp"` or
-`"arena"` — replacing the interim `tool_hints: bool` added when the builder
-board's arena syntax leaked into the MCP board:
+`narrate_units` and `narrate_builder_tasks` take
+`surface: Literal["mcp", "arena"] = "mcp"`, replacing the interim
+`tool_hints: bool` added when the builder board's arena syntax leaked into the
+MCP board. Any other value raises `ValueError`.
 
 | Affordance | `surface="arena"` | `surface="mcp"` |
 |---|---|---|
 | GP activation | `activate_great_person with {"unit_id": 65541}` | `unit_action(unit_id=65541, action="activate")` |
 | Improvement | `improve_tile with {"unit_index": 5, "improvement_name": "IMPROVEMENT_MINE"}` | `unit_action(unit_id=65541, action="improve", improvement="IMPROVEMENT_MINE")` |
-| Upgrade | `upgrade_unit with {"unit_id": 65541}` | `unit_action(unit_id=65541, action="upgrade")` |
-| Promotion | `get_unit_promotions with {"unit_id": 65541}` | `get_unit_promotions(unit_id=65541)` |
+| Upgrade | `upgrade_unit with {"unit_id": 65541}` | `upgrade_unit(unit_id=65541)` |
 
 `unit_index` appears only in arena syntax; MCP always uses the composite
 `unit_id`. This supersedes `tool_hints`, which suppressed the builder hints
 on MCP entirely — an MCP agent gets the affordance too, in its own syntax.
 Callers: `server.py:864` and `server.py` `get_units` pass `surface="mcp"`;
-`arena/registry.py:71` and its units renderer pass `surface="arena"`.
+`arena/registry.py:71`, its units renderer, and
+`arena/briefing.py` pass `surface="arena"`. Arena `get_units` and newly built
+briefings additionally receive the filtered tool tuple as `available_tools`;
+direct MCP callers do not need that arena-only context.
 
 Suppression rules already established for the builder board carry over
 unchanged and apply to every affordance: no hint for a unit with no moves
@@ -120,11 +156,20 @@ left, and no hint naming an improvement the Lua scan could not map
 - Narration tests per surface: arena output contains the arena call and the
   MCP output contains the `unit_action` form, and neither contains the
   other's syntax — the regression that the builder board shipped with.
+- Reachability tests: minimal's `get_units` output contains no
+  `improve_tile`, `activate_great_person`, or `upgrade_unit` call; standard
+  contains improvement and activation calls when their signals are true but
+  not upgrade; full contains all signaled calls.
+- Briefing tests assert arena syntax and the same minimal/standard/full
+  reachability behavior, including the fail-closed no-context case.
 - Suppression tests: no affordance for a zero-move unit, none for
-  `"UNKNOWN"`.
+  `"UNKNOWN"`, and no promotion affordance from `needs_promotion`.
 - Audit test: after the change, the `minimal` absent-verb list contains both
   `improve` and `activate_great_person`, and the `standard` list contains
   neither.
+- A deterministic audit-doc test confirms the checked-in
+  `docs/research/arena-tool-coverage-audit.md` count and the
+  `get_great_people` / `activate_great_person` tier rows match script output.
 - Full arena suite green before each commit.
 
 ## Out of scope

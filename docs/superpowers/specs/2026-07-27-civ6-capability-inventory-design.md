@@ -63,6 +63,17 @@ build stamp: neither `UI.GetAppVersion()` nor `Game.GetRuleSet()` is
 available in this Lua context (both probed, both absent). A game update
 surfaces as a diff when someone re-runs `--capture`.
 
+The FireTuner query prints only records in this exact form:
+
+```text
+CAPABILITY|UnitOperations|UNITOPERATION_AIR_ATTACK
+```
+
+Capture rejects malformed records, unknown or missing table names, duplicate
+action records, and empty tables. It parses and validates the complete result
+before atomically replacing the snapshot, so a failed capture leaves the
+previous committed file intact.
+
 The snapshot is committed. CI has no FireTuner, so every other component
 reads the file, never the game.
 
@@ -72,14 +83,27 @@ reads the file, never the game.
 one entry each:
 
 ```python
+from typing import Literal
+
+CoverageStatus = Literal["covered", "missing", "excluded"]
+MissingPriority = Literal["high", "medium", "low"]
+
 @dataclass(frozen=True)
 class Coverage:
-    status: str                  # "covered" | "missing" | "excluded"
+    status: CoverageStatus
     tool: str | None = None      # required when covered
-    priority: str | None = None  # required when missing: "high"|"medium"|"low"
+    priority: MissingPriority | None = None
     note: str | None = None      # required when missing or excluded
 
 ACTION_COVERAGE: dict[str, Coverage]
+
+def validate_coverage(
+    snapshot: dict[str, object],
+    coverage: dict[str, Coverage],
+    *,
+    arena_tools: set[str],
+    unit_action_verbs: set[str],
+) -> None: ...
 ```
 
 `tool` names either an arena registry tool (`"improve_tile"`) or an MCP-only
@@ -104,12 +128,15 @@ Classification is a judgment call and stays hand-maintained. The rule:
 `EMBARK`/`DISEMBARK` are called out because they are the ambiguous case: if
 implementation finds that `move_unit` does not in fact auto-embark, they are
 `missing` at `medium`, not `excluded`. The map records whichever the
-implementer verifies, with the evidence in the note.
+implementer verifies. The evidence note names the `move_unit` engine path and
+records whether a live land-to-water move succeeded. If that verification
+cannot be completed, both actions default to `missing` at `medium`; the map
+must not retain a placeholder classification.
 
 ### 3. Enforcement test
 
-`tests/test_capability_coverage.py` fails when the snapshot and the map
-disagree:
+`tests/arena/test_capability_coverage.py` calls `validate_coverage` and fails
+when the snapshot and the map disagree:
 
 - every action type in the snapshot has a map entry — the failure message
   lists the unclassified types and names `capability_map.py` as the file to
@@ -124,15 +151,31 @@ disagree:
   non-empty note; every `excluded` entry has a non-empty note.
 
 Classification logic is also tested against synthetic snapshot/map pairs, so
-the rules are exercised independently of the real data.
+the rules are exercised independently of the real data. The report command
+calls the same validator before printing anything; an invalid map cannot look
+healthy merely because pytest was not run.
 
 ### 4. Report
 
-`scripts/audit_civ6_capabilities.py --report` reads only the committed
-snapshot and the map — no game, no network — and prints the three counts
-plus the `missing` entries ranked by priority. That ranked list is the input
-to any future implementation spec. `--json` emits the same content
-machine-readably, matching the existing audit script's interface.
+Running `scripts/audit_civ6_capabilities.py` with no mode, or explicitly with
+`--report`, reads only the committed snapshot and map — no game, no network —
+and prints the three counts plus the `missing` entries ranked high, medium,
+then low and alphabetically within a priority. That ranked list is the input
+to any future implementation spec. `--json` modifies report output and emits
+the same evidence machine-readably, with this stable top-level shape:
+
+```json
+{
+  "counts": {"covered": 0, "missing": 0, "excluded": 0, "total": 0},
+  "missing": [
+    {"action": "UNITOPERATION_PILLAGE", "priority": "high", "note": "..."}
+  ]
+}
+```
+
+`--capture` is the only live mode. It is mutually exclusive with `--report`
+and rejects `--json`; capture writes the snapshot and prints a short table
+count summary.
 
 ## Testing
 
@@ -140,8 +183,8 @@ machine-readably, matching the existing audit script's interface.
 - The enforcement test runs offline against committed data.
 - `--report` and `--json` are exercised by a subprocess test, as
   `tests/arena/test_tool_coverage_audit.py` already does for the tool audit.
-- `--capture` is not tested against a live game; its parsing is tested
-  against recorded FireTuner lines.
+- `--capture` is not tested against a live game; its parser, rejection cases,
+  and atomic-write boundary are tested against recorded FireTuner lines.
 
 ## Out of scope
 
