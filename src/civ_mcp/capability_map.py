@@ -3,11 +3,42 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Set
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypedDict
 
 
 CoverageStatus = Literal["covered", "missing", "excluded"]
 MissingPriority = Literal["high", "medium", "low"]
+
+
+class SnapshotTables(TypedDict):
+    UnitOperations: list[str]
+    UnitCommands: list[str]
+    DiplomaticActions: list[str]
+
+
+class ActionSnapshot(TypedDict):
+    schema_version: Literal[1]
+    tables: SnapshotTables
+
+
+class CoverageCounts(TypedDict):
+    covered: int
+    missing: int
+    excluded: int
+    total: int
+
+
+class MissingCoverageRow(TypedDict):
+    action: str
+    priority: MissingPriority
+    note: str
+
+
+class ReportEvidence(TypedDict):
+    counts: CoverageCounts
+    missing: list[MissingCoverageRow]
+
+
 _STATUSES = {"covered", "missing", "excluded"}
 _PRIORITIES = {"high", "medium", "low"}
 _PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -175,7 +206,14 @@ ACTION_COVERAGE: dict[str, Coverage] = {
         priority="low",
         note="No tool can airlift a unit between Aerodromes.",
     ),
-    "UNITCOMMAND_AUTOMATE": Coverage("covered", tool="unit_action:automate"),
+    "UNITCOMMAND_AUTOMATE": Coverage(
+        "missing",
+        priority="low",
+        note=(
+            "No path invokes this command; automate uses the distinct "
+            "UNITOPERATION_AUTOMATE_EXPLORE."
+        ),
+    ),
     "UNITCOMMAND_BUILDING_PRODUCTION": Coverage(
         "missing",
         priority="low",
@@ -245,9 +283,7 @@ ACTION_COVERAGE: dict[str, Coverage] = {
         "excluded", note="Engine-internal targeting command, not a standalone order."
     ),
     "UNITCOMMAND_PROJECT_PRODUCTION": Coverage(
-        "missing",
-        priority="low",
-        note="No tool issues the targeted Great Person project-production command.",
+        "covered", tool="unit_action:sacrifice_charges"
     ),
     "UNITCOMMAND_PROMOTE": Coverage("covered", tool="promote_unit"),
     "UNITCOMMAND_SPREAD_DISSENT": Coverage(
@@ -579,25 +615,30 @@ def validate_coverage(
 def build_report_evidence(
     snapshot: Mapping[str, object],
     coverage: Mapping[str, Coverage],
-) -> dict[str, object]:
+) -> ReportEvidence:
     actions = _snapshot_actions(snapshot)
-    counts = Counter(
+    counts: Counter[CoverageStatus] = Counter(
         coverage[action].status for action in actions if action in coverage
     )
-    missing = sorted(
-        (
-            {
-                "action": action,
-                "priority": item.priority,
-                "note": item.note,
-            }
-            for action, item in coverage.items()
-            if item.status == "missing"
-        ),
+    missing: list[MissingCoverageRow] = []
+    for action, item in coverage.items():
+        if item.status == "missing":
+            priority = item.priority
+            note = item.note
+            if priority is None or note is None:
+                raise ValueError(f"{action}: incomplete missing coverage entry")
+            missing.append(
+                {
+                    "action": action,
+                    "priority": priority,
+                    "note": note,
+                }
+            )
+    missing.sort(
         key=lambda row: (
             _PRIORITY_ORDER[row["priority"]],
             row["action"],
-        ),
+        )
     )
     return {
         "counts": {

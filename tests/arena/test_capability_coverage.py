@@ -23,6 +23,10 @@ from civ_mcp.capability_map import (
     build_report_evidence,
     validate_coverage,
 )
+from civ_mcp.lua.units import (
+    build_automate_explore,
+    build_sacrifice_builder_charges,
+)
 from scripts.audit_arena_tool_coverage import collect_evidence
 
 
@@ -346,6 +350,28 @@ def test_found_religion_operation_names_activating_tool():
     assert item.tool == "activate_great_person"
 
 
+def test_project_production_names_exact_royal_society_backend():
+    item = ACTION_COVERAGE["UNITCOMMAND_PROJECT_PRODUCTION"]
+    lua = build_sacrifice_builder_charges(7)
+
+    assert item.status == "covered"
+    assert item.tool == "unit_action:sacrifice_charges"
+    assert 'GameInfo.UnitCommands["UNITCOMMAND_PROJECT_PRODUCTION"]' in lua
+    assert "UnitManager.RequestCommand(unit, cmdHash" in lua
+
+
+def test_automate_command_is_not_conflated_with_auto_explore_operation():
+    item = ACTION_COVERAGE["UNITCOMMAND_AUTOMATE"]
+    lua = build_automate_explore(7)
+
+    assert item.status == "missing"
+    assert item.priority == "low"
+    assert item.tool is None
+    assert item.note and "AUTOMATE_EXPLORE" in item.note
+    assert 'GameInfo.UnitOperations["UNITOPERATION_AUTOMATE_EXPLORE"]' in lua
+    assert "UNITCOMMAND_AUTOMATE" not in lua
+
+
 def test_committed_snapshot_has_complete_valid_coverage():
     mcp_actions = set(collect_evidence()["mcp_unit_actions"])
     validate_coverage(
@@ -381,6 +407,21 @@ def test_report_cli_human_and_json():
     )
     assert "counts:" in human.stdout
     assert "UNITOPERATION_PILLAGE" in human.stdout
+
+    explicit = subprocess.run(
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/audit_civ6_capabilities.py",
+            "--report",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert explicit.stdout == human.stdout
 
     machine = subprocess.run(
         [

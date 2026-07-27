@@ -10,9 +10,12 @@ import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, cast
+from typing import TYPE_CHECKING, cast
 
 from civ_mcp.connection import GameConnection
+
+if TYPE_CHECKING:
+    from civ_mcp.capability_map import ActionSnapshot, ReportEvidence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -100,8 +103,11 @@ async def capture_action_space() -> dict[str, object]:
     return parse_capture_lines(lines)
 
 
-def _load_snapshot(path: Path = SNAPSHOT_PATH) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+def _load_snapshot(path: Path = SNAPSHOT_PATH) -> ActionSnapshot:
+    return cast(
+        "ActionSnapshot",
+        json.loads(path.read_text(encoding="utf-8")),
+    )
 
 
 def _arena_audit_evidence() -> dict[str, object]:
@@ -119,7 +125,7 @@ def _arena_audit_evidence() -> dict[str, object]:
     return module.collect_evidence()
 
 
-def _validated_report() -> dict[str, object]:
+def _validated_report() -> ReportEvidence:
     from civ_mcp.arena.registry import TOOL_REGISTRY
     from civ_mcp.capability_map import (
         ACTION_COVERAGE,
@@ -128,7 +134,16 @@ def _validated_report() -> dict[str, object]:
     )
 
     snapshot = _load_snapshot()
-    unit_actions = set(_arena_audit_evidence()["mcp_unit_actions"])
+    raw_unit_actions = _arena_audit_evidence()["mcp_unit_actions"]
+    if not isinstance(raw_unit_actions, list):
+        raise RuntimeError("arena audit mcp_unit_actions must be a list")
+    unit_actions: set[str] = set()
+    for action in raw_unit_actions:
+        if not isinstance(action, str):
+            raise RuntimeError(
+                "arena audit mcp_unit_actions must contain only strings"
+            )
+        unit_actions.add(action)
     validate_coverage(
         snapshot,
         ACTION_COVERAGE,
@@ -138,7 +153,7 @@ def _validated_report() -> dict[str, object]:
     return build_report_evidence(snapshot, ACTION_COVERAGE)
 
 
-def _print_human(evidence: Mapping[str, object]) -> None:
+def _print_human(evidence: ReportEvidence) -> None:
     counts = evidence["counts"]
     print(
         "counts:",
