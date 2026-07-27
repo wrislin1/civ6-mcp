@@ -550,3 +550,90 @@ If the payment step still fails with the role, the action, the deadline,
 and the current legality all stated explicitly on every turn, the
 constraint is not prompt-side and the next lever is model capability
 (the v1 recommendation 4 that has never been tried: larger local models).
+
+---
+
+# v5 result: both deals honored, and LLM channel initiative vanished
+
+**Date:** 2026-07-26 · **Run:** `arena_runs/arena-channels-behavior-v5` ·
+**Config:** `experiments/arena-channels-behavior-v5.yaml` (implementation
+`588eb91`) · 90/90 puppet turns over game turns 157–186, zero failed turns,
+$0.00.
+
+## Result: the deal lifecycle is solved; engagement collapsed
+
+| metric | v3 | v4 | v5 |
+|--------|----|----|----|
+| deals | 3 | 3 | **2** |
+| honored | 1 | 0 | **2** |
+| broken | 2 | 2 | **0** |
+| expired | 0 | 1 | 0 |
+| grievances | 2 | 2 | **0** |
+| rejected channel actions | 7 | 4 | **2** |
+| messages | 12 | 8 | **0** |
+| LLM-initiated deals | 1 | 1 | **0** |
+
+Both scripted deals completed the full lifecycle — proposed T157, accepted
+T158, favor verified satisfied T163, auto-funded T163, payment accepted
+T164. First clean sweep of the series, and the first run with no grievance.
+
+**Both LLM seats sent zero messages.** The only two messages in the ledger
+are P3's two deal texts. All channel activity ended at T164; the remaining
+22 game turns produced nothing.
+
+## What the affordance line did and did not do
+
+It **redirected** action when a legal action existed. gemma settled
+`deal-000001` on the turn its line flipped to `AVAILABLE NOW:
+respond_to_payment — the 50 gold is waiting for you, accept it by turn
+165`. In v4, the same model on the same deal with the same deadline made
+three premature attempts and then went silent through both valid turns.
+
+It **did not suppress** illegal attempts. Both rejections came from models
+acting against an explicit line in their own context:
+
+- T162 qwen → `fund_deal`, while its block read `YOU ACCEPTED THIS — you
+  are the payee … AVAILABLE NOW: nothing — you owe the favor, due turn 163`.
+  This is v3's error class, which v4's guidance had eliminated entirely.
+- T163 gemma → `respond_to_payment`, while its block read `AVAILABLE NOW:
+  nothing — waiting for Player 3 to fund the payment`.
+
+So the mechanism is narrower than "the models now read state": **naming the
+currently-legal action gets it taken; stating that nothing is available does
+not stop an idle model from trying anyway.** Redirection works, suppression
+does not.
+
+This also revises the v4 conclusion. "Prose can name an action but cannot
+convey when it becomes available" was right about the fix but wrong about
+the constraint: vocabulary was never binding at the moment of action —
+salience at the moment of legality was.
+
+## The engagement collapse needs an ablation
+
+Two candidate causes, not distinguished by this run:
+
+1. **The `propose_deal` schema change.** Its description gained "If you want
+   to be PAID for a favor you perform, do not use this — send a message
+   asking the other player to propose the deal to you." That is a
+   *discouraging* clause on the only deal-initiating action, added to fix
+   v4's inverted deal object. It may have suppressed initiation outright.
+2. **Messages in v3/v4 were symptoms of failure.** Most of qwen's traffic
+   was chasing an unpaid deal, apologising for a breach, and renegotiating
+   after one. v5 had no failures to chase: every deal settled by T164, so
+   the thread that generated 8–12 messages never started.
+
+Explanation 2 is consistent with the timing — v3/v4 messaging clustered
+after their first breach — but explanation 1 is a change I introduced and
+cannot be dismissed. **v6 should revert only the discouraging clause of the
+`propose_deal` description** (keeping "YOU are the payer") and change
+nothing else. If messaging and LLM-initiated deals return, cause 1; if the
+run stays quiet, cause 2 and the collapse is a benign consequence of things
+working.
+
+`auto_accept` was never exercised: no LLM proposed a deal to P3, so the
+path added for v4's expired `deal-000003` saw no traffic.
+
+## max_steps confirmed again
+
+gemma 11.5 model turns / 11.5 tool calls; qwen 14.0 / 18.5. Both under the
+cap of 15. Third run consistent with the metric-mismatch explanation.
