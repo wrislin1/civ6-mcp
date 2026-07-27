@@ -238,8 +238,18 @@ def narrate_units(
 
 
 def narrate_builder_tasks(
-    tasks: list[lq.BuilderTask], builders: list[lq.BuilderInfo]
+    tasks: list[lq.BuilderTask],
+    builders: list[lq.BuilderInfo],
+    *,
+    tool_hints: bool = False,
 ) -> str:
+    """Render the builder task board.
+
+    ``tool_hints`` appends arena-registry call syntax (``improve_tile`` /
+    ``repair_improvement`` with a ``unit_index``) to each actionable task. The
+    MCP server exposes those actions as ``unit_action(unit_id, action=...)``
+    instead, so it leaves the hints off.
+    """
     if not builders:
         return "No builders with charges available."
     idle = [b for b in builders if b.moves > 0]
@@ -248,7 +258,7 @@ def narrate_builder_tasks(
         lines.append("")
         lines.append("No tiles need improvement in your territory.")
         lines.append("")
-        _append_builder_list(lines, builders)
+        _append_builder_list(lines, builders, tool_hints=tool_hints)
         return "\n".join(lines)
 
     builders_by_id = {builder.unit_id: builder for builder in builders}
@@ -274,26 +284,40 @@ def narrate_builder_tasks(
                 action = f"repair {t.resource}"
                 tool_name = "repair_improvement"
             else:
+                imp_label = t.improvement.replace("IMPROVEMENT_", "")
                 suffix = ""
                 if t.resource_class == "luxury":
                     suffix = "+"
                 elif t.resource_class == "strategic":
                     suffix = "*"
                 res_prefix = f"{t.resource}{suffix} — " if t.resource else ""
-                action = f"{res_prefix}build {t.improvement}"
+                action = f"{res_prefix}build {imp_label}"
                 tool_name = "improve_tile"
 
             builder_str = ""
             if t.nearest_builder_id >= 0:
                 builder = builders_by_id.get(t.nearest_builder_id)
                 builder_index = (
-                    f", unit_index:{builder.unit_index}" if builder is not None else ""
+                    f", unit_index:{builder.unit_index}"
+                    if tool_hints and builder is not None
+                    else ""
                 )
                 builder_str = (
                     f" — nearest builder id:{t.nearest_builder_id}{builder_index}, "
                     f"{t.distance} tile{'s' if t.distance != 1 else ''}"
                 )
-                if builder is not None:
+                # Only hint a call the builder can actually make: it needs a
+                # movement point left, and improve_tile needs a real
+                # improvement name (the Lua scan emits UNKNOWN for resources
+                # with no mapped improvement).
+                if (
+                    tool_hints
+                    and builder is not None
+                    and builder.moves > 0
+                    and not (
+                        tool_name == "improve_tile" and t.improvement == "UNKNOWN"
+                    )
+                ):
                     call_args: dict[str, int | str] = {
                         "unit_index": builder.unit_index
                     }
@@ -308,25 +332,32 @@ def narrate_builder_tasks(
             )
 
     lines.append("")
-    _append_builder_list(lines, builders)
+    _append_builder_list(lines, builders, tool_hints=tool_hints)
     return "\n".join(lines)
 
 
-def _append_builder_list(lines: list[str], builders: list[lq.BuilderInfo]) -> None:
+def _append_builder_list(
+    lines: list[str], builders: list[lq.BuilderInfo], *, tool_hints: bool = False
+) -> None:
     idle = [b for b in builders if b.moves > 0]
     busy = [b for b in builders if b.moves <= 0]
+
+    def _ident(b: lq.BuilderInfo) -> str:
+        if tool_hints:
+            return f"id:{b.unit_id}, unit_index:{b.unit_index}"
+        return f"id:{b.unit_id}"
+
     lines.append(f"IDLE BUILDERS ({len(idle)}):")
     for b in idle:
         lines.append(
-            f"  id:{b.unit_id}, unit_index:{b.unit_index} at ({b.x},{b.y}) — "
+            f"  {_ident(b)} at ({b.x},{b.y}) — "
             f"{b.charges} charges, {b.moves:.0f} moves"
         )
     if busy:
         lines.append(f"BUSY BUILDERS ({len(busy)}):")
         for b in busy:
             lines.append(
-                f"  id:{b.unit_id}, unit_index:{b.unit_index} at ({b.x},{b.y}) — "
-                f"{b.charges} charges (no moves)"
+                f"  {_ident(b)} at ({b.x},{b.y}) — {b.charges} charges (no moves)"
             )
 
 

@@ -27,7 +27,7 @@ ACTION_ALIASES = {
 
 
 def _parse(path: Path) -> ast.Module:
-    return ast.parse(path.read_text())
+    return ast.parse(path.read_text(encoding="utf-8"))
 
 
 def _is_mcp_tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -43,11 +43,22 @@ def _is_mcp_tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return False
 
 
+def _only(nodes: Iterable[ast.AST], what: str) -> ast.AST:
+    """First matching node, with a readable error when the source moved."""
+    node = next(iter(nodes), None)
+    if node is None:
+        raise SystemExit(f"audit: could not find {what}; update this script")
+    return node
+
+
 def _game_state_methods(tree: ast.Module) -> set[str]:
-    game_state = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "GameState"
+    game_state = _only(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "GameState"
+        ),
+        "class GameState in game_state.py",
     )
     return {
         node.name
@@ -80,28 +91,48 @@ def _mcp_gamestate_methods(
     return _gs_attributes(tools, methods)
 
 
+def _match_literals(pattern: ast.pattern) -> set[str]:
+    """String literals a case pattern matches, including or-patterns."""
+    if isinstance(pattern, ast.MatchOr):
+        return {
+            literal
+            for alternative in pattern.patterns
+            for literal in _match_literals(alternative)
+        }
+    if isinstance(pattern, ast.MatchValue) and isinstance(
+        pattern.value, ast.Constant
+    ):
+        if isinstance(pattern.value.value, str):
+            return {pattern.value.value}
+    return set()
+
+
 def _unit_actions(server_tree: ast.Module) -> set[str]:
-    unit_action = next(
-        node
-        for node in server_tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "unit_action"
+    unit_action = _only(
+        (
+            node
+            for node in server_tree.body
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "unit_action"
+        ),
+        "async def unit_action in server.py",
     )
-    action_match = next(
-        node
-        for node in ast.walk(unit_action)
-        if isinstance(node, ast.Match)
-        and isinstance(node.subject, ast.Call)
-        and isinstance(node.subject.func, ast.Attribute)
-        and isinstance(node.subject.func.value, ast.Name)
-        and node.subject.func.value.id == "action"
-        and node.subject.func.attr == "lower"
+    action_match = _only(
+        (
+            node
+            for node in ast.walk(unit_action)
+            if isinstance(node, ast.Match)
+            and isinstance(node.subject, ast.Call)
+            and isinstance(node.subject.func, ast.Attribute)
+            and isinstance(node.subject.func.value, ast.Name)
+            and node.subject.func.value.id == "action"
+            and node.subject.func.attr == "lower"
+        ),
+        "match action.lower() in unit_action",
     )
     return {
-        pattern.value.value
+        literal
         for case in action_match.cases
-        if isinstance((pattern := case.pattern), ast.MatchValue)
-        and isinstance(pattern.value, ast.Constant)
-        and isinstance(pattern.value.value, str)
+        for literal in _match_literals(case.pattern)
     }
 
 
@@ -113,7 +144,7 @@ def collect_evidence() -> dict[str, object]:
     registry_methods = _gs_attributes(registry_tree.body, methods)
     server_actions = _unit_actions(server_tree)
 
-    claude_text = CLAUDE_PATH.read_text()
+    claude_text = CLAUDE_PATH.read_text(encoding="utf-8")
     table = claude_text.split("## Unit Actions Reference", 1)[1].split(
         "Common improvements:",
         1,

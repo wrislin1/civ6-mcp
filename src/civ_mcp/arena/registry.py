@@ -68,7 +68,7 @@ async def _empire_resources_text(gs: Any, args: dict[str, Any]) -> str:
 async def _builder_tasks_text(gs: Any, args: dict[str, Any]) -> str:
     del args
     tasks, builders = await gs.get_builder_tasks()
-    return nr.narrate_builder_tasks(tasks, builders)
+    return nr.narrate_builder_tasks(tasks, builders, tool_hints=True)
 
 
 async def _pending_diplomacy_text(gs: Any, args: dict[str, Any]) -> str:

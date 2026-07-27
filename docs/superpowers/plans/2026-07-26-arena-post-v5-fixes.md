@@ -33,10 +33,14 @@
 | `experiments/arena-channels-behavior-v6.yaml` | Preserve the v5 treatment with a new run id. |
 | `tests/arena/test_channel_protocol.py` | Pin the exact retained schema description. |
 | `tests/arena/test_experiment.py` | Prove raw-byte v5/v6 equality after the run-id substitution and load v6. |
-| `src/civ_mcp/arena/registry.py` | Register `repair_improvement` and extend `standard`. |
+| `src/civ_mcp/arena/registry.py` | Register `repair_improvement`, extend `standard`, and request arena call hints on the task board. |
 | `src/civ_mcp/arena/vocab.py` | Mirror the new action verb for analyzer vocabulary parity. |
+| `src/civ_mcp/narrate.py` | Render the builder task board; emit arena call hints only under `tool_hints=True`. |
 | `tests/arena/test_registry.py` | Pin exact tier tuples and test repair dispatch/validation. |
+| `tests/test_narrate_builder_tasks.py` | Keep the MCP board free of arena call syntax and hint only actionable tasks. |
 | `CLAUDE.md` | Complete the MCP unit-action reference table. |
+| `scripts/audit_arena_tool_coverage.py` | Generate the deterministic three-surface coverage evidence. |
+| `tests/arena/test_tool_coverage_audit.py` | Pin the audit evidence and its unit-action scan. |
 | `docs/research/arena-tool-coverage-audit.md` | Record action coverage, tier membership, and dispositions. |
 | `tools/skills/civ6-arena-live/SKILL.md` | Correct the tracked landing-code instructions. |
 | `.claude/skills/civ6-arena-live/SKILL.md` | Ignored local mirror of the tracked skill source. |
@@ -201,10 +205,18 @@ Expected: the full arena suite passes, `git diff --check` prints nothing, and th
 - Modify: `tests/arena/test_registry.py`
 - Modify: `src/civ_mcp/arena/registry.py`
 - Modify: `src/civ_mcp/arena/vocab.py`
+- Modify: `src/civ_mcp/narrate.py`
 - Modify: `CLAUDE.md`
 - Create: `docs/research/arena-tool-coverage-audit.md`
 - Create: `scripts/audit_arena_tool_coverage.py`
 - Create: `tests/arena/test_tool_coverage_audit.py`
+- Create: `tests/test_narrate_builder_tasks.py`
+
+The task board is shared with the MCP server, whose builder actions are
+`unit_action(unit_id, action="improve"|"repair", improvement=...)`. Arena
+call hints are therefore opt-in: `narrate_builder_tasks(..., tool_hints=True)`
+from the arena registry only, and only for a task a builder can act on this
+turn (`moves > 0`, mapped improvement).
 
 **Interfaces:**
 - Consumes: `GameState.repair_improvement(unit_index: int) -> str`, `_tool`, `_int_param`, `TOOL_REGISTRY`, `TIERS`, and `LOCAL_TOOL_VERBS`.
