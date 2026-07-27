@@ -2,23 +2,26 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Cut the v6 ablation artifact (schema-clause revert), close the arena tool-coverage gap that left builders idle (audit + `standard` tier enrichment + repair verb), and fix the stale landing-code skill doc.
+**Goal:** Create the v6 channel-guidance ablation, close the routine builder-tool gap in the arena `standard` tier with a complete coverage audit, and correct the tracked live-arena skill's GitHub landing instructions.
 
-**Architecture:** Three independent deliverables against existing modules. The v6 change touches only the `propose_deal` schema description plus a byte-identical-minus-`run_id` experiment artifact so the description is the single run variable. The tier work freezes `minimal` as-is, adds a `repair_improvement` registry tool wrapping the existing `GameState.repair_improvement`, and enriches `standard` with exactly `get_builder_tasks` + `repair_improvement`. The audit doc records every remaining gap with a disposition instead of adding more tools.
+**Architecture:** This is a small post-run maintenance batch with three independently reviewable commits. The v6 task changes one schema string and clones v5 with only its run id changed. The tier task adds one adapter over existing `GameState` behavior, synchronizes action vocabulary, pins both stable tiers, updates the MCP action reference, and records the complete cross-surface audit. The final task changes only the tracked operator skill and its ignored local mirror.
 
-**Tech Stack:** Python 3.12, pytest via `uv run --extra test pytest`, YAML experiment artifacts, markdown docs.
+**Tech Stack:** Python 3.12, pytest via `uv run --extra test pytest`, YAML experiment artifacts, Markdown documentation.
 
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-07-26-arena-post-v5-fixes-design.md`.
-- The `propose_deal` description loses exactly this text (including the leading space): ` If you want to be PAID for a favor you perform, do not use this — send a message asking the other player to propose the deal to you.` The retained description is exactly: `Propose an unofficial favor-for-gold deal. YOU are the payer: you pay payment_gold and to_player performs the favor.`
-- `experiments/arena-channels-behavior-v6.yaml` is byte-identical to `experiments/arena-channels-behavior-v5.yaml` except `run_id: arena-channels-behavior-v6`.
-- The `minimal` tier is frozen: `TIERS["minimal"]` in `src/civ_mcp/arena/registry.py` must not change.
-- `standard` gains exactly two tools: `get_builder_tasks` and `repair_improvement`. No other tier additions in this cycle.
-- The new `repair_improvement` registry tool wraps the existing `GameState.repair_improvement(unit_index)` — no new `GameState` or Lua code.
-- Audit dispositions use exactly three labels: `add-to-standard-now`, `listed-for-later`, `intentionally-excluded`.
-- Run targeted tests with `uv run --extra test pytest <paths> -v`; run `git diff --check` before each commit; commit after each task.
-- Do not change the analyzer, `full` tier contents (beyond the automatic registry pickup), or any v1–v5 experiment artifact.
+- Remove exactly this suffix from the `propose_deal` description, including its leading space: ` If you want to be PAID for a favor you perform, do not use this — send a message asking the other player to propose the deal to you.`
+- Retain exactly: `Propose an unofficial favor-for-gold deal. YOU are the payer: you pay payment_gold and to_player performs the favor.`
+- `experiments/arena-channels-behavior-v6.yaml` must equal v5 byte-for-byte after replacing the single v5 `run_id` line with the v6 `run_id` line.
+- `TIERS["minimal"]` remains the exact ordered 15-tool tuple used by v1-v5.
+- `TIERS["standard"]` gains exactly `get_builder_tasks` and `repair_improvement`, becoming an exact ordered 26-tool tuple.
+- `repair_improvement` wraps existing `GameState.repair_improvement(unit_index: int) -> str`; do not add `GameState` or Lua behavior.
+- Keep `LOCAL_TOOL_VERBS` exactly synchronized with non-empty `TOOL_REGISTRY[*].verb` values.
+- Audit dispositions are exactly `add-to-standard-now`, `listed-for-later`, and `intentionally-excluded`.
+- Do not modify v1-v5 experiment artifacts, analyzer logic or rubrics, or the explicit contents of `minimal`.
+- Run targeted tests first, then `uv run --extra test pytest tests/arena -q`, then `git diff --check` before every commit.
+- Running v6 is attended work for another session.
 
 ---
 
@@ -26,18 +29,21 @@
 
 | File | Responsibility |
 |---|---|
-| `src/civ_mcp/arena/channel_protocol.py` | Drop the discouraging clause from the `propose_deal` schema description. |
-| `experiments/arena-channels-behavior-v6.yaml` | v6 ablation artifact (v5 + run_id only). |
-| `src/civ_mcp/arena/registry.py` | Add `repair_improvement` tool; extend `standard` tier tuple. |
-| `docs/research/arena-tool-coverage-audit.md` | Full three-surface coverage audit with dispositions. |
-| `.claude/skills/civ6-arena-live/SKILL.md` | Replace the stale "Landing code on `.141`" section. |
-| `tests/arena/test_channel_protocol.py` | Pin the revised `propose_deal` description. |
-| `tests/arena/test_experiment.py` | v6 loader test (equality-minus-run_id vs v5). |
-| `tests/arena/test_registry.py` | Pin `standard` additions; freeze-comment on minimal; dispatch + invalid-arg tests for `repair_improvement`. |
+| `src/civ_mcp/arena/channel_protocol.py` | Remove only the discouraging `propose_deal` suffix. |
+| `experiments/arena-channels-behavior-v6.yaml` | Preserve the v5 treatment with a new run id. |
+| `tests/arena/test_channel_protocol.py` | Pin the exact retained schema description. |
+| `tests/arena/test_experiment.py` | Prove raw-byte v5/v6 equality after the run-id substitution and load v6. |
+| `src/civ_mcp/arena/registry.py` | Register `repair_improvement` and extend `standard`. |
+| `src/civ_mcp/arena/vocab.py` | Mirror the new action verb for analyzer vocabulary parity. |
+| `tests/arena/test_registry.py` | Pin exact tier tuples and test repair dispatch/validation. |
+| `CLAUDE.md` | Complete the MCP unit-action reference table. |
+| `docs/research/arena-tool-coverage-audit.md` | Record action coverage, tier membership, and dispositions. |
+| `tools/skills/civ6-arena-live/SKILL.md` | Correct the tracked landing-code instructions. |
+| `.claude/skills/civ6-arena-live/SKILL.md` | Ignored local mirror of the tracked skill source. |
 
 ---
 
-### Task 1: V6 Schema Revert And Ablation Artifact
+### Task 1: V6 Schema Ablation
 
 **Files:**
 - Modify: `tests/arena/test_channel_protocol.py`
@@ -46,43 +52,47 @@
 - Create: `experiments/arena-channels-behavior-v6.yaml`
 
 **Interfaces:**
-- Consumes: `channel_tool_schemas()` (already imported in `tests/arena/test_channel_protocol.py:15`); `load_experiment(path)` and the `ARENA_CHANNELS_BEHAVIOR_V5` constant plus `replace` from `dataclasses` (already imported) in `tests/arena/test_experiment.py`.
-- Produces: `experiments/arena-channels-behavior-v6.yaml` with `run_id: arena-channels-behavior-v6`; a `propose_deal` schema description without the discouraging clause.
+- Consumes: `channel_tool_schemas()`, `load_experiment(path)`, `ARENA_CHANNELS_BEHAVIOR_V5`.
+- Produces: an exact retained `propose_deal` description and a loadable v6 artifact whose sole file-level difference from v5 is `run_id`.
 
-- [ ] **Step 1: Write the failing schema-description test**
+- [ ] **Step 1: Add the failing exact-description test**
 
-In `tests/arena/test_channel_protocol.py`, add at the end of the file:
+Append to `tests/arena/test_channel_protocol.py`:
 
 ```python
 def test_propose_deal_description_states_payer_without_discouraging_use():
-    # v5 ablation context: the clause "do not use this" on the only
-    # deal-initiating action coincided with LLM channel initiative dropping
-    # to zero (v3: 1 LLM-initiated deal, v4: 1, v5: 0). v6 keeps the
-    # role-direction sentence (it fixed v4's inverted deal object) and drops
-    # only the discouraging clause.
-    schemas = {s["function"]["name"]: s for s in channel_tool_schemas()}
-    description = schemas["propose_deal"]["function"]["description"]
-    assert description == (
+    schemas = {schema["function"]["name"]: schema for schema in channel_tool_schemas()}
+
+    assert schemas["propose_deal"]["function"]["description"] == (
         "Propose an unofficial favor-for-gold deal. YOU are the payer: you "
         "pay payment_gold and to_player performs the favor."
     )
 ```
 
-- [ ] **Step 2: Write the failing v6 loader test**
+- [ ] **Step 2: Add the failing raw-byte and loader test**
 
-In `tests/arena/test_experiment.py`, add below the v5 constant (line ~31):
+Add beside the existing v4/v5 constants in `tests/arena/test_experiment.py`:
 
 ```python
-ARENA_CHANNELS_BEHAVIOR_V6 = REPO_ROOT / "experiments" / "arena-channels-behavior-v6.yaml"
+ARENA_CHANNELS_BEHAVIOR_V6 = (
+    REPO_ROOT / "experiments" / "arena-channels-behavior-v6.yaml"
+)
 ```
 
-Add this test directly below `test_arena_channels_behavior_v5_differs_from_v4_only_in_run_id_and_auto_accept` (line ~349):
+Add below `test_arena_channels_behavior_v5_differs_from_v4_only_in_run_id_and_auto_accept`:
 
 ```python
 def test_arena_channels_behavior_v6_differs_from_v5_only_in_run_id():
-    # v6 isolates the propose_deal description revert: the config must be
-    # equivalent to v5 apart from run_id, so the schema text is the single
-    # changed variable between the two runs.
+    v5_bytes = ARENA_CHANNELS_BEHAVIOR_V5.read_bytes()
+    old_run_id = b"run_id: arena-channels-behavior-v5\n"
+    new_run_id = b"run_id: arena-channels-behavior-v6\n"
+
+    assert v5_bytes.count(old_run_id) == 1
+    assert ARENA_CHANNELS_BEHAVIOR_V6.read_bytes() == v5_bytes.replace(
+        old_run_id,
+        new_run_id,
+        1,
+    )
     v5 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V5)
     v6 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V6)
 
@@ -90,7 +100,7 @@ def test_arena_channels_behavior_v6_differs_from_v5_only_in_run_id():
     assert replace(v6, run_id=v5.run_id) == v5
 ```
 
-- [ ] **Step 3: Run the new tests and verify the expected failures**
+- [ ] **Step 3: Verify both tests fail for the intended reasons**
 
 Run:
 
@@ -101,11 +111,11 @@ uv run --extra test pytest \
   -v
 ```
 
-Expected: the description test fails on the "do not use this" clause still being present; the loader test fails because the v6 yaml does not exist.
+Expected: the schema assertion shows the existing discouraging suffix, and the artifact test raises `FileNotFoundError` for v6.
 
-- [ ] **Step 4: Revert the discouraging clause**
+- [ ] **Step 4: Remove only the discouraging schema suffix**
 
-In `src/civ_mcp/arena/channel_protocol.py` (lines 444–447), replace:
+In `src/civ_mcp/arena/channel_protocol.py`, replace:
 
 ```python
             "Propose an unofficial favor-for-gold deal. YOU are the payer: you "
@@ -121,127 +131,214 @@ with:
             "pay payment_gold and to_player performs the favor.",
 ```
 
-- [ ] **Step 5: Create the v6 artifact**
+- [ ] **Step 5: Clone v5 and change its one run-id line**
 
 Run:
 
 ```bash
-sed 's/^run_id: arena-channels-behavior-v5$/run_id: arena-channels-behavior-v6/' \
-  experiments/arena-channels-behavior-v5.yaml > experiments/arena-channels-behavior-v6.yaml
-diff experiments/arena-channels-behavior-v5.yaml experiments/arena-channels-behavior-v6.yaml
+cp experiments/arena-channels-behavior-v5.yaml \
+  experiments/arena-channels-behavior-v6.yaml
 ```
 
-Expected diff output — exactly one changed line:
+Then change line 1 of the new file from:
 
-```
-1c1
-< run_id: arena-channels-behavior-v5
----
-> run_id: arena-channels-behavior-v6
+```yaml
+run_id: arena-channels-behavior-v5
 ```
 
-- [ ] **Step 6: Run the tests and verify they pass**
+to:
+
+```yaml
+run_id: arena-channels-behavior-v6
+```
+
+- [ ] **Step 6: Run the focused tests**
 
 Run:
 
 ```bash
-uv run --extra test pytest tests/arena/test_channel_protocol.py tests/arena/test_experiment.py -v
+uv run --extra test pytest \
+  tests/arena/test_channel_protocol.py \
+  tests/arena/test_experiment.py \
+  -v
 ```
 
-Expected: all tests pass (the two new ones plus no regressions in either file).
+Expected: both files pass, including the new exact-description and raw-byte tests.
 
-- [ ] **Step 7: Check the diff and commit**
+- [ ] **Step 7: Confirm the preregistered prediction remains explicit**
+
+Run:
 
 ```bash
+rg -n "If messaging and LLM-initiated deals return, cause 1; if the" \
+  docs/research/arena-channels-behavior-v1-findings.md
+```
+
+Expected: one match in the v5 engagement-collapse section. Do not append a v6 result before the attended run.
+
+- [ ] **Step 8: Run the required pre-commit gate and commit**
+
+Run:
+
+```bash
+uv run --extra test pytest tests/arena -q
 git diff --check
-git add tests/arena/test_channel_protocol.py tests/arena/test_experiment.py \
-  src/civ_mcp/arena/channel_protocol.py experiments/arena-channels-behavior-v6.yaml
-git commit -m "feat(arena): cut channels behavior v6 ablation artifact"
+git add \
+  src/civ_mcp/arena/channel_protocol.py \
+  experiments/arena-channels-behavior-v6.yaml \
+  tests/arena/test_channel_protocol.py \
+  tests/arena/test_experiment.py
+git commit -m "feat(arena): cut channels behavior v6 ablation"
 ```
 
-Expected: `git diff --check` prints nothing; commit succeeds.
+Expected: the full arena suite passes, `git diff --check` prints nothing, and the commit succeeds.
 
 ---
 
-### Task 2: Repair Tool And Standard Tier Enrichment
+### Task 2: Builder Coverage, Tier Pins, And Audit
 
 **Files:**
 - Modify: `tests/arena/test_registry.py`
 - Modify: `src/civ_mcp/arena/registry.py`
+- Modify: `src/civ_mcp/arena/vocab.py`
+- Modify: `CLAUDE.md`
+- Create: `docs/research/arena-tool-coverage-audit.md`
 
 **Interfaces:**
-- Consumes: `GameState.repair_improvement(unit_index: int) -> str` (`src/civ_mcp/game_state.py:597`, existing); `_tool` and `_int_param` helpers in `registry.py`; `TIERS` dict (`registry.py:1347`).
-- Produces: `TOOL_REGISTRY["repair_improvement"]`; `TIERS["standard"]` containing `get_builder_tasks` and `repair_improvement`. `full` picks up the new tool automatically (`TIERS["full"] = tuple(TOOL_REGISTRY)`).
+- Consumes: `GameState.repair_improvement(unit_index: int) -> str`, `_tool`, `_int_param`, `TOOL_REGISTRY`, `TIERS`, and `LOCAL_TOOL_VERBS`.
+- Produces: `TOOL_REGISTRY["repair_improvement"]`, a 26-tool `standard` tier, unchanged 15-tool `minimal`, complete MCP action documentation, and a post-change coverage audit.
 
-- [ ] **Step 1: Write the failing tier and dispatch tests**
+- [ ] **Step 1: Strengthen the existing tier snapshots**
 
-In `tests/arena/test_registry.py`, add below `test_standard_adds_map_and_combat` (line ~90):
+Replace the existing `MINIMAL_15` declaration and
+`test_minimal_tier_is_todays_fifteen` in `tests/arena/test_registry.py`
+with:
 
 ```python
-def test_standard_adds_builder_management():
-    """Post-v5 fix (riz 2026-07-26): across v3-v5 the LLM seats' builders
-    wandered without ever improving or repairing a tile. Root cause was the
-    tool surface, not the models: minimal offers no improvement verbs at
-    all, standard had improve_tile but no way to see what needs improving
-    (get_builder_tasks) and no repair verb existed anywhere in the
-    registry. minimal stays frozen for artifact comparability; standard is
-    the empire-behavior tier."""
-    extra = set(TIERS["standard"]) - set(TIERS["minimal"])
-    assert {"get_builder_tasks", "repair_improvement"} <= extra
+MINIMAL_TIER_SNAPSHOT = (
+    "get_overview",
+    "get_units",
+    "get_cities",
+    "move_unit",
+    "found_city",
+    "set_city_production",
+    "set_research",
+    "fortify_unit",
+    "skip_unit",
+    "get_unit_promotions",
+    "promote_unit",
+    "get_pending_diplomacy",
+    "respond_to_diplomacy",
+    "get_pending_trades",
+    "respond_to_trade",
+)
+MINIMAL_15 = set(MINIMAL_TIER_SNAPSHOT)
+
+STANDARD_TIER_SNAPSHOT = (
+    "get_overview",
+    "get_units",
+    "get_cities",
+    "move_unit",
+    "found_city",
+    "set_city_production",
+    "set_research",
+    "fortify_unit",
+    "skip_unit",
+    "get_unit_promotions",
+    "promote_unit",
+    "get_map_area",
+    "get_tech_civics",
+    "attack_unit",
+    "get_builder_tasks",
+    "improve_tile",
+    "remove_feature",
+    "repair_improvement",
+    "purchase_item",
+    "heal_unit",
+    "alert_unit",
+    "set_civic",
+    "get_pending_diplomacy",
+    "respond_to_diplomacy",
+    "get_pending_trades",
+    "respond_to_trade",
+)
 
 
-def test_minimal_tier_is_frozen_for_artifact_comparability():
-    """Re-running a historical experiment artifact must offer the same
-    world it originally ran with. Extend standard (or add a tier) instead
-    of touching minimal."""
-    assert set(TIERS["minimal"]) == MINIMAL_15
+def test_minimal_tier_is_frozen_for_historical_artifact_comparability():
+    """Historical artifacts must retain the exact tool order they ran with."""
+    assert TIERS["minimal"] == MINIMAL_TIER_SNAPSHOT
 ```
 
-In the dispatch-test section (the fake `GameState` class at line ~1443 that
-defines `async def improve_tile`), add a sibling method to the same fake:
+Replace `test_standard_adds_map_and_combat` with:
 
 ```python
+def test_standard_tier_is_pinned_for_empire_behavior():
+    assert TIERS["standard"] == STANDARD_TIER_SNAPSHOT
+```
+
+This preserves `MINIMAL_15` for existing set-based assertions while adding exact ordered snapshots.
+
+- [ ] **Step 2: Add repair metadata, validation, and dispatch tests**
+
+Add to `tests/arena/test_registry.py` near the other direct dispatch tests:
+
+```python
+def test_repair_improvement_tool_metadata():
+    tool = TOOL_REGISTRY["repair_improvement"]
+
+    assert tool.verb == "repair"
+    assert tool.required == ("unit_index",)
+
+
+@pytest.mark.asyncio
+async def test_repair_improvement_rejects_non_numeric_unit_index():
+    class FakeGS:
         async def repair_improvement(self, unit_index):
-            self.calls.append(("repair_improvement", unit_index)); return "OK"
+            raise AssertionError("must not reach GameState")
+
+    with pytest.raises((TypeError, ValueError)):
+        await dispatch(FakeGS(), "repair_improvement", {"unit_index": "z"})
+
+
+@pytest.mark.asyncio
+async def test_repair_improvement_dispatches_numeric_unit_index():
+    class FakeGS:
+        def __init__(self):
+            self.calls = []
+
+        async def repair_improvement(self, unit_index):
+            self.calls.append(("repair_improvement", unit_index))
+            return "OK"
+
+    gs = FakeGS()
+
+    assert await dispatch(
+        gs,
+        "repair_improvement",
+        {"unit_index": "5"},
+    ) == "OK"
+    assert gs.calls == [("repair_improvement", 5)]
 ```
 
-and, mirroring the existing `improve_tile` dispatch assertion at line ~1465,
-add:
-
-```python
-    await _dispatch(gs, "repair_improvement", {"unit_index": "5"})
-    assert ("repair_improvement", 5) in gs.calls
-```
-
-(Adapt the exact call pattern to the enclosing test's local helper names —
-the `improve_tile` assertion three lines above is the template. If dispatch
-goes through a differently-named local helper, use that helper.)
-
-In the invalid-argument parametrize list at line ~1393 (the entries shaped
-`("improve_tile", {"unit_index": "z", "improvement_name": "IMPROVEMENT_FARM"})`),
-add:
-
-```python
-    ("repair_improvement", {"unit_index": "z"}),
-```
-
-- [ ] **Step 2: Run the new tests and verify the expected failures**
+- [ ] **Step 3: Verify the new tests fail while the minimal pin passes**
 
 Run:
 
 ```bash
-uv run --extra test pytest tests/arena/test_registry.py -v 2>&1 | tail -20
+uv run --extra test pytest \
+  tests/arena/test_registry.py::test_minimal_tier_is_frozen_for_historical_artifact_comparability \
+  tests/arena/test_registry.py::test_standard_tier_is_pinned_for_empire_behavior \
+  tests/arena/test_registry.py::test_repair_improvement_tool_metadata \
+  tests/arena/test_registry.py::test_repair_improvement_rejects_non_numeric_unit_index \
+  tests/arena/test_registry.py::test_repair_improvement_dispatches_numeric_unit_index \
+  -v
 ```
 
-Expected: `test_standard_adds_builder_management` fails (tools absent);
-the dispatch/invalid tests fail with `repair_improvement` unknown;
-`test_minimal_tier_is_frozen_for_artifact_comparability` passes immediately
-(minimal already matches `MINIMAL_15`).
+Expected: the minimal pin passes; the standard pin and three repair tests fail because the additions do not exist yet.
 
-- [ ] **Step 3: Add the registry tool**
+- [ ] **Step 4: Register repair and synchronize the vocabulary mirror**
 
-In `src/civ_mcp/arena/registry.py`, directly below the `remove_feature`
-entry (which starts at line ~614), add:
+Add below `remove_feature` in `TOOL_REGISTRY`:
 
 ```python
     "repair_improvement": _tool(
@@ -254,252 +351,341 @@ entry (which starts at line ~614), add:
     ),
 ```
 
-Match the surrounding entries' exact `_tool` argument order — `improve_tile`
-at line ~603 is the template. If `_tool` in this file takes `verb` as a
-keyword with a different name, mirror `improve_tile`'s usage exactly.
-
-- [ ] **Step 4: Extend the standard tier**
-
-In `TIERS["standard"]` (line ~1373), add two entries after
-`"remove_feature",`:
+Add below `"remove_feature": "remove_feature",` in
+`src/civ_mcp/arena/vocab.py`:
 
 ```python
-        "get_builder_tasks",
-        "repair_improvement",
+    "repair_improvement": "repair",
 ```
 
-Do not touch `TIERS["minimal"]`.
+- [ ] **Step 5: Extend `standard` without changing `minimal`**
 
-- [ ] **Step 5: Run the registry tests and verify they pass**
+In `TIERS["standard"]`, insert `get_builder_tasks` before `improve_tile` and
+`repair_improvement` after `remove_feature`:
+
+```python
+        "attack_unit",
+        "get_builder_tasks",
+        "improve_tile",
+        "remove_feature",
+        "repair_improvement",
+        "purchase_item",
+```
+
+Do not edit the `minimal` tuple. `full` becomes 90 tools automatically because it is defined as `tuple(TOOL_REGISTRY)`.
+
+- [ ] **Step 6: Complete the MCP unit-action reference**
+
+In the `CLAUDE.md` unit-action table, make the builder-action portion read:
+
+```markdown
+| `improve` | Build improvement | Builders and Military Engineers; see improvements below |
+| `repair` | Repair pillaged improvement | Builders only; no improvement name required |
+| `remove_improvement` | Demolish intact improvement | Builders only; costs one charge |
+| `remove_feature` | Chop/harvest feature | Builders only; removes forest, jungle, or marsh from tile |
+| `build_route` | Build road/railroad | Military Engineers only; on current tile; no charges used |
+| `trade_route` | Start route | Traders; target_x/y of destination city |
+| `teleport` | Move idle trader | Traders only; target_x/y of city |
+| `activate` | Use Great Person | Must be on completed matching district |
+| `sacrifice_charges` | Boost district project | Royal Society builders; spends all charges |
+| `spread_religion` | Spread religion | Missionaries/Apostles |
+```
+
+- [ ] **Step 7: Run the registry and vocabulary tests**
 
 Run:
 
 ```bash
-uv run --extra test pytest tests/arena/test_registry.py -v 2>&1 | tail -10
+uv run --extra test pytest \
+  tests/arena/test_registry.py \
+  tests/arena/test_analyze.py::test_local_tool_verbs_mirror_registry_verbs_exactly \
+  -v
 ```
 
-Expected: all tests pass, including the pre-existing
-`test_tiers_nest` (minimal ⊂ standard ⊂ full) and
-`test_full_tier_initially_matches_registry_order` (full picks up the new
-tool automatically).
+Expected: all tests pass. In particular, the tier tuples match exactly, repair coerces `"5"` to `5`, and the registry/vocabulary maps remain equal.
 
-- [ ] **Step 6: Check the diff and commit**
+- [ ] **Step 8: Generate deterministic audit evidence**
 
-```bash
-git diff --check
-git add tests/arena/test_registry.py src/civ_mcp/arena/registry.py
-git commit -m "feat(arena): add repair verb and builder tools to standard tier"
-```
-
-Expected: `git diff --check` prints nothing; commit succeeds.
-
----
-
-### Task 3: Tool-Coverage Audit Doc
-
-**Files:**
-- Create: `docs/research/arena-tool-coverage-audit.md`
-
-**Interfaces:**
-- Consumes: `TOOL_REGISTRY` / `TIERS` from `civ_mcp.arena.registry`; `GameState` from `civ_mcp.game_state`; the unit-action table in `CLAUDE.md`.
-- Produces: the audit document. No code changes — Task 2 already made the only tool additions this cycle.
-
-- [ ] **Step 1: Generate the three-surface comparison**
-
-Run and capture the output:
+Run this read-only script from the repository root:
 
 ```bash
-cd /home/riz/projects/civ6-mcp
 uv run python - <<'PY'
-import inspect
-from civ_mcp.arena.registry import TOOL_REGISTRY, TIERS
-from civ_mcp.game_state import GameState
-
-methods = {
-    n for n, m in inspect.getmembers(GameState, predicate=inspect.isfunction)
-    if not n.startswith("_")
-}
+import ast
 import re
-covered = set(re.findall(r"gs\.([a-z_]+)\(", open("src/civ_mcp/arena/registry.py").read()))
+from pathlib import Path
 
-print("== GameState methods with NO registry tool calling them ==")
-for name in sorted(methods - covered):
-    print(" ", name)
+from civ_mcp.arena.registry import TIERS, TOOL_REGISTRY
+
+server_text = Path("src/civ_mcp/server.py").read_text()
+registry_text = Path("src/civ_mcp/arena/registry.py").read_text()
+claude_text = Path("CLAUDE.md").read_text()
+
+server_tree = ast.parse(server_text)
+
+
+def is_mcp_tool(node):
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if (
+            isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "mcp"
+            and target.attr == "tool"
+        ):
+            return True
+    return False
+
+
+exposed_methods = set()
+for node in server_tree.body:
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        continue
+    if not is_mcp_tool(node):
+        continue
+    exposed_methods.update(
+        call.func.attr
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "gs"
+    )
+
+registry_methods = set(re.findall(r"gs\.([a-z_]+)\(", registry_text))
+action_line = re.search(r"action: One of: ([^\n]+)", server_text)
+assert action_line is not None
+server_actions = {value.strip() for value in action_line.group(1).split(",")}
+
+table = claude_text.split("## Unit Actions Reference", 1)[1].split(
+    "Common improvements:",
+    1,
+)[0]
+documented_actions = set(re.findall(r"^\| `([^`]+)` \|", table, re.MULTILINE))
+
+aliases = {
+    "activate_great_person": "activate",
+    "start_trade_route": "trade_route",
+    "teleport_trader": "teleport",
+}
+arena_actions = {
+    aliases.get(tool.verb, tool.verb)
+    for tool in TOOL_REGISTRY.values()
+    if tool.verb
+}
+
+print(
+    "counts:",
+    f"registry={len(TOOL_REGISTRY)}",
+    f"minimal={len(TIERS['minimal'])}",
+    f"standard={len(TIERS['standard'])}",
+    f"full={len(TIERS['full'])}",
+)
+print("MCP unit actions absent from CLAUDE.md:", sorted(server_actions - documented_actions))
+print("MCP unit actions absent from arena:", sorted(server_actions - arena_actions))
+print(
+    "Exposed GameState calls absent from arena registry:",
+    sorted(exposed_methods - registry_methods),
+)
 print()
-print("== registry tools absent from standard ==")
-for name in sorted(set(TOOL_REGISTRY) - set(TIERS["standard"])):
-    print(" ", name)
+print(
+    "| tool | minimal | minimal disposition | standard | "
+    "standard disposition | full |"
+)
+print("|---|---:|---|---:|---|---:|")
+for name in TOOL_REGISTRY:
+    in_minimal = name in TIERS["minimal"]
+    in_standard = name in TIERS["standard"]
+    minimal_disposition = (
+        "present"
+        if in_minimal
+        else "intentionally-excluded"
+    )
+    standard_disposition = (
+        "present"
+        if in_standard
+        else "listed-for-later"
+    )
+    print(
+        f"| `{name}` | {'yes' if in_minimal else 'no'} | "
+        f"{minimal_disposition} | "
+        f"{'yes' if in_standard else 'no'} | "
+        f"{standard_disposition} | yes |"
+    )
 PY
 ```
 
-- [ ] **Step 2: Write the audit document**
+Expected evidence after the change:
 
-Create `docs/research/arena-tool-coverage-audit.md` with this structure,
-filling the tables from Step 1's output. Every row gets exactly one
-disposition: `add-to-standard-now` / `listed-for-later` /
-`intentionally-excluded`. The disposition rule (from the spec): read-only
-tools and builder-class action verbs that need no new `GameState`/Lua code
-may be `add-to-standard-now`; this cycle's additions are already fixed as
-`get_builder_tasks` + `repair_improvement` (Task 2), so every other gap is
-`listed-for-later` or `intentionally-excluded`.
-
-```markdown
-# Arena Tool-Coverage Audit
-
-**Date:** 2026-07-26 · **Trigger:** operator observation during the
-channels-behavior v3–v5 runs — LLM builders wandered without improving,
-building, or repairing a tile. Root cause: the `minimal` tier offered no
-improvement verbs, and no repair verb existed in the registry at all.
-Zero `improve_tile` calls and zero out-of-tier rejections across three
-runs: a tool absent from the schema does not exist in the model's world.
-
-## Method
-
-Three surfaces compared:
-1. `TOOL_REGISTRY` (`src/civ_mcp/arena/registry.py`) — N tools.
-2. `GameState` public methods (`src/civ_mcp/game_state.py`) — the actions
-   the MCP server can execute against the live game.
-3. The unit-action table in `CLAUDE.md`.
-
-Dispositions: `add-to-standard-now` (read-only or builder-class, no new
-game-side code) / `listed-for-later` / `intentionally-excluded`
-(ops/save/load/debug surfaces the arena must not expose).
-
-## Fixed this cycle
-
-| gap | disposition | change |
-|---|---|---|
-| no repair verb in registry | add-to-standard-now | `repair_improvement` tool added, wraps existing `GameState.repair_improvement` |
-| `get_builder_tasks` absent from standard | add-to-standard-now | added to `TIERS["standard"]` |
-
-## GameState actions with no registry tool
-
-| GameState method | game action | disposition | notes |
-|---|---|---|---|
-| `sleep_unit` | unit sleep (manual wake) | listed-for-later | ... |
-| `delete_unit` | disband unit | listed-for-later | risky verb for LLM seats; maintenance relief niche |
-| `build_route` | Military Engineer railroad | listed-for-later | era-gated, needs Encampment+Armory |
-| `remove_improvement` | ... | listed-for-later | ... |
-| (every remaining row from Step 1 output) | ... | ... | ... |
-
-## Registry tools absent from `standard`
-
-| tool | disposition | notes |
-|---|---|---|
-| (every row from Step 1 output, post-Task-2) | listed-for-later / intentionally-excluded | one line each on why it stays out of standard for now |
-
-## Tier philosophy (recorded for future cycles)
-
-- `minimal` is frozen (pinned by
-  `test_minimal_tier_is_frozen_for_artifact_comparability`): re-running a
-  historical artifact must offer the same world it originally ran with.
-- `standard` is the empire-behavior tier: it should contain everything a
-  seat needs to run an empire without strategic-layer tools.
-- `full` is the whole registry by construction.
+```text
+counts: registry=90 minimal=15 standard=26 full=90
+MCP unit actions absent from CLAUDE.md: []
+MCP unit actions absent from arena: ['build_route', 'delete', 'remove_improvement', 'sacrifice_charges', 'sleep']
+Exposed GameState calls absent from arena registry: ['build_route', 'check_game_over', 'delete_unit', 'end_turn', 'execute_lua', 'get_diary_snapshot', 'get_game_identity', 'get_threat_scan', 'load_game_save', 'load_save', 'remove_improvement', 'sacrifice_builder_charges', 'sleep_unit', 'submit_congress']
 ```
 
-Replace every `...` and the placeholder rows with real content from the
-Step 1 output — the committed document must contain no ellipses. Keep
-per-row notes to one line.
+The script also prints exactly 90 tier-membership rows. Preserve those rows in registry order in the audit document.
 
-- [ ] **Step 3: Verify the document is complete**
+- [ ] **Step 9: Write the complete audit document**
+
+Create `docs/research/arena-tool-coverage-audit.md` with these sections and
+facts:
+
+1. **Scope and method:** name the three compared surfaces, state the
+   pre-change/post-change registry counts (89/90), and explain that the
+   `unit_action` cases define the direct gameplay-action set.
+2. **Fixed this cycle:** record `repair_improvement` and
+   `get_builder_tasks` as `add-to-standard-now`. Separately record the
+   three `CLAUDE.md` documentation-parity fixes.
+3. **Unit-action matrix:** include all 20 MCP unit actions. Mark the five
+   post-change arena gaps from Step 8 as `listed-for-later`; the other 15
+   are present. Note the arena aliases `start_trade_route` → `trade_route`,
+   `teleport_trader` → `teleport`, and `activate_great_person` →
+   `activate`.
+4. **Non-action exposed helpers:** classify `check_game_over`,
+   `get_diary_snapshot`, `get_game_identity`, `get_threat_scan`, and
+   `submit_congress` as composed/internal and `intentionally-excluded`.
+   Classify `end_turn`, `execute_lua`, `load_game_save`, and `load_save` as
+   lifecycle/ops and `intentionally-excluded`.
+5. **Tier membership:** include all 90 generated rows. Explain that every
+   absence from `minimal` is intentional because the historical tier is
+   frozen; every absence from `standard` is `listed-for-later`; `full`
+   contains the whole registry.
+6. **Decision record:** explain why routine, non-destructive repair is in
+   `standard`, while destructive `remove_improvement`/`delete`,
+   specialized `sacrifice_charges`/`build_route`, and passive `sleep`
+   remain deferred.
+
+Do not use placeholder rows or ellipses. The five unit-action gaps and nine
+composed/lifecycle exclusions above account for every post-change
+`GameState` method reported by Step 8.
+
+- [ ] **Step 10: Verify the audit and run the required pre-commit gate**
 
 Run:
 
 ```bash
-grep -n '\.\.\.' docs/research/arena-tool-coverage-audit.md && echo "PLACEHOLDERS REMAIN" || echo "clean"
-grep -c 'add-to-standard-now\|listed-for-later\|intentionally-excluded' docs/research/arena-tool-coverage-audit.md
+test "$(rg -c '^\| `[^`]+` \| (yes|no) \| (present|intentionally-excluded) \| (yes|no) \| (present|listed-for-later) \| yes \|' \
+  docs/research/arena-tool-coverage-audit.md)" -eq 90
+! rg -n 'TO''DO|TB''D|[.][.][.]' docs/research/arena-tool-coverage-audit.md
+uv run --extra test pytest tests/arena -q
+git diff --check
 ```
 
-Expected: `clean`, and the disposition count is at least the number of gap
-rows (every row dispositioned).
+Expected: the tier table has exactly 90 rows, the placeholder scan is
+silent, the full arena suite passes, and `git diff --check` is silent.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 11: Commit the tier and audit deliverable**
+
+Run:
 
 ```bash
-git add docs/research/arena-tool-coverage-audit.md
-git commit -m "docs(arena): audit tool coverage across registry, tiers, and game actions"
+git add \
+  src/civ_mcp/arena/registry.py \
+  src/civ_mcp/arena/vocab.py \
+  tests/arena/test_registry.py \
+  CLAUDE.md \
+  docs/research/arena-tool-coverage-audit.md
+git commit -m "feat(arena): add builder repair coverage to standard tier"
 ```
 
-Expected: commit succeeds.
+Expected: the commit succeeds with the registry, tier pins, documentation parity, and audit together.
 
 ---
 
-### Task 4: Skill-Doc Landing Section Fix
+### Task 3: GitHub Landing Skill Documentation
 
 **Files:**
-- Modify: `.claude/skills/civ6-arena-live/SKILL.md`
+- Modify: `tools/skills/civ6-arena-live/SKILL.md`
+- Modify locally when present: `.claude/skills/civ6-arena-live/SKILL.md`
 
 **Interfaces:**
-- Consumes: nothing from earlier tasks.
-- Produces: an accurate landing-code section; no code or test surface.
+- Consumes: the verified `origin` URL `git@github.com:wrislin1/civ6-mcp.git`.
+- Produces: one tracked canonical skill with an identical ignored local mirror.
 
-- [ ] **Step 1: Replace the stale section**
+- [ ] **Step 1: Replace the stale tracked section**
 
-In `.claude/skills/civ6-arena-live/SKILL.md`, replace the entire
-`## Landing code on \`.141\`` section (heading plus its numbered list and
-trailing paragraph, ending just before `## Scripts`) with:
+In `tools/skills/civ6-arena-live/SKILL.md`, replace the entire
+`## Landing code on \`.141\`` section, ending immediately before
+`## Scripts`, with:
 
 ```markdown
 ## Landing code
 
 `origin` is GitHub (`git@github.com:wrislin1/civ6-mcp.git`). Land work by
 committing to `main` and running `git push origin main`. There is no `.141`
-checkout in the loop anymore; if another machine (e.g. riz-llm) needs the
+checkout in the loop anymore; if another machine such as riz-llm needs the
 code, it pulls from GitHub.
 ```
 
-- [ ] **Step 2: Verify no stale references remain**
+- [ ] **Step 2: Refresh and verify the ignored local mirror**
+
+If `.claude/skills/civ6-arena-live/SKILL.md` exists, replace the same
+section there with the exact content from Step 1. Then run:
+
+```bash
+cmp tools/skills/civ6-arena-live/SKILL.md \
+  .claude/skills/civ6-arena-live/SKILL.md
+git check-ignore .claude/skills/civ6-arena-live/SKILL.md
+git diff -- tools/skills/civ6-arena-live/SKILL.md
+```
+
+Expected: `cmp` is silent, `git check-ignore` prints the local mirror path,
+and `git diff` shows only the tracked landing-section replacement.
+
+- [ ] **Step 3: Verify stale claims are gone and the remote matches**
 
 Run:
 
 ```bash
-grep -n 'denyCurrentBranch\|ff-only\|non-bare' .claude/skills/civ6-arena-live/SKILL.md || echo "clean"
-grep -n 'no GitHub remote' .claude/skills/civ6-arena-live/SKILL.md || echo "clean"
+! rg -n 'denyCurrentBranch|ff-only|non-bare|no GitHub remote' \
+  tools/skills/civ6-arena-live/SKILL.md
+test "$(git remote get-url origin)" = "git@github.com:wrislin1/civ6-mcp.git"
 ```
 
-Expected: both print `clean`. (The `Environment` section's host lines and
-the FireTuner/watcher sections are accurate and must remain untouched.)
+Expected: both commands exit zero with no stale-reference output.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Run the required pre-commit gate and commit**
+
+Run:
 
 ```bash
+uv run --extra test pytest tests/arena -q
 git diff --check
-git add .claude/skills/civ6-arena-live/SKILL.md
-git commit -m "docs(skill): landing path is GitHub origin, not the .141 checkout"
+git add tools/skills/civ6-arena-live/SKILL.md
+git commit -m "docs(skill): update arena landing path for GitHub origin"
 ```
 
-Expected: `git diff --check` prints nothing; commit succeeds.
+Expected: the full arena suite passes, the diff check is silent, and only the tracked canonical skill is committed.
 
 ---
 
 ## Final Verification
 
-- [ ] **Step 1: Run the targeted suites**
+- [ ] **Step 1: Re-run the complete acceptance set**
+
+Run:
 
 ```bash
 uv run --extra test pytest \
   tests/arena/test_channel_protocol.py \
   tests/arena/test_experiment.py \
   tests/arena/test_registry.py \
-  -v 2>&1 | tail -5
-```
-
-Expected: all pass.
-
-- [ ] **Step 2: Run the full arena suite**
-
-```bash
+  tests/arena/test_analyze.py::test_local_tool_verbs_mirror_registry_verbs_exactly \
+  -v
 uv run --extra test pytest tests/arena -q
+git diff --check
 ```
 
-Expected: all tests pass (~1790+, roughly 2–3 minutes).
+Expected: all focused tests and the complete arena suite pass; the diff check is silent.
 
-- [ ] **Step 3: Inspect git state and push**
+- [ ] **Step 2: Verify scope and publish**
+
+Run:
 
 ```bash
 git status --short --untracked-files=no
+git log -3 --oneline
 git push origin main
 ```
 
-Expected: tracked tree clean; push succeeds.
+Expected: the tracked tree is clean, the three task commits are at the tip of `main`, and the push to GitHub succeeds.
