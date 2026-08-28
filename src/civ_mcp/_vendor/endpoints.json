@@ -346,6 +346,6 @@
   "source": {
     "generator": "tools/scripts/gen-configs.py",
     "manifest": "models.yaml",
-    "models_yaml_sha256": "98822404b1baff3341ce070387e4784a4cfc62eac4c4f3949e490e80fb1fc519"
+    "models_yaml_sha256": "cacb444359fdc8660154a13dc2e4bd773c8703ce7b73a646abc60a24f304e7d2"
   }
 }
