@@ -375,22 +375,57 @@ def test_arena_channels_behavior_v5_differs_from_v4_only_in_run_id_and_auto_acce
     assert replace(v5, run_id=v4.run_id, players=normalized) == v4
 
 
-def test_arena_channels_behavior_v6_differs_from_v5_only_in_run_id():
+SEAT0_SCRIPTED_BLOCK = (
+    b"  - player: 0\n"
+    b"    provider: scripted\n"
+    b"    model: seat0-smoke\n"
+    b'    attention: {mode: "off"}\n'
+)
+
+
+def test_arena_channels_behavior_v6_differs_from_v5_only_in_run_id_seat0_and_budget():
+    # v6 isolates the schema-suffix fix, so the LLM seats and the P3 script
+    # must be byte-identical to v5. Two operator deltas are allowed on top:
+    # a scripted seat-0 pilot (so the run is hands-free; the human civ's play
+    # is irrelevant to the channels question) and the turn budgets scaled by
+    # 4/3, because seat 0 charges the shared puppet budget -- 120 slots over
+    # four seats is the same 30-game-turn window v5 had with 90 over three.
     v5_bytes = ARENA_CHANNELS_BEHAVIOR_V5.read_bytes()
     old_run_id = b"run_id: arena-channels-behavior-v5\n"
     new_run_id = b"run_id: arena-channels-behavior-v6\n"
 
     assert v5_bytes.count(old_run_id) == 1
-    assert ARENA_CHANNELS_BEHAVIOR_V6.read_bytes() == v5_bytes.replace(
-        old_run_id,
-        new_run_id,
-        1,
+    assert v5_bytes.count(b"max_puppet_turns: 90\n") == 1
+    assert v5_bytes.count(b"max_game_turns: 108\n") == 1
+    assert v5_bytes.count(b"civs:\n") == 1
+    expected = (
+        v5_bytes.replace(old_run_id, new_run_id, 1)
+        .replace(b"max_puppet_turns: 90\n", b"max_puppet_turns: 120\n", 1)
+        .replace(b"max_game_turns: 108\n", b"max_game_turns: 144\n", 1)
+        .replace(b"civs:\n", b"civs:\n" + SEAT0_SCRIPTED_BLOCK, 1)
     )
+    assert ARENA_CHANNELS_BEHAVIOR_V6.read_bytes() == expected
+
     v5 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V5)
     v6 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V6)
 
     assert v6.run_id == "arena-channels-behavior-v6"
-    assert replace(v6, run_id=v5.run_id) == v5
+    assert v6.max_puppet_turns == 120
+    assert v6.max_game_turns == 144
+    seat0 = next(player for player in v6.players if player.player_id == 0)
+    assert seat0.provider == "scripted"
+    assert seat0.model == "seat0-smoke"
+    assert seat0.options.attention.mode == "off"
+    assert seat0.options.channels.enabled is False
+
+    without_seat0 = [player for player in v6.players if player.player_id != 0]
+    assert replace(
+        v6,
+        run_id=v5.run_id,
+        max_puppet_turns=v5.max_puppet_turns,
+        max_game_turns=v5.max_game_turns,
+        players=without_seat0,
+    ) == v5
 
 
 def test_arena_channels_behavior_v7_is_tracker_only_delta_from_v6():

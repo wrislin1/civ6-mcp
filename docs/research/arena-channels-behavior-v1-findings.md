@@ -630,6 +630,18 @@ nothing else. If messaging and LLM-initiated deals return, cause 1; if the
 run stays quiet, cause 2 and the collapse is a benign consequence of things
 working.
 
+> **Amendment 2026-08-28 (before v6 ran).** v6 and v7 add two operator deltas
+> that are not treatments: a scripted seat-0 pilot (`seat0-smoke`, attention
+> off) so the run is hands-free, and `max_puppet_turns`/`max_game_turns`
+> scaled 90/108 → 120/144 because seat 0 charges the shared puppet budget —
+> four seats at 120 slots is the same 30-game-turn window v5 had at 90 over
+> three. The LLM seats, the P3 script, and the channel rules are byte-identical
+> to v5 (pinned in `test_experiment.py`). v1–v5 had a human at seat 0; the
+> human civ is not a channels participant, so this does not touch the
+> prediction above. The v6 attempt paused at T161 (`arena_runs/
+> arena-channels-behavior-v6-paused-t161`) before any deal window closed and
+> is not a result.
+
 `auto_accept` was never exercised: no LLM proposed a deal to P3, so the
 path added for v4's expired `deal-000003` saw no traffic.
 

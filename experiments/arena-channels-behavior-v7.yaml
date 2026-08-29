@@ -1,11 +1,15 @@
 run_id: arena-channels-behavior-v7
-max_puppet_turns: 90
-max_game_turns: 108
+max_puppet_turns: 120
+max_game_turns: 144
 channel_rules:
   acceptance_turns: 3
   funding_turns: 2
   payment_response_turns: 2
 civs:
+  - player: 0
+    provider: scripted
+    model: seat0-smoke
+    attention: {mode: "off"}
   - player: 1
     provider: local
     model: gemma4-26b
