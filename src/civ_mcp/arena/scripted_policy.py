@@ -244,6 +244,7 @@ class ScriptedPolicy:
         want_tech = "ENDTURN_BLOCKING_RESEARCH" in blocker_block
         want_civic = "ENDTURN_BLOCKING_CIVIC" in blocker_block
         want_production = "ENDTURN_BLOCKING_PRODUCTION" in blocker_block
+        want_diplomacy = "== PENDING DIPLOMACY ==" in blocker_block
 
         if want_tech or want_civic:
             research_actions, research_errors = await self._choose_research(
@@ -255,6 +256,10 @@ class ScriptedPolicy:
             prod_actions, prod_errors = await self._choose_production(gs)
             actions.extend(prod_actions)
             errors.extend(prod_errors)
+        if want_diplomacy:
+            diplomacy_actions, diplomacy_errors = await self._answer_diplomacy(gs)
+            actions.extend(diplomacy_actions)
+            errors.extend(diplomacy_errors)
 
         if actions:
             body = ", ".join(f"{a['tool']}={a['item']}" for a in actions)
@@ -264,6 +269,36 @@ class ScriptedPolicy:
         if errors:
             summary += " | errors: " + "; ".join(errors)
         return {"summary": summary, "actions": actions}
+
+    async def _answer_diplomacy(self, gs):
+        """Advance each open seat-0 diplomacy session by one positive round.
+
+        The coordinator gives a wedged session up to three focused passes, so
+        one response per session per pass is sufficient for ordinary 2-3 round
+        encounters. A positive response is the least disruptive deterministic
+        default for a pilot whose strategy is intentionally out of scope.
+        """
+        actions: list[dict] = []
+        errors: list[str] = []
+        try:
+            sessions = await gs.get_diplomacy_sessions()
+        except Exception as e:
+            return actions, [f"get_diplomacy_sessions failed {e!r}"]
+        for session in sorted(sessions, key=lambda item: item.other_player_id):
+            try:
+                result = await gs.diplomacy_respond(
+                    session.other_player_id, "POSITIVE"
+                )
+                actions.append({
+                    "tool": "respond_to_diplomacy",
+                    "item": f"player {session.other_player_id}",
+                    "result": result,
+                })
+            except Exception as e:
+                errors.append(
+                    f"respond_to_diplomacy({session.other_player_id}) failed {e!r}"
+                )
+        return actions, errors
 
     async def _choose_research(self, gs, *, tech: bool, civic: bool):
         """Pick the available tech/civic with key ``(turns, type_name)`` from a

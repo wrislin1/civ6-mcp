@@ -4156,18 +4156,28 @@ class _ScriptedGS:
     adding its key to `raise_on`, so the exception-into-summary contract is
     exercised without a live game."""
 
-    def __init__(self, *, techs=None, civics=None, cities=None, production=None):
+    def __init__(
+        self,
+        *,
+        techs=None,
+        civics=None,
+        cities=None,
+        production=None,
+        diplomacy_sessions=None,
+    ):
         self.overview_calls = 0
         self.units_calls = 0
         self.skipped: list[int] = []
         self.research_set: list[str] = []
         self.civic_set: list[str] = []
         self.production_set: list[tuple] = []
+        self.diplomacy_responses: list[tuple[int, str]] = []
         self.listed: list[int] = []
         self._techs = list(techs or [])
         self._civics = list(civics or [])
         self._cities = list(cities or [])
         self._production = dict(production or {})   # city_id -> [ProductionOption]
+        self._diplomacy_sessions = list(diplomacy_sessions or [])
         self.raise_on: set[str] = set()
 
     async def get_game_overview(self):
@@ -4223,6 +4233,22 @@ class _ScriptedGS:
             raise RuntimeError("set_prod boom")
         self.production_set.append((city_id, item_type, item_name, target_x, target_y))
         return f"PRODUCING|{item_name}"
+
+    async def get_diplomacy_sessions(self):
+        if "diplomacy_sessions" in self.raise_on:
+            raise RuntimeError("diplomacy sessions boom")
+        return list(self._diplomacy_sessions)
+
+    async def diplomacy_respond(self, other_player_id, response):
+        if "diplomacy_respond" in self.raise_on:
+            raise RuntimeError("diplomacy respond boom")
+        self.diplomacy_responses.append((other_player_id, response))
+        self._diplomacy_sessions = [
+            session
+            for session in self._diplomacy_sessions
+            if session.other_player_id != other_player_id
+        ]
+        return f"OK:RESPONDED|{response}|SESSION_CLOSED"
 
 
 def _tech(tech_type, turns):
@@ -4520,6 +4546,37 @@ async def test_scripted_repair_production_treats_game_nothing_as_empty_queue():
 
     assert gs.listed == [1]
     assert gs.production_set == [(1, "UNIT", "UNIT_MISSIONARY", None, None)]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_answers_pending_diplomacy_positively():
+    gs = _ScriptedGS(
+        diplomacy_sessions=[
+            lq.DiplomacySession(
+                session_id=1,
+                other_player_id=1,
+                other_civ_name="Khmer",
+                other_leader_name="Jayavarman VII",
+                choices=[],
+            )
+        ]
+    )
+
+    result = await ScriptedPolicy()(
+        gs,
+        0,
+        162,
+        blocker_block=seat0_mod.build_diplomacy_block("1#1"),
+    )
+
+    assert gs.diplomacy_responses == [(1, "POSITIVE")]
+    assert result["actions"] == [
+        {
+            "tool": "respond_to_diplomacy",
+            "item": "player 1",
+            "result": "OK:RESPONDED|POSITIVE|SESSION_CLOSED",
+        }
+    ]
 
 
 @pytest.mark.asyncio
