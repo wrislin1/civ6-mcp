@@ -2246,7 +2246,12 @@ def list_autosaves(limit: int = 10) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _navigate_to_save_sync(save_name: str, tab: str | None = "Autosaves") -> str:
+def _navigate_to_save_sync(
+    save_name: str,
+    tab: str | None = "Autosaves",
+    *,
+    launched_now: bool = False,
+) -> str:
     """Navigate: Main Menu → Single Player → Load Game → [tab] → select → Load.
 
     Args:
@@ -2259,8 +2264,6 @@ def _navigate_to_save_sync(save_name: str, tab: str | None = "Autosaves") -> str
     _require_gui_deps()  # Fail fast if deps missing
     nav_start = time.time()
     steps = []
-    launched_now = False
-
     # Launch the game if it's not running
     if not is_game_running():
         log.info("Game not running — launching before OCR navigation")
@@ -2452,7 +2455,11 @@ async def launch_game() -> str:
     return await asyncio.to_thread(_launch_game_sync)
 
 
-async def load_save_from_menu(save_name: str | None = None) -> str:
+async def load_save_from_menu(
+    save_name: str | None = None,
+    *,
+    launched_now: bool = False,
+) -> str:
     """Navigate the main menu to load a save via OCR.
 
     Args:
@@ -2489,7 +2496,12 @@ async def load_save_from_menu(save_name: str | None = None) -> str:
         avail_str = ", ".join(available + regular) if (available or regular) else "none"
         return f"Save '{save_name}' not found. Available: {avail_str}"
 
-    return await asyncio.to_thread(_navigate_to_save_sync, save_name, tab)
+    return await asyncio.to_thread(
+        _navigate_to_save_sync,
+        save_name,
+        tab,
+        launched_now=launched_now,
+    )
 
 
 async def restart_and_load(save_name: str | None = None) -> str:
@@ -2519,7 +2531,7 @@ async def restart_and_load(save_name: str | None = None) -> str:
     await dismiss_crash_dialogs()
 
     # Step 3: Load save via OCR
-    load_result = await load_save_from_menu(save_name)
+    load_result = await load_save_from_menu(save_name, launched_now=True)
     results.append(f"Load: {load_result}")
 
     return " | ".join(results)

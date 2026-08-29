@@ -364,3 +364,31 @@ def test_navigation_does_not_dismiss_cinematic_for_existing_game(monkeypatch):
 
     assert result.startswith("FAILED: Could not find 'Single Player'")
     assert calls == ["cinematic:False", "Single Player"]
+
+
+@pytest.mark.asyncio
+async def test_restart_and_load_preserves_fresh_launch_context(monkeypatch):
+    load_calls: list[tuple[str | None, bool]] = []
+
+    async def fake_dismiss():
+        return []
+
+    async def fake_kill():
+        return "Game killed"
+
+    async def fake_launch():
+        return "Game launched"
+
+    async def fake_load(save_name, *, launched_now=False):
+        load_calls.append((save_name, launched_now))
+        return "Save loading"
+
+    monkeypatch.setattr(game_launcher, "dismiss_crash_dialogs", fake_dismiss)
+    monkeypatch.setattr(game_launcher, "kill_game", fake_kill)
+    monkeypatch.setattr(game_launcher, "launch_game", fake_launch)
+    monkeypatch.setattr(game_launcher, "load_save_from_menu", fake_load)
+
+    result = await game_launcher.restart_and_load("CHANNELS_GATE_V1_T157")
+
+    assert result.endswith("Load: Save loading")
+    assert load_calls == [("CHANNELS_GATE_V1_T157", True)]
