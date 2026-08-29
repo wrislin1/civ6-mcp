@@ -162,6 +162,8 @@ _LAUNCH_TIMEOUT_SECONDS = 60
 _PORT_POLL_TIMEOUT = 180
 # Tuner TCP port
 _TUNER_PORT = 4318
+# Fresh Windows launches can expose FireTuner during a black video transition.
+_STARTUP_FRAME_PROBE_ATTEMPTS = 15
 
 
 def _require_gui_deps() -> None:
@@ -1968,14 +1970,23 @@ def _dismiss_startup_cinematic_win32(*, launched_now: bool) -> bool:
     if sys.platform != "win32" or not launched_now or not _winrt_ocr_available():
         return False
 
-    win = _find_game_window_win32()
-    if win is None:
+    win = None
+    image = None
+    for attempt in range(_STARTUP_FRAME_PROBE_ATTEMPTS):
+        win = _find_game_window_win32()
+        if win is not None:
+            image = _capture_window_win32(win.window_id)
+            if _image_has_visual_content(image):
+                break
+        if attempt < _STARTUP_FRAME_PROBE_ATTEMPTS - 1:
+            log.info("Startup frame is unavailable or blank; retrying")
+            time.sleep(1)
+    else:
+        log.warning("Startup frame stayed blank; not injecting Escape")
         return False
 
-    image = _capture_window_win32(win.window_id)
-    if not _image_has_visual_content(image):
-        log.warning("Startup frame capture was blank; not injecting Escape")
-        return False
+    assert win is not None
+    assert image is not None
 
     if _ocr_winrt(image, win.x, win.y, win.w, win.h):
         return False
