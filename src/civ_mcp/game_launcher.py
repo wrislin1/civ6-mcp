@@ -1878,7 +1878,7 @@ def _bring_to_front(pid: int | None = None) -> None:
     log.warning("Could not confirm window focus after 3 attempts")
 
 
-def _bring_to_front_win32() -> None:
+def _bring_to_front_win32() -> bool:
     """Bring the game window to foreground on Windows.
 
     Uses the thread-attach trick to bypass Windows' foreground lock:
@@ -1891,20 +1891,22 @@ def _bring_to_front_win32() -> None:
     win = _find_game_window_win32()
     if win is None:
         log.debug("Cannot bring to front: no game window found")
-        return
+        return False
 
     hwnd = win.window_id
     user32 = ctypes.windll.user32
 
     # If already foreground, nothing to do
     if user32.GetForegroundWindow() == hwnd:
-        return
+        return True
 
+    attached = False
+    fg_thread = 0
+    our_thread = 0
     try:
         # Attach our thread to the foreground window's thread
         fg_thread = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
-        our_thread = user32.GetCurrentThreadId()
-        attached = False
+        our_thread = ctypes.windll.kernel32.GetCurrentThreadId()
         if fg_thread != our_thread:
             attached = user32.AttachThreadInput(our_thread, fg_thread, True)
 
@@ -1913,11 +1915,76 @@ def _bring_to_front_win32() -> None:
         if win32gui.IsIconic(hwnd):
             win32gui.ShowWindow(hwnd, SW_RESTORE)
         win32gui.SetForegroundWindow(hwnd)
-
-        if attached:
-            user32.AttachThreadInput(our_thread, fg_thread, False)
+        return bool(user32.GetForegroundWindow() == hwnd)
     except Exception:
         log.debug("Could not bring window to front (non-fatal)")
+        return False
+    finally:
+        if attached:
+            user32.AttachThreadInput(our_thread, fg_thread, False)
+
+
+def _press_escape_win32() -> bool:
+    """Send one Escape keypress only after verifying Civ VI has focus."""
+    if not _bring_to_front_win32():
+        log.warning("Refusing to press Escape: Civ VI is not the foreground window")
+        return False
+
+    import win32api
+    import win32con
+
+    time.sleep(0.5)
+    win32api.keybd_event(win32con.VK_ESCAPE, 0, 0, 0)
+    win32api.keybd_event(
+        win32con.VK_ESCAPE,
+        0,
+        win32con.KEYEVENTF_KEYUP,
+        0,
+    )
+    return True
+
+
+def _winrt_ocr_available() -> bool:
+    """Return whether Windows has an OCR engine for the current user."""
+    from winrt.windows.media.ocr import OcrEngine
+
+    return OcrEngine.try_create_from_user_profile_languages() is not None
+
+
+def _image_has_visual_content(image: "PIL.Image.Image") -> bool:
+    """Reject uniform PrintWindow frames before acting on empty OCR."""
+    extrema = image.getextrema()
+    return any(high - low >= 8 for low, high in extrema)
+
+
+def _dismiss_startup_cinematic_win32(*, launched_now: bool) -> bool:
+    """Dismiss a text-free Windows startup cinematic once, if present.
+
+    FireTuner can become reachable while Civ VI is still playing its intro.
+    A main-menu wait would otherwise time out even though capture and OCR are
+    healthy.  Only press Escape when the current game frame contains no OCR
+    text, so an already-visible menu is left untouched.
+    """
+    if sys.platform != "win32" or not launched_now or not _winrt_ocr_available():
+        return False
+
+    win = _find_game_window_win32()
+    if win is None:
+        return False
+
+    image = _capture_window_win32(win.window_id)
+    if not _image_has_visual_content(image):
+        log.warning("Startup frame capture was blank; not injecting Escape")
+        return False
+
+    if _ocr_winrt(image, win.x, win.y, win.w, win.h):
+        return False
+
+    log.info("No text found in startup frame; pressing Escape once")
+    if not _press_escape_win32():
+        return False
+    time.sleep(3)
+    return True
 
 
 def _bring_to_front_linux() -> None:
@@ -2181,18 +2248,23 @@ def _navigate_to_save_sync(save_name: str, tab: str | None = "Autosaves") -> str
     _require_gui_deps()  # Fail fast if deps missing
     nav_start = time.time()
     steps = []
+    launched_now = False
 
     # Launch the game if it's not running
     if not is_game_running():
         log.info("Game not running — launching before OCR navigation")
         launch_result = _launch_game_sync()
         log.info("Launch result: %s", launch_result)
+        launched_now = True
         # After launch, game should be at main menu (Aspyr launcher handled by _launch_game_sync)
     else:
         # Dismiss crash dialog if present — it overlays the menu and blocks OCR
         _dismiss_crash_dialog()
         # Click through Aspyr launcher if present (macOS shows PLAY button before main menu)
         _click_aspyr_launcher_sync()
+
+    if sys.platform == "win32":
+        _dismiss_startup_cinematic_win32(launched_now=launched_now)
 
     log.info("[1/7] Waiting for main menu (Single Player)...")
     if not _click_text("Single Player", timeout=90, exact=True, post_delay=0.5):

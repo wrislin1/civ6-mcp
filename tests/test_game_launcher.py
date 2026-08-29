@@ -106,3 +106,227 @@ def test_windows_gui_preflight_requires_pillow(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Pillow"):
         game_launcher._require_gui_deps()
+
+
+def test_windows_startup_cinematic_is_dismissed_after_fresh_launch(monkeypatch):
+    window = SimpleNamespace(window_id=123, x=10, y=20, w=800, h=600)
+    image = SimpleNamespace(getextrema=lambda: ((0, 255), (0, 240), (0, 250)))
+    escape_presses: list[bool] = []
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_find_game_window_win32", lambda: window)
+    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", lambda: True, raising=False)
+    monkeypatch.setattr(
+        game_launcher, "_capture_window_win32", lambda _window_id: image
+    )
+    monkeypatch.setattr(game_launcher, "_ocr_winrt", lambda *_args: [])
+    monkeypatch.setattr(
+        game_launcher,
+        "_press_escape_win32",
+        lambda: escape_presses.append(True) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(game_launcher.time, "sleep", lambda _seconds: None)
+
+    assert game_launcher._dismiss_startup_cinematic_win32(launched_now=True) is True
+    assert escape_presses == [True]
+
+
+def test_windows_startup_cinematic_is_not_dismissed_when_text_is_visible(
+    monkeypatch,
+):
+    window = SimpleNamespace(window_id=123, x=10, y=20, w=800, h=600)
+    image = SimpleNamespace(getextrema=lambda: ((0, 255), (0, 240), (0, 250)))
+    escape_presses: list[bool] = []
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_find_game_window_win32", lambda: window)
+    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", lambda: True, raising=False)
+    monkeypatch.setattr(
+        game_launcher, "_capture_window_win32", lambda _window_id: image
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_ocr_winrt",
+        lambda *_args: [("Single Player", 100, 100, 50, 20)],
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_press_escape_win32",
+        lambda: escape_presses.append(True),
+        raising=False,
+    )
+
+    assert game_launcher._dismiss_startup_cinematic_win32(launched_now=True) is False
+    assert escape_presses == []
+
+
+def test_windows_startup_cinematic_is_not_dismissed_for_existing_game(monkeypatch):
+    window = SimpleNamespace(window_id=123, x=10, y=20, w=800, h=600)
+    image = SimpleNamespace(getextrema=lambda: ((0, 255), (0, 240), (0, 250)))
+    escape_presses: list[bool] = []
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", lambda: True, raising=False)
+    monkeypatch.setattr(game_launcher, "_find_game_window_win32", lambda: window)
+    monkeypatch.setattr(
+        game_launcher, "_capture_window_win32", lambda _window_id: image
+    )
+    monkeypatch.setattr(game_launcher, "_ocr_winrt", lambda *_args: [])
+    monkeypatch.setattr(
+        game_launcher,
+        "_press_escape_win32",
+        lambda: escape_presses.append(True) or True,
+        raising=False,
+    )
+
+    assert game_launcher._dismiss_startup_cinematic_win32(launched_now=False) is False
+    assert escape_presses == []
+
+
+def test_windows_startup_cinematic_is_not_dismissed_without_ocr_engine(monkeypatch):
+    escape_presses: list[bool] = []
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", lambda: False, raising=False)
+    monkeypatch.setattr(
+        game_launcher,
+        "_press_escape_win32",
+        lambda: escape_presses.append(True) or True,
+        raising=False,
+    )
+
+    assert game_launcher._dismiss_startup_cinematic_win32(launched_now=True) is False
+    assert escape_presses == []
+
+
+def test_windows_startup_cinematic_is_not_dismissed_for_blank_capture(monkeypatch):
+    window = SimpleNamespace(window_id=123, x=10, y=20, w=800, h=600)
+    image = SimpleNamespace(getextrema=lambda: ((0, 0), (0, 0), (0, 0)))
+    escape_presses: list[bool] = []
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_find_game_window_win32", lambda: window)
+    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", lambda: True, raising=False)
+    monkeypatch.setattr(
+        game_launcher, "_capture_window_win32", lambda _window_id: image
+    )
+    monkeypatch.setattr(game_launcher, "_ocr_winrt", lambda *_args: [])
+    monkeypatch.setattr(
+        game_launcher,
+        "_press_escape_win32",
+        lambda: escape_presses.append(True) or True,
+        raising=False,
+    )
+
+    assert game_launcher._dismiss_startup_cinematic_win32(launched_now=True) is False
+    assert escape_presses == []
+
+
+def test_windows_escape_is_not_injected_without_verified_game_focus(monkeypatch):
+    key_events: list[tuple[int, int, int, int]] = []
+    win32api = ModuleType("win32api")
+    win32api.keybd_event = lambda *args: key_events.append(args)
+    win32con = ModuleType("win32con")
+    win32con.VK_ESCAPE = 27
+    win32con.KEYEVENTF_KEYUP = 2
+
+    monkeypatch.setitem(sys.modules, "win32api", win32api)
+    monkeypatch.setitem(sys.modules, "win32con", win32con)
+    monkeypatch.setattr(game_launcher, "_bring_to_front_win32", lambda: False)
+
+    assert game_launcher._press_escape_win32() is False
+    assert key_events == []
+
+
+def test_windows_focus_uses_kernel_thread_id_and_verifies_foreground(monkeypatch):
+    window = SimpleNamespace(window_id=123)
+    attached: list[tuple[int, int, bool]] = []
+    kernel_calls: list[bool] = []
+
+    class FakeUser32:
+        foreground = 456
+
+        def GetForegroundWindow(self):
+            return self.foreground
+
+        def GetWindowThreadProcessId(self, _hwnd, _process_id):
+            return 77
+
+        def AttachThreadInput(self, current, foreground, attach):
+            attached.append((current, foreground, bool(attach)))
+            return True
+
+    class FakeKernel32:
+        def GetCurrentThreadId(self):
+            kernel_calls.append(True)
+            return 88
+
+    user32 = FakeUser32()
+    win32gui = ModuleType("win32gui")
+    win32gui.IsIconic = lambda _hwnd: False
+    win32gui.SetForegroundWindow = lambda hwnd: setattr(user32, "foreground", hwnd)
+
+    monkeypatch.setitem(sys.modules, "win32gui", win32gui)
+    monkeypatch.setattr(game_launcher, "_find_game_window_win32", lambda: window)
+    monkeypatch.setattr(
+        ctypes,
+        "windll",
+        SimpleNamespace(user32=user32, kernel32=FakeKernel32()),
+        raising=False,
+    )
+
+    assert game_launcher._bring_to_front_win32() is True
+    assert kernel_calls == [True]
+    assert attached == [(88, 77, True), (88, 77, False)]
+
+
+def test_navigation_checks_for_startup_cinematic_after_launch(monkeypatch):
+    calls: list[str] = []
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_require_gui_deps", lambda: None)
+    monkeypatch.setattr(game_launcher, "is_game_running", lambda: False)
+    monkeypatch.setattr(game_launcher, "_launch_game_sync", lambda: "Game launched")
+    monkeypatch.setattr(
+        game_launcher,
+        "_dismiss_startup_cinematic_win32",
+        lambda *, launched_now: calls.append(f"cinematic:{launched_now}"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_click_text",
+        lambda text, **_kwargs: calls.append(text) or False,
+    )
+
+    result = game_launcher._navigate_to_save_sync("ANY_SAVE", tab=None)
+
+    assert result.startswith("FAILED: Could not find 'Single Player'")
+    assert calls == ["cinematic:True", "Single Player"]
+
+
+def test_navigation_does_not_dismiss_cinematic_for_existing_game(monkeypatch):
+    calls: list[str] = []
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_require_gui_deps", lambda: None)
+    monkeypatch.setattr(game_launcher, "is_game_running", lambda: True)
+    monkeypatch.setattr(game_launcher, "_dismiss_crash_dialog", lambda: None)
+    monkeypatch.setattr(game_launcher, "_click_aspyr_launcher_sync", lambda: None)
+    monkeypatch.setattr(
+        game_launcher,
+        "_dismiss_startup_cinematic_win32",
+        lambda *, launched_now: calls.append(f"cinematic:{launched_now}"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_click_text",
+        lambda text, **_kwargs: calls.append(text) or False,
+    )
+
+    result = game_launcher._navigate_to_save_sync("ANY_SAVE", tab=None)
+
+    assert result.startswith("FAILED: Could not find 'Single Player'")
+    assert calls == ["cinematic:False", "Single Player"]
