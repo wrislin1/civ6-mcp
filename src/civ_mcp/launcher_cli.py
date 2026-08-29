@@ -61,8 +61,8 @@ def _launcher_failed(result: str) -> bool:
         "FAILED:" in result
         or "ABORTED:" in result
         or "WARNING:" in result
-        or result.startswith("Save '")
-        or result.startswith("No autosaves found")
+        or " not found." in result
+        or "No autosaves found" in result
     )
 
 

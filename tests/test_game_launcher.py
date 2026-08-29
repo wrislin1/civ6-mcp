@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import builtins
 import ctypes
-from types import SimpleNamespace
+import sys
 import uuid
+from types import ModuleType, SimpleNamespace
+
+import pytest
 
 from civ_mcp import game_launcher
 
@@ -80,3 +84,25 @@ def test_windows_save_base_is_built_below_known_documents(monkeypatch):
         r"C:\Users\wrisl\OneDrive\Documents\My Games\Sid Meier's Civilization VI"
         r"\Saves\Single"
     )
+
+
+def test_windows_gui_preflight_requires_pillow(monkeypatch):
+    winrt_ocr = ModuleType("winrt.windows.media.ocr")
+    winrt_ocr.OcrEngine = object
+    for module_name in ("winrt", "winrt.windows", "winrt.windows.media"):
+        monkeypatch.setitem(sys.modules, module_name, ModuleType(module_name))
+    monkeypatch.setitem(sys.modules, "winrt.windows.media.ocr", winrt_ocr)
+    monkeypatch.setitem(sys.modules, "win32gui", ModuleType("win32gui"))
+
+    real_import = builtins.__import__
+
+    def import_without_pillow(name, *args, **kwargs):
+        if name == "PIL":
+            raise ImportError("Pillow deliberately absent")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(builtins, "__import__", import_without_pillow)
+
+    with pytest.raises(RuntimeError, match="Pillow"):
+        game_launcher._require_gui_deps()

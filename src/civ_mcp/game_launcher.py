@@ -180,6 +180,13 @@ def _require_gui_deps() -> None:
                 "Game launcher requires Windows OCR support. "
                 "Install with: uv pip install 'civ6-mcp[launcher-windows]'"
             )
+        try:
+            from PIL import Image  # noqa: F401
+        except ImportError:
+            raise RuntimeError(
+                "Game launcher requires Pillow for Windows screen capture. "
+                "Install with: uv pip install 'civ6-mcp[launcher-windows]'"
+            )
         return
     if sys.platform == "linux":
         import shutil

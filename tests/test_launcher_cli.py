@@ -72,22 +72,34 @@ def test_load_commands_dispatch_named_save(
 
 
 @pytest.mark.parametrize(
-    "result",
+    ("command", "launcher_name", "result"),
     [
-        "Save 'DOES_NOT_EXIST' not found. Available: none",
-        "Save loading (42s). Steps: WARNING: FireTuner port not open after load",
+        (
+            "load",
+            "load_save_from_menu",
+            "Save 'DOES_NOT_EXIST' not found. Available: none",
+        ),
+        (
+            "load",
+            "load_save_from_menu",
+            "Save loading (42s). Steps: WARNING: FireTuner port not open after load",
+        ),
+        (
+            "restart-and-load",
+            "restart_and_load",
+            "Kill: Game killed. | Launch: Game launched. | "
+            "Load: Save 'DOES_NOT_EXIST' not found. Available: none",
+        ),
     ],
 )
 def test_load_command_returns_failure_for_unusable_result(
-    monkeypatch, capsys, result
+    monkeypatch, capsys, command, launcher_name, result
 ):
     async def unusable_result(_save_name):
         return result
 
     monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
-    monkeypatch.setattr(
-        launcher_cli.game_launcher, "load_save_from_menu", unusable_result
-    )
+    monkeypatch.setattr(launcher_cli.game_launcher, launcher_name, unusable_result)
 
-    assert launcher_cli.main(["load", "DOES_NOT_EXIST"]) == 1
+    assert launcher_cli.main([command, "DOES_NOT_EXIST"]) == 1
     assert capsys.readouterr().err == result + "\n"

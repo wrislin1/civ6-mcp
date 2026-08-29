@@ -49,6 +49,7 @@ launcher-macos = [
     "pyobjc-framework-Vision>=11.0",
 ]
 launcher-windows = [
+    "Pillow>=10.0",
     "pywin32>=311",
     "winrt-Windows.Media.Ocr>=2.1",
     "winrt-Windows.Graphics.Imaging>=2.1",

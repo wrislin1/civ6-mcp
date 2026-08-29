@@ -526,6 +526,7 @@ launcher-macos = [
     { name = "pyobjc-framework-vision" },
 ]
 launcher-windows = [
+    { name = "pillow" },
     { name = "pywin32" },
     { name = "winrt-windows-foundation" },
     { name = "winrt-windows-foundation-collections" },
@@ -582,6 +583,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'evals'", specifier = ">=1.0" },
     { name = "pandas", marker = "extra == 'analysis'", specifier = ">=2.3.3" },
     { name = "pillow", marker = "extra == 'launcher-linux'", specifier = ">=10.0" },
+    { name = "pillow", marker = "extra == 'launcher-windows'", specifier = ">=10.0" },
     { name = "pyarrow", marker = "extra == 'publish'", specifier = ">=18.0" },
     { name = "pyobjc-framework-quartz", marker = "extra == 'launcher-macos'", specifier = ">=11.0" },
     { name = "pyobjc-framework-vision", marker = "extra == 'launcher-macos'", specifier = ">=11.0" },
