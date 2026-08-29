@@ -132,36 +132,46 @@ def test_windows_startup_cinematic_is_dismissed_after_fresh_launch(monkeypatch):
     assert escape_presses == [True]
 
 
-def test_windows_startup_cinematic_retries_transient_blank_frame(monkeypatch):
-    window = SimpleNamespace(window_id=123, x=10, y=20, w=800, h=600)
-    blank = SimpleNamespace(getextrema=lambda: ((0, 0), (0, 0), (0, 0)))
-    cinematic = SimpleNamespace(
-        getextrema=lambda: ((0, 255), (0, 240), (0, 250))
+def test_wait_for_text_retries_empty_results_hook_until_it_acts(monkeypatch):
+    window = SimpleNamespace(pid=123)
+    ocr_results = iter(
+        [
+            [],
+            [],
+            [],
+            [("Single Player", 100, 100, 50, 20)],
+        ]
     )
-    frames = iter([blank, cinematic])
-    captures: list[object] = []
-    escape_presses: list[bool] = []
+    hook_calls: list[bool] = []
+    clock = [0.0]
 
-    def capture(_window_id):
-        image = next(frames)
-        captures.append(image)
-        return image
+    def now():
+        clock[0] += 0.1
+        return clock[0]
 
-    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
-    monkeypatch.setattr(game_launcher, "_find_game_window_win32", lambda: window)
-    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", lambda: True)
-    monkeypatch.setattr(game_launcher, "_capture_window_win32", capture)
-    monkeypatch.setattr(game_launcher, "_ocr_winrt", lambda *_args: [])
-    monkeypatch.setattr(
-        game_launcher,
-        "_press_escape_win32",
-        lambda: escape_presses.append(True) or True,
-    )
+    def on_empty_results():
+        hook_calls.append(True)
+        return len(hook_calls) == 2
+
+    monkeypatch.setattr(game_launcher.time, "time", now)
     monkeypatch.setattr(game_launcher.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(game_launcher, "_require_gui_deps", lambda: None)
+    monkeypatch.setattr(game_launcher, "_find_game_window", lambda: window)
+    monkeypatch.setattr(game_launcher, "_bring_to_front", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        game_launcher, "_ocr_game_window", lambda _window: next(ocr_results)
+    )
 
-    assert game_launcher._dismiss_startup_cinematic_win32(launched_now=True) is True
-    assert captures == [blank, cinematic]
-    assert escape_presses == [True]
+    match = game_launcher._wait_for_text(
+        "Single Player",
+        timeout=5,
+        exact=True,
+        interval=0,
+        on_empty_results=on_empty_results,
+    )
+
+    assert match == ("Single Player", 100, 100, 50, 20)
+    assert hook_calls == [True, True]
 
 
 def test_windows_startup_cinematic_is_not_dismissed_when_text_is_visible(
@@ -328,16 +338,19 @@ def test_navigation_checks_for_startup_cinematic_after_launch(monkeypatch):
         lambda *, launched_now: calls.append(f"cinematic:{launched_now}"),
         raising=False,
     )
-    monkeypatch.setattr(
-        game_launcher,
-        "_click_text",
-        lambda text, **_kwargs: calls.append(text) or False,
-    )
+    def fake_click(text, **kwargs):
+        calls.append(text)
+        hook = kwargs.get("on_empty_results")
+        if hook is not None:
+            hook()
+        return False
+
+    monkeypatch.setattr(game_launcher, "_click_text", fake_click)
 
     result = game_launcher._navigate_to_save_sync("ANY_SAVE", tab=None)
 
     assert result.startswith("FAILED: Could not find 'Single Player'")
-    assert calls == ["cinematic:True", "Single Player"]
+    assert calls == ["Single Player", "cinematic:True"]
 
 
 def test_navigation_does_not_dismiss_cinematic_for_existing_game(monkeypatch):
@@ -354,16 +367,19 @@ def test_navigation_does_not_dismiss_cinematic_for_existing_game(monkeypatch):
         lambda *, launched_now: calls.append(f"cinematic:{launched_now}"),
         raising=False,
     )
-    monkeypatch.setattr(
-        game_launcher,
-        "_click_text",
-        lambda text, **_kwargs: calls.append(text) or False,
-    )
+    def fake_click(text, **kwargs):
+        calls.append(text)
+        hook = kwargs.get("on_empty_results")
+        if hook is not None:
+            hook()
+        return False
+
+    monkeypatch.setattr(game_launcher, "_click_text", fake_click)
 
     result = game_launcher._navigate_to_save_sync("ANY_SAVE", tab=None)
 
     assert result.startswith("FAILED: Could not find 'Single Player'")
-    assert calls == ["cinematic:False", "Single Player"]
+    assert calls == ["Single Player"]
 
 
 @pytest.mark.asyncio

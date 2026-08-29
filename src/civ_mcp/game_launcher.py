@@ -27,6 +27,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from typing import NamedTuple
 
 log = logging.getLogger(__name__)
@@ -162,8 +163,6 @@ _LAUNCH_TIMEOUT_SECONDS = 60
 _PORT_POLL_TIMEOUT = 180
 # Tuner TCP port
 _TUNER_PORT = 4318
-# Fresh Windows launches can expose FireTuner during a black video transition.
-_STARTUP_FRAME_PROBE_ATTEMPTS = 15
 
 
 def _require_gui_deps() -> None:
@@ -1970,23 +1969,14 @@ def _dismiss_startup_cinematic_win32(*, launched_now: bool) -> bool:
     if sys.platform != "win32" or not launched_now or not _winrt_ocr_available():
         return False
 
-    win = None
-    image = None
-    for attempt in range(_STARTUP_FRAME_PROBE_ATTEMPTS):
-        win = _find_game_window_win32()
-        if win is not None:
-            image = _capture_window_win32(win.window_id)
-            if _image_has_visual_content(image):
-                break
-        if attempt < _STARTUP_FRAME_PROBE_ATTEMPTS - 1:
-            log.info("Startup frame is unavailable or blank; retrying")
-            time.sleep(1)
-    else:
-        log.warning("Startup frame stayed blank; not injecting Escape")
+    win = _find_game_window_win32()
+    if win is None:
         return False
 
-    assert win is not None
-    assert image is not None
+    image = _capture_window_win32(win.window_id)
+    if not _image_has_visual_content(image):
+        log.debug("Startup frame is blank; waiting for the next menu OCR probe")
+        return False
 
     if _ocr_winrt(image, win.x, win.y, win.w, win.h):
         return False
@@ -2019,6 +2009,7 @@ def _wait_for_text(
     interval: float = 1.5,
     prefer_bottom: bool = False,
     min_y_fraction: float = 0.0,
+    on_empty_results: Callable[[], bool] | None = None,
 ) -> tuple[str, int, int, int, int] | None:
     """Wait until OCR finds target text in game window.
 
@@ -2047,6 +2038,12 @@ def _wait_for_text(
                 results = _ocr_fullscreen()
 
         last_results = results
+        if not results and on_empty_results is not None:
+            if on_empty_results():
+                # The hook acted (for example, dismissed a cinematic). It is
+                # one-shot from this point, but the normal OCR wait continues.
+                on_empty_results = None
+
         match = _find_text(
             results,
             target,
@@ -2095,6 +2092,7 @@ def _click_text(
     prefer_bottom: bool = False,
     min_y_fraction: float = 0.0,
     y_offset: int = 0,
+    on_empty_results: Callable[[], bool] | None = None,
 ) -> bool:
     """Find text via OCR and click it. Returns success.
 
@@ -2109,6 +2107,7 @@ def _click_text(
         exact=exact,
         prefer_bottom=prefer_bottom,
         min_y_fraction=min_y_fraction,
+        on_empty_results=on_empty_results,
     )
     if not match:
         return False
@@ -2277,11 +2276,20 @@ def _navigate_to_save_sync(
         # Click through Aspyr launcher if present (macOS shows PLAY button before main menu)
         _click_aspyr_launcher_sync()
 
-    if sys.platform == "win32":
-        _dismiss_startup_cinematic_win32(launched_now=launched_now)
+    startup_empty_hook = None
+    if sys.platform == "win32" and launched_now:
+        startup_empty_hook = lambda: _dismiss_startup_cinematic_win32(
+            launched_now=True
+        )
 
     log.info("[1/7] Waiting for main menu (Single Player)...")
-    if not _click_text("Single Player", timeout=90, exact=True, post_delay=0.5):
+    if not _click_text(
+        "Single Player",
+        timeout=90,
+        exact=True,
+        post_delay=0.5,
+        on_empty_results=startup_empty_hook,
+    ):
         return "FAILED: Could not find 'Single Player' on main menu. Is the game at the main menu?"
     steps.append("Clicked Single Player")
 

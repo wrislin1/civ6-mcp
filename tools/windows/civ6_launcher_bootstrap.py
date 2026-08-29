@@ -9,6 +9,7 @@ dispatches the normal launcher CLI from the checkout source tree.
 
 from __future__ import annotations
 
+import logging
 import site
 import sys
 from pathlib import Path
@@ -56,6 +57,11 @@ def main(
     while source_dir in sys.path:
         sys.path.remove(source_dir)
     sys.path.insert(0, source_dir)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
 
     return _run_launcher(sys.argv[1:] if argv is None else argv)
 
