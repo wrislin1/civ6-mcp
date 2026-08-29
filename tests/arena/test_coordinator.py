@@ -4504,6 +4504,25 @@ async def test_scripted_repair_production_only_empty_queue_cities():
 
 
 @pytest.mark.asyncio
+async def test_scripted_repair_production_treats_game_nothing_as_empty_queue():
+    """The live game serializes some empty queues as ``nothing``, not ``NONE``."""
+    gs = _ScriptedGS(
+        cities=[_prod_city(1, "nothing")],
+        production={1: [_prod("UNIT", "UNIT_MISSIONARY", turns=3)]},
+    )
+
+    await ScriptedPolicy()(
+        gs,
+        0,
+        7,
+        blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION"),
+    )
+
+    assert gs.listed == [1]
+    assert gs.production_set == [(1, "UNIT", "UNIT_MISSIONARY", None, None)]
+
+
+@pytest.mark.asyncio
 async def test_scripted_repair_resolves_only_named_blockers():
     """Only production is named → tech/civic are left untouched even though
     available data exists (so an unnamed blocker is never silently resolved)."""

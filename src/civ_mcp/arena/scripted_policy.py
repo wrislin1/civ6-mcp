@@ -314,7 +314,7 @@ class ScriptedPolicy:
             return actions, [f"get_cities failed {e!r}"]
         for city in cities:
             current = str(getattr(city, "currently_building", "NONE") or "NONE").upper()
-            if current not in ("", "NONE"):
+            if current not in ("", "NONE", "NOTHING"):
                 continue  # queue is already set; nothing to repair here
             try:
                 options = await gs.list_city_production(city.city_id)
