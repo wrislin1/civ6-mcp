@@ -23,12 +23,12 @@ Usage: $(basename "$0") [OPTIONS]
 Start the hybrid 4-civ arena watcher on the remote gaming PC ($remote).
 
 Options:
-  --config <path>           Repo-relative YAML experiment config
-  --dry-run-args          Print civ-arena arguments and exit before SSH
+  --config <path>           Repo-relative YAML experiment config; must declare run_id
+  --dry-run-args            Print civ-arena arguments and exit before SSH
   --player <spec>           Player spec (repeatable; default: 4-player preset)
                               Preset: ${default_players[*]}
-  --run-id <id>             Run identifier
-                              Default: hybrid-4civ-<ISO8601Z>
+  --run-id <id>             Ad-hoc run identifier (not valid with --config)
+                              Default for ad-hoc runs: hybrid-4civ-<ISO8601Z>
   --max-puppet-turns <n>    Max puppet turns TOTAL across all seats, not per player
                               (default: $default_max_puppet_turns; one 4-civ round = 4)
   --idle-poll-limit <n>     Idle poll limit in seconds   (default: $default_idle_poll_limit)
@@ -51,6 +51,7 @@ config_supplied=0
 config_owned_overrides=()
 players=()
 run_id=""
+run_id_supplied=0
 dry_run_args=0
 max_puppet_turns="$default_max_puppet_turns"
 idle_poll_limit="$default_idle_poll_limit"
@@ -67,6 +68,7 @@ while [[ $# -gt 0 ]]; do
       players+=("$2"); shift 2 ;;
     --run-id)
       [[ $# -ge 2 ]] || { echo "error: --run-id requires an argument" >&2; exit 1; }
+      run_id_supplied=1
       run_id="$2"; shift 2 ;;
     --max-puppet-turns)
       [[ $# -ge 2 ]] || { echo "error: --max-puppet-turns requires an argument" >&2; exit 1; }
@@ -106,9 +108,47 @@ if [[ "$config_supplied" -eq 1 && ${#config_owned_overrides[@]} -gt 0 ]]; then
   exit 1
 fi
 
-# Compute run_id locally so it is consistent between the .arena-runs/ filename
-# and the --run-id value forwarded to civ-arena.
-[[ -n "$run_id" ]] || run_id="hybrid-4civ-$(date -u +%Y%m%dT%H%M%SZ)"
+# Config-driven experiments own their transcript identity. Read the top-level
+# scalar locally so the detached log/PID files use the same ID as civ-arena,
+# without violating civ-arena's deliberate "YAML run_id cannot be overridden"
+# boundary. Requiring the ID also avoids launching a detached run whose generated
+# transcript name the wrapper cannot know in advance.
+if [[ "$config_supplied" -eq 1 ]]; then
+  if [[ "$run_id_supplied" -eq 1 ]]; then
+    echo "error: --config cannot be combined with --run-id; set run_id in the YAML" >&2
+    exit 1
+  fi
+  if [[ ! -f "$config_path" ]]; then
+    echo "error: config file not found locally: $config_path" >&2
+    exit 1
+  fi
+  run_id="$({
+    awk '
+      /^run_id:[[:space:]]*/ {
+        sub(/^run_id:[[:space:]]*/, "")
+        sub(/[[:space:]]+#.*$/, "")
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+        print
+        exit
+      }
+    ' "$config_path"
+  })"
+  if [[ ${#run_id} -ge 2 ]]; then
+    if [[ "$run_id" == \"*\" || "$run_id" == \'*\' ]]; then
+      run_id="${run_id:1:${#run_id}-2}"
+    fi
+  fi
+  if [[ -z "$run_id" ]]; then
+    echo "error: config must declare a top-level run_id for detached logs" >&2
+    exit 1
+  fi
+  if [[ "$run_id" == *[!A-Za-z0-9._-]* ]]; then
+    echo "error: config run_id contains unsafe characters: $run_id" >&2
+    exit 1
+  fi
+else
+  [[ -n "$run_id" ]] || run_id="hybrid-4civ-$(date -u +%Y%m%dT%H%M%SZ)"
+fi
 
 # Use default 4-player roster when no --config or --player args were supplied.
 if [[ "$config_supplied" -eq 0 && ${#players[@]} -eq 0 ]]; then
@@ -123,11 +163,6 @@ if [[ "$config_supplied" -eq 1 ]]; then
     "--config-default-max-puppet-turns" "$max_puppet_turns"
     "--config-default-idle-poll-limit" "$idle_poll_limit"
     "--config-default-gateway-url" "$gateway_url"
-    # Always forward the locally-computed run_id so the .arena-runs/ log files and
-    # the printed RUN_ID match the transcript dir civ-arena actually writes. A
-    # config whose YAML also sets run_id is an explicit error (civ-arena rejects
-    # --run-id + a YAML run_id) rather than a silent divergence.
-    "--run-id" "$run_id"
   )
 else
   for spec in "${players[@]}"; do

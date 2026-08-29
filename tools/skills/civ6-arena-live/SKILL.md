@@ -12,14 +12,23 @@ Live arena operation has two separate states: the Civilization game turn state a
 ## Environment
 
 - WSL gaming PC: `riz@192.168.20.141`
-- Windows side: `ssh -p 2222 wrisl@192.168.20.141`
-- Remote repo: `~/projects/civ6-mcp`
+- WSL repo: `~/projects/civ6-mcp`
+- Native Windows companion checkout: `C:\Users\wrisl\dev\civ6-mcp`
+  (`/mnt/c/Users/wrisl/dev/civ6-mcp` from WSL). It is a GitHub clone, not a
+  separate codebase.
 - Known-good hybrid watchers (both verified live):
   - Codex: player 1 `local:qwen3-coder:30b`, player 2 `cli-codex:gpt-5.5`
   - Claude: player 1 `local:gemma4:26b`, player 2 `cli-claude:` (empty model = Claude default)
   - both with `--max-puppet-turns 2` and `--idle-poll-limit 1800`
 
 ## Operating Pattern
+
+When the requested save is not already verified in-game, **REQUIRED
+CONDITIONAL REFERENCE:** read
+[references/windows-launcher.md](references/windows-launcher.md) before
+starting a watcher. It covers the native companion checkout, Windows
+Application Control, OCR loading, exact-state verification, and FireTuner
+release.
 
 CLI-provider pre-flight (when a watcher uses `cli-claude` or `cli-codex`), on the target host before arming — a failed seat only surfaces mid-handoff otherwise:
 
@@ -35,17 +44,36 @@ Before telling the user to end turn:
 3. Confirm it is alive and record `RUN_ID`, `PID`, `OUT`, and `ERR`.
 4. Only then tell the user to end the turn.
 
+For the channels-behavior line, use the committed experiment config rather
+than the script's bare four-seat defaults, for example:
+
+```bash
+tools/skills/civ6-arena-live/scripts/start-hybrid-watch.sh \
+  --config experiments/arena-channels-behavior-v6.yaml
+```
+
+The v6/v7 configs include scripted seat 0, so they do not require a human to
+advance the player civ after the save is loaded. Do not combine `--config`
+with `--run-id` or config-owned player, budget, idle, or gateway overrides.
+The YAML's top-level `run_id` owns both the transcript directory and detached
+watcher log names. Before launch, confirm no exact artifact already exists for
+that ID; suffixed archival names such as `*-paused-t161` do not collide.
+
 After the user says it is back to them:
 
 1. Read the watcher output and cost tail.
-2. Confirm `puppet_turns_played: 2`.
+2. For an ad-hoc handoff cycle, confirm `puppet_turns_played: 2`. For a
+   config-driven experiment, confirm the config's own budget or stop condition.
 3. Confirm hook state is `PuppetState(local=0, active=False, ...)`.
 4. Confirm no arena/Codex/MCP processes remain.
 5. Start the next watcher only if the user wants the next cycle armed.
 
 ## Important Invariants
 
-- The current watcher is per-cycle. It exits after `--max-puppet-turns 2`; it is not a daemon.
+- An ad-hoc handoff watcher is per-cycle and normally exits after
+  `--max-puppet-turns 2`; it is not a daemon. A config-driven experiment uses
+  its committed budgets instead (channels v6/v7 use 120 puppet turns), so do
+  not apply the two-turn completion check to it.
 - `PuppetState(local=0, active=False)` means human control is back.
 - A direct hook poll can fail while an arena or Codex MCP child owns the single FireTuner connection. Do not treat that alone as proof Civ is down.
 - End-of-session means no watcher process is running unless the user explicitly asks to keep one armed.
@@ -90,5 +118,7 @@ Run from the repo root:
   hook poll when connection state is ambiguous.
 - `tools/skills/civ6-arena-live/scripts/start-hybrid-watch.sh`
 - `tools/skills/civ6-arena-live/scripts/stop-arena-watchers.sh`
+- `tools/skills/civ6-arena-live/scripts/windows-civ6-launcher.sh` — WSL entry
+  point for native Windows `preflight`, `load`, and `restart-and-load`.
 
 The stop script is dry-run by default; pass `--yes` to terminate matching watcher process groups.
