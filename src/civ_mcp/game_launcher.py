@@ -53,6 +53,68 @@ class WindowInfo(NamedTuple):
     pid: int
 
 
+def _get_windows_documents_dir() -> str:
+    """Return Windows' configured Documents known folder.
+
+    ``expanduser('~/Documents')`` ignores Known Folder redirection, including
+    the common OneDrive-backed Documents location. Ask Windows for the
+    configured path and retain the old expansion as a defensive fallback.
+    """
+    import ctypes
+    import uuid
+
+    class _GUID(ctypes.Structure):
+        _fields_ = [
+            ("data1", ctypes.c_uint32),
+            ("data2", ctypes.c_uint16),
+            ("data3", ctypes.c_uint16),
+            ("data4", ctypes.c_ubyte * 8),
+        ]
+
+    folder_id = _GUID.from_buffer_copy(
+        uuid.UUID("fdd39ad0-238f-46af-adb4-6c85480369c7").bytes_le
+    )
+    path = ctypes.c_wchar_p()
+    lookup = ctypes.windll.shell32.SHGetKnownFolderPath
+    lookup.argtypes = [
+        ctypes.POINTER(_GUID),
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_wchar_p),
+    ]
+    lookup.restype = ctypes.c_long
+
+    result = lookup(ctypes.byref(folder_id), 0, None, ctypes.byref(path))
+    if result == 0 and path.value:
+        try:
+            return path.value
+        finally:
+            free = ctypes.windll.ole32.CoTaskMemFree
+            free.argtypes = [ctypes.c_void_p]
+            free.restype = None
+            free(ctypes.cast(path, ctypes.c_void_p))
+
+    log.warning(
+        "SHGetKnownFolderPath(FOLDERID_Documents) failed with HRESULT %#x; "
+        "falling back to ~/Documents",
+        result,
+    )
+    return os.path.expanduser("~/Documents")
+
+
+def _windows_save_base() -> str:
+    """Return the Windows directory containing single-player saves."""
+    import ntpath
+
+    return ntpath.join(
+        _get_windows_documents_dir(),
+        "My Games",
+        "Sid Meier's Civilization VI",
+        "Saves",
+        "Single",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Constants — hardcoded for safety (not configurable by agents)
 # ---------------------------------------------------------------------------
@@ -77,9 +139,7 @@ elif sys.platform == "win32":
         "Civ6_Exe_Child.exe",
         "Civ6_Exe.exe",
     )
-    _SAVE_BASE = os.path.expanduser(
-        "~/Documents/My Games/Sid Meier's Civilization VI/Saves/Single"
-    )
+    _SAVE_BASE = _windows_save_base()
     SAVE_DIR = os.path.join(_SAVE_BASE, "auto")
     SINGLE_SAVE_DIR = _SAVE_BASE
 elif sys.platform == "linux":

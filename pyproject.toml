@@ -49,6 +49,7 @@ launcher-macos = [
     "pyobjc-framework-Vision>=11.0",
 ]
 launcher-windows = [
+    "pywin32>=311",
     "winrt-Windows.Media.Ocr>=2.1",
     "winrt-Windows.Graphics.Imaging>=2.1",
     "winrt-Windows.Storage.Streams>=2.1",
@@ -82,6 +83,7 @@ Repository = "https://github.com/lmwilki/civ6-mcp"
 civ-mcp = "civ_mcp.server:main"
 civ-arena = "civ_mcp.arena.arena:main"
 civ-arena-analyze = "civ_mcp.arena.analyze:main"
+civ6-launcher = "civ_mcp.launcher_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/civ_mcp"]
