@@ -37,6 +37,21 @@ CLI-provider pre-flight (when a watcher uses `cli-claude` or `cli-codex`), on th
 3. `.mcp.json` is present in the repo CWD (project auto-discovery needs it).
 4. Tip: a diagnostic `claude -p` calling `get_game_overview` with no game loaded should return the FireTuner `4318` connection error — that proves the civ6 tools load on this host.
 
+### Preregistration gate (added after v8, 2026-08-30)
+
+Before launching an overnight config-driven run, land BOTH in the same
+commit as the experiment YAML:
+
+1. A config pin test asserting the intentional deltas from the previous
+   run (pattern: `test_arena_channels_behavior_v8_is_standard_tier_bundle_
+   delta_from_v7` in tests/arena/test_experiment.py).
+2. For every treatment the config claims, an assertion that the mechanism
+   can actually fire. Briefing specifically: assert
+   `briefing_budget(n_ctx, options, 0, 0) > 0` with the gateway's real
+   n_ctx — v8 "enabled" briefing but max_steps 15 x result_char_cap 6000
+   reserved 38,704+ tokens against 32,768, so briefing rendered zero
+   tokens all run and nobody noticed until post-hoc review.
+
 Before telling the user to end turn:
 
 1. Check for existing `civ-arena`, `codex exec`, and `civ-mcp` processes.
