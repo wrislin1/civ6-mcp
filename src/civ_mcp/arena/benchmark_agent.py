@@ -191,6 +191,20 @@ class SingleTurnAgent:
         return state, state_digest(state)
 
     async def run(self, gs: Any, player_id: int, turn: int) -> EpisodeEvidence:
+        """Run one objective-blind turn and return its evidence.
+
+        Exception contract for the runner: `EpisodeTimedOut` is the *only*
+        exception this method raises deliberately -- it means the episode
+        ran out of wall-clock budget and is a scoreable-candidate timeout for
+        the runner's health discriminator (healthy/identity-correct backend
+        -> "runaway_timeout" terminal; unhealthy/unreachable -> infrastructure
+        retry). Any *other* exception (including one raised by an injected
+        `capture_state`, e.g. `benchmark_state.BenchmarkStateError` on a
+        stale connection or a wrong manifest `player_id`) propagates out of
+        `run()` unchanged, with no `EpisodeEvidence` returned -- this is a
+        harness failure, not a model outcome, and the runner must classify
+        it as an infrastructure attempt rather than score it.
+        """
         try:
             async with asyncio.timeout(self.episode_wall_s):
                 return await self._run_episode(gs, player_id, turn)

@@ -10,6 +10,7 @@ from civ_mcp.arena.benchmark_agent import (
     benchmark_prompt,
     resolved_benchmark_tools,
 )
+from civ_mcp.arena.benchmark_state import BenchmarkStateError
 
 
 def test_prompt_is_objective_blind_and_control_surface_is_common():
@@ -293,3 +294,53 @@ async def test_unknown_tool_call_is_recorded_as_invalid_and_not_dispatched():
     assert len(evidence.invalid_tool_calls) == 1
     assert evidence.invalid_tool_calls[0]["reason"] == "unknown_tool"
     assert evidence.steps[0]["tool_result_full"].startswith("UNAVAILABLE")
+
+
+@pytest.mark.asyncio
+async def test_capture_state_failure_propagates_raw_out_of_run():
+    """Pins the contract on SingleTurnAgent.run's docstring: a raising
+    capture_state (e.g. BenchmarkStateError on a stale connection or a wrong
+    manifest player_id -- exactly the harness failure a real benchmark run
+    would hit) propagates out of run() unchanged, with no EpisodeEvidence
+    returned. The runner must classify this as an infrastructure attempt,
+    not swallow it into a scoreable-looking episode.
+    """
+    async def failing_capture_state(conn, player_id, tile_coords):
+        raise BenchmarkStateError("ERR:PLAYER_NOT_FOUND")
+
+    agent = SingleTurnAgent(
+        OneShotFinishBackend(),
+        "minimal",
+        episode_wall_s=5.0,
+        max_steps=4,
+        tile_coords=[(9, 10)],
+        capture_state=failing_capture_state,
+    )
+    gs = RecordingGS()
+
+    with pytest.raises(BenchmarkStateError):
+        await agent.run(gs, player_id=0, turn=1)
+
+
+@pytest.mark.asyncio
+async def test_capture_state_connection_failure_is_not_reclassified_as_timeout():
+    """A plain transport-level failure (e.g. a dropped FireTuner connection)
+    must propagate as itself, never get reinterpreted as EpisodeTimedOut --
+    the runner's health discriminator only fires on a real wall-clock trip.
+    """
+    async def failing_capture_state(conn, player_id, tile_coords):
+        raise ConnectionError("stale connection")
+
+    agent = SingleTurnAgent(
+        OneShotFinishBackend(),
+        "minimal",
+        episode_wall_s=5.0,
+        max_steps=4,
+        tile_coords=[(9, 10)],
+        capture_state=failing_capture_state,
+    )
+    gs = RecordingGS()
+
+    with pytest.raises(ConnectionError) as exc_info:
+        await agent.run(gs, player_id=0, turn=1)
+    assert not isinstance(exc_info.value, EpisodeTimedOut)
