@@ -27,13 +27,12 @@ Five gates plus the shared exception type:
 """
 from __future__ import annotations
 
-import math
 from dataclasses import asdict
 from typing import Any, Iterable, Mapping, Sequence
 
 from civ_mcp.arena.backends import RetryPolicy, SamplingConfig
 from civ_mcp.arena.benchmark_agent import FINISH_TRIAL_TOOL_NAME
-from civ_mcp.arena.benchmark_backend import BackendProbe, episode_wall_seconds
+from civ_mcp.arena.benchmark_backend import BackendProbe, episode_wall_seconds, nearest_rank_p95
 from civ_mcp.arena.benchmark_manifest import PositionManifest, fingerprint
 from civ_mcp.arena.benchmark_state import state_digest
 
@@ -139,8 +138,13 @@ def check_treatment_can_fire(
        A task nominally reachable only at level 0 (baseline/no-op) needs no
        discovery, so it is not required here.
     2. The standard arm has the capabilities to complete every objective.
-       An objective may declare an optional `"requires"` list of capability
-       names; any objective with no such list is trivially satisfiable.
+       Every objective must declare its `"requires"` list of capability
+       names -- fail closed by design: a missing or empty `"requires"` is
+       an undeclared requirement, not proof the objective needs nothing,
+       and raises `undeclared_objective_requirements` rather than being
+       silently treated as satisfied. A declared-but-uncovered requirement
+       raises the `treatment_cannot_fire` / `standard_arm_missing_capabilities`
+       failure instead.
     """
     discoverable = set(minimal_observation.get("discoverable_task_ids") or ())
     standard_caps = set(standard_capabilities)
@@ -168,11 +172,38 @@ def check_treatment_can_fire(
         )
 
     missing_capabilities: dict[str, list[str]] = {}
+    undeclared_task_ids: list[str] = []
     for objective in position.objectives:
-        required = set(objective.get("requires") or ())
-        missing = sorted(required - standard_caps)
+        task_id = str(objective.get("task_id"))
+        required = objective.get("requires")
+        if not required:
+            # Fail closed on silence: an objective with no declared
+            # requirement is NOT trivially satisfied. A real position
+            # manifest must say what the standard arm needs before a
+            # counted run can admit it -- absence of a "requires" list is
+            # a manifest-authoring gap, not proof the objective needs
+            # nothing.
+            undeclared_task_ids.append(task_id)
+            continue
+        missing = sorted(set(required) - standard_caps)
         if missing:
-            missing_capabilities[str(objective.get("task_id"))] = missing
+            missing_capabilities[task_id] = missing
+
+    if undeclared_task_ids:
+        raise GateFailure(
+            "undeclared_objective_requirements",
+            {
+                "position_id": position.position_id,
+                "undeclared_task_ids": sorted(undeclared_task_ids),
+                "message": (
+                    f"position {position.position_id}: objective(s) "
+                    f"{sorted(undeclared_task_ids)} do not declare a 'requires' "
+                    "capability list; a counted run must not admit an objective "
+                    "whose standard-arm capability requirements are undeclared"
+                ),
+            },
+        )
+
     if missing_capabilities:
         raise GateFailure(
             "treatment_cannot_fire",
@@ -259,11 +290,6 @@ def check_gpu_conflicts(
 # ---------------------------------------------------------------------------
 # admit_model_block
 # ---------------------------------------------------------------------------
-
-
-def _p95(latencies_s: Sequence[float]) -> float:
-    ordered = sorted(latencies_s)
-    return ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
 
 
 def admit_model_block(
@@ -388,7 +414,7 @@ def admit_model_block(
         )
 
     warm_latencies_s = list(probe.latencies_s)
-    p95_latency_s = _p95(warm_latencies_s)
+    p95_latency_s = nearest_rank_p95(warm_latencies_s)
     episode_wall_s = episode_wall_seconds(max_steps=max_steps, latencies_s=warm_latencies_s)
 
     return {

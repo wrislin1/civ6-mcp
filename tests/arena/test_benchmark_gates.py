@@ -84,7 +84,16 @@ def test_calibration_gate_requires_minimal_progress_and_standard_completion():
 
 
 def test_check_treatment_can_fire_passes_when_minimal_reaches_and_standard_completes():
-    position = _position()
+    position = _position(
+        objectives=(
+            {
+                "task_id": "repair",
+                "unit_index": 4,
+                "target": [9, 8],
+                "requires": ["repair_improvement"],
+            },
+        ),
+    )
     evidence = check_treatment_can_fire(
         position=position,
         minimal_observation={"discoverable_task_ids": ["repair"]},
@@ -95,16 +104,50 @@ def test_check_treatment_can_fire_passes_when_minimal_reaches_and_standard_compl
     json.dumps(evidence)
 
 
+def test_check_treatment_can_fire_rejects_undeclared_objective_requirements():
+    """Fail-closed on silence: an objective with no `requires` list must not
+    be treated as trivially satisfied -- a real position manifest must
+    declare what the standard arm needs before a counted run admits it."""
+    position = _position(
+        objectives=({"task_id": "repair", "unit_index": 4, "target": [9, 8]},),
+    )
+    with pytest.raises(GateFailure, match="do not declare a 'requires' capability") as exc_info:
+        check_treatment_can_fire(
+            position=position,
+            minimal_observation={"discoverable_task_ids": ["repair"]},
+            standard_capabilities={"improve_tile", "repair_improvement", "remove_feature"},
+        )
+    assert exc_info.value.code == "undeclared_objective_requirements"
+    assert exc_info.value.details["undeclared_task_ids"] == ["repair"]
+
+
+def test_check_treatment_can_fire_rejects_undeclared_objective_requirements_when_empty():
+    """An explicitly empty `requires: []` is just as undeclared as an
+    absent key -- both fail closed rather than being read as "needs
+    nothing"."""
+    position = _position(
+        objectives=({"task_id": "repair", "requires": []},),
+    )
+    with pytest.raises(GateFailure) as exc_info:
+        check_treatment_can_fire(
+            position=position,
+            minimal_observation={"discoverable_task_ids": ["repair"]},
+            standard_capabilities={"repair_improvement"},
+        )
+    assert exc_info.value.code == "undeclared_objective_requirements"
+
+
 def test_check_treatment_can_fire_rejects_standard_arm_missing_capabilities():
     position = _position(
         objectives=({"task_id": "repair", "requires": ["repair_improvement"]},),
     )
-    with pytest.raises(GateFailure, match="standard arm lacks capabilit"):
+    with pytest.raises(GateFailure, match="standard arm lacks capabilit") as exc_info:
         check_treatment_can_fire(
             position=position,
             minimal_observation={"discoverable_task_ids": ["repair"]},
             standard_capabilities=set(),
         )
+    assert exc_info.value.code == "treatment_cannot_fire"
 
 
 # ---------------------------------------------------------------------------
@@ -113,11 +156,12 @@ def test_check_treatment_can_fire_rejects_standard_arm_missing_capabilities():
 
 
 def test_check_clean_checkout_rejects_dirty_wsl():
-    with pytest.raises(GateFailure, match="WSL checkout is dirty"):
+    with pytest.raises(GateFailure, match="WSL checkout is dirty") as exc_info:
         check_clean_checkout(
             wsl={"commit": "abc123", "status": " M src/foo.py\n"},
             windows={"commit": "abc123", "status": ""},
         )
+    assert exc_info.value.code == "dirty_checkout"
 
 
 def test_check_clean_checkout_rejects_dirty_windows():
@@ -129,11 +173,12 @@ def test_check_clean_checkout_rejects_dirty_windows():
 
 
 def test_check_clean_checkout_rejects_windows_commit_mismatch():
-    with pytest.raises(GateFailure, match="does not match Windows companion commit"):
+    with pytest.raises(GateFailure, match="does not match Windows companion commit") as exc_info:
         check_clean_checkout(
             wsl={"commit": "abc123", "status": ""},
             windows={"commit": "def456", "status": ""},
         )
+    assert exc_info.value.code == "commit_mismatch"
 
 
 def test_check_clean_checkout_passes_when_clean_and_matching():
@@ -150,19 +195,21 @@ def test_check_clean_checkout_passes_when_clean_and_matching():
 
 
 def test_check_gpu_conflicts_rejects_unidentified_process():
-    with pytest.raises(GateFailure, match="unidentified process"):
+    with pytest.raises(GateFailure, match="unidentified process") as exc_info:
         check_gpu_conflicts(
             processes=[{"pid": 4242, "service": None, "gpu_index": 0}],
             approved_services=set(),
         )
+    assert exc_info.value.code == "gpu_conflict_unidentified_process"
 
 
 def test_check_gpu_conflicts_rejects_without_scoped_acknowledgment():
-    with pytest.raises(GateFailure, match="GPU conflict"):
+    with pytest.raises(GateFailure, match="GPU conflict") as exc_info:
         check_gpu_conflicts(
             processes=[{"pid": 111, "service": "ollama", "gpu_index": 0}],
             approved_services=set(),
         )
+    assert exc_info.value.code == "gpu_conflict_not_acknowledged"
 
 
 def test_check_gpu_conflicts_rejects_over_broad_acknowledgment():
@@ -234,10 +281,11 @@ def _admit_kwargs(**overrides):
 
 
 def test_admit_model_block_rejects_endpoint_identity_mismatch():
-    with pytest.raises(GateFailure, match="endpoint identity mismatch"):
+    with pytest.raises(GateFailure, match="endpoint identity mismatch") as exc_info:
         admit_model_block(
             **_admit_kwargs(resolved_endpoint="http://192.168.20.196:9999/v1")
         )
+    assert exc_info.value.code == "endpoint_identity_mismatch"
 
 
 def test_admit_model_block_rejects_probe_reported_model_mismatch():
@@ -246,13 +294,15 @@ def test_admit_model_block_rejects_probe_reported_model_mismatch():
 
 
 def test_admit_model_block_rejects_counted_backend_with_hidden_retries():
-    with pytest.raises(GateFailure, match="RetryPolicy"):
+    with pytest.raises(GateFailure, match="RetryPolicy") as exc_info:
         admit_model_block(**_admit_kwargs(retry_policy=RetryPolicy(max_attempts=3)))
+    assert exc_info.value.code == "counted_backend_hidden_retries"
 
 
 def test_admit_model_block_rejects_zero_briefing_budget():
-    with pytest.raises(GateFailure, match="briefing budget"):
+    with pytest.raises(GateFailure, match="briefing budget") as exc_info:
         admit_model_block(**_admit_kwargs(briefing_budget_chars=0))
+    assert exc_info.value.code == "zero_briefing_budget"
 
 
 def test_admit_model_block_rejects_insufficient_warm_latency_samples():
@@ -334,8 +384,11 @@ def _lock_kwargs(**overrides):
 
 
 def test_build_session_lock_rejects_missing_boot_health_evidence():
-    with pytest.raises(GateFailure, match="boot-health evidence is missing or reports failure"):
+    with pytest.raises(
+        GateFailure, match="boot-health evidence is missing or reports failure"
+    ) as exc_info:
         build_session_lock(**_lock_kwargs(boot_health=None))
+    assert exc_info.value.code == "boot_health_missing_or_failed"
 
 
 def test_build_session_lock_rejects_failed_boot_health_evidence():
@@ -343,24 +396,40 @@ def test_build_session_lock_rejects_failed_boot_health_evidence():
         build_session_lock(**_lock_kwargs(boot_health={"ok": False, "reason": "timeout"}))
 
 
+def test_build_session_lock_rejects_boot_health_missing_baseline_offset():
+    """The "fresh-offset" half of the boot-health gate: `ok: True` alone is
+    not sufficient -- a poll that never recorded a baseline byte offset
+    cannot prove the observed frame progress happened *after* this
+    session's boot, so it must fail closed exactly like a missing/failed
+    poll does."""
+    with pytest.raises(
+        GateFailure, match="boot-health evidence is missing or reports failure"
+    ) as exc_info:
+        build_session_lock(**_lock_kwargs(boot_health={"ok": True}))
+    assert exc_info.value.code == "boot_health_missing_or_failed"
+
+
 def test_build_session_lock_rejects_end_turn_exposure():
-    with pytest.raises(GateFailure, match="end_turn"):
+    with pytest.raises(GateFailure, match="end_turn") as exc_info:
         build_session_lock(
             **_lock_kwargs(tools_schema=[GET_UNITS_SCHEMA, END_TURN_SCHEMA, FINISH_SCHEMA])
         )
+    assert exc_info.value.code == "end_turn_exposed"
 
 
 def test_build_session_lock_rejects_missing_finish_control():
-    with pytest.raises(GateFailure, match="finish_trial"):
+    with pytest.raises(GateFailure, match="finish_trial") as exc_info:
         build_session_lock(**_lock_kwargs(tools_schema=[GET_UNITS_SCHEMA]))
+    assert exc_info.value.code == "missing_finish_control"
 
 
 def test_build_session_lock_rejects_canonical_state_mismatch():
     position = _position(expected_state={"turn": 157})
-    with pytest.raises(GateFailure, match="canonical-state mismatch"):
+    with pytest.raises(GateFailure, match="canonical-state mismatch") as exc_info:
         build_session_lock(
             **_lock_kwargs(position=position, canonical_state={"turn": 999})
         )
+    assert exc_info.value.code == "canonical_state_mismatch"
 
 
 def test_build_session_lock_rejects_dirty_wsl():
