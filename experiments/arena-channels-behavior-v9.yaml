@@ -1,0 +1,74 @@
+# arena-channels-behavior-v9 — message-only P3 overture (preregistered 2026-08-30)
+#
+# Exact v7 control plus one social stimulus after both scripted deals have
+# closed: at T170 P3 sends the same message-only overture to each LLM seat.
+# It creates no deal or favor object. Question: does an unsolicited
+# counterparty message elicit a reply, sustained dialogue, or an LLM-initiated
+# deal? Unchanged from v7: save/window, models, minimal tools, task tracker,
+# channel guidance/rules, scripted T157 deals, seat-0 pilot, and budgets.
+run_id: arena-channels-behavior-v9
+max_puppet_turns: 120
+max_game_turns: 144
+channel_rules:
+  acceptance_turns: 3
+  funding_turns: 2
+  payment_response_turns: 2
+civs:
+  - player: 0
+    provider: scripted
+    model: seat0-smoke
+    attention: {mode: "off"}
+  - player: 1
+    provider: local
+    model: gemma4-26b
+    gateway: http://192.168.20.196:11440/v1
+    tools: minimal
+    max_steps: 15
+    task_tracker: {enabled: true}
+    channels: {enabled: true, guidance: true}
+  - player: 2
+    provider: local
+    model: qwen3.6-27b
+    gateway: http://192.168.20.196:11441/v1
+    tools: minimal
+    max_steps: 15
+    task_tracker: {enabled: true}
+    channels: {enabled: true, guidance: true}
+  - player: 3
+    provider: scripted
+    channels:
+      enabled: true
+      auto_accept: true
+      script:
+        - turn: 157
+          action: propose_deal
+          args:
+            to_player: 1
+            text: "I'll pay you 50 gold if you keep your military units at least 3 tiles away from my lands for the next few turns. A simple deal to build trust between us."
+            favor:
+              term_type: keep_units_away
+              params: {player_id: 3, min_distance: 3, unit_scope: military}
+            payment_gold: 50
+            timing: on_delivery
+            within: 5
+        - turn: 157
+          action: propose_deal
+          args:
+            to_player: 2
+            text: "I'll pay you 50 gold if you keep your military units at least 3 tiles away from my lands for the next few turns. A simple deal to build trust between us."
+            favor:
+              term_type: keep_units_away
+              params: {player_id: 3, min_distance: 3, unit_scope: military}
+            payment_gold: 50
+            timing: on_delivery
+            within: 5
+        - turn: 170
+          action: send_message
+          args:
+            to_player: 1
+            text: "Our borders have been peaceful, and I would like to keep relations constructive. If you see a mutually beneficial arrangement, I am open to hearing it."
+        - turn: 170
+          action: send_message
+          args:
+            to_player: 2
+            text: "Our borders have been peaceful, and I would like to keep relations constructive. If you see a mutually beneficial arrangement, I am open to hearing it."

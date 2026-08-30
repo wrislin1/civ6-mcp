@@ -34,6 +34,7 @@ ARENA_CHANNELS_BEHAVIOR_V5 = REPO_ROOT / "experiments" / "arena-channels-behavio
 ARENA_CHANNELS_BEHAVIOR_V6 = REPO_ROOT / "experiments" / "arena-channels-behavior-v6.yaml"
 ARENA_CHANNELS_BEHAVIOR_V7 = REPO_ROOT / "experiments" / "arena-channels-behavior-v7.yaml"
 ARENA_CHANNELS_BEHAVIOR_V8 = REPO_ROOT / "experiments" / "arena-channels-behavior-v8.yaml"
+ARENA_CHANNELS_BEHAVIOR_V9 = REPO_ROOT / "experiments" / "arena-channels-behavior-v9.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -529,6 +530,61 @@ def test_arena_channels_behavior_v8_briefing_budget_is_zero_as_run():
     assert briefing_budget(
         32768, o, playbook_chars=0, tool_schema_chars=0
     ) == 0
+
+
+def test_arena_channels_behavior_v9_is_message_overture_only_delta_from_v7():
+    """v9 isolates one social stimulus after the scripted deals have closed:
+    P3 sends the same message-only overture to each LLM at T170. No tool,
+    tracker, briefing, deal, model, or budget setting changes from v7."""
+    v7 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V7)
+    v9 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V9)
+    v7_p3 = next(player for player in v7.players if player.player_id == 3)
+    v9_p3 = next(player for player in v9.players if player.player_id == 3)
+
+    added = v9_p3.options.channels.script[len(v7_p3.options.channels.script):]
+    assert added == (
+        ChannelScriptStep(
+            170,
+            "send_message",
+            {
+                "to_player": 1,
+                "text": (
+                    "Our borders have been peaceful, and I would like to keep "
+                    "relations constructive. If you see a mutually beneficial "
+                    "arrangement, I am open to hearing it."
+                ),
+            },
+        ),
+        ChannelScriptStep(
+            170,
+            "send_message",
+            {
+                "to_player": 2,
+                "text": (
+                    "Our borders have been peaceful, and I would like to keep "
+                    "relations constructive. If you see a mutually beneficial "
+                    "arrangement, I am open to hearing it."
+                ),
+            },
+        ),
+    )
+
+    normalized_players = [
+        replace(
+            player,
+            options=replace(
+                player.options,
+                channels=replace(
+                    player.options.channels,
+                    script=v7_p3.options.channels.script,
+                ),
+            ),
+        )
+        if player.player_id == 3
+        else player
+        for player in v9.players
+    ]
+    assert replace(v9, run_id=v7.run_id, players=normalized_players) == v7
 
 
 def test_rejects_auto_accept_without_channels_enabled(tmp_path):

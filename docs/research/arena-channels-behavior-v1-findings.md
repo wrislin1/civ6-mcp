@@ -975,3 +975,45 @@ narrative above. SHA-256 of the primary evidence files:
 - `channels/state.json` — `dc332f1ee20c5389e43cb7a4cef5f6928c0de9c0bbf3959a63e78fa24d34bdbd`
 - `report.md` — `f87bc4e1bdafeba1b2885a547dd770903078f4031c4c4c34f0976f8970e69516`
 - `report.json` — `abcbfc8a01fd2372b44f9d53b6f76ca16aba51869530a548707cd6903b4ce736`
+
+---
+
+# v9 preregistration: isolate a message-only counterparty overture
+
+**Date:** 2026-08-30 · **Planned run:** `arena-channels-behavior-v9` ·
+**Config:** `experiments/arena-channels-behavior-v9.yaml`.
+
+v9 returns to the clean v7 control: the same T157 save, T157–T186 window,
+models, minimal tool tier, task tracker, channel rules, scripted deals,
+scripted seat 0, and turn budgets. The sole treatment delta is that P3 sends
+the same message-only overture to P1 and P2 at T170, after both T157 deals
+have reached a terminal state:
+
+> Our borders have been peaceful, and I would like to keep relations
+> constructive. If you see a mutually beneficial arrangement, I am open to
+> hearing it.
+
+The message creates no deal, favor, or payment object. The config pin test
+`test_arena_channels_behavior_v9_is_message_overture_only_delta_from_v7`
+enforces that isolation.
+
+## Outcomes and prediction
+
+Primary outcomes, measured separately for gemma/P1 and qwen/P2, are:
+
+1. whether the LLM sends any unscripted reply to P3 during T171–T173;
+2. whether it sends two or more post-overture messages through T186
+   (sustained dialogue rather than one acknowledgement); and
+3. whether it initiates a deal through `propose_deal` during T171–T186.
+
+Secondary observations are message content, rejected channel actions, and
+whether the original two scripted deal lifecycles remain honored without
+grievances.
+
+Preregistered prediction: qwen will reply and may sustain relationship
+maintenance, because it produced all nine v7 messages; gemma will remain
+silent, as it did throughout v7. The overture is not expected by itself to
+restore LLM-initiated deal-making (v7: zero), so any valid LLM-initiated deal
+would be a stronger-than-predicted result. This run tests whether explicit
+counterparty contact is sufficient to elicit channel engagement; it does not
+test the standard tier or briefing content.
