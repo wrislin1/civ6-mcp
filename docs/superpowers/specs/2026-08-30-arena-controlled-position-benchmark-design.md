@@ -334,6 +334,12 @@ Treatment-can-fire assertions include:
 - `finish_trial` is present in every arm.
 - `end_turn` is absent in every arm.
 - Position-required actions are legal and observable.
+- For calibration specifically, the minimal arm can discover every target
+  through its actual observation tools and can legally reach rubric levels
+  1–2 through recognition and `move_unit`; the standard arm can legally reach
+  level 4 through repair, improvement, or feature removal. The gate therefore
+  proves that the rubric has meaningful range in both arms, not only that the
+  standard mutation tools exist.
 - A briefing arm has positive computed budget, nonzero sections, and actual
   injected briefing content.
 - A fresh one-turn suite cannot claim to test task tracking without
@@ -361,7 +367,10 @@ GPU routing policy:
 - Prefer a single-GPU llama.cpp endpoint when the model and KV cache fit with
   safe headroom.
 - Use a live-registry-declared unified mode for Granite or Ornith when needed.
-- Drain conflicting GPU workloads before warming the model.
+- Detect and report conflicting GPU workloads before warming the model. The
+  runner blocks by default; it may drain only services named in an explicit,
+  scoped operator acknowledgment for that run, and never kills unmanaged or
+  unidentified processes automatically.
 - Record host, endpoint, GPU indexes, mode, model identity, quantization,
   context size, and warm latency.
 - Fix the allocation for the entire model block.
@@ -371,8 +380,10 @@ GPU routing policy:
 The current vendored registry explicitly exposes `riz-unified-cpp`. Home-LLM
 per-GPU entries advertise unified capability but the snapshot has no separate
 stable `home-unified-cpp` ID, so code resolves the live registry instead of
-inventing an endpoint. The user has authorized full control of all GPUs on
-`riz-llm` and `home-llm` during recorded testing.
+inventing an endpoint. The operator authorized use of both `riz-llm` and
+`home-llm` for this campaign, but that historical authorization is not itself
+a runner permission to terminate future workloads; the scoped acknowledgment
+above remains required.
 
 Quality remains the primary comparison. Latency and throughput are reported
 as topology-conditioned when models require different GPU modes.
@@ -383,7 +394,10 @@ The calibration uses twelve preregistered seeds. The same requested seed is
 used within a treatment pair; seeds differ across pairs. Temperature, `top_p`,
 token limits, and all other sampling parameters are fixed within a suite.
 
-A startup probe sends a canonical request with repeated and differing seeds:
+A startup probe sends a canonical request with repeated and differing seeds.
+It uses the suite's exact temperature, `top_p`, token settings, prompt shape,
+and tool schema so a temperature-zero or otherwise mismatched probe cannot
+misclassify seed support:
 
 - If identical seed/configuration reproduces and at least some differing seeds
   diverge, the endpoint is recorded as seed-honoring.
@@ -405,9 +419,23 @@ Each Stage 1 trial is one complete decision episode, not one tool call:
 3. Capture and verify canonical starting state.
 4. Construct a new backend/agent conversation with no prior memory.
 5. Apply the arm's tools and fixed sampling configuration.
-6. Allow up to fifteen model round trips and a five-minute episode wall time.
+6. Allow up to fifteen model round trips and the model block's locked,
+   latency-derived episode wall time.
 7. Capture final queried state without calling `end_turn`.
 8. Atomically persist raw scoreable evidence.
+
+The episode wall catches runaway work rather than pacing healthy models. Before
+the block starts, the endpoint gate runs at least ten representative warm
+round trips using the suite's prompt shape, full tool schema, and sampling
+configuration. It locks:
+
+```text
+episode_wall_s = max(300, ceil(max_steps × p95_roundtrip_s × 1.5))
+```
+
+The measured samples, p95, formula inputs, and resulting wall are stored in the
+session lock and shared by every arm in that model block. Changing the wall
+requires a new lock.
 
 The calibration scaffold holds everything except tool tier constant:
 
@@ -429,13 +457,14 @@ An episode is complete and scoreable when:
 - The model emits a response with no tool calls (implicit finish, matching the
   existing `LLMPolicy` behavior).
 - Fifteen model round trips are exhausted.
-- The five-minute wall limit is reached.
+- The block's latency-derived episode wall is reached.
 - The model emits malformed response/tool output.
 
 If `finish_trial` accompanies game actions in one response, supplied game
 actions execute in order and the episode then terminates. Step-limit
 exhaustion, zero useful actions, incoherent orders, domain rejections, loops,
-and model-generation timeouts are outcomes, not retry reasons.
+and model-generation timeouts with a healthy post-timeout endpoint are
+outcomes, not retry reasons.
 
 ## Retry and evidence-admission policy
 
@@ -450,7 +479,8 @@ including attempts across process restarts.
 | Demonstrably exogenous connection failure or unavailable gateway | Infrastructure attempt; retry |
 | Unknown failure class | Stop for classification; never automatically retry |
 | Malformed model response/tool output | Scoreable trial failure |
-| Generation/request timeout | Scoreable trial failure |
+| Request/episode timeout; immediate canary is unhealthy, unresponsive, or wrong-identity | Infrastructure attempt; retry |
+| Request/episode timeout; immediate canary is healthy and identity-correct | Scoreable runaway-generation failure |
 | Step-limit exhaustion | Completed, scoreable trial |
 | Zero useful actions or incoherent decisions | Completed, scoreable trial |
 | Domain rejection or repeated action loop | Completed, scoreable trial |
@@ -458,7 +488,10 @@ including attempts across process restarts.
 Every attempt is journaled with a preregistered failure class. Exhausting three
 attempts stops the session rather than shrinking the arm. Completed trials
 record the attempt count and prior infrastructure classes so retry pressure is
-visible in reports.
+visible in reports. Every timeout triggers a short, independently bounded
+canary against the exact endpoint; the request failure, canary response,
+latency, health, and identity verdict are journaled whether the episode is
+admitted as infrastructure or scoreable evidence.
 
 ## Persistence and resume
 
@@ -600,6 +633,18 @@ digests enter the lock. A post-freeze rubric edit creates a new rubric/position
 version and applies only to future runs; it never retroactively rescales
 evidence. This differs from a scorer implementation fix, which may regenerate
 reports over unchanged rubric predicates and raw evidence.
+
+The benchmark prompt is objective-blind and generic across every position. Its
+instruction is limited to the equivalent of "assess the current situation and
+issue the best orders available for this turn; finish when done," plus the
+standard turn/player announcement and generic `finish_trial` protocol. It
+contains no position names, objective labels, coordinates, unit references,
+resource names, target outcomes, rubric text, or hints such as "your builders
+have work available." Position manifests and rubrics are never injected. The
+prompt is authored without model pilot transcripts, frozen and digested
+alongside the rubrics before Stage 2, and any later edit creates a new suite
+version rather than silently tuning an existing comparison. The calibration
+uses the same objective-blind template, frozen before its first counted trial.
 
 ## Stage 2 model screen
 
@@ -768,6 +813,11 @@ The runner fails closed around evidence admission:
   runner callers.
 - Backend sends exact sampling parameters and exposes rather than hides
   benchmark retries.
+- Seed and warm-latency probes use the suite's exact sampling/prompt/schema;
+  the derived episode wall is locked and identical across arms in a model
+  block.
+- Timeout health probes deterministically separate endpoint failure from
+  healthy runaway generation and journal both verdict paths.
 - Metric fixtures distinguish harness-invalid calls, domain rejections,
   successful mutations, useful progress, and repeated loops.
 - Counterfactual mutations prove each metric test can fail.
@@ -782,6 +832,9 @@ The runner fails closed around evidence admission:
 - Reports ignore `attempts/` and regenerate deterministically from lock plus
   `trials/`.
 - Neither tier exposes `end_turn`; both expose `finish_trial`.
+- The objective-blind prompt contains no manifest/rubric terms or
+  position-specific hints, and the minimal calibration arm can attain rubric
+  levels 1–2 without possessing standard builder mutation tools.
 - Regression tests that guard absence, restore, cancellation, or admission
   paths receive counterfactual/severing checks during implementation.
 
@@ -810,4 +863,3 @@ The smoke episodes are not part of the calibration sample.
   stable.
 - Thirty-turn finalist experiment design and execution.
 - Parallel model execution; port 4318 remains single-client.
-
