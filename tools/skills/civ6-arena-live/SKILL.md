@@ -39,6 +39,21 @@ CLI-provider pre-flight (when a watcher uses `cli-claude` or `cli-codex`), on th
 
 ### Preregistration gate (added after v8, 2026-08-30)
 
+For every recorded experiment, resolve and record the actual endpoint for
+each configured model/gateway pair before launch; green health alone is not
+enough. Confirm that unrelated local-LLM and benchmark jobs use
+non-overlapping endpoints. For example, if `living-emerald` is active, verify
+and record that it is actually pinned to `home-llm` rather than the experiment
+gateway; this is an example, not a permanent allocation. Warm every configured
+model on its resolved endpoint and record representative response latency.
+**Block launch** until the endpoint allocations are non-overlapping and all of
+this evidence is recorded.
+
+If overlap is discovered post hoc, treat latency and timeout comparisons as
+confounded. A complete, timeout-free behavioral artifact need not be
+discarded, but behavior affected by timeouts, fallback, truncation, or
+incomplete turns is also confounded.
+
 Before launching an overnight config-driven run, land BOTH in the same
 commit as the experiment YAML:
 
