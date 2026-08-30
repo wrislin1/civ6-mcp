@@ -347,6 +347,23 @@ for _, name in ipairs(names) do
     if ctl ~= nil and not ctl:IsHidden() then
         pcall(function() UIManager:DequeuePopup(ctl) end)
         pcall(function() ctl:SetHide(true) end)
+        if name == "NaturalDisasterPopup" then
+            -- Hiding the context alone orphans the disaster cinematic
+            -- (observed live: v8 T159 -- black world, dead ESC, end turn
+            -- suppressed). Replicate the popup's own Close() restore path.
+            pcall(function() UI.ClearTemporaryPlotVisibility("NaturalDisaster") end)
+            pcall(function() Events.StopAllCameraAnimations() end)
+            pcall(function() LuaEvents.NaturalDisasterPopup_Closed() end)
+            pcall(function() UI.SetInterfaceMode(InterfaceModeTypes.SELECTION) end)
+            pcall(function() UILens.RestoreActiveLens() end)
+            local sounds = {"Blizzard", "Flood", "Hurricane", "Sandstorm",
+                            "Tornado", "Volcano", "Drought", "Meltdown",
+                            "CometStrike", "ForestFire", "MeteorShower",
+                            "SolarFlare"}
+            for _, s in ipairs(sounds) do
+                pcall(function() UI.PlaySound("Stop_Disaster_" .. s .. "_Movie_Loop") end)
+            end
+        end
         closed[#closed+1] = name
     end
 end
