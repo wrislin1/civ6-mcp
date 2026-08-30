@@ -325,6 +325,60 @@ def test_windows_focus_uses_kernel_thread_id_and_verifies_foreground(monkeypatch
     assert attached == [(88, 77, True), (88, 77, False)]
 
 
+def test_windows_focus_falls_back_to_wscript_app_activate(monkeypatch):
+    window = SimpleNamespace(window_id=123, pid=7052)
+    activated: list[int] = []
+
+    class FakeUser32:
+        foreground = 456
+
+        def GetForegroundWindow(self):
+            return self.foreground
+
+        def GetWindowThreadProcessId(self, _hwnd, _process_id):
+            return 77
+
+        def AttachThreadInput(self, _current, _foreground, _attach):
+            return True
+
+    class FakeKernel32:
+        def GetCurrentThreadId(self):
+            return 88
+
+    user32 = FakeUser32()
+    win32gui = ModuleType("win32gui")
+    win32gui.IsIconic = lambda _hwnd: False
+    win32gui.SetForegroundWindow = lambda _hwnd: None
+    win32com = ModuleType("win32com")
+    win32com_client = ModuleType("win32com.client")
+
+    def dispatch(name):
+        assert name == "WScript.Shell"
+
+        def app_activate(pid):
+            activated.append(pid)
+            user32.foreground = window.window_id
+            return True
+
+        return SimpleNamespace(AppActivate=app_activate)
+
+    win32com_client.Dispatch = dispatch
+    monkeypatch.setitem(sys.modules, "win32gui", win32gui)
+    monkeypatch.setitem(sys.modules, "win32com", win32com)
+    monkeypatch.setitem(sys.modules, "win32com.client", win32com_client)
+    monkeypatch.setattr(game_launcher, "_find_game_window_win32", lambda: window)
+    monkeypatch.setattr(game_launcher.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        ctypes,
+        "windll",
+        SimpleNamespace(user32=user32, kernel32=FakeKernel32()),
+        raising=False,
+    )
+
+    assert game_launcher._bring_to_front_win32() is True
+    assert activated == [7052]
+
+
 def test_navigation_checks_for_startup_cinematic_after_launch(monkeypatch):
     calls: list[str] = []
 

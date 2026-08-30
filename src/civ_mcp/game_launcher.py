@@ -1916,13 +1916,30 @@ def _bring_to_front_win32() -> bool:
         if win32gui.IsIconic(hwnd):
             win32gui.ShowWindow(hwnd, SW_RESTORE)
         win32gui.SetForegroundWindow(hwnd)
-        return bool(user32.GetForegroundWindow() == hwnd)
+        if user32.GetForegroundWindow() == hwnd:
+            return True
     except Exception:
-        log.debug("Could not bring window to front (non-fatal)")
-        return False
+        log.debug("Native foreground activation failed; trying WScript fallback")
     finally:
         if attached:
             user32.AttachThreadInput(our_thread, fg_thread, False)
+
+    # SetForegroundWindow can be denied without raising when another process
+    # owns Windows' foreground lock. WScript.Shell uses the shell activation
+    # path and succeeds in that case; still verify the resulting HWND before
+    # allowing any key or mouse injection.
+    try:
+        from win32com.client import Dispatch
+
+        Dispatch("WScript.Shell").AppActivate(win.pid)
+        time.sleep(0.3)
+        if user32.GetForegroundWindow() == hwnd:
+            return True
+    except Exception:
+        log.debug("WScript foreground activation failed (non-fatal)")
+
+    log.debug("Could not bring Civ VI window to foreground")
+    return False
 
 
 def _press_escape_win32() -> bool:
