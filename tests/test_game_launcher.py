@@ -558,3 +558,45 @@ async def test_restart_and_load_preserves_fresh_launch_context(monkeypatch):
 
     assert result.endswith("Load: Save loading")
     assert load_calls == [("CHANNELS_GATE_V1_T157", True)]
+
+
+def test_win32_input_struct_is_windows_abi_sized():
+    """SendInput rejects any INPUT whose cbSize is not the Win64 ABI's 40
+    bytes (error 87) — observed live 2026-08-29 when a KEYBDINPUT-only
+    union was used. The shared definition must carry the full union."""
+    assert hasattr(game_launcher, "_INPUT")
+    assert ctypes.sizeof(game_launcher._INPUT) == 40
+    fields = dict(game_launcher._KEYBDINPUT._fields_)
+    assert "wVk" in fields and "dwExtraInfo" in fields
+
+
+def test_windows_escape_sends_keydown_and_keyup_via_sendinput(monkeypatch):
+    sendinput_calls: list[tuple[int, int]] = []
+
+    class FakeUser32:
+        def SendInput(self, n, _events, size):
+            sendinput_calls.append((n, size))
+            return n
+
+        def MapVirtualKeyW(self, _vk, _map_type):
+            return 1
+
+    monkeypatch.setattr(
+        ctypes, "windll",
+        SimpleNamespace(user32=FakeUser32()),
+        raising=False,
+    )
+    win32api = ModuleType("win32api")
+    win32api.keybd_event = lambda *args: (_ for _ in ()).throw(
+        AssertionError("legacy keybd_event must not be used")
+    )
+    win32con = ModuleType("win32con")
+    win32con.VK_ESCAPE = 27
+    win32con.KEYEVENTF_KEYUP = 2
+    monkeypatch.setitem(sys.modules, "win32api", win32api)
+    monkeypatch.setitem(sys.modules, "win32con", win32con)
+    monkeypatch.setattr(game_launcher, "_bring_to_front_win32", lambda: True)
+    monkeypatch.setattr(game_launcher.time, "sleep", lambda _s: None)
+
+    assert game_launcher._press_escape_win32() is True
+    assert sendinput_calls == [(2, 40)]   # keydown + keyup, correct cbSize

@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import glob
 import logging
+import ctypes
 import os
 import socket
 import subprocess
@@ -163,6 +164,64 @@ _LAUNCH_TIMEOUT_SECONDS = 60
 _PORT_POLL_TIMEOUT = 180
 # Tuner TCP port
 _TUNER_PORT = 4318
+
+
+# --- Win64 SendInput ABI (shared by mouse and keyboard injection) ----------
+# SendInput rejects the whole batch with ERROR_INVALID_PARAMETER (87) when
+# cbSize is not exactly the Win64 INPUT size of 40 bytes -- the union must
+# contain MOUSEINPUT even for keyboard-only events (observed live
+# 2026-08-29; a KEYBDINPUT-only union reads as sent=0/err=87 and the game
+# never sees the input). Fixed-width fields keep sizeof() identical on the
+# Linux/WSL side, where the unit tests run.
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_int32),
+        ("dy", ctypes.c_int32),
+        ("mouseData", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_uint16),
+        ("wScan", ctypes.c_uint16),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+class _INPUT(ctypes.Structure):
+    class _U(ctypes.Union):
+        _fields_ = [("mi", _MOUSEINPUT), ("ki", _KEYBDINPUT)]
+
+    _anonymous_ = ("u",)
+    _fields_ = [("type", ctypes.c_uint32), ("u", _U)]
+
+
+_KEYEVENTF_KEYUP = 0x0002
+
+
+def _send_key_win32(vk: int) -> bool:
+    """Inject one key press (down+up) via SendInput. Returns True when both
+    events were accepted."""
+    user32 = ctypes.windll.user32
+    scan = user32.MapVirtualKeyW(vk, 0)
+    down = _INPUT(type=1)
+    down.ki = _KEYBDINPUT(vk, scan, 0, 0, 0)
+    up = _INPUT(type=1)
+    up.ki = _KEYBDINPUT(vk, scan, _KEYEVENTF_KEYUP, 0, 0)
+    events = (_INPUT * 2)(down, up)
+    sent = user32.SendInput(2, events, ctypes.sizeof(_INPUT))
+    if sent != 2:
+        log.warning("SendInput injected %d/2 key events", sent)
+    return sent == 2
+
 
 
 def _require_gui_deps() -> None:
@@ -1713,19 +1772,6 @@ def _click_win32(x: int, y: int) -> None:
         vh,
     )
 
-    class MOUSEINPUT(ctypes.Structure):
-        _fields_ = [
-            ("dx", ctypes.c_long),
-            ("dy", ctypes.c_long),
-            ("mouseData", ctypes.c_ulong),
-            ("dwFlags", ctypes.c_ulong),
-            ("time", ctypes.c_ulong),
-            ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
-        ]
-
-    class INPUT(ctypes.Structure):
-        _fields_ = [("type", ctypes.c_ulong), ("mi", MOUSEINPUT)]
-
     MOUSEEVENTF_MOVE = 0x0001
     MOUSEEVENTF_ABSOLUTE = 0x8000
     MOUSEEVENTF_VIRTUALDESK = 0x4000
@@ -1733,49 +1779,30 @@ def _click_win32(x: int, y: int) -> None:
     MOUSEEVENTF_LEFTUP = 0x0004
     ABS_VIRT = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
 
-    # Move
-    move = INPUT(
-        type=0,
-        mi=MOUSEINPUT(
-            dx=abs_x,
-            dy=abs_y,
-            mouseData=0,
-            dwFlags=MOUSEEVENTF_MOVE | ABS_VIRT,
-            time=0,
-            dwExtraInfo=None,
-        ),
+    def _mouse_event(flags: int) -> _INPUT:
+        event = _INPUT(type=0)
+        event.mi = _MOUSEINPUT(
+            dx=abs_x, dy=abs_y, mouseData=0, dwFlags=flags,
+            time=0, dwExtraInfo=0,
+        )
+        return event
+
+    # Move (hover), then click down/up -- the shared 40-byte _INPUT keeps
+    # SendInput from rejecting the events with error 87.
+    user32.SendInput(
+        1, ctypes.byref(_mouse_event(MOUSEEVENTF_MOVE | ABS_VIRT)),
+        ctypes.sizeof(_INPUT),
     )
-    user32.SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT))
     time.sleep(0.15)
-
-    # Click down
-    down = INPUT(
-        type=0,
-        mi=MOUSEINPUT(
-            dx=abs_x,
-            dy=abs_y,
-            mouseData=0,
-            dwFlags=MOUSEEVENTF_LEFTDOWN | ABS_VIRT,
-            time=0,
-            dwExtraInfo=None,
-        ),
+    user32.SendInput(
+        1, ctypes.byref(_mouse_event(MOUSEEVENTF_LEFTDOWN | ABS_VIRT)),
+        ctypes.sizeof(_INPUT),
     )
-    user32.SendInput(1, ctypes.byref(down), ctypes.sizeof(INPUT))
     time.sleep(0.05)
-
-    # Click up
-    up = INPUT(
-        type=0,
-        mi=MOUSEINPUT(
-            dx=abs_x,
-            dy=abs_y,
-            mouseData=0,
-            dwFlags=MOUSEEVENTF_LEFTUP | ABS_VIRT,
-            time=0,
-            dwExtraInfo=None,
-        ),
+    user32.SendInput(
+        1, ctypes.byref(_mouse_event(MOUSEEVENTF_LEFTUP | ABS_VIRT)),
+        ctypes.sizeof(_INPUT),
     )
-    user32.SendInput(1, ctypes.byref(up), ctypes.sizeof(INPUT))
 
 
 def _click_linux(x: int, y: int) -> None:
@@ -1948,18 +1975,8 @@ def _press_escape_win32() -> bool:
         log.warning("Refusing to press Escape: Civ VI is not the foreground window")
         return False
 
-    import win32api
-    import win32con
-
     time.sleep(0.5)
-    win32api.keybd_event(win32con.VK_ESCAPE, 0, 0, 0)
-    win32api.keybd_event(
-        win32con.VK_ESCAPE,
-        0,
-        win32con.KEYEVENTF_KEYUP,
-        0,
-    )
-    return True
+    return _send_key_win32(0x1B)  # VK_ESCAPE
 
 
 def _winrt_ocr_available() -> bool:
