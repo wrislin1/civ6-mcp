@@ -17,6 +17,14 @@ def test_episode_wall_uses_p95_and_five_minute_floor():
     assert episode_wall_seconds(max_steps=15, latencies_s=[2.0] * 10) == 300
 
 
+def test_episode_wall_seconds_fails_closed_on_no_evidence():
+    """An empty latency list (e.g. every probe_backend call errored) must not
+    silently fall back to the 300s floor as if evidence existed -- that would
+    let a fully-down backend sail through the admission gate. Raise instead."""
+    with pytest.raises(ValueError):
+        episode_wall_seconds(max_steps=15, latencies_s=[])
+
+
 # ---------------------------------------------------------------------------
 # probe_backend
 # ---------------------------------------------------------------------------

@@ -14,7 +14,18 @@ from dataclasses import dataclass, field, replace
 def episode_wall_seconds(*, max_steps: int, latencies_s: list[float]) -> int:
     """Nearest-rank p95 of observed per-step latencies, scaled by max_steps
     with 1.5x headroom, floored at 300s (5 minutes) so a fast-but-small probe
-    sample never produces an unrealistically tight episode budget."""
+    sample never produces an unrealistically tight episode budget.
+
+    An empty `latencies_s` means the warm-latency probe produced no evidence
+    at all (e.g. every `probe_backend` call errored because the backend is
+    down) -- this is fail-closed by design: we refuse to guess a 300s floor
+    as if evidence existed, and raise instead so the admission gate refuses
+    the model block rather than silently proceeding."""
+    if not latencies_s:
+        raise ValueError(
+            "episode_wall_seconds: latencies_s is empty -- no probe evidence "
+            "to size the episode wall from; refusing to guess a floor value"
+        )
     ordered = sorted(latencies_s)
     p95 = ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
     return max(300, math.ceil(max_steps * p95 * 1.5))
