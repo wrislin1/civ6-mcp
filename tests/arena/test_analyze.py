@@ -2515,3 +2515,139 @@ def test_analyze_channels_counts_rejected_actions_by_player_and_reason() -> None
         "only the proposer may fund a deal": 2,
         "deal has no linked payment awaiting response": 1,
     }
+
+
+# ---------------------------------------------------------------------------
+# Task 1 — shared action-quality classifier wired into analyze()
+#
+# analyze.py attaches classify_action_quality's mapping under "action_quality"
+# per played record (series row) and aggregates totals by player, without
+# touching any existing report key. Historical records/runs (no "objectives"
+# field on the transcript record) must report useful_actions: None /
+# useful_action_coverage: "unavailable" rather than treating every
+# successful mutation as useful.
+# ---------------------------------------------------------------------------
+
+def test_action_quality_attached_to_played_series_rows(run_dir: Path) -> None:
+    from civ_mcp.arena.analyze import load_records, analyze
+
+    tr = load_records(run_dir / "transcript.jsonl")
+    co = load_records(run_dir / "arena_cost.jsonl")
+    report = analyze(tr, co)
+
+    row = report["by_player"][1]["series"][0]
+    aq = row["action_quality"]
+    assert aq is not None
+    # tr_a1: 1 invalid_tool_calls entry, 3 steps all with non-error results,
+    # but no state_digest fields on this legacy fixture -> no counted mutation.
+    assert aq["invalid_calls"] == 1
+    assert aq["domain_rejections"] == 0
+    assert aq["successful_mutations"] == 0
+    assert aq["useful_actions"] is None
+    assert aq["useful_action_coverage"] == "unavailable"
+    assert aq["repetitions"] == 0
+    assert aq["loop_excess"] == 0
+
+
+def test_action_quality_domain_rejection_detected_from_blocked_result(run_dir: Path) -> None:
+    """tr_a2 step 0 result is 'MOVING_TO|3,3|BLOCKED' -> a domain rejection."""
+    from civ_mcp.arena.analyze import load_records, analyze
+
+    tr = load_records(run_dir / "transcript.jsonl")
+    co = load_records(run_dir / "arena_cost.jsonl")
+    report = analyze(tr, co)
+
+    row = report["by_player"][1]["series"][1]
+    assert row["action_quality"]["domain_rejections"] == 1
+
+
+def test_action_quality_aggregated_by_player_without_objectives(run_dir: Path) -> None:
+    from civ_mcp.arena.analyze import load_records, analyze
+
+    tr = load_records(run_dir / "transcript.jsonl")
+    co = load_records(run_dir / "arena_cost.jsonl")
+    report = analyze(tr, co)
+
+    aq_a = report["by_player"][1]["action_quality"]
+    assert aq_a["invalid_calls"] == 1
+    assert aq_a["domain_rejections"] == 1
+    assert aq_a["useful_actions"] is None
+    assert aq_a["useful_action_coverage"] == "unavailable"
+
+    aq_b = report["by_player"][2]["action_quality"]
+    assert aq_b["invalid_calls"] == 0
+    assert aq_b["domain_rejections"] == 0
+    assert aq_b["useful_actions"] is None
+    assert aq_b["useful_action_coverage"] == "unavailable"
+
+
+def test_action_quality_existing_report_keys_unchanged(run_dir: Path) -> None:
+    """Adding action_quality must not remove or rename any existing key."""
+    from civ_mcp.arena.analyze import load_records, analyze
+
+    tr = load_records(run_dir / "transcript.jsonl")
+    co = load_records(run_dir / "arena_cost.jsonl")
+    report = analyze(tr, co)
+
+    player_a = report["by_player"][1]
+    for key in ("player_id", "model", "provider", "series", "failed_turns", "rates",
+                "rubric", "behavior"):
+        assert key in player_a
+    series_row = player_a["series"][0]
+    for key in ("turn", "score", "cities", "units", "science", "culture",
+                "prompt_tokens", "completion_tokens", "wall_clock_s", "step_count",
+                "state_delta"):
+        assert key in series_row
+
+
+def test_action_quality_none_for_failed_and_slept_series_rows() -> None:
+    """A failed or slept turn has no real model action to classify."""
+    from civ_mcp.arena.analyze import analyze
+
+    base = {"player_id": 1, "model": "m", "provider": "p", "driver": "in_process"}
+    failed = {**base, "turn": 1, "turn_kind": "failed"}
+    slept = {**base, "turn": 2, "turn_kind": "slept", "slept": True}
+    played = {**base, "turn": 3, "steps": [], "invalid_tool_calls": []}
+    report = analyze([failed, slept, played], [])
+
+    series = {row["turn"]: row for row in report["by_player"][1]["series"]}
+    assert series[1]["action_quality"] is None
+    assert series[2]["action_quality"] is None
+    assert series[3]["action_quality"] is not None
+
+
+def test_action_quality_useful_actions_available_when_objectives_present() -> None:
+    """A record carrying an objective mapping reports a real useful_actions count."""
+    from civ_mcp.arena.analyze import analyze
+
+    state_a = {"tiles": [{"improvement": None}]}
+    state_b = {"tiles": [{"improvement": "IMPROVEMENT_MINE"}]}
+    rec = {
+        "player_id": 1, "model": "m", "provider": "p", "driver": "in_process",
+        "turn": 1,
+        "steps": [
+            {"tool_name": "improve_tile", "tool_args": {"unit_index": 8},
+             "tool_result_full": "IMPROVING|IMPROVEMENT_MINE|9,10",
+             "state_before": state_a, "state_after": state_b,
+             "state_digest_before": "a", "state_digest_after": "b"},
+        ],
+        "invalid_tool_calls": [],
+        "objectives": [{
+            "task_id": "mine", "unit_index": 8, "target": [9, 10],
+            "tools": ["improve_tile"],
+            "progress_predicate": {
+                "kind": "state_changed_to",
+                "path": ["tiles", 0, "improvement"],
+                "value": "IMPROVEMENT_MINE",
+            },
+        }],
+    }
+    report = analyze([rec], [])
+
+    row_aq = report["by_player"][1]["series"][0]["action_quality"]
+    assert row_aq["useful_actions"] == 1
+    assert row_aq["useful_action_coverage"] == "objective_verified"
+
+    player_aq = report["by_player"][1]["action_quality"]
+    assert player_aq["useful_actions"] == 1
+    assert player_aq["useful_action_coverage"] == "objective_verified"

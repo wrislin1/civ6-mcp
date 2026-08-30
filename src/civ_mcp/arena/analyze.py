@@ -20,6 +20,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from civ_mcp.arena.action_metrics import classify_action_quality
 from civ_mcp.arena.task_tracker import (
     BLOCKED_VISIBLE_HOSTILE,
     DROPPED_FUTURE_DATED,
@@ -1158,6 +1159,15 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
         trade_calls = 0
         religion_wc_calls = 0
 
+        # Task 1 — shared action-quality classifier accumulators
+        aq_invalid_calls = 0
+        aq_domain_rejections = 0
+        aq_successful_mutations = 0
+        aq_useful_actions = 0
+        aq_useful_actions_available = False
+        aq_repetitions = 0
+        aq_loop_excess = 0
+
         for rec in records:
             turn: int = rec.get("turn", 0)
             kind = _turn_kind(rec)
@@ -1166,6 +1176,7 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
             steps = _steps_of(rec)
             invalid_calls: list = _counted_invalid_calls(rec)
             step_count: int = rec.get("step_count") or len(steps)
+            action_quality: "dict | None" = None
 
             # --- token totals: always top-level, never step-sum ---
             prompt_tokens: int = rec.get("prompt_tokens") or 0
@@ -1206,6 +1217,24 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
                     trade_calls += _count_tool_calls(steps, _TRADE_ROUTE_TOOLS)
                     religion_wc_calls += _count_tool_calls(steps, _RELIGION_WC_TOOLS)
 
+                    # Task 1 — shared action-quality classifier. Historical
+                    # records carry no "objectives" mapping (the controlled-
+                    # position benchmark scorer is a later task), so this
+                    # naturally reports useful_actions: None for them.
+                    action_quality = classify_action_quality(
+                        steps=steps,
+                        invalid_tool_calls=invalid_calls,
+                        objectives=rec.get("objectives") or (),
+                    )
+                    aq_invalid_calls += action_quality["invalid_calls"]
+                    aq_domain_rejections += action_quality["domain_rejections"]
+                    aq_successful_mutations += action_quality["successful_mutations"]
+                    aq_repetitions += action_quality["repetitions"]
+                    aq_loop_excess += action_quality["loop_excess"]
+                    if action_quality["useful_actions"] is not None:
+                        aq_useful_actions_available = True
+                        aq_useful_actions += action_quality["useful_actions"]
+
                 # Task classification counts stay over played + slept
                 # records: pre-model task follow-through runs on slept
                 # turns too, so their follow-through is real behavior --
@@ -1231,6 +1260,7 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
                 "wall_clock_s": rec.get("wall_clock_s"),
                 "step_count": step_count,
                 "state_delta": state_delta,
+                "action_quality": action_quality,
             })
 
         # Rates
@@ -1265,6 +1295,17 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
                 "great_people_tool_calls": gp_calls,
                 "trade_route_tool_calls": trade_calls,
                 "religion_wc_tool_calls": religion_wc_calls,
+            },
+            "action_quality": {
+                "invalid_calls": aq_invalid_calls,
+                "domain_rejections": aq_domain_rejections,
+                "successful_mutations": aq_successful_mutations,
+                "useful_actions": aq_useful_actions if aq_useful_actions_available else None,
+                "useful_action_coverage": (
+                    "objective_verified" if aq_useful_actions_available else "unavailable"
+                ),
+                "repetitions": aq_repetitions,
+                "loop_excess": aq_loop_excess,
             },
         }
 
