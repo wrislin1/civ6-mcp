@@ -139,3 +139,27 @@ Run from the repo root:
   point for native Windows `preflight`, `load`, and `restart-and-load`.
 
 The stop script is dry-run by default; pass `--yes` to terminate matching watcher process groups.
+
+## Live-run stall playbook (proven 2026-08-30, v7)
+
+Three recurring seat-0 stall classes and their live fixes, until the code
+fixes land (drain-arm orphan sweep, refire modal dismissal, production
+readback):
+
+1. `seat0_drain_deadline` after channel funding: AI↔AI diplomacy sessions
+   wedge the interturn. Let the watcher hit its deadline (clean self-stop),
+   then run `lq.build_close_orphan_sessions()` in the InGame state over the
+   freed tuner. No reload needed; funding survives.
+2. `human_pending` with `blockers=[]`: an engine UI modal (disaster cinematic,
+   Historic Moments, Inspiration/Eureka) is blocking. One synthetic ESC per
+   modal clears it; LoadScreen/modals accept VK_ESCAPE only. A 64-bit
+   SendInput INPUT struct must include MOUSEINPUT in the union (sizeof 40)
+   or every event is rejected with error 87.
+3. `human_pending` with a persisting `ENDTURN_BLOCKING_PRODUCTION` after a
+   repair that claims success: verify with `GetCurrentProductionTypeHash()`
+   per city over the tuner; refill any `hash == 0` city via
+   `GameState.set_city_production(...)`, then relaunch — the fresh
+   coordinator re-admits the held turn and ends it itself.
+
+Resume budgets: remaining rounds × configured seats (4 for channels v6/v7),
+computed from the live game turn — see "Resume budget accounting" above.

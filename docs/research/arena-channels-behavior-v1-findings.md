@@ -726,3 +726,95 @@ two LLM seats and asks whether harness-level intent tracking produces more
 deterministic follow-through. Treat v6's one-message/no-LLM-deal outcome as
 the comparison point, and use game-turn/seat accounting rather than transcript
 row counts if another resume is required.
+
+---
+
+# v7 result: the task tracker sustained engagement without restoring deal-making
+
+**Date:** 2026-08-30 · **Run:** `arena_runs/arena-channels-behavior-v7` ·
+**Config:** `experiments/arena-channels-behavior-v7.yaml` · scripted seat 0,
+gemma4-26b at P1, qwen3.6-27b at P2, task_tracker enabled on both, $0.00.
+
+## Result
+
+| metric | v3 | v4 | v5 | v6 | v7 |
+|--------|----|----|----|----|----|
+| deals | 3 | 3 | 2 | 2 | **2** |
+| honored | 1 | 0 | 2 | 2 | **2** |
+| broken | 2 | 2 | 0 | 0 | **0** |
+| grievances | 2 | 2 | 0 | 0 | **0** |
+| rejected channel actions | 7 | 4 | 2 | 2 | **1** |
+| LLM messages | 12 | 8 | 0 | 1 | **9** |
+| LLM-initiated deals | 1 | 1 | 0 | 0 | **0** |
+
+The single treatment delta from v6 (`task_tracker.enabled: true` on both LLM
+seats) coincided with the largest engagement change of the series: qwen sent
+nine messages across the window (v6: one; v5: zero). The pattern is one
+acceptance note at T159, one unprompted thanks at T167 after payment, then a
+recurring one-per-turn "our peaceful cooperation continues" status ping to P3
+from T175 through T186. All nine went to the scripted seat; gemma sent zero
+and never replied. So the tracker produced *sustained* engagement — the first
+run since v4 with channel traffic after the deals closed — but the content is
+formulaic relationship maintenance, not negotiation, and no LLM proposed a
+deal. The v3/v4-style LLM deal-making thread remains unrecovered.
+
+Rejected actions dropped to one: gemma attempted to fund `deal-000001` at
+T163 as the payee ("only the proposer may fund a deal") — the same inverted
+role confusion class documented in v4 — and never repeated it. qwen, whose
+premature payment attempts defined v4/v6's rejection rows, made none: it
+acted exactly once per lifecycle transition, on the turn the affordance line
+offered it. That timing discipline is consistent with the tracker's intent
+state carrying "waiting for X" across turns.
+
+## Deal result
+
+Both scripted deals ran the full lifecycle on the final timeline: proposed
+T157, accepted T158, `keep_units_away` verified satisfied from real unit
+observations at T163, auto-funded T163, payment responses accepted T164–165,
+terminal `honored` / payment `settled`, zero grievances. Unlike v6, the two
+50-gold engine transfers are part of the surviving timeline: the T163 funding
+hard-interturn was recovered live by closing the orphaned AI↔AI diplomacy
+sessions over FireTuner (no reload, no rollback), so the engine-level payment
+evidence stands for the first time in the series.
+
+## Operational qualifications
+
+Attended recovery run, exact preregistered artifact: 92 transcript rows over
+exactly T157–T186 (30 turns, 3 rows per round), three operational resumes
+(`.arena-runs/arena-channels-behavior-v7.resume-*.yaml`) using round-based
+budget accounting (remaining rounds × 4 seats), no duplicate or rolled-back
+rows. Five seat-0 stalls required operator input, in three classes, none
+attributable to the treatment:
+
+1. **T163 funding hard-interturn** — same wedge as v6: engine gold transfers
+   open AI↔AI diplomacy sessions that the coordinator's drain arm never
+   probes (it checks local-player sessions only). The watcher self-terminated
+   at `seat0_drain_poll_limit`; `build_close_orphan_sessions()` run manually
+   over the freed tuner closed session `2-3#131075` and the interturn
+   completed in place.
+2. **UI-modal stalls (T165, T169, T175, plus mid-turn queues)** — Gathering
+   Storm disaster cinematics and Historic Moment/Inspiration popups block the
+   end turn while the blocker radar reads empty (`human_pending` with
+   `blockers=[]`). Cleared with a single synthetic ESC per modal; from T170 an
+   OCR-gated auto-dismisser handled them unattended.
+3. **Silent production repair failure (T166: three cities; T176: capital)** —
+   the seat-0 repair logged `set_city_production=... ` as applied while
+   tuner readback showed `GetCurrentProductionTypeHash()==0`. Queues were
+   refilled manually with readback verification before each relaunch.
+
+## Recommendations before v8
+
+1. Run the orphan-session sweep in the seat-0 drain arm on the existing
+   45-poll cadence — removes stall class 1 entirely.
+2. Dismiss known engine modals (disaster views, moment timelines) from the
+   seat-0 refire path via Lua `UIManager:DequeuePopup`, mirroring the sweep's
+   view-hiding block — removes class 2.
+3. Add readback verification (`GetCurrentProductionTypeHash() ~= 0`) to the
+   scripted production repair and re-issue on mismatch — removes class 3 and
+   the false "completed" repair records.
+4. On the treatment question: the tracker earns its place in the standard
+   tier for lifecycle discipline alone. If the goal is LLM-initiated deals,
+   the next single-variable candidate is seeding a non-scripted counterparty
+   overture (P3 messaging without a deal attached) rather than further
+   schema/tracker changes — both models now handle every *offered*
+   transition correctly and initiate none.
