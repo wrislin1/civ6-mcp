@@ -4166,6 +4166,7 @@ class _ScriptedGS:
         diplomacy_sessions=None,
         great_people=None,
         city_states=None,
+        dedications=None,
     ):
         self.overview_calls = 0
         self.units_calls = 0
@@ -4176,6 +4177,7 @@ class _ScriptedGS:
         self.diplomacy_responses: list[tuple[int, str]] = []
         self.great_people_recruited: list[int] = []
         self.envoys_sent: list[int] = []
+        self.dedications_chosen: list[int] = []
         self.listed: list[int] = []
         self._techs = list(techs or [])
         self._civics = list(civics or [])
@@ -4184,6 +4186,9 @@ class _ScriptedGS:
         self._diplomacy_sessions = list(diplomacy_sessions or [])
         self._great_people = list(great_people or [])
         self._city_states = city_states or lq.EnvoyStatus(tokens_available=0)
+        self._dedications = dedications or lq.DedicationStatus(
+            "Normal", 0, 0, 0, 0, 0
+        )
         self.raise_on: set[str] = set()
 
     async def get_game_overview(self):
@@ -4277,6 +4282,17 @@ class _ScriptedGS:
             raise RuntimeError("send envoy boom")
         self.envoys_sent.append(player_id)
         return f"OK:ENVOY_SENT|{player_id}"
+
+    async def get_dedications(self):
+        if "dedications" in self.raise_on:
+            raise RuntimeError("dedications boom")
+        return self._dedications
+
+    async def choose_dedication(self, dedication_index):
+        if "choose_dedication" in self.raise_on:
+            raise RuntimeError("choose dedication boom")
+        self.dedications_chosen.append(dedication_index)
+        return f"OK:DEDICATION_CHOSEN|{dedication_index}"
 
 
 def _tech(tech_type, turns):
@@ -4664,6 +4680,38 @@ async def test_scripted_repair_sends_each_available_envoy_deterministically():
     assert [action["tool"] for action in result["actions"]] == [
         "send_envoy",
         "send_envoy",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_chooses_required_dedications_by_index():
+    gs = _ScriptedGS(
+        dedications=lq.DedicationStatus(
+            "Heroic",
+            3,
+            0,
+            0,
+            0,
+            2,
+            choices=[
+                lq.DedicationChoice(5, "ECONOMIC", "", "", ""),
+                lq.DedicationChoice(2, "INFRASTRUCTURE", "", "", ""),
+                lq.DedicationChoice(3, "RELIGIOUS", "", "", ""),
+            ],
+        )
+    )
+
+    result = await ScriptedPolicy()(
+        gs,
+        0,
+        176,
+        blocker_block=_prod_block("ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE"),
+    )
+
+    assert gs.dedications_chosen == [2, 3]
+    assert [action["tool"] for action in result["actions"]] == [
+        "choose_dedication",
+        "choose_dedication",
     ]
 
 

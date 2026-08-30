@@ -246,6 +246,7 @@ class ScriptedPolicy:
         want_production = "ENDTURN_BLOCKING_PRODUCTION" in blocker_block
         want_great_person = "ENDTURN_BLOCKING_CLAIM_GREAT_PERSON" in blocker_block
         want_envoy = "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" in blocker_block
+        want_dedication = "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" in blocker_block
         want_diplomacy = "== PENDING DIPLOMACY ==" in blocker_block
 
         if want_tech or want_civic:
@@ -266,6 +267,10 @@ class ScriptedPolicy:
             envoy_actions, envoy_errors = await self._send_envoys(gs)
             actions.extend(envoy_actions)
             errors.extend(envoy_errors)
+        if want_dedication:
+            dedication_actions, dedication_errors = await self._choose_dedications(gs)
+            actions.extend(dedication_actions)
+            errors.extend(dedication_errors)
         if want_diplomacy:
             diplomacy_actions, diplomacy_errors = await self._answer_diplomacy(gs)
             actions.extend(diplomacy_actions)
@@ -361,6 +366,34 @@ class ScriptedPolicy:
                 target["envoys_sent"] += 1
             except Exception as e:
                 errors.append(f"send_envoy({target['player_id']}) failed {e!r}")
+                break
+        return actions, errors
+
+    async def _choose_dedications(self, gs):
+        """Choose every required era dedication in stable index order."""
+        actions: list[dict] = []
+        errors: list[str] = []
+        try:
+            status = await gs.get_dedications()
+        except Exception as e:
+            return actions, [f"get_dedications failed {e!r}"]
+        choices = sorted(status.choices, key=lambda choice: (choice.index, choice.name))
+        if status.selections_allowed > len(choices):
+            errors.append(
+                f"only {len(choices)} dedication choices for "
+                f"{status.selections_allowed} required selections"
+            )
+        for choice in choices[: status.selections_allowed]:
+            try:
+                result = await gs.choose_dedication(choice.index)
+                actions.append({
+                    "tool": "choose_dedication",
+                    "item": choice.name,
+                    "dedication_index": choice.index,
+                    "result": result,
+                })
+            except Exception as e:
+                errors.append(f"choose_dedication({choice.index}) failed {e!r}")
                 break
         return actions, errors
 
