@@ -2368,6 +2368,13 @@ def _navigate_to_save_sync(
         return "FAILED: Could not find 'Load Game' button."
     steps.append("Clicked Load Game")
 
+    log.info("Confirming that the save list opened...")
+    if not _wait_for_text("Autosaves", timeout=10, exact=True):
+        return (
+            "FAILED: Load Game screen did not open after clicking its menu item. "
+            "No save-list input was sent."
+        )
+
     if tab is not None:
         log.info("[3/6] Clicking '%s' filter...", tab)
         if not _click_text(tab, timeout=10, exact=True, post_delay=1):

@@ -446,6 +446,11 @@ def test_navigation_uses_scrollable_save_search(monkeypatch):
     monkeypatch.setattr(game_launcher, "_click_text", lambda _text, **_kwargs: True)
     monkeypatch.setattr(
         game_launcher,
+        "_wait_for_text",
+        lambda _text, **_kwargs: ("Autosaves", 1, 1, 1, 1),
+    )
+    monkeypatch.setattr(
+        game_launcher,
         "_click_save_in_scrollable_list",
         lambda save_name: searched.append(save_name) or False,
         raising=False,
@@ -455,6 +460,29 @@ def test_navigation_uses_scrollable_save_search(monkeypatch):
 
     assert result.startswith("FAILED: Save 'CHANNELS_GATE_V1_T157' not found")
     assert searched == ["CHANNELS_GATE_V1_T157"]
+
+
+def test_navigation_stops_when_load_game_screen_did_not_open(monkeypatch):
+    searched: list[str] = []
+
+    monkeypatch.setattr(game_launcher, "_require_gui_deps", lambda: None)
+    monkeypatch.setattr(game_launcher, "is_game_running", lambda: True)
+    monkeypatch.setattr(game_launcher, "_dismiss_crash_dialog", lambda: None)
+    monkeypatch.setattr(game_launcher, "_click_aspyr_launcher_sync", lambda: None)
+    monkeypatch.setattr(game_launcher, "_click_text", lambda _text, **_kwargs: True)
+    monkeypatch.setattr(game_launcher, "_wait_for_text", lambda _text, **_kwargs: None)
+    monkeypatch.setattr(
+        game_launcher,
+        "_click_save_in_scrollable_list",
+        lambda save_name: searched.append(save_name) or False,
+    )
+
+    result = game_launcher._navigate_to_save_sync(
+        "CHANNELS_GATE_V1_T157", tab=None
+    )
+
+    assert result.startswith("FAILED: Load Game screen did not open")
+    assert searched == []
 
 
 def test_windows_save_search_scrolls_until_target_is_visible(monkeypatch):
