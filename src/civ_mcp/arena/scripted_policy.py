@@ -244,6 +244,7 @@ class ScriptedPolicy:
         want_tech = "ENDTURN_BLOCKING_RESEARCH" in blocker_block
         want_civic = "ENDTURN_BLOCKING_CIVIC" in blocker_block
         want_production = "ENDTURN_BLOCKING_PRODUCTION" in blocker_block
+        want_great_person = "ENDTURN_BLOCKING_CLAIM_GREAT_PERSON" in blocker_block
         want_diplomacy = "== PENDING DIPLOMACY ==" in blocker_block
 
         if want_tech or want_civic:
@@ -256,6 +257,10 @@ class ScriptedPolicy:
             prod_actions, prod_errors = await self._choose_production(gs)
             actions.extend(prod_actions)
             errors.extend(prod_errors)
+        if want_great_person:
+            gp_actions, gp_errors = await self._claim_great_people(gs)
+            actions.extend(gp_actions)
+            errors.extend(gp_errors)
         if want_diplomacy:
             diplomacy_actions, diplomacy_errors = await self._answer_diplomacy(gs)
             actions.extend(diplomacy_actions)
@@ -269,6 +274,42 @@ class ScriptedPolicy:
         if errors:
             summary += " | errors: " + "; ".join(errors)
         return {"summary": summary, "actions": actions}
+
+    async def _claim_great_people(self, gs):
+        """Recruit every Great Person the pilot can currently claim.
+
+        The end-turn blocker does not identify a class, and leaving any
+        recruitable candidate unclaimed can keep the blocker active. Sorting
+        makes the otherwise strategy-neutral pilot deterministic.
+        """
+        actions: list[dict] = []
+        errors: list[str] = []
+        try:
+            people = await gs.get_great_people()
+        except Exception as e:
+            return actions, [f"get_great_people failed {e!r}"]
+        candidates = sorted(
+            (person for person in people if person.can_recruit),
+            key=lambda person: (
+                person.class_name,
+                person.individual_name,
+                person.individual_id,
+            ),
+        )
+        for person in candidates:
+            try:
+                result = await gs.recruit_great_person(person.individual_id)
+                actions.append({
+                    "tool": "recruit_great_person",
+                    "item": person.individual_name,
+                    "individual_id": person.individual_id,
+                    "result": result,
+                })
+            except Exception as e:
+                errors.append(
+                    f"recruit_great_person({person.individual_id}) failed {e!r}"
+                )
+        return actions, errors
 
     async def _answer_diplomacy(self, gs):
         """Advance each open seat-0 diplomacy session by one positive round.

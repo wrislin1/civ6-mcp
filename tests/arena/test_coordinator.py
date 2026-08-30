@@ -4164,6 +4164,7 @@ class _ScriptedGS:
         cities=None,
         production=None,
         diplomacy_sessions=None,
+        great_people=None,
     ):
         self.overview_calls = 0
         self.units_calls = 0
@@ -4172,12 +4173,14 @@ class _ScriptedGS:
         self.civic_set: list[str] = []
         self.production_set: list[tuple] = []
         self.diplomacy_responses: list[tuple[int, str]] = []
+        self.great_people_recruited: list[int] = []
         self.listed: list[int] = []
         self._techs = list(techs or [])
         self._civics = list(civics or [])
         self._cities = list(cities or [])
         self._production = dict(production or {})   # city_id -> [ProductionOption]
         self._diplomacy_sessions = list(diplomacy_sessions or [])
+        self._great_people = list(great_people or [])
         self.raise_on: set[str] = set()
 
     async def get_game_overview(self):
@@ -4249,6 +4252,17 @@ class _ScriptedGS:
             if session.other_player_id != other_player_id
         ]
         return f"OK:RESPONDED|{response}|SESSION_CLOSED"
+
+    async def get_great_people(self):
+        if "great_people" in self.raise_on:
+            raise RuntimeError("great people boom")
+        return list(self._great_people)
+
+    async def recruit_great_person(self, individual_id):
+        if "recruit_great_person" in self.raise_on:
+            raise RuntimeError("recruit great person boom")
+        self.great_people_recruited.append(individual_id)
+        return f"OK:RECRUITED|{individual_id}"
 
 
 def _tech(tech_type, turns):
@@ -4576,6 +4590,39 @@ async def test_scripted_repair_answers_pending_diplomacy_positively():
             "item": "player 1",
             "result": "OK:RESPONDED|POSITIVE|SESSION_CLOSED",
         }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_claims_each_currently_recruitable_great_person():
+    gs = _ScriptedGS(
+        great_people=[
+            lq.GreatPersonInfo(
+                "Great General", "B", "Medieval Era", 120, "Korea", 125,
+                can_recruit=True, individual_id=59,
+            ),
+            lq.GreatPersonInfo(
+                "Great Admiral", "A", "Medieval Era", 120, "Korea", 130,
+                can_recruit=True, individual_id=4,
+            ),
+            lq.GreatPersonInfo(
+                "Great Scientist", "C", "Renaissance Era", 310, "Unclaimed", 10,
+                can_recruit=False, individual_id=136,
+            ),
+        ]
+    )
+
+    result = await ScriptedPolicy()(
+        gs,
+        0,
+        167,
+        blocker_block=_prod_block("ENDTURN_BLOCKING_CLAIM_GREAT_PERSON"),
+    )
+
+    assert gs.great_people_recruited == [4, 59]
+    assert [action["tool"] for action in result["actions"]] == [
+        "recruit_great_person",
+        "recruit_great_person",
     ]
 
 
