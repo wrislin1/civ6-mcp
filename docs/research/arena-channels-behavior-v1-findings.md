@@ -649,3 +649,80 @@ path added for v4's expired `deal-000003` saw no traffic.
 
 gemma 11.5 model turns / 11.5 tool calls; qwen 14.0 / 18.5. Both under the
 cap of 15. Third run consistent with the metric-mismatch explanation.
+
+---
+
+# v6 result: initiative returned minimally, not the deal-making thread
+
+**Date:** 2026-08-29 · **Run:** `arena_runs/arena-channels-behavior-v6` ·
+**Config:** `experiments/arena-channels-behavior-v6.yaml` · scripted seat 0,
+gemma4-26b at P1, qwen3.6-27b at P2, $0.00.
+
+## Result: the ablation prediction was only partially met
+
+| metric | v3 | v4 | v5 | v6 |
+|--------|----|----|----|----|
+| deals | 3 | 3 | 2 | **2** |
+| honored | 1 | 0 | 2 | **2** |
+| broken | 2 | 2 | 0 | **0** |
+| grievances | 2 | 2 | 0 | **0** |
+| rejected channel actions | 7 | 4 | 2 | **2** |
+| LLM messages | 12 | 8 | 0 | **1** |
+| LLM-initiated deals | 1 | 1 | 0 | **0** |
+
+Removing the discouraging `propose_deal` suffix restored one unprompted
+channel action: qwen sent gemma `Checking for deals` at T157, before P3's
+scripted proposals were applied. That is real initiative and rejects the
+strict “v6 stays completely quiet” outcome. It did **not** restore an
+LLM-initiated deal or the sustained 8–12-message thread from v3/v4.
+
+The clean interpretation is that both v5 hypotheses contributed. The schema
+clause probably suppressed some initiation, because the one-line ablation
+immediately brought a message back. But most earlier traffic was still a
+symptom of lifecycle failure: once both v6 deals completed, neither model
+started a new conversation. The suffix was not the sole cause of the collapse.
+
+## Deal result
+
+Both scripted deals followed the same logical lifecycle:
+
+- proposed T157 and accepted by both LLM seats T158;
+- `keep_units_away` verified satisfied T163 (`obs-000038` and `obs-000040`);
+- payments offered and accepted T163;
+- terminal state `honored`, favor `satisfied`, payment `settled`, with zero
+  grievances.
+
+qwen made both rejected actions: a premature payment response at T162, then
+an attempt at T175 to respond to a deal for which it was not the counterparty.
+The latter happened long after both deals were terminal and did not change
+state.
+
+## Operational qualifications
+
+This was an attended recovery run, not a clean uninterrupted artifact.
+Scripted seat 0 exposed missing deterministic handlers for live empty
+production queues, diplomacy, Great Person claims, envoys, dedications, and
+governor titles; each was regression-tested and fixed before resuming. A T163
+engine payment proposal also reproduced a Civ AI hard interturn. Recovery used
+`0_MCP_0163` and preserved the channel ledger, but did not replay the two
+engine gold-transfer proposals because replay reproduced the hang. Therefore
+`settled` is proven in the channel state machine; the corresponding 50-gold
+engine transfers are not claimed as final-timeline evidence.
+
+The intended observation window was 30 game turns (T157–T186). Resume budgets
+were reduced from transcript rows, but scripted P3 consumes the shared budget
+without emitting a transcript row. That under-counted spent slots across
+restarts and extended the final artifact through seat 0 at T193: 36 unique LLM
+turns per seat instead of 30, plus a duplicate rolled-back T163 record for each
+LLM. No channel messages, deals, or grievances were added after T175, so the
+metrics and the ablation conclusion are unchanged at the intended T186 cutoff.
+Future resume accounting must include every configured seat, not only
+persisted transcript rows.
+
+## Recommendation for v7
+
+Run v7 as preregistered. It changes only `task_tracker.enabled: true` on the
+two LLM seats and asks whether harness-level intent tracking produces more
+deterministic follow-through. Treat v6's one-message/no-LLM-deal outcome as
+the comparison point, and use game-turn/seat accounting rather than transcript
+row counts if another resume is required.

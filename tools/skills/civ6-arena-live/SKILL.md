@@ -68,6 +68,23 @@ After the user says it is back to them:
 4. Confirm no arena/Codex/MCP processes remain.
 5. Start the next watcher only if the user wants the next cycle armed.
 
+### Resume budget accounting
+
+`max_puppet_turns` is a shared admission budget, not a transcript-row count.
+Every configured seat charges it, including channel-only scripted seats that
+emit no transcript row; an admitted seat-0 turn that ends `human_pending` was
+also charged before repair. Therefore never subtract `wc -l transcript.jsonl`
+or only successful rows to create a resume config.
+
+For each completed final-timeline game round, subtract the number of configured
+seats (`len(civs)`; four for channels v6/v7). Account for any partial round from
+the watcher/coordinator admission order, including transcriptless seats. If the
+exact partial-round charges cannot be proven, derive the remaining observation
+window from the loaded save's game turn and document the uncertainty; do not
+guess from transcript rows. Preserve the YAML `run_id`, archive the stopped log
+triplet with a suffix, and change only the two budget fields in an ignored
+operational resume config.
+
 ## Important Invariants
 
 - An ad-hoc handoff watcher is per-cycle and normally exits after
