@@ -1,0 +1,1 @@
+{"schema_version": 1, "run_id": "arena-channels-behavior-v8", "player_id": 2, "tasks": [{"task_id": "builder_improve:2752516", "kind": "builder_improve", "unit_id": 2752516, "target_x": 49, "target_y": 22, "created_turn": 163, "updated_turn": 164, "improvement": "IMPROVEMENT_FARM", "status": "complete", "last_result": "improvement_already_built", "failure_count": 1}]}

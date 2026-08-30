@@ -186,5 +186,24 @@ readback):
    real `\\.\DISPLAYn` and boots complete. `DisplaySwitch.exe`,
    SC_MONITORPOWER, and execution-state keepers do NOT re-attach.
 
+5. **WC-segment wedge** (v8 T182): after a WC session, `blockers=['UNKNOWN']`
+   = the WC results notification; the game can enter a state where city
+   production sets pass CanProduce yet silently fail readback and end-turn is
+   a no-op. In-place repair does NOT work — reload that turn's `AutoSave_NNNN`
+   (fresh deserialization drops the mid-segment state) and let the relaunched
+   coordinator re-run the round.
+6. **Boot roulette** (v8): cold boots hang probabilistically at ~frame 3-5
+   (one core spinning, no Auto HDR event in the System log). Verify boot
+   health with a fresh-offset `Profile.csv` frame check (healthy = frames
+   past 100 within ~4 min); on a wedge, kill and relaunch. A detached
+   display (`WinDisc` primary) makes the hang deterministic — force-attach a
+   real output first (see class 4).
+7. **Continue/leader screen input**: the bridge `press-escape` can be
+   ignored there; the reliable press is ALT-tap + SetForegroundWindow +
+   SendInput ESC with `wScan` populated (MapVirtualKeyW). Clicking works too
+   but only at OCR-derived coordinates: window origin + line (x + w/2,
+   y + h/2) from `_ocr_game_window`; screenshot-pixel guesses miss (the shot
+   file is downscaled).
+
 Resume budgets: remaining rounds × configured seats (4 for channels v6/v7),
 computed from the live game turn — see "Resume budget accounting" above.

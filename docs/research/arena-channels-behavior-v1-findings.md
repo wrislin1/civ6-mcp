@@ -838,3 +838,123 @@ alongside this section. SHA-256 of the primary evidence files:
 - `channels/state.json` — `0e02cf1a7f402d6164af3788d43c12bc10053b21ddbba2ce0fde03b54f10dbae`
 - `report.md` — `241ce3dfaa3a56906f6d42907dc331ab470967b07962edeef9bf007ff7229845`
 - `report.json` — `8a0582e636cae7c68de636aeffaa84e8165d093f4a87e4d6f1664dc6fda6b47b`
+
+# v8 — standard-tier integrated run (2026-08-30)
+
+Preregistered in `experiments/arena-channels-behavior-v8.yaml` (commit
+3499d1c): the v7 scenario unchanged — save `CHANNELS_GATE_V1_T157`, window
+T157–T186, same four seats, budgets 120/144, same scripted P3
+`keep_units_away` deals — with the integrated treatment bundle on both LLM
+seats: `tools: standard`, briefing enabled (default six sections), condensed
+playbook, 6000-char results, `context_budget: auto`. Unchanged from v7:
+max_steps 15, task tracker on, channels on with guidance. First run over the
+v7-derived stall fixes (d0a3ae7 orphan sweep, ebcb026/9292ea9/c0a6dff popup
+dismissal, e7895eb production readback) plus the mid-campaign fix 0501fd2
+(drain-arm popup dismissal).
+
+## Deal result
+
+Both scripted deals ran the full lifecycle: proposed T157, accepted T158,
+`keep_units_away` verified satisfied from real unit observations at T163
+(obs-000038, obs-000040), auto-funded T163, payment responses accepted T163,
+terminal `honored` / payment `settled`, zero grievances.
+
+**Engine-payment qualification (unlike v7):** the T163 funding fired during
+watcher leg 4 and its channel-ledger events applied once; the subsequent
+game reload to `0_MCP_0163` (saved before the interturn transfers) rolled the
+engine-side gold movement off the final timeline, and on the T163 re-run the
+channel layer correctly deduplicated (`applied_source_ids`) rather than
+re-funding. v8's payments are therefore channel-ledger-settled but NOT
+engine-verified on the surviving timeline. v7 remains the engine-transfer
+evidence artifact.
+
+## LLM behavior under the standard tier
+
+- **Zero channel initiations, zero channel messages** from either model
+  (v7: qwen sent 9 messages). Both models handled every *offered* transition
+  correctly, as in v7. The added capability surface did not induce channel
+  engagement — it redirected attention to game mechanics.
+- Heavy use of the new tools: qwen made 27 Great-People calls, gemma 6;
+  average 14.0/15.6 tool calls per turn; invalid-call rate 0.0%.
+- Task tracker: active turns 15, 12 pre-model actions, 2 completions, 1 lost
+  (per `report.md` behavior metrics).
+- Cost: gemma4-26b 3.72M prompt / 12.3k completion tokens; qwen3.6-27b 4.83M
+  prompt / 44.5k completion.
+
+## Row accounting
+
+94 transcript rows; 31 LLM rows per seat = 30 turns plus one T163 duplicate
+each from the reload replay; seat-0 duplicates at T159 and T182 (held turns
+re-admitted after watcher restarts). Distinct turns exactly T157–T186; the
+final end-turn left the live game at T187. Six watcher legs; resume configs
+in `.arena-runs/arena-channels-behavior-v8.resume-*.yaml` used the
+rounds-times-seats convention throughout.
+
+## Operational narrative (six legs, five stall classes)
+
+1. **T159 dismisser-induced cinematic orphan.** The v7-era popup fix
+   (DequeuePopup+SetHide) hid `NaturalDisasterPopup` mid-cinematic, orphaning
+   the disaster camera (black world, dead ESC, end turn suppressed) and — on
+   watcher kill — the tuner. Fixed twice: 9292ea9 (replicate Close()'s
+   restore path) and c0a6dff (call each popup context's OWN Close()/OnClose()
+   in its Lua state; the InGame hide leaks PopupManager's engine event hold —
+   observed live as event id 1640, released by in-context Close()).
+2. **Display detach.** The physical display (DENON AVR chain) dropped
+   overnight; Windows fell back to the `WinDisc` ghost display; the running
+   game wedged in `AppHost::WndProcEx ... resizing buffers` and every boot
+   wedged early (~frame 3, one core spinning, no Auto HDR event). Recovered
+   by force-attaching a real GPU output via `ChangeDisplaySettingsExW`
+   (CDS_UPDATEREGISTRY|CDS_NORESET staging + global apply) and dropping the
+   game to 1920x1080 windowed.
+3. **Boot roulette.** Even with a display attached, cold boots hung at the
+   same early stage probabilistically (2 of ~4 attempts); kill+relaunch with
+   a fresh-offset Profile.csv frame check (healthy = frames past 100) is the
+   remedy.
+4. **T163 funding drain wedge, unresolvable in place.** The drain-arm orphan
+   sweep fired autonomously and closed sessions `1-3#65539, 2-3#131075`
+   (validating d0a3ae7's mechanism), but the interturn stayed wedged through
+   every in-place lever (event-release, cinematic restore, re-sweeps).
+   Resolved by reloading `0_MCP_0163`; the re-run's T163 interturn passed
+   clean. 0501fd2 added drain-arm popup dismissal for the observed mid-drain
+   disaster; the wedge's residual cause is unattributed.
+5. **T182 World Congress segment wedge.** After the T181 WC pass
+   (completed/defaulted), T182 held with `blockers=['UNKNOWN']` — the WC
+   results notification — and the game entered a state where city production
+   operations passed CanProduce yet silently failed readback and end-turn
+   was a no-op. In-place repair exhausted; reloading `AutoSave_0182` dropped
+   the mid-segment state entirely (the save carried the post-WC world; leg 6
+   re-ran T182–T186 without incident).
+
+Unattended fix validations on the final timeline: five-plus disaster popups
+context-natively dismissed with the turn advancing (T160, T169, the T182
+re-run, and recheck dismissals between), the production-readback path
+correctly surfacing silent failures (no false repair records), and the
+orphan sweep closing real AI-AI sessions in the drain arm.
+
+## Recommendations before v9
+
+1. The treatment question is now sharp: richer capability did not produce
+   channel initiation — the models play better Civ and ignore diplomacy they
+   are not prompted into. The single-variable candidate remains a scripted
+   P3 message-only overture (no deal attached).
+2. Investigate the WC-segment city-operation refusal (silent CanProduce-pass
+   set failures) and teach the human-pending arm a WC-results/notification
+   repair; the blocker radar should map the WC results notification instead
+   of reporting UNKNOWN.
+3. Add boot-health telemetry (fresh-offset frame counter) to the launcher so
+   restart flows detect the early-boot hang without operator archaeology.
+4. The launcher's `press-escape` bridge should populate `wScan`
+   (MapVirtualKeyW) — the continue screen accepted only the scancode-bearing
+   ESC after an ALT-tap foreground assist.
+
+## Evidence integrity
+
+The run directory `arena_runs/arena-channels-behavior-v8/` is committed
+alongside this section. SHA-256 of the primary evidence files:
+
+- `transcript.jsonl` — `7d9e4bf2a08e57823b2b209a29c13cfec3d59c4bcfdd16d72b94f34c2730fa20`
+- `arena_cost.jsonl` — `e8d2f60dcd10d02faf360cf1ea8c7513e62a574ad54b826bd3e63671464ec4ff`
+- `channels/events.jsonl` — `8bb130c23d4c43d77f1e1485f5bc59eabe222ab25952bdc147db90449fdb0bde`
+- `channels/state.json` — `dc332f1ee20c5389e43cb7a4cef5f6928c0de9c0bbf3959a63e78fa24d34bdbd`
+- `report.md` — `f87bc4e1bdafeba1b2885a547dd770903078f4031c4c4c34f0976f8970e69516`
+- `report.json` — `abcbfc8a01fd2372b44f9d53b6f76ca16aba51869530a548707cd6903b4ce736`
