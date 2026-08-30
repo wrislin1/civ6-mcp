@@ -8310,7 +8310,7 @@ async def test_seat0_drain_wedge_dismisses_blocking_popups(monkeypatch, tmp_path
         harness._polls = iter([seat0_poll(8, active=True)])
         return "POPUPS|NaturalDisasterPopup"
 
-    monkeypatch.setattr(coordinator_mod, "_dismiss_blocking_popups", fake_dismiss)
+    monkeypatch.setattr(coordinator_mod, "dismiss_blocking_popups", fake_dismiss)
 
     conn = Seat0CapsConn()
     gs = FakeGSWithConn(conn)
@@ -8462,7 +8462,7 @@ async def test_seat0_quiet_recheck_dismisses_blocking_popups(monkeypatch, tmp_pa
         return "POPUPS|NaturalDisasterPopup"
 
     monkeypatch.setattr(
-        coordinator_mod, "_dismiss_blocking_popups", fake_dismiss, raising=False
+        coordinator_mod, "dismiss_blocking_popups", fake_dismiss, raising=False
     )
 
     conn = Seat0CapsConn()
@@ -8499,7 +8499,7 @@ async def test_seat0_human_pending_arm_dismisses_popups_on_sweep_cadence(
         return "POPUPS|none"
 
     monkeypatch.setattr(
-        coordinator_mod, "_dismiss_blocking_popups", fake_dismiss, raising=False
+        coordinator_mod, "dismiss_blocking_popups", fake_dismiss, raising=False
     )
     monkeypatch.setattr(coordinator_mod, "ORPHAN_SWEEP_IDLE_POLLS", 2)
     conn = FakeConn()

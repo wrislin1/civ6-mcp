@@ -9,6 +9,7 @@ from pathlib import Path
 from civ_mcp import lua as lq
 from civ_mcp.arena import autoresolve, hook, seat0
 from civ_mcp.arena.agent import load_playbook
+from civ_mcp.arena.popups import dismiss_blocking_popups
 from civ_mcp.arena.attention import (
     AttentionState,
     DIGEST_MAX_CHARS,
@@ -170,59 +171,6 @@ async def _sweep_orphan_sessions(conn) -> str:
 
 
 
-_POPUP_CONTEXT_CLOSERS = {
-    "NaturalDisasterPopup": "Close()",
-    "HistoricMoments": "Close()",
-    "BoostUnlockedPopup": "OnClose()",
-}
-
-
-async def _dismiss_blocking_popups(conn) -> str:
-    """Best-effort: close known engine popups (disaster cinematics, moment
-    timelines, boost popups) that block turn processing while the blocker
-    radar reads empty. Never raises into the poll loop.
-
-    Prefer each context's own close function, executed IN that context:
-    hiding NaturalDisasterPopup from InGame leaks its PopupManager engine
-    hold (UI.ReferenceCurrentEvent) and wedges the interturn at PLEASE WAIT
-    (observed live: v8 T159, event id 1640). The context's Close() releases
-    the engine hold, pops the Reveal input context, and re-shows bulk-hidden
-    UI. Falls back to the InGame dequeue+hide+restore Lua when per-state
-    execution or matching contexts are unavailable.
-    """
-    states = dict(getattr(conn, "lua_states", None) or {})
-    execute_in_state = getattr(conn, "execute_in_state", None)
-    closed: list[str] = []
-    if execute_in_state is not None and states:
-        for idx in sorted(states):
-            closer = _POPUP_CONTEXT_CLOSERS.get(states[idx])
-            if closer is None:
-                continue
-            lua = (
-                'if ContextPtr:IsHidden() then print("HIDDEN") '
-                f'else {closer}; print("CLOSED") end; print("{lq.SENTINEL}")'
-            )
-            try:
-                lines = await execute_in_state(idx, lua)
-            except Exception:
-                continue
-            if any("CLOSED" in line for line in lines):
-                closed.append(states[idx])
-        if closed:
-            return "POPUPS|" + ",".join(closed)
-    try:
-        lines = await conn.execute_write(lq.build_dismiss_blocking_popups())
-    except Exception:
-        return "err"
-    for line in lines:
-        if line.startswith("POPUPS|"):
-            names = [
-                name
-                for name in line.removeprefix("POPUPS|").split(",")
-                if name and name != "none" and not name.startswith("SKIPPED:")
-            ]
-            return "POPUPS|" + (",".join(names) if names else "none")
-    return "?"
 def _transcript_driver(pol) -> str:
     """Transcript `driver` label for a policy, aligned with
     PlayerSpec.driver_kind(): 'cli', 'scripted', or 'in_process'."""
@@ -1335,7 +1283,7 @@ async def run_arena(
                 # popup) also absorbs the end turn with an empty radar
                 # (observed live: v7 T165/T169). Dismiss known popups and give
                 # the pending request a fresh grace window to process.
-                popups = await _dismiss_blocking_popups(conn)
+                popups = await dismiss_blocking_popups(conn)
                 if popups not in ("POPUPS|none", "?", "err"):
                     print(f"[arena] blocking popups dismissed during seat-0 "
                           f"recheck: {popups}", file=sys.stderr)
@@ -2657,7 +2605,7 @@ async def run_arena(
                             # A queued engine popup can also be what holds a
                             # human_pending turn (observed live: v7 T165's
                             # disaster + moment + boost queue). Same cadence.
-                            popups = await _dismiss_blocking_popups(conn)
+                            popups = await dismiss_blocking_popups(conn)
                             if popups not in ("POPUPS|none", "?", "err"):
                                 print(f"[arena] blocking popups dismissed "
                                       f"while human_pending: {popups}",
@@ -2729,7 +2677,7 @@ async def run_arena(
                             # (observed live: v8 T162 -- drain wedged 30m at
                             # PLEASE WAIT under a black DisasterCinematic
                             # lens). Dismiss popups on the same cadence.
-                            popups = await _dismiss_blocking_popups(conn)
+                            popups = await dismiss_blocking_popups(conn)
                             if popups not in ("POPUPS|none", "?", "err"):
                                 print(f"[arena] blocking popups dismissed "
                                       f"during seat-0 drain: {popups}",

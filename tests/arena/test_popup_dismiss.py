@@ -9,7 +9,7 @@ The dismiss pass closes those known popup contexts from Lua instead.
 import asyncio
 
 from civ_mcp import lua as lq
-from civ_mcp.arena.coordinator import _dismiss_blocking_popups
+from civ_mcp.arena.popups import dismiss_blocking_popups
 
 
 class PopupRecordingConn:
@@ -55,10 +55,10 @@ def test_dismiss_blocking_popups_reports_and_swallows_errors():
         async def execute_write(self, lua, timeout=5.0):
             raise ConnectionError("dead socket")
 
-    assert asyncio.run(_dismiss_blocking_popups(_Boom())) == "err"
+    assert asyncio.run(dismiss_blocking_popups(_Boom())) == "err"
 
     conn = PopupRecordingConn(lines=["POPUPS|NaturalDisasterPopup"])
-    assert asyncio.run(_dismiss_blocking_popups(conn)) == "POPUPS|NaturalDisasterPopup"
+    assert asyncio.run(dismiss_blocking_popups(conn)) == "POPUPS|NaturalDisasterPopup"
 
 
 def test_dismiss_fallback_does_not_claim_a_skipped_disaster_was_closed():
@@ -66,7 +66,7 @@ def test_dismiss_fallback_does_not_claim_a_skipped_disaster_was_closed():
     deadlines. 050b0c4 originally returned the skip through the POPUPS success
     channel, so every drain cadence could reset without closing anything."""
     conn = PopupRecordingConn(lines=["POPUPS|SKIPPED:NaturalDisasterPopup"])
-    assert asyncio.run(_dismiss_blocking_popups(conn)) == "POPUPS|none"
+    assert asyncio.run(dismiss_blocking_popups(conn)) == "POPUPS|none"
 
 
 class ContextCloseConn(PopupRecordingConn):
@@ -94,7 +94,7 @@ def test_dismiss_prefers_context_native_close():
         in_state_lines={73: ["PopupManager.Unlock 'NaturalDisasterPopup'", "CLOSED"],
                         90: ["HIDDEN"]},
     )
-    result = asyncio.run(_dismiss_blocking_popups(conn))
+    result = asyncio.run(dismiss_blocking_popups(conn))
     assert result == "POPUPS|NaturalDisasterPopup"
     assert conn.write_calls == []          # never fell back to the InGame hide
     by_idx = dict(conn.state_calls)
@@ -108,10 +108,10 @@ def test_dismiss_falls_back_to_ingame_hide_without_states():
     """A conn without per-state execution (or with no matching contexts)
     keeps the v7-era InGame dequeue+hide+restore path."""
     conn = PopupRecordingConn(lines=["POPUPS|HistoricMoments"])
-    assert asyncio.run(_dismiss_blocking_popups(conn)) == "POPUPS|HistoricMoments"
+    assert asyncio.run(dismiss_blocking_popups(conn)) == "POPUPS|HistoricMoments"
     assert len(conn.write_calls) == 1
 
     empty = ContextCloseConn(states={5: "InGame"})
     empty._lines = ["POPUPS|none"]
-    assert asyncio.run(_dismiss_blocking_popups(empty)) == "POPUPS|none"
+    assert asyncio.run(dismiss_blocking_popups(empty)) == "POPUPS|none"
     assert len(empty.write_calls) == 1     # fallback ran the builder
