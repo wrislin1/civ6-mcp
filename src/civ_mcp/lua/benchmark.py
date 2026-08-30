@@ -44,7 +44,7 @@ local ok_tr, tr = pcall(function() return p:GetTreasury() end)
 if ok_tr and tr then gold = tr:GetGoldBalance() end
 pcall(function() faith = p:GetReligion():GetFaithBalance() end)
 print("IDENTITY|" .. civType .. "|" .. seed .. "|" .. turn .. "|" .. activePlayer
-      .. "|" .. pid .. "|" .. gold .. "|" .. faith)
+      .. "|" .. pid .. "|" .. string.format("%.1f", gold) .. "|" .. string.format("%.1f", faith))
 for i, u in p:GetUnits():Members() do
     local uid = u:GetID()
     local entry = GameInfo.Units[u:GetType()]
