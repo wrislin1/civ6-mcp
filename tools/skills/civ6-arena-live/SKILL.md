@@ -174,5 +174,17 @@ readback):
    `GameState.set_city_production(...)`, then relaunch — the fresh
    coordinator re-admits the held turn and ends it itself.
 
+4. **Display-detach boot wedge** (2026-08-30): if the physical display
+   powers off, Windows drops to the `WinDisc` ghost display; the running game
+   wedges in `AppHost::WndProcEx ... resizing buffers` (tuner dies) and every
+   relaunch wedges at boot (~frame 3, one core spinning, no Auto HDR event).
+   Pixels are useless (black captures); read
+   `AppData\Local\Firaxis Games\...\Logs\Profile.csv` (fresh-offset frame
+   counter) and `Renderer.log`. Fix: force-attach a detached GPU output with
+   `ChangeDisplaySettingsExW(output, mode, CDS_UPDATEREGISTRY|CDS_NORESET)`
+   per output, then a final global apply — primary flips from `WinDisc` to a
+   real `\\.\DISPLAYn` and boots complete. `DisplaySwitch.exe`,
+   SC_MONITORPOWER, and execution-state keepers do NOT re-attach.
+
 Resume budgets: remaining rounds × configured seats (4 for channels v6/v7),
 computed from the live game turn — see "Resume budget accounting" above.
