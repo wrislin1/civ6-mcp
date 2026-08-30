@@ -35,18 +35,17 @@ def test_build_dismiss_blocking_popups_lua_shape():
     assert "DequeuePopup" in lua
     assert "SetHide" in lua
     assert "POPUPS|" in lua
-    # Force-hiding NaturalDisasterPopup mid-cinematic orphans the disaster
-    # camera (observed live: v8 T159 — black world, dead ESC, end turn
-    # suppressed). The dismisser must replicate the popup's own Close()
-    # restore path, not merely hide the context.
-    for restore_call in (
-        "StopAllCameraAnimations",
-        "InterfaceModeTypes.SELECTION",
-        "UILens.RestoreActiveLens",
-        "NaturalDisasterPopup_Closed",
-        "ClearTemporaryPlotVisibility",
-    ):
-        assert restore_call in lua, restore_call
+    # Force-hiding NaturalDisasterPopup leaks its PopupManager engine hold
+    # (UI.ReferenceCurrentEvent) — the hold is context-local, so no InGame
+    # restore block can release it (proven live: v8 T159 wedged at PLEASE
+    # WAIT even after the full Close()-replication restore ran). The InGame
+    # fallback must therefore never force-hide the disaster popup: it only
+    # reports it as skipped, leaving dismissal to the context-native path.
+    assert "SKIPPED:NaturalDisasterPopup" in lua
+    hide_list = lua.split("local names")[1].split("}")[0]
+    assert "NaturalDisasterPopup" not in hide_list
+    assert "HistoricMoments" in hide_list
+    assert "BoostUnlockedPopup" in hide_list
 
 
 def test_dismiss_blocking_popups_reports_and_swallows_errors():

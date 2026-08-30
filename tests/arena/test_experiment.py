@@ -33,6 +33,7 @@ ARENA_CHANNELS_BEHAVIOR_V4 = REPO_ROOT / "experiments" / "arena-channels-behavio
 ARENA_CHANNELS_BEHAVIOR_V5 = REPO_ROOT / "experiments" / "arena-channels-behavior-v5.yaml"
 ARENA_CHANNELS_BEHAVIOR_V6 = REPO_ROOT / "experiments" / "arena-channels-behavior-v6.yaml"
 ARENA_CHANNELS_BEHAVIOR_V7 = REPO_ROOT / "experiments" / "arena-channels-behavior-v7.yaml"
+ARENA_CHANNELS_BEHAVIOR_V8 = REPO_ROOT / "experiments" / "arena-channels-behavior-v8.yaml"
 
 GOOD = """
 run_id: exp-1
@@ -460,6 +461,74 @@ def test_arena_channels_behavior_v7_is_tracker_only_delta_from_v6():
         run_id=v6.run_id,
         players=normalized_players,
     ) == v6
+
+
+def test_arena_channels_behavior_v8_is_standard_tier_bundle_delta_from_v7():
+    """Pin the intentional v7->v8 deltas (review finding 5, 2026-08-30).
+
+    v8 adds the rich bundle to both LLM seats: tools standard, 6000-char
+    results, condensed playbook, auto context budget, briefing enabled in
+    config. Everything else (seats, channel script, tracker, steps) matches
+    v7; budgets and idle limit are v8's own.
+    """
+    v7 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V7)
+    v8 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V8)
+    by_player = {player.player_id: player for player in v8.players}
+
+    assert v8.run_id == "arena-channels-behavior-v8"
+    assert (v8.max_puppet_turns, v8.max_game_turns) == (120, 144)
+    assert v8.idle_poll_limit == 3600
+    for pid in (1, 2):
+        o = by_player[pid].options
+        assert o.tools == "standard"
+        assert o.result_char_cap == 6000
+        assert o.playbook == "condensed"
+        assert o.context_budget == "auto"
+        assert o.briefing.enabled is True
+        assert o.max_steps == 15
+        assert o.task_tracker.enabled is True
+        assert o.channels.enabled is True
+
+    normalized_players = [
+        replace(
+            player,
+            options=replace(
+                player.options,
+                tools="minimal",
+                result_char_cap=1500,
+                playbook="none",
+                briefing=replace(player.options.briefing, enabled=False),
+            ),
+        )
+        if player.player_id in {1, 2}
+        else player
+        for player in v8.players
+    ]
+    assert replace(
+        v8,
+        run_id=v7.run_id,
+        idle_poll_limit=v7.idle_poll_limit,
+        players=normalized_players,
+    ) == v7
+
+
+def test_arena_channels_behavior_v8_briefing_budget_is_zero_as_run():
+    """Document the v8 flaw found in review (2026-08-30): with the models'
+    detected n_ctx of 32768, max_steps 15 x result_char_cap 6000 reserves
+    38,704+ tokens, so briefing_budget() is 0 and NO briefing was ever
+    rendered — v8 exercised standard tools + playbook + result cap, not
+    briefing content (report.md: avg briefing tok 0.0 on both seats).
+
+    Any v9 that claims briefing as treatment must flip this assertion to
+    `> 0` by raising n_ctx or lowering the steps x cap reserve.
+    """
+    from civ_mcp.arena.budget import briefing_budget
+
+    v8 = load_experiment(ARENA_CHANNELS_BEHAVIOR_V8)
+    o = {player.player_id: player for player in v8.players}[1].options
+    assert briefing_budget(
+        32768, o, playbook_chars=0, tool_schema_chars=0
+    ) == 0
 
 
 def test_rejects_auto_accept_without_channels_enabled(tmp_path):

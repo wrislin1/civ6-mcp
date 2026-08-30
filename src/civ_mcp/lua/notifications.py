@@ -332,40 +332,35 @@ BLOCKING_TOOL_MAP: dict[str, str] = {
 def build_dismiss_blocking_popups() -> str:
     """Close known engine popups that block turn processing (InGame context).
 
-    Observed live (2026-08-30, arena-channels-behavior-v7): Gathering Storm
-    disaster cinematics (`NaturalDisasterPopup`), the Historic Moments
-    timeline, and the Inspiration/Eureka popup (`BoostUnlockedPopup`) hold the
-    end turn while the EndTurnBlocking query reads empty, so seat 0 stalls
-    with `blockers=[]` until a human presses ESC. Dequeue and hide each one
-    that is currently visible. Reports 'POPUPS|none' or 'POPUPS|<name>,...'.
+    Observed live (2026-08-30, arena-channels-behavior-v7): the Historic
+    Moments timeline and the Inspiration/Eureka popup (`BoostUnlockedPopup`)
+    hold the end turn while the EndTurnBlocking query reads empty. Dequeue
+    and hide each one that is currently visible.
+
+    `NaturalDisasterPopup` is deliberately NOT hidden here: hiding it leaks
+    its PopupManager engine hold (`UI.ReferenceCurrentEvent`), which is
+    context-local and unreachable from InGame -- the interturn then wedges at
+    PLEASE WAIT even after a full Close()-replication restore (proven live:
+    v8 T159, event id 1640). A visible disaster popup is only REPORTED as
+    skipped; dismissal belongs to the context-native path in
+    `coordinator._dismiss_blocking_popups`, which runs the popup's own
+    Close() in its Lua state. Reports 'POPUPS|none' or 'POPUPS|<name>,...'
+    (with 'SKIPPED:NaturalDisasterPopup' when the disaster popup is up).
     """
     return """
 local closed = {}
-local names = {"NaturalDisasterPopup", "HistoricMoments", "BoostUnlockedPopup"}
+local names = {"HistoricMoments", "BoostUnlockedPopup"}
 for _, name in ipairs(names) do
     local ctl = ContextPtr:LookUpControl("/InGame/" .. name)
     if ctl ~= nil and not ctl:IsHidden() then
         pcall(function() UIManager:DequeuePopup(ctl) end)
         pcall(function() ctl:SetHide(true) end)
-        if name == "NaturalDisasterPopup" then
-            -- Hiding the context alone orphans the disaster cinematic
-            -- (observed live: v8 T159 -- black world, dead ESC, end turn
-            -- suppressed). Replicate the popup's own Close() restore path.
-            pcall(function() UI.ClearTemporaryPlotVisibility("NaturalDisaster") end)
-            pcall(function() Events.StopAllCameraAnimations() end)
-            pcall(function() LuaEvents.NaturalDisasterPopup_Closed() end)
-            pcall(function() UI.SetInterfaceMode(InterfaceModeTypes.SELECTION) end)
-            pcall(function() UILens.RestoreActiveLens() end)
-            local sounds = {"Blizzard", "Flood", "Hurricane", "Sandstorm",
-                            "Tornado", "Volcano", "Drought", "Meltdown",
-                            "CometStrike", "ForestFire", "MeteorShower",
-                            "SolarFlare"}
-            for _, s in ipairs(sounds) do
-                pcall(function() UI.PlaySound("Stop_Disaster_" .. s .. "_Movie_Loop") end)
-            end
-        end
         closed[#closed+1] = name
     end
+end
+local disaster = ContextPtr:LookUpControl("/InGame/NaturalDisasterPopup")
+if disaster ~= nil and not disaster:IsHidden() then
+    closed[#closed+1] = "SKIPPED:NaturalDisasterPopup"
 end
 if #closed > 0 then
     print("POPUPS|" .. table.concat(closed, ","))

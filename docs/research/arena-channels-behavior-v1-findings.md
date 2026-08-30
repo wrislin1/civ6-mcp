@@ -845,8 +845,8 @@ Preregistered in `experiments/arena-channels-behavior-v8.yaml` (commit
 3499d1c): the v7 scenario unchanged — save `CHANNELS_GATE_V1_T157`, window
 T157–T186, same four seats, budgets 120/144, same scripted P3
 `keep_units_away` deals — with the integrated treatment bundle on both LLM
-seats: `tools: standard`, briefing enabled (default six sections), condensed
-playbook, 6000-char results, `context_budget: auto`. Unchanged from v7:
+seats: `tools: standard`, briefing enabled in config, condensed playbook,
+6000-char results, `context_budget: auto`. Unchanged from v7:
 max_steps 15, task tracker on, channels on with guidance. First run over the
 v7-derived stall fixes (d0a3ae7 orphan sweep, ebcb026/9292ea9/c0a6dff popup
 dismissal, e7895eb production readback) plus the mid-campaign fix 0501fd2
@@ -868,12 +868,26 @@ re-funding. v8's payments are therefore channel-ledger-settled but NOT
 engine-verified on the surviving timeline. v7 remains the engine-transfer
 evidence artifact.
 
+**Review correction (2026-08-30): briefing never rendered.** Both seats
+recorded `briefing_tokens: 0` on every turn (report.md: avg briefing tok
+0.0). Mechanically inevitable: `briefing_budget()` reserves
+`max_steps x (result_char_cap/3 + 512) + 1024` = 38,704+ tokens against the
+detected 32,768-token n_ctx, leaving a zero budget, so `maybe_build_briefing`
+emitted nothing. v8 therefore exercised standard tools + condensed playbook +
+6000-char results + auto context handling, NOT briefing content. A config
+pin test now documents this
+(`test_arena_channels_behavior_v8_briefing_budget_is_zero_as_run`); any v9
+claiming briefing as treatment must make that budget positive.
+
 ## LLM behavior under the standard tier
 
 - **Zero channel initiations, zero channel messages** from either model
   (v7: qwen sent 9 messages). Both models handled every *offered* transition
-  correctly, as in v7. The added capability surface did not induce channel
-  engagement — it redirected attention to game mechanics.
+  correctly, as in v7. Because v8 changed a bundle (tool tier, result cap,
+  playbook, context handling, idle limit), the supported claim is: under the
+  integrated v8 configuration the models used substantially more Civ
+  capability and sent no channel messages — the bundle does not isolate
+  which component displaced channel engagement.
 - Heavy use of the new tools: qwen made 27 Great-People calls, gemma 6;
   average 14.0/15.6 tool calls per turn; invalid-call rate 0.0%.
 - Task tracker: active turns 15, 12 pre-model actions, 2 completions, 1 lost
@@ -933,10 +947,11 @@ orphan sweep closing real AI-AI sessions in the drain arm.
 
 ## Recommendations before v9
 
-1. The treatment question is now sharp: richer capability did not produce
-   channel initiation — the models play better Civ and ignore diplomacy they
-   are not prompted into. The single-variable candidate remains a scripted
-   P3 message-only overture (no deal attached).
+1. The treatment question stays open: under the v8 bundle no channel
+   initiation occurred, but the bundle does not isolate the cause. The
+   single-variable candidate remains a scripted P3 message-only overture
+   (no deal attached); a briefing-effective rerun (budget > 0) is a second
+   candidate now that v8 is known to have run briefing-less.
 2. Investigate the WC-segment city-operation refusal (silent CanProduce-pass
    set failures) and teach the human-pending arm a WC-results/notification
    repair; the blocker radar should map the WC results notification instead
@@ -950,7 +965,9 @@ orphan sweep closing real AI-AI sessions in the drain arm.
 ## Evidence integrity
 
 The run directory `arena_runs/arena-channels-behavior-v8/` is committed
-alongside this section. SHA-256 of the primary evidence files:
+alongside this section, including `ops/` with the six watcher-leg log
+archives and the three operational resume configs referenced by the
+narrative above. SHA-256 of the primary evidence files:
 
 - `transcript.jsonl` — `7d9e4bf2a08e57823b2b209a29c13cfec3d59c4bcfdd16d72b94f34c2730fa20`
 - `arena_cost.jsonl` — `e8d2f60dcd10d02faf360cf1ea8c7513e62a574ad54b826bd3e63671464ec4ff`

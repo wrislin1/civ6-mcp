@@ -1,0 +1,79 @@
+# arena-channels-behavior-v8 — standard-tier integrated run (preregistered 2026-08-30)
+#
+# Same scenario as v7 (save CHANNELS_GATE_V1_T157, window T157+, same seats,
+# same budgets, same scripted P3 keep_units_away deals). Treatment bundle on
+# both LLM seats, mirroring the ab-minimal-vs-standard rich configuration:
+#   tools minimal -> standard   (builder economy, GP, map/tech, combat, civics)
+#   briefing enabled            (surface-scoped briefing, default 6 sections)
+#   result_char_cap 1500 -> 6000, playbook condensed, context_budget auto
+# Unchanged from v7: max_steps 15, task_tracker on, channels on + guidance,
+# channel_rules, budgets 120/144. Question: with the full merged capability
+# surface, do the models play materially better Civ, and does any channel
+# behavior change (v7 result: perfect offered-deal lifecycle, zero initiations)?
+# First run over the landed stall fixes (orphan sweep d0a3ae7, popup dismiss
+# ebcb026, production readback e7895eb) — doubles as their live validation.
+run_id: arena-channels-behavior-v8
+max_puppet_turns: 112  # resume: T157-T158 consumed (2 rounds x 4); AutoSave_0159 replays T159 in full
+max_game_turns: 136   # 144 - 8, same accounting
+idle_poll_limit: 3600
+channel_rules:
+  acceptance_turns: 3
+  funding_turns: 2
+  payment_response_turns: 2
+civs:
+  - player: 0
+    provider: scripted
+    model: seat0-smoke
+    attention: {mode: "off"}
+  - player: 1
+    provider: local
+    model: gemma4-26b
+    gateway: http://192.168.20.196:11440/v1
+    tools: standard
+    result_char_cap: 6000
+    max_steps: 15
+    playbook: condensed
+    context_budget: auto
+    briefing: {enabled: true}
+    task_tracker: {enabled: true}
+    channels: {enabled: true, guidance: true}
+  - player: 2
+    provider: local
+    model: qwen3.6-27b
+    gateway: http://192.168.20.196:11441/v1
+    tools: standard
+    result_char_cap: 6000
+    max_steps: 15
+    playbook: condensed
+    context_budget: auto
+    briefing: {enabled: true}
+    task_tracker: {enabled: true}
+    channels: {enabled: true, guidance: true}
+  - player: 3
+    provider: scripted
+    channels:
+      enabled: true
+      auto_accept: true
+      script:
+        - turn: 157
+          action: propose_deal
+          args:
+            to_player: 1
+            text: "I'll pay you 50 gold if you keep your military units at least 3 tiles away from my lands for the next few turns. A simple deal to build trust between us."
+            favor:
+              term_type: keep_units_away
+              params: {player_id: 3, min_distance: 3, unit_scope: military}
+            payment_gold: 50
+            timing: on_delivery
+            within: 5
+        - turn: 157
+          action: propose_deal
+          args:
+            to_player: 2
+            text: "I'll pay you 50 gold if you keep your military units at least 3 tiles away from my lands for the next few turns. A simple deal to build trust between us."
+            favor:
+              term_type: keep_units_away
+              params: {player_id: 3, min_distance: 3, unit_scope: military}
+            payment_gold: 50
+            timing: on_delivery
+            within: 5
