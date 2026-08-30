@@ -41,7 +41,7 @@ def test_build_dismiss_blocking_popups_lua_shape():
     # WAIT even after the full Close()-replication restore ran). The InGame
     # fallback must therefore never force-hide the disaster popup: it only
     # reports it as skipped, leaving dismissal to the context-native path.
-    assert "SKIPPED:NaturalDisasterPopup" in lua
+    assert "POPUP_SKIPPED|NaturalDisasterPopup" in lua
     hide_list = lua.split("local names")[1].split("}")[0]
     assert "NaturalDisasterPopup" not in hide_list
     assert "HistoricMoments" in hide_list
@@ -59,6 +59,14 @@ def test_dismiss_blocking_popups_reports_and_swallows_errors():
 
     conn = PopupRecordingConn(lines=["POPUPS|NaturalDisasterPopup"])
     assert asyncio.run(_dismiss_blocking_popups(conn)) == "POPUPS|NaturalDisasterPopup"
+
+
+def test_dismiss_fallback_does_not_claim_a_skipped_disaster_was_closed():
+    """A skipped-only fallback result must not reset the coordinator's stall
+    deadlines. 050b0c4 originally returned the skip through the POPUPS success
+    channel, so every drain cadence could reset without closing anything."""
+    conn = PopupRecordingConn(lines=["POPUPS|SKIPPED:NaturalDisasterPopup"])
+    assert asyncio.run(_dismiss_blocking_popups(conn)) == "POPUPS|none"
 
 
 class ContextCloseConn(PopupRecordingConn):

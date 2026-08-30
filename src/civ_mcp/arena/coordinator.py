@@ -216,7 +216,12 @@ async def _dismiss_blocking_popups(conn) -> str:
         return "err"
     for line in lines:
         if line.startswith("POPUPS|"):
-            return line
+            names = [
+                name
+                for name in line.removeprefix("POPUPS|").split(",")
+                if name and name != "none" and not name.startswith("SKIPPED:")
+            ]
+            return "POPUPS|" + (",".join(names) if names else "none")
     return "?"
 def _transcript_driver(pol) -> str:
     """Transcript `driver` label for a policy, aligned with

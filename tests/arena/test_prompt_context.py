@@ -107,3 +107,35 @@ async def test_maybe_build_briefing_returns_empty_when_disabled(monkeypatch):
     )
 
     assert result == Briefing()
+
+
+@pytest.mark.asyncio
+async def test_enabled_zero_budget_briefing_records_misconfiguration(monkeypatch, caplog):
+    """An enabled briefing must not disappear silently as it did in v8."""
+    async def fail_build_briefing(*args, **kwargs):
+        raise AssertionError("zero-budget briefing must not query game state")
+
+    monkeypatch.setattr(
+        "civ_mcp.arena.prompt_context.build_briefing",
+        fail_build_briefing,
+    )
+    options = CivOptions(
+        max_steps=15,
+        result_char_cap=6000,
+        briefing=BriefingOptions(enabled=True),
+    )
+
+    result = await maybe_build_briefing(
+        object(),
+        options,
+        n_ctx=32768,
+        playbook_chars=0,
+        tool_schema_chars=0,
+        surface="arena",
+    )
+
+    assert result.text == ""
+    assert result.errors == [
+        "briefing_budget_zero: n_ctx=32768 max_steps=15 result_char_cap=6000"
+    ]
+    assert "enabled briefing has zero effective budget" in caplog.text

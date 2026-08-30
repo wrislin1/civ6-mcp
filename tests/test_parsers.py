@@ -425,6 +425,28 @@ class TestParseEndTurnBlocking:
         blockers = parse_end_turn_blocking(lines)
         assert len(blockers) == 2
 
+    def test_world_congress_results_recovers_unknown_blocker_name(self):
+        """Gathering Storm can omit the WC-results value from the reverse
+        EndTurnBlockingTypes table (v8 T182). The stable notification type
+        identifies the existing informational LOOK cleanup without treating
+        unrelated unknown blockers as safe."""
+        blockers = parse_end_turn_blocking([
+            "BLOCKING|UNKNOWN|Review World Congress results|"
+            "NOTIFICATION_WORLD_CONGRESS_RESULTS|17"
+        ])
+        assert blockers == [
+            (
+                "ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK",
+                "Review World Congress results",
+            )
+        ]
+
+    def test_unrecognized_unknown_blocker_stays_unknown(self):
+        blockers = parse_end_turn_blocking([
+            "BLOCKING|UNKNOWN|Unrecognized prompt|NOTIFICATION_SOMETHING_NEW|99"
+        ])
+        assert blockers == [("UNKNOWN", "Unrecognized prompt")]
+
     def test_empty_lines(self):
         assert parse_end_turn_blocking([]) == []
 

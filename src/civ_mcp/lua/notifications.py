@@ -28,10 +28,12 @@ if list then
                 for k, v in pairs(EndTurnBlockingTypes) do
                     if v == bt then typeName = k; break end
                 end
+                local notificationType = entry:GetTypeName() or "UNKNOWN"
                 if not seen[typeName] then
                     seen[typeName] = true
                     local msg = (entry:GetMessage() or ""):gsub("|", "/")
-                    print("BLOCKING|" .. typeName .. "|" .. msg)
+                    print("BLOCKING|" .. typeName .. "|" .. msg .. "|" ..
+                          notificationType .. "|" .. tostring(bt))
                     found = found + 1
                 end
             end
@@ -265,6 +267,12 @@ def parse_end_turn_blocking(lines: list[str]) -> list[tuple[str, str]]:
             parts = line.split("|")
             blocking_type = parts[1] if len(parts) > 1 else "UNKNOWN"
             msg = parts[2] if len(parts) > 2 else ""
+            notification_type = parts[3] if len(parts) > 3 else ""
+            if (
+                blocking_type == "UNKNOWN"
+                and notification_type == "NOTIFICATION_WORLD_CONGRESS_RESULTS"
+            ):
+                blocking_type = "ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK"
             blockers.append((blocking_type, msg))
     return blockers
 
@@ -360,7 +368,7 @@ for _, name in ipairs(names) do
 end
 local disaster = ContextPtr:LookUpControl("/InGame/NaturalDisasterPopup")
 if disaster ~= nil and not disaster:IsHidden() then
-    closed[#closed+1] = "SKIPPED:NaturalDisasterPopup"
+    print("POPUP_SKIPPED|NaturalDisasterPopup")
 end
 if #closed > 0 then
     print("POPUPS|" .. table.concat(closed, ","))

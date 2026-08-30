@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Collection
 
 from civ_mcp.narrate import ToolSurface
 from civ_mcp.arena.briefing import Briefing, build_briefing
 from civ_mcp.arena.budget import briefing_budget
+
+
+log = logging.getLogger(__name__)
 
 
 async def maybe_build_briefing(
@@ -34,6 +38,13 @@ async def maybe_build_briefing(
         playbook_chars,
         tool_schema_chars,
     )
+    if budget <= 0:
+        error = (
+            f"briefing_budget_zero: n_ctx={n_ctx} max_steps={options.max_steps} "
+            f"result_char_cap={options.result_char_cap}"
+        )
+        log.warning("enabled briefing has zero effective budget: %s", error)
+        return Briefing(errors=[error])
     return await build_briefing(
         gs,
         options.briefing,
