@@ -60,3 +60,51 @@ def test_dismiss_blocking_popups_reports_and_swallows_errors():
 
     conn = PopupRecordingConn(lines=["POPUPS|NaturalDisasterPopup"])
     assert asyncio.run(_dismiss_blocking_popups(conn)) == "POPUPS|NaturalDisasterPopup"
+
+
+class ContextCloseConn(PopupRecordingConn):
+    """Conn whose tuner state list exposes popup contexts (live: v8 T159
+    showed 135 in-game states with NaturalDisasterPopup at index 73)."""
+
+    def __init__(self, states, in_state_lines=None):
+        super().__init__()
+        self.lua_states = dict(states)
+        self.state_calls = []
+        self._in_state_lines = in_state_lines or {}
+
+    async def execute_in_state(self, state_index, lua, timeout=5.0):
+        self.state_calls.append((state_index, lua))
+        return self._in_state_lines.get(state_index, ["HIDDEN"])
+
+
+def test_dismiss_prefers_context_native_close():
+    """Hiding NaturalDisasterPopup from InGame leaks its PopupManager engine
+    hold (UI.ReferenceCurrentEvent) and wedges the interturn at PLEASE WAIT
+    (observed live: v8 T159, event id 1640). The dismisser must call each
+    visible popup context's own close function in that context instead."""
+    conn = ContextCloseConn(
+        states={5: "InGame", 73: "NaturalDisasterPopup", 90: "BoostUnlockedPopup"},
+        in_state_lines={73: ["PopupManager.Unlock 'NaturalDisasterPopup'", "CLOSED"],
+                        90: ["HIDDEN"]},
+    )
+    result = asyncio.run(_dismiss_blocking_popups(conn))
+    assert result == "POPUPS|NaturalDisasterPopup"
+    assert conn.write_calls == []          # never fell back to the InGame hide
+    by_idx = dict(conn.state_calls)
+    assert "Close()" in by_idx[73]
+    assert "OnClose()" in by_idx[90]       # boost popup's closer is OnClose
+    assert "IsHidden" in by_idx[73]        # only closes visible contexts
+    assert 5 not in by_idx                 # InGame itself is never a target
+
+
+def test_dismiss_falls_back_to_ingame_hide_without_states():
+    """A conn without per-state execution (or with no matching contexts)
+    keeps the v7-era InGame dequeue+hide+restore path."""
+    conn = PopupRecordingConn(lines=["POPUPS|HistoricMoments"])
+    assert asyncio.run(_dismiss_blocking_popups(conn)) == "POPUPS|HistoricMoments"
+    assert len(conn.write_calls) == 1
+
+    empty = ContextCloseConn(states={5: "InGame"})
+    empty._lines = ["POPUPS|none"]
+    assert asyncio.run(_dismiss_blocking_popups(empty)) == "POPUPS|none"
+    assert len(empty.write_calls) == 1     # fallback ran the builder

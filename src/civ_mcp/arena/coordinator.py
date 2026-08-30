@@ -170,10 +170,46 @@ async def _sweep_orphan_sessions(conn) -> str:
 
 
 
+_POPUP_CONTEXT_CLOSERS = {
+    "NaturalDisasterPopup": "Close()",
+    "HistoricMoments": "Close()",
+    "BoostUnlockedPopup": "OnClose()",
+}
+
+
 async def _dismiss_blocking_popups(conn) -> str:
     """Best-effort: close known engine popups (disaster cinematics, moment
     timelines, boost popups) that block turn processing while the blocker
-    radar reads empty. Never raises into the poll loop."""
+    radar reads empty. Never raises into the poll loop.
+
+    Prefer each context's own close function, executed IN that context:
+    hiding NaturalDisasterPopup from InGame leaks its PopupManager engine
+    hold (UI.ReferenceCurrentEvent) and wedges the interturn at PLEASE WAIT
+    (observed live: v8 T159, event id 1640). The context's Close() releases
+    the engine hold, pops the Reveal input context, and re-shows bulk-hidden
+    UI. Falls back to the InGame dequeue+hide+restore Lua when per-state
+    execution or matching contexts are unavailable.
+    """
+    states = dict(getattr(conn, "lua_states", None) or {})
+    execute_in_state = getattr(conn, "execute_in_state", None)
+    closed: list[str] = []
+    if execute_in_state is not None and states:
+        for idx in sorted(states):
+            closer = _POPUP_CONTEXT_CLOSERS.get(states[idx])
+            if closer is None:
+                continue
+            lua = (
+                'if ContextPtr:IsHidden() then print("HIDDEN") '
+                f'else {closer}; print("CLOSED") end; print("{lq.SENTINEL}")'
+            )
+            try:
+                lines = await execute_in_state(idx, lua)
+            except Exception:
+                continue
+            if any("CLOSED" in line for line in lines):
+                closed.append(states[idx])
+        if closed:
+            return "POPUPS|" + ",".join(closed)
     try:
         lines = await conn.execute_write(lq.build_dismiss_blocking_popups())
     except Exception:
@@ -182,8 +218,6 @@ async def _dismiss_blocking_popups(conn) -> str:
         if line.startswith("POPUPS|"):
             return line
     return "?"
-
-
 def _transcript_driver(pol) -> str:
     """Transcript `driver` label for a policy, aligned with
     PlayerSpec.driver_kind(): 'cli', 'scripted', or 'in_process'."""
