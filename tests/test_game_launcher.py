@@ -382,6 +382,74 @@ def test_navigation_does_not_dismiss_cinematic_for_existing_game(monkeypatch):
     assert calls == ["Single Player"]
 
 
+def test_navigation_uses_scrollable_save_search(monkeypatch):
+    searched: list[str] = []
+
+    monkeypatch.setattr(game_launcher, "_require_gui_deps", lambda: None)
+    monkeypatch.setattr(game_launcher, "is_game_running", lambda: True)
+    monkeypatch.setattr(game_launcher, "_dismiss_crash_dialog", lambda: None)
+    monkeypatch.setattr(game_launcher, "_click_aspyr_launcher_sync", lambda: None)
+    monkeypatch.setattr(game_launcher, "_click_text", lambda _text, **_kwargs: True)
+    monkeypatch.setattr(
+        game_launcher,
+        "_click_save_in_scrollable_list",
+        lambda save_name: searched.append(save_name) or False,
+        raising=False,
+    )
+
+    result = game_launcher._navigate_to_save_sync("CHANNELS_GATE_V1_T157", tab=None)
+
+    assert result.startswith("FAILED: Save 'CHANNELS_GATE_V1_T157' not found")
+    assert searched == ["CHANNELS_GATE_V1_T157"]
+
+
+def test_windows_save_search_scrolls_until_target_is_visible(monkeypatch):
+    clicks = iter([False, False, True])
+    scrolls: list[bool] = []
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(
+        game_launcher,
+        "_click_text",
+        lambda _text, **_kwargs: next(clicks),
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_scroll_save_list_down_win32",
+        lambda: scrolls.append(True) or True,
+        raising=False,
+    )
+
+    assert game_launcher._click_save_in_scrollable_list("CHANNELS_GATE_V1_T157")
+    assert scrolls == [True, True]
+
+
+def test_windows_save_scroll_targets_list_and_sends_wheel_step(monkeypatch):
+    cursor_positions: list[tuple[int, int]] = []
+    wheel_events: list[tuple[int, int, int, int, int]] = []
+    fake_api = ModuleType("win32api")
+    fake_api.SetCursorPos = cursor_positions.append
+    fake_api.mouse_event = lambda *args: wheel_events.append(args)
+    fake_con = ModuleType("win32con")
+    fake_con.MOUSEEVENTF_WHEEL = 0x0800
+    fake_con.WHEEL_DELTA = 120
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(
+        game_launcher,
+        "_find_game_window_win32",
+        lambda: game_launcher.WindowInfo(42, 10, 20, 1000, 800, 99),
+    )
+    monkeypatch.setattr(game_launcher, "_bring_to_front_win32", lambda: True)
+    monkeypatch.setattr(game_launcher.time, "sleep", lambda _seconds: None)
+    monkeypatch.setitem(sys.modules, "win32api", fake_api)
+    monkeypatch.setitem(sys.modules, "win32con", fake_con)
+
+    assert game_launcher._scroll_save_list_down_win32()
+    assert cursor_positions == [(460, 516)]
+    assert wheel_events == [(0x0800, 0, 0, -600, 0)]
+
+
 @pytest.mark.asyncio
 async def test_restart_and_load_preserves_fresh_launch_context(monkeypatch):
     load_calls: list[tuple[str | None, bool]] = []

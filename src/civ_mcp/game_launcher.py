@@ -2130,6 +2130,57 @@ def _click_text(
     return True
 
 
+def _scroll_save_list_down_win32() -> bool:
+    """Scroll the Windows save list down by roughly one page.
+
+    Civ VI does not expose the save-list scrollbar to OCR reliably. Position
+    the pointer inside the list and send a bounded mouse-wheel step instead.
+    """
+    if sys.platform != "win32":
+        return False
+
+    try:
+        import win32api
+        import win32con
+
+        win = _find_game_window_win32()
+        if win is None or not _bring_to_front_win32():
+            return False
+
+        # Keep the pointer inside the central save rows and away from the
+        # filter controls, scrollbar, and bottom action buttons.
+        x = win.x + int(win.w * 0.45)
+        y = win.y + int(win.h * 0.62)
+        win32api.SetCursorPos((x, y))
+        time.sleep(0.2)
+        win32api.mouse_event(
+            win32con.MOUSEEVENTF_WHEEL,
+            0,
+            0,
+            -5 * win32con.WHEEL_DELTA,
+            0,
+        )
+        time.sleep(0.6)
+        log.info("Scrolled Windows save list down at (%d,%d)", x, y)
+        return True
+    except Exception as exc:
+        log.warning("Could not scroll Windows save list: %s", exc)
+        return False
+
+
+def _click_save_in_scrollable_list(save_name: str, *, max_scrolls: int = 12) -> bool:
+    """Find and select a save, scrolling a long Windows list when needed."""
+    if sys.platform != "win32":
+        return _click_text(save_name, timeout=15, post_delay=1)
+
+    for scroll_count in range(max_scrolls + 1):
+        if _click_text(save_name, timeout=2, post_delay=1):
+            return True
+        if scroll_count == max_scrolls or not _scroll_save_list_down_win32():
+            break
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Crash dialog dismissal (Windows only)
 # ---------------------------------------------------------------------------
@@ -2312,7 +2363,7 @@ def _navigate_to_save_sync(
         steps.append("Default save list (regular saves)")
 
     log.info("[4/6] Looking for save '%s'...", save_name)
-    if not _click_text(save_name, timeout=15, post_delay=1):
+    if not _click_save_in_scrollable_list(save_name):
         return (
             f"FAILED: Save '{save_name}' not found. Steps completed: {', '.join(steps)}"
         )
