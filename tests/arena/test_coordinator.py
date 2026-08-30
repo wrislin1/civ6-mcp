@@ -4247,7 +4247,19 @@ class _ScriptedGS:
         if "set_prod" in self.raise_on:
             raise RuntimeError("set_prod boom")
         self.production_set.append((city_id, item_type, item_name, target_x, target_y))
+        self._apply_production(city_id, item_name)
         return f"PRODUCING|{item_name}"
+
+    def _apply_production(self, city_id, item_name):
+        """Model the engine: a successful set fills the city's queue, so a
+        readback sees it. Overridable to model the silent-failure engine
+        state observed live (v7 T166/T176)."""
+        import dataclasses as _dc
+        self._cities = [
+            _dc.replace(c, currently_building=item_name)
+            if c.city_id == city_id else c
+            for c in self._cities
+        ]
 
     async def get_diplomacy_sessions(self):
         if "diplomacy_sessions" in self.raise_on:
@@ -8313,3 +8325,69 @@ async def test_seat0_drain_wedge_runs_orphan_sweep(monkeypatch, tmp_path):
     assert not [e for e in result["log"] if e.get("event") == "seat0_drain_deadline"]
     swept = [e for e in result["log"] if "orphan_sweep" in e]
     assert swept and swept[0]["orphan_sweep"] == "ORPHANS|2-3#131075"
+
+
+class _NonStickGS(_ScriptedGS):
+    """_ScriptedGS whose set_city_production only takes effect after a
+    configurable number of attempts per city — modelling the live v7
+    T166/T176 failure where the engine accepted the request and reported
+    PRODUCING but the queue read back empty."""
+
+    def __init__(self, *, stick_after=None, **kwargs):
+        super().__init__(**kwargs)
+        self._stick_after = dict(stick_after or {})
+        self._set_attempts: dict[int, int] = {}
+
+    def _apply_production(self, city_id, item_name):
+        self._set_attempts[city_id] = self._set_attempts.get(city_id, 0) + 1
+        if self._set_attempts[city_id] >= self._stick_after.get(city_id, 1):
+            super()._apply_production(city_id, item_name)
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_production_retries_when_set_does_not_stick():
+    """Observed live (v7 T166/T176): set_city_production returns PRODUCING but
+    the queue reads back empty. The repair must verify by readback and retry
+    once with the next candidate instead of reporting a false success."""
+    gs = _NonStickGS(
+        stick_after={1: 2},
+        cities=[_prod_city(1, "NONE")],
+        production={1: [
+            _prod("BUILDING", "BUILDING_MONUMENT", turns=6),
+            _prod("BUILDING", "BUILDING_GRANARY", turns=4),
+            _prod("UNIT", "UNIT_WARRIOR", turns=3),
+        ]},
+    )
+    res = await ScriptedPolicy()(
+        gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION")
+    )
+    assert gs.production_set == [
+        (1, "BUILDING", "BUILDING_MONUMENT", None, None),
+        (1, "BUILDING", "BUILDING_GRANARY", None, None),
+    ]
+    assert "| errors:" not in res["summary"]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_production_reports_silent_set_failure():
+    """If neither the first pick nor the retry sticks, the repair record must
+    carry a real error instead of claiming success — the coordinator then
+    escalates honestly rather than logging a completed repair over an empty
+    queue."""
+    gs = _NonStickGS(
+        stick_after={1: 99},   # never sticks
+        cities=[_prod_city(1, "NONE")],
+        production={1: [
+            _prod("BUILDING", "BUILDING_MONUMENT", turns=6),
+            _prod("BUILDING", "BUILDING_GRANARY", turns=4),
+        ]},
+    )
+    res = await ScriptedPolicy()(
+        gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PRODUCTION")
+    )
+    assert len(gs.production_set) == 2      # first pick + one retry, no loop
+    assert {t[2] for t in gs.production_set} == {
+        "BUILDING_MONUMENT", "BUILDING_GRANARY"
+    }
+    assert "| errors:" in res["summary"]
+    assert "did not stick" in res["summary"]

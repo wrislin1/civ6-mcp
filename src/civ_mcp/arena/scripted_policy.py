@@ -544,6 +544,7 @@ class ScriptedPolicy:
         options. Never picks a new district/wonder needing a tile target."""
         actions: list[dict] = []
         errors: list[str] = []
+        pending: dict[int, tuple[str, list]] = {}
         try:
             cities, _warnings = await gs.get_cities()
         except Exception as e:
@@ -575,10 +576,76 @@ class ScriptedPolicy:
                 errors.append(
                     f"set_city_production({city.city_id},{option.item_name}) failed {e!r}"
                 )
+                continue
+            pending[city.city_id] = (option.item_name, options)
+        errors.extend(await self._verify_production_stuck(gs, pending, actions))
         return actions, errors
 
+    async def _verify_production_stuck(self, gs, pending, actions):
+        """Readback verification for the sets above. Observed live (v7
+        T166/T176): the engine can accept set_city_production, answer
+        PRODUCING, and leave the queue empty. Re-fetch, retry each still-empty
+        city once with the next candidate, and report a real error when the
+        retry does not stick either -- a false "completed" repair sends the
+        coordinator to human_pending over an invisible cause."""
+        if not pending:
+            return []
+        errors: list[str] = []
+        retried: dict[int, str] = {}
+        for cid in await self._empty_queue_cities(gs, set(pending)):
+            failed_item, options = pending[cid]
+            picked = self._pick_production(options, exclude={failed_item})
+            if picked is None:
+                errors.append(
+                    f"set_city_production({cid},{failed_item}) did not stick "
+                    f"(queue still empty; no alternative candidate)"
+                )
+                continue
+            option, target_x, target_y = picked
+            try:
+                result = await gs.set_city_production(
+                    cid, option.category, option.item_name, target_x, target_y
+                )
+                actions.append({
+                    "tool": "set_city_production",
+                    "item": option.item_name,
+                    "city_id": cid,
+                    "result": result,
+                })
+                retried[cid] = option.item_name
+            except Exception as e:
+                errors.append(
+                    f"set_city_production({cid},{option.item_name}) failed {e!r}"
+                )
+        if retried:
+            for cid in await self._empty_queue_cities(gs, set(retried)):
+                errors.append(
+                    f"set_city_production({cid},{retried[cid]}) did not stick "
+                    f"(queue still empty)"
+                )
+        return errors
+
     @staticmethod
-    def _pick_production(options):
+    async def _empty_queue_cities(gs, city_ids):
+        """City ids from ``city_ids`` whose build queue reads back empty.
+        A failed readback verifies nothing and reports nothing -- the old
+        no-verification behavior, never a false error."""
+        try:
+            cities, _warnings = await gs.get_cities()
+        except Exception:
+            return []
+        empty: list[int] = []
+        for c in cities:
+            if c.city_id in city_ids:
+                current = str(
+                    getattr(c, "currently_building", "NONE") or "NONE"
+                ).upper()
+                if current in ("", "NONE", "NOTHING"):
+                    empty.append(c.city_id)
+        return empty
+
+    @staticmethod
+    def _pick_production(options, exclude=frozenset()):
         """Choose one tile-free production option (or None). Repairs carry their
         own coords; new districts (needing a policy-chosen tile) and projects are
         never selectable. Returns ``(option, target_x, target_y)``."""
@@ -591,7 +658,8 @@ class ScriptedPolicy:
         # coordinator reaches human_pending -- never a policy-chosen tile.
         candidates = [
             o for o in options
-            if getattr(o, "is_repair", False) or o.category in ("UNIT", "BUILDING")
+            if o.item_name not in exclude
+            and (getattr(o, "is_repair", False) or o.category in ("UNIT", "BUILDING"))
         ]
         if not candidates:
             return None
