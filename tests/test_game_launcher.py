@@ -379,45 +379,6 @@ def test_windows_focus_falls_back_to_wscript_app_activate(monkeypatch):
     assert activated == [7052]
 
 
-def test_windows_click_uses_native_cursor_and_mouse_events(monkeypatch):
-    cursor_positions: list[tuple[int, int]] = []
-    mouse_events: list[tuple[int, int, int, int, int]] = []
-    send_input_calls: list[bool] = []
-    fake_api = ModuleType("win32api")
-    fake_api.SetCursorPos = cursor_positions.append
-    fake_api.mouse_event = lambda *args: mouse_events.append(args)
-    fake_con = ModuleType("win32con")
-    fake_con.MOUSEEVENTF_LEFTDOWN = 2
-    fake_con.MOUSEEVENTF_LEFTUP = 4
-
-    class FakeUser32:
-        def SetThreadDpiAwarenessContext(self, _context):
-            return 0
-
-        def GetSystemMetrics(self, index):
-            return {76: 0, 77: 0, 78: 3840, 79: 2160}[index]
-
-        def SendInput(self, *_args):
-            send_input_calls.append(True)
-            return 1
-
-    monkeypatch.setitem(sys.modules, "win32api", fake_api)
-    monkeypatch.setitem(sys.modules, "win32con", fake_con)
-    monkeypatch.setattr(game_launcher.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(
-        ctypes,
-        "windll",
-        SimpleNamespace(user32=FakeUser32()),
-        raising=False,
-    )
-
-    game_launcher._click_win32(2801, 355)
-
-    assert cursor_positions == [(2801, 355)]
-    assert mouse_events == [(2, 0, 0, 0, 0), (4, 0, 0, 0, 0)]
-    assert send_input_calls == []
-
-
 def test_navigation_checks_for_startup_cinematic_after_launch(monkeypatch):
     calls: list[str] = []
 

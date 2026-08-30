@@ -1673,16 +1673,109 @@ def _click(x: int, y: int) -> None:
 
 
 def _click_win32(x: int, y: int) -> None:
-    """Click at physical screen coordinates using native mouse events."""
-    import win32api
-    import win32con
+    """Click at screen coordinates using SendInput (Windows)."""
+    import ctypes
+    import ctypes.wintypes
 
-    log.info("Click: screen=(%d,%d) via win32 mouse_event", x, y)
-    win32api.SetCursorPos((x, y))
+    # MOUSEEVENTF_ABSOLUTE + MOUSEEVENTF_VIRTUALDESK maps 0-65535 to the
+    # physical virtual screen. All OCR coordinates are in physical pixel
+    # space (game window captures DX framebuffers at native resolution,
+    # fullscreen captures use DPI-aware mode).
+    user32 = ctypes.windll.user32
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_ssize_t(-4)
+    old_ctx = None
+    try:
+        old_ctx = user32.SetThreadDpiAwarenessContext(
+            DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        )
+    except Exception:
+        pass
+
+    vx0 = user32.GetSystemMetrics(76)  # SM_XVIRTUALSCREEN
+    vy0 = user32.GetSystemMetrics(77)  # SM_YVIRTUALSCREEN
+    vw = user32.GetSystemMetrics(78)  # SM_CXVIRTUALSCREEN
+    vh = user32.GetSystemMetrics(79)  # SM_CYVIRTUALSCREEN
+
+    if old_ctx:
+        user32.SetThreadDpiAwarenessContext(ctypes.c_ssize_t(old_ctx))
+
+    abs_x = int((x - vx0) * 65536 / vw)
+    abs_y = int((y - vy0) * 65536 / vh)
+    log.info(
+        "Click: screen=(%d,%d) abs=(%d,%d) vscreen=(%d,%d)+%dx%d",
+        x,
+        y,
+        abs_x,
+        abs_y,
+        vx0,
+        vy0,
+        vw,
+        vh,
+    )
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [
+            ("dx", ctypes.c_long),
+            ("dy", ctypes.c_long),
+            ("mouseData", ctypes.c_ulong),
+            ("dwFlags", ctypes.c_ulong),
+            ("time", ctypes.c_ulong),
+            ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+        ]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [("type", ctypes.c_ulong), ("mi", MOUSEINPUT)]
+
+    MOUSEEVENTF_MOVE = 0x0001
+    MOUSEEVENTF_ABSOLUTE = 0x8000
+    MOUSEEVENTF_VIRTUALDESK = 0x4000
+    MOUSEEVENTF_LEFTDOWN = 0x0002
+    MOUSEEVENTF_LEFTUP = 0x0004
+    ABS_VIRT = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
+
+    # Move
+    move = INPUT(
+        type=0,
+        mi=MOUSEINPUT(
+            dx=abs_x,
+            dy=abs_y,
+            mouseData=0,
+            dwFlags=MOUSEEVENTF_MOVE | ABS_VIRT,
+            time=0,
+            dwExtraInfo=None,
+        ),
+    )
+    user32.SendInput(1, ctypes.byref(move), ctypes.sizeof(INPUT))
     time.sleep(0.15)
-    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+
+    # Click down
+    down = INPUT(
+        type=0,
+        mi=MOUSEINPUT(
+            dx=abs_x,
+            dy=abs_y,
+            mouseData=0,
+            dwFlags=MOUSEEVENTF_LEFTDOWN | ABS_VIRT,
+            time=0,
+            dwExtraInfo=None,
+        ),
+    )
+    user32.SendInput(1, ctypes.byref(down), ctypes.sizeof(INPUT))
     time.sleep(0.05)
-    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+
+    # Click up
+    up = INPUT(
+        type=0,
+        mi=MOUSEINPUT(
+            dx=abs_x,
+            dy=abs_y,
+            mouseData=0,
+            dwFlags=MOUSEEVENTF_LEFTUP | ABS_VIRT,
+            time=0,
+            dwExtraInfo=None,
+        ),
+    )
+    user32.SendInput(1, ctypes.byref(up), ctypes.sizeof(INPUT))
 
 
 def _click_linux(x: int, y: int) -> None:
