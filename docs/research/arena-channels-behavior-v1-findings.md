@@ -1017,3 +1017,131 @@ restore LLM-initiated deal-making (v7: zero), so any valid LLM-initiated deal
 would be a stronger-than-predicted result. This run tests whether explicit
 counterparty contact is sufficient to elicit channel engagement; it does not
 test the standard tier or briefing content.
+
+---
+
+# v9 result: a message-only overture did not restore channel engagement
+
+**Date:** 2026-08-30 · **Run:** `arena-channels-behavior-v9` · **Final
+window:** T157-T186 inclusive.
+
+## Artifact shape
+
+The completed artifact has 92 transcript rows and exactly the preregistered
+30 distinct game turns. P1 and P2 each have 31 rows: T157-T186 plus one T163
+reload replay. Scripted seat 0 has 30 rows. A direct FireTuner overview after
+the watcher exited verified the live game at T187.
+
+The T170 script emitted both private overtures successfully. Each LLM's
+channel view recorded two received messages in total: the original T157 deal
+message and the new T170 overture. Every post-overture P1/P2 transcript row
+recorded `prompt_injections.channels: true`, so the negative result is not a
+dispatch or prompt-injection failure.
+
+## Preregistered outcomes
+
+| outcome | gemma4-26b / P1 | qwen3.6-27b / P2 |
+|---|---:|---:|
+| any reply to P3 during T171-T173 | no | no |
+| at least 2 post-overture messages through T186 | 0 | 0 |
+| LLM-initiated deal during T171-T186 | 0 | 0 |
+
+All four messages in the channel report were scripted P3 messages (the two
+T157 deal messages plus the two T170 overtures). Neither LLM sent any channel
+action, and there were zero rejected channel actions.
+
+The preregistered prediction was therefore **falsified for qwen** and
+**supported for gemma**. The prediction that neither model would initiate a
+deal was supported. Under this v7/minimal-tier bundle, explicit counterparty
+contact was not sufficient to elicit acknowledgement, sustained dialogue, or
+negotiation. Qwen's nine spontaneous v7 messages are not reproduced by simply
+giving it a polite inbound prompt; one run cannot identify which remaining
+state or sampling difference produced v7's traffic.
+
+## Deal lifecycle qualification
+
+The two T157 deals were accepted, their keep-units-away favors were observed
+satisfied, both ended `honored`, both payments are ledger-`settled`, and there
+were zero grievances. The T163 funding drain still wedged after the orphan
+sweep and required reloading `0_MCP_0163`. That reload rolled the initial
+engine-side gold offers off the final game timeline while the external channel
+ledger correctly deduplicated the replay. Accordingly, v9 proves channel-ledger
+settlement but is **not** a second engine-transfer artifact; v7 remains the
+engine-verified payment result.
+
+## Operations and live hardening evidence
+
+The run used two watcher legs:
+
+1. T157-T163 ran from the committed v9 config. At the T163 funding drain, the
+   orphan-session sweep closed `1-3#65539` and `2-3#131075`, but the interturn
+   remained wedged. The watcher was stopped and its logs archived.
+2. The game was reloaded to `0_MCP_0163` and resumed with 24 remaining rounds
+   (`96` seat admissions, `120` game-turn slack). The first menu recovery
+   correctly selected T163, then the launcher's fallback grid changed the
+   selection to T182; the exact overview gate caught the wrong turn before
+   arena started. A clean retry selected T163 and activated it with `Enter`;
+   the overview matched before the second watcher was armed. T163-T186 then
+   completed without operator intervention or data loss.
+
+The post-reload leg exercised two fixes that had failed in v8. Context-native
+Natural Disaster closing advanced normally, and the T181 World Congress
+default/recheck plus guarded refire admitted T182 without a reload. The game
+did not suffer a display detach during v9. The physical-chain diagnosis is now
+more specific: an Auto HDR/display-mode transition can briefly drop the TV;
+Home Assistant interprets that as TV-off and shortly powers down the DENON
+AVR, converting a transient HDMI handshake into a real detach. The live skill
+now recommends debouncing explicit TV-off and ignoring transient/unavailable
+states.
+
+## Exploratory move-quality review (not a treatment outcome)
+
+The requested post-hoc review is in `move-quality-review.md`. The headline is
+that fast Gemma turns did not imply good decisions. The analyzer's 0% invalid
+rate counts only malformed schemas; parsing game results found 114/247 (46.2%)
+Gemma actions and 181/634 (28.5%) Qwen actions rejected by the game. Gemma was
+fast but brittle and repetitive. Qwen was more observant and more often legal,
+but used far more calls, looped around blocked tiles, and completed only 3 of
+69 task attempts (9 terminal failures). Both finished with negative income and
+large pools of idle or unusable assets.
+
+This is not a fair full-game benchmark: v9 intentionally used the minimal tier,
+which omits builder improvement/repair and Great Person activation. Empire
+score, city, and unit growth are descriptive only; neither model recorded a
+successful `found_city` call despite each civ ending with one additional city.
+
+## Recommendations after v9
+
+1. Treat the isolated channel question as answered: a generic message-only
+   overture is insufficient. Do not add another wording variant. If the
+   channels line continues, test a mechanism—such as turning an inbound
+   message into an explicit response task/attention item—rather than another
+   prose nudge.
+2. Add game-domain rejection and repeated-failure metrics to the analyzer;
+   schema-invalid rate alone materially overstates play quality. Then run a
+   separate recorded-state decision benchmark on the standard tier with a
+   positive briefing budget. That benchmark, not v9, should compare move
+   quality.
+3. Fix the Windows loader so an OCR-confirmed save selection disables the
+   generic fallback grid and make exact turn/civ verification a mandatory
+   success gate. The operator playbook documents the proven workaround.
+4. Continue root-causing the residual T163 funding drain wedge and add
+   boot-health telemetry. The WC transition and popup classes no longer block
+   the next run.
+5. The gemma-controlled channels sequence is now complete enough to proceed
+   to the recorded-state model bake-off (qwen3.8/granite4.2/ornith), with
+   unrelated local-model workloads pinned away from its endpoints.
+
+## Evidence integrity
+
+The committed run directory includes the generated reports, channel ledger,
+post-hoc quality review, both watcher-leg logs, PIDs, and the operational resume
+config under `ops/`. SHA-256 of the primary evidence files:
+
+- `transcript.jsonl` — `ad0d320871953de54ac1e8c01779043b93d266e425497cc5693947327246bd6c`
+- `arena_cost.jsonl` — `b228a5a9aca10da2db78b302a96f6633be3298a7f4ed4fdd519ed17932de67cd`
+- `channels/events.jsonl` — `145b553adbbb0c48e1f5da6fe725957fecb229e6020e27120d7dd50f23849166`
+- `channels/state.json` — `e819c79365e7dd0e2f50f39413ed32ffaa53e2a0cb522d900e81dfa5939d19db`
+- `report.md` — `8a7edd3f073d98f2805b7a359d8ed9691a1cef44250a1ccb7cd2581fdcec0285`
+- `report.json` — `b4a3d7b9700492ecf820f954bf89fba7b8c18763215ff54dbb1e417169b530ed`
+- `move-quality-review.md` — `396bce07ed031c94f616460d3b089e6ba81c08629c80b04da58dfbdaa17c38d8`

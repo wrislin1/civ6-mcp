@@ -29,7 +29,23 @@ separate codebase.
 5. Verify the exact turn/civ through an existing owner's safe API. If none
    exists, start `uv run civ-mcp` with a PTY, query
    `curl http://127.0.0.1:8000/api/overview`, then stop the verifier. Re-run the
-   owner map and ensure it is gone before starting arena.
+   owner map and ensure it is gone before starting arena. Treat this exact-state
+   check as authoritative: a menu click that appears successful is not proof
+   that the requested save loaded.
+
+### Save-selection recovery details (proven on v9)
+
+- `_ocr_game_window` returns line-center coordinates. Use them directly;
+  adding half the OCR width/height moves the click off target.
+- At 1920x1080 the bottom `Load` button can be clipped from OCR. Once the exact
+  save row is visibly selected, `Enter` reliably activates it.
+- Stop the generic fallback-grid sequence after the exact row is selected. A
+  later fallback click can change the selection to a different save (v9 first
+  selected T163, then silently moved to T182). The overview gate caught the
+  wrong turn before arena started.
+- If the overview does not match the requested turn and civilization, restart
+  the menu load from a clean game process; never resume against the wrong
+  state.
 
 Windows Application Control blocks `.venv\Scripts\python.exe` here. The wrapper
 uses signed system Python plus the companion `.venv` packages; do not replace

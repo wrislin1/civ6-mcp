@@ -186,12 +186,22 @@ readback):
    real `\\.\DISPLAYn` and boots complete. `DisplaySwitch.exe`,
    SC_MONITORPOWER, and execution-state keepers do NOT re-attach.
 
-5. **WC-segment wedge** (v8 T182): after a WC session, `blockers=['UNKNOWN']`
-   = the WC results notification; the game can enter a state where city
-   production sets pass CanProduce yet silently fail readback and end-turn is
-   a no-op. In-place repair does NOT work — reload that turn's `AutoSave_NNNN`
-   (fresh deserialization drops the mid-segment state) and let the relaunched
-   coordinator re-run the round.
+   On this PC the confirmed trigger chain is broader than idle sleep: an Auto
+   HDR/display-mode transition can briefly disconnect the TV, Home Assistant
+   interprets the TV as powered down, and its automation then powers off the
+   DENON AVR. That converts a transient HDMI handshake into a real display
+   detach. A Windows execution-state keeper does not prevent this. Debounce
+   the automation so AVR power-off requires the TV to remain explicitly
+   `off` for a grace period; ignore `unavailable` and brief off transitions.
+
+5. **WC-results transition hold** (v8 T182; fixed path proven in v9): map
+   `NOTIFICATION_WORLD_CONGRESS_RESULTS` to
+   `ENDTURN_BLOCKING_WORLD_CONGRESS_LOOK`, let the seat-0 WC default/recheck
+   path run, then permit the guarded refire after a quiet radar. v9 advanced
+   T181 -> T182 through this path without a reload. If the notification still
+   persists, production passes CanProduce but fails readback, or end-turn is a
+   no-op, reload that turn's `AutoSave_NNNN`; fresh deserialization remains
+   the proven fallback for the deeper v8 mid-segment state.
 6. **Boot roulette** (v8): cold boots hang probabilistically at ~frame 3-5
    (one core spinning, no Auto HDR event in the System log). Verify boot
    health with a fresh-offset `Profile.csv` frame check (healthy = frames
@@ -205,5 +215,5 @@ readback):
    y + h/2) from `_ocr_game_window`; screenshot-pixel guesses miss (the shot
    file is downscaled).
 
-Resume budgets: remaining rounds × configured seats (4 for channels v6/v7),
+Resume budgets: remaining rounds × configured seats (4 for channels v6-v9),
 computed from the live game turn — see "Resume budget accounting" above.
