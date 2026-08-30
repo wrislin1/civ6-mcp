@@ -268,6 +268,7 @@ from civ_mcp.lua.models import (  # noqa: F401
     WonderPlacement,
 )
 from civ_mcp.lua.notifications import (  # noqa: F401
+    build_dismiss_blocking_popups,
     BLOCKING_TOOL_MAP,
     NOTIFICATION_TOOL_MAP,
     build_clear_stale_end_turn_blocker,

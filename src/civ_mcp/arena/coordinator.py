@@ -170,6 +170,20 @@ async def _sweep_orphan_sessions(conn) -> str:
 
 
 
+async def _dismiss_blocking_popups(conn) -> str:
+    """Best-effort: close known engine popups (disaster cinematics, moment
+    timelines, boost popups) that block turn processing while the blocker
+    radar reads empty. Never raises into the poll loop."""
+    try:
+        lines = await conn.execute_write(lq.build_dismiss_blocking_popups())
+    except Exception:
+        return "err"
+    for line in lines:
+        if line.startswith("POPUPS|"):
+            return line
+    return "?"
+
+
 def _transcript_driver(pol) -> str:
     """Transcript `driver` label for a policy, aligned with
     PlayerSpec.driver_kind(): 'cli', 'scripted', or 'in_process'."""
@@ -1276,6 +1290,21 @@ async def run_arena(
                 # probe for one and hand it to the pilot BEFORE spending the
                 # quiet-recheck budget on it.
                 if await _seat0_diplomacy_pass_if_wedged(turn):
+                    seat0_state.grace_polls = 0
+                    return
+                # An engine popup (disaster cinematic, moment timeline, boost
+                # popup) also absorbs the end turn with an empty radar
+                # (observed live: v7 T165/T169). Dismiss known popups and give
+                # the pending request a fresh grace window to process.
+                popups = await _dismiss_blocking_popups(conn)
+                if popups not in ("POPUPS|none", "?", "err"):
+                    print(f"[arena] blocking popups dismissed during seat-0 "
+                          f"recheck: {popups}", file=sys.stderr)
+                    log.append({
+                        "turn": turn,
+                        "player_id": 0,
+                        "popup_dismiss": popups,
+                    })
                     seat0_state.grace_polls = 0
                     return
                 if seat0_state.note_idle_recheck():
@@ -2585,6 +2614,18 @@ async def run_arena(
                                 log.append({
                                     "turn": st.turn,
                                     "orphan_sweep": swept_sessions,
+                                })
+                            # A queued engine popup can also be what holds a
+                            # human_pending turn (observed live: v7 T165's
+                            # disaster + moment + boost queue). Same cadence.
+                            popups = await _dismiss_blocking_popups(conn)
+                            if popups not in ("POPUPS|none", "?", "err"):
+                                print(f"[arena] blocking popups dismissed "
+                                      f"while human_pending: {popups}",
+                                      file=sys.stderr)
+                                log.append({
+                                    "turn": st.turn,
+                                    "popup_dismiss": popups,
                                 })
                         human_polls += 1
                         if human_polls % SEAT0_DIPLO_IDLE_POLLS == 0:

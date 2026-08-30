@@ -327,3 +327,33 @@ BLOCKING_TOOL_MAP: dict[str, str] = {
     "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN": "Use get_city_states() then send_envoy(player_id=...)",
     "ENDTURN_BLOCKING_SPY_CHOOSE_ESCAPE_ROUTE": "Auto-resolved: spy chooses fastest escape route",
 }
+
+
+def build_dismiss_blocking_popups() -> str:
+    """Close known engine popups that block turn processing (InGame context).
+
+    Observed live (2026-08-30, arena-channels-behavior-v7): Gathering Storm
+    disaster cinematics (`NaturalDisasterPopup`), the Historic Moments
+    timeline, and the Inspiration/Eureka popup (`BoostUnlockedPopup`) hold the
+    end turn while the EndTurnBlocking query reads empty, so seat 0 stalls
+    with `blockers=[]` until a human presses ESC. Dequeue and hide each one
+    that is currently visible. Reports 'POPUPS|none' or 'POPUPS|<name>,...'.
+    """
+    return """
+local closed = {}
+local names = {"NaturalDisasterPopup", "HistoricMoments", "BoostUnlockedPopup"}
+for _, name in ipairs(names) do
+    local ctl = ContextPtr:LookUpControl("/InGame/" .. name)
+    if ctl ~= nil and not ctl:IsHidden() then
+        pcall(function() UIManager:DequeuePopup(ctl) end)
+        pcall(function() ctl:SetHide(true) end)
+        closed[#closed+1] = name
+    end
+end
+if #closed > 0 then
+    print("POPUPS|" .. table.concat(closed, ","))
+else
+    print("POPUPS|none")
+end
+print("{SENTINEL}")
+""".replace("{SENTINEL}", SENTINEL)

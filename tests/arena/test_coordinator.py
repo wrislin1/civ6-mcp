@@ -8391,3 +8391,80 @@ async def test_scripted_repair_production_reports_silent_set_failure():
     }
     assert "| errors:" in res["summary"]
     assert "did not stick" in res["summary"]
+
+
+@pytest.mark.asyncio
+async def test_seat0_quiet_recheck_dismisses_blocking_popups(monkeypatch, tmp_path):
+    """An engine popup (disaster cinematic, moment timeline, boost popup)
+    absorbs the end turn while the blocker radar reads empty (observed live:
+    v7 T165/T169). The quiet recheck must dismiss known popups before burning
+    idle-recheck budget; once dismissed the pending end request processes and
+    the turn advances with no refire and no human_pending."""
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),                        # admission
+        *[seat0_poll(7, active=True) for _ in range(6)],   # grace + recheck
+    ])
+    sessions = _AnsweringSessions("")
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+
+    dismissals = []
+
+    async def fake_dismiss(_conn):
+        dismissals.append(True)
+        harness._polls = iter([seat0_poll(8, active=True)])
+        return "POPUPS|NaturalDisasterPopup"
+
+    monkeypatch.setattr(
+        coordinator_mod, "_dismiss_blocking_popups", fake_dismiss, raising=False
+    )
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(tmp_path, idle_poll_limit=40, run_id="seat0-popup-recheck")
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert len(dismissals) == 1
+    assert harness.names().count("end_turn") == 1     # never refired
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert result["seat0_human_pending"] == 0
+    dismissed = [e for e in result["log"] if "popup_dismiss" in e]
+    assert dismissed and dismissed[0]["popup_dismiss"] == "POPUPS|NaturalDisasterPopup"
+
+
+@pytest.mark.asyncio
+async def test_seat0_human_pending_arm_dismisses_popups_on_sweep_cadence(
+    monkeypatch, tmp_path
+):
+    """A popup can also arrive (or persist) while a turn is already held
+    human_pending; the waiting arm must keep trying to dismiss on the orphan
+    sweep cadence, so a queued cinematic self-heals without an operator."""
+    harness = Seat0Harness(monkeypatch, [seat0_poll(7, active=True)])
+    hard = _blocker("UNKNOWN", "??")
+    harness.blocker_queue = [[hard], [hard]]
+    dismissals = []
+
+    async def fake_dismiss(_conn):
+        dismissals.append(True)
+        return "POPUPS|none"
+
+    monkeypatch.setattr(
+        coordinator_mod, "_dismiss_blocking_popups", fake_dismiss, raising=False
+    )
+    monkeypatch.setattr(coordinator_mod, "ORPHAN_SWEEP_IDLE_POLLS", 2)
+    conn = FakeConn()
+    pol = Seat0ScriptPolicy(harness, [_returned("normal ok")])
+    cfg = _seat0_cfg(
+        tmp_path, run_id="seat0-hp-popup", idle_poll_limit=5,
+        seat0_human_pending_poll_limit=6,
+    )
+
+    result = await asyncio.wait_for(
+        run_arena(conn, FakeGS(), cfg, policy=pol), timeout=5.0
+    )
+
+    assert result["seat0_human_pending"] == 1
+    assert len(dismissals) == 3   # human-pending polls 2, 4, and 6
