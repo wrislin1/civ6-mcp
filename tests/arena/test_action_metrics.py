@@ -71,17 +71,47 @@ def test_classifier_reports_useful_actions_unavailable_without_objectives():
     assert got["repetitions"] == 0
 
 
+def test_classifier_does_not_double_count_gated_calls_as_domain_rejections():
+    """Realistic shape from agent.py: a gated/out_of_tier/unknown_tool call is
+    BOTH appended to invalid_tool_calls AND given a step whose
+    tool_result_full is agent.py's canned "UNAVAILABLE: ..." string (the call
+    never reached the game engine — it was intercepted before dispatch).
+    That single event must be counted once, as an invalid call, never as a
+    domain rejection (which means the call reached the engine and was
+    refused)."""
+    steps = [
+        {"tool_name": "fake_tool", "tool_args": {},
+         "tool_result_full": "UNAVAILABLE: fake_tool is not a real tool.",
+         "state_before": {"a": 1}, "state_after": {"a": 1},
+         "state_digest_before": "x", "state_digest_after": "x"},
+    ]
+    got = classify_action_quality(
+        steps=steps,
+        invalid_tool_calls=[{"tool_name": "fake_tool", "reason": "unknown_tool"}],
+    )
+    assert got["invalid_calls"] == 1
+    assert got["domain_rejections"] == 0
+    assert got["successful_mutations"] == 0
+
+
 # ---------------------------------------------------------------------------
 # classify_result
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("raw", ["Error: BLOCKED", "unavailable: no charges", "OK|BLOCKED"])
+@pytest.mark.parametrize("raw", ["Error: BLOCKED", "OK|BLOCKED"])
 def test_classify_result_domain_rejection(raw: str):
     assert classify_result(raw) == "domain_rejection"
 
 
 def test_classify_result_success():
     assert classify_result("IMPROVING|IMPROVEMENT_MINE|9,10") == "success"
+
+
+def test_classify_result_unavailable_is_not_a_domain_rejection():
+    """agent.py's _unavailable_result() prefix means the call was intercepted
+    before it ever reached the game engine (gated/out_of_tier/unknown_tool) —
+    it must not read as the game having rejected a legal call."""
+    assert classify_result("UNAVAILABLE: fake_tool is not a real tool.") != "domain_rejection"
 
 
 # ---------------------------------------------------------------------------

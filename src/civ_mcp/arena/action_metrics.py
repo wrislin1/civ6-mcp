@@ -36,13 +36,21 @@ class PredicateError(Exception):
 def classify_result(result: str) -> str:
     """Classify a raw tool-result string as "success" or "domain_rejection".
 
-    Mirrors the real conventions from ``game_state.py`` also used by
-    ``analyze._is_error_result``: title-case ``Error: ...``, pipe-delimited
-    ``...|BLOCKED``, and an ``unavailable`` prefix (e.g. a builder with no
-    charges left) all indicate the game rejected a legal call.
+    Mirrors ``analyze._is_error_result``'s real ``game_state.py``
+    conventions exactly: title-case ``Error: ...`` and pipe-delimited
+    ``...|BLOCKED`` both mean the call reached the game engine and the game
+    rejected it.
+
+    Deliberately does NOT treat an ``UNAVAILABLE: ...`` prefix as a domain
+    rejection. ``agent.py``'s ``_unavailable_result`` emits that string for
+    gated / out-of-tier / unknown-tool calls that never reach the game
+    engine at all — the call is intercepted before dispatch, and the same
+    event is already recorded in ``invalid_tool_calls``. Counting it here
+    too would both double-count it and mislabel an agent-level gating
+    outcome as a legal-but-rejected game action.
     """
     normalized = (result or "").strip().lower()
-    if normalized.startswith(("error", "unavailable")) or "|blocked" in normalized:
+    if normalized.startswith("error") or "|blocked" in normalized:
         return "domain_rejection"
     return "success"
 
