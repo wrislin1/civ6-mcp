@@ -750,9 +750,10 @@ gemma4-26b at P1, qwen3.6-27b at P2, task_tracker enabled on both, $0.00.
 The single treatment delta from v6 (`task_tracker.enabled: true` on both LLM
 seats) coincided with the largest engagement change of the series: qwen sent
 nine messages across the window (v6: one; v5: zero). The pattern is one
-acceptance note at T159, one unprompted thanks at T167 after payment, then a
-recurring one-per-turn "our peaceful cooperation continues" status ping to P3
-from T175 through T186. All nine went to the scripted seat; gemma sent zero
+acceptance note at T159, one unprompted thanks at T167 after payment, then
+seven near-identical "our peaceful cooperation continues" status pings to P3
+across the final twelve turns (T175, T176, T179, T180, T182, T184, T186).
+All nine went to the scripted seat; gemma sent zero
 and never replied. So the tracker produced *sustained* engagement — the first
 run since v4 with channel traffic after the deals closed — but the content is
 formulaic relationship maintenance, not negotiation, and no LLM proposed a
@@ -779,12 +780,17 @@ evidence stands for the first time in the series.
 
 ## Operational qualifications
 
-Attended recovery run, exact preregistered artifact: 92 transcript rows over
-exactly T157–T186 (30 turns, 3 rows per round), three operational resumes
-(`.arena-runs/arena-channels-behavior-v7.resume-*.yaml`) using round-based
-budget accounting (remaining rounds × 4 seats), no duplicate or rolled-back
-rows. Five seat-0 stalls required operator input, in three classes, none
-attributable to the treatment:
+Attended recovery run over exactly the preregistered T157–T186 window. Both
+LLM seats have exactly one row per turn: 60 LLM rows, no duplicates, no
+rollbacks. The transcript's 92 rows are those 60 plus one seat-0 record per
+turn and two seat-0 re-admission records where a held turn was repaired and
+re-run after a watcher restart (T166, T176); seat-0 terminal states are
+`advanced` everywhere except `interrupted` at T163 and `human_pending` at
+T165/T169 — turns that nonetheless ended on the final timeline. Three
+operational resumes (`.arena-runs/arena-channels-behavior-v7.resume-*.yaml`)
+used round-based budget accounting (remaining rounds × 4 seats). Five stalls
+required operator input — T163, T165, T166, T169, T176 — in three classes,
+none attributable to the treatment:
 
 1. **T163 funding hard-interturn** — same wedge as v6: engine gold transfers
    open AI↔AI diplomacy sessions that the coordinator's drain arm never
@@ -792,11 +798,13 @@ attributable to the treatment:
    at `seat0_drain_poll_limit`; `build_close_orphan_sessions()` run manually
    over the freed tuner closed session `2-3#131075` and the interturn
    completed in place.
-2. **UI-modal stalls (T165, T169, T175, plus mid-turn queues)** — Gathering
+2. **UI-modal stalls (T165, T169, plus mid-turn queues)** — Gathering
    Storm disaster cinematics and Historic Moment/Inspiration popups block the
    end turn while the blocker radar reads empty (`human_pending` with
    `blockers=[]`). Cleared with a single synthetic ESC per modal; from T170 an
-   OCR-gated auto-dismisser handled them unattended.
+   OCR-gated auto-dismisser handled them without operator input (a T175
+   disaster cinematic was dismissed this way and never reached
+   `human_pending`).
 3. **Silent production repair failure (T166: three cities; T176: capital)** —
    the seat-0 repair logged `set_city_production=... ` as applied while
    tuner readback showed `GetCurrentProductionTypeHash()==0`. Queues were
@@ -818,3 +826,15 @@ attributable to the treatment:
    overture (P3 messaging without a deal attached) rather than further
    schema/tracker changes — both models now handle every *offered*
    transition correctly and initiate none.
+
+## Evidence integrity
+
+The run directory `arena_runs/arena-channels-behavior-v7/` is committed
+alongside this section. SHA-256 of the primary evidence files:
+
+- `transcript.jsonl` — `b988205983f0820244abcaea6dadccf2371aea70b5feaca01d0bd23d010ecc74`
+- `arena_cost.jsonl` — `b115da1bf2da2a3f70831848fcabccefa24f58eb870aa949ac00c580cdd70420`
+- `channels/events.jsonl` — `a2fb93c78b8f43daaa5df4f9bcb8f02786eaf86b7b3cb1af04529caca3be2b62`
+- `channels/state.json` — `0e02cf1a7f402d6164af3788d43c12bc10053b21ddbba2ce0fde03b54f10dbae`
+- `report.md` — `241ce3dfaa3a56906f6d42907dc331ab470967b07962edeef9bf007ff7229845`
+- `report.json` — `8a0582e636cae7c68de636aeffaa84e8165d093f4a87e4d6f1664dc6fda6b47b`

@@ -148,8 +148,21 @@ readback):
 
 1. `seat0_drain_deadline` after channel funding: AI↔AI diplomacy sessions
    wedge the interturn. Let the watcher hit its deadline (clean self-stop),
-   then run `lq.build_close_orphan_sessions()` in the InGame state over the
-   freed tuner. No reload needed; funding survives.
+   then run the sweep over the freed tuner (InGame state; no reload needed,
+   funding survives):
+
+   ```bash
+   uv run python - <<'PY'
+   import asyncio
+   from civ_mcp.connection import GameConnection
+   from civ_mcp.lua.diplomacy import build_close_orphan_sessions
+   async def main():
+       conn = GameConnection(); await conn.connect()
+       print(await conn.execute_write(build_close_orphan_sessions()))
+       await conn.disconnect()
+   asyncio.run(main())
+   PY
+   ```
 2. `human_pending` with `blockers=[]`: an engine UI modal (disaster cinematic,
    Historic Moments, Inspiration/Eureka) is blocking. One synthetic ESC per
    modal clears it; LoadScreen/modals accept VK_ESCAPE only. A 64-bit
