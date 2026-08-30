@@ -4167,6 +4167,7 @@ class _ScriptedGS:
         great_people=None,
         city_states=None,
         dedications=None,
+        governors=None,
     ):
         self.overview_calls = 0
         self.units_calls = 0
@@ -4178,6 +4179,8 @@ class _ScriptedGS:
         self.great_people_recruited: list[int] = []
         self.envoys_sent: list[int] = []
         self.dedications_chosen: list[int] = []
+        self.governors_appointed: list[str] = []
+        self.governors_promoted: list[tuple[str, str]] = []
         self.listed: list[int] = []
         self._techs = list(techs or [])
         self._civics = list(civics or [])
@@ -4189,6 +4192,7 @@ class _ScriptedGS:
         self._dedications = dedications or lq.DedicationStatus(
             "Normal", 0, 0, 0, 0, 0
         )
+        self._governors = governors or lq.GovernorStatus(0, 0, False)
         self.raise_on: set[str] = set()
 
     async def get_game_overview(self):
@@ -4293,6 +4297,23 @@ class _ScriptedGS:
             raise RuntimeError("choose dedication boom")
         self.dedications_chosen.append(dedication_index)
         return f"OK:DEDICATION_CHOSEN|{dedication_index}"
+
+    async def get_governors(self):
+        if "governors" in self.raise_on:
+            raise RuntimeError("governors boom")
+        return self._governors
+
+    async def appoint_governor(self, governor_type):
+        if "appoint_governor" in self.raise_on:
+            raise RuntimeError("appoint governor boom")
+        self.governors_appointed.append(governor_type)
+        return f"OK:APPOINTED|{governor_type}"
+
+    async def promote_governor(self, governor_type, promotion_type):
+        if "promote_governor" in self.raise_on:
+            raise RuntimeError("promote governor boom")
+        self.governors_promoted.append((governor_type, promotion_type))
+        return f"OK:PROMOTED|{governor_type}|{promotion_type}"
 
 
 def _tech(tech_type, turns):
@@ -4716,6 +4737,64 @@ async def test_scripted_repair_chooses_required_dedications_by_index():
 
 
 @pytest.mark.asyncio
+async def test_scripted_repair_appoints_governor_for_live_opportunity_blocker():
+    gs = _ScriptedGS(
+        governors=lq.GovernorStatus(
+            1,
+            5,
+            True,
+            available_to_appoint=[
+                lq.GovernorInfo("GOVERNOR_THE_RESOURCE_MANAGER", "Magnus", "The Steward"),
+                lq.GovernorInfo("GOVERNOR_THE_AMBASSADOR", "Amani", "The Diplomat"),
+            ],
+        )
+    )
+
+    result = await ScriptedPolicy()(
+        gs,
+        0,
+        181,
+        blocker_block=_prod_block("ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY"),
+    )
+
+    assert gs.governors_appointed == ["GOVERNOR_THE_AMBASSADOR"]
+    assert result["actions"][0]["tool"] == "appoint_governor"
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_promotes_governor_when_all_are_appointed():
+    gs = _ScriptedGS(
+        governors=lq.GovernorStatus(
+            1,
+            7,
+            False,
+            appointed=[
+                lq.AppointedGovernor(
+                    "GOVERNOR_THE_DEFENDER",
+                    "Victor",
+                    1,
+                    "Seoul",
+                    True,
+                    available_promotions=[
+                        lq.GovernorPromotion("PROMO_Z", "Z", "", 2, 1),
+                        lq.GovernorPromotion("PROMO_A", "A", "", 1, 2),
+                    ],
+                )
+            ],
+        )
+    )
+
+    await ScriptedPolicy()(
+        gs,
+        0,
+        181,
+        blocker_block=_prod_block("ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT"),
+    )
+
+    assert gs.governors_promoted == [("GOVERNOR_THE_DEFENDER", "PROMO_A")]
+
+
+@pytest.mark.asyncio
 async def test_scripted_repair_resolves_only_named_blockers():
     """Only production is named → tech/civic are left untouched even though
     available data exists (so an unnamed blocker is never silently resolved)."""
@@ -4741,7 +4820,7 @@ async def test_scripted_repair_unimplemented_blocker_returns_without_clearing():
         production={1: [_prod("BUILDING", "BUILDING_MONUMENT")]},
     )
     result = await ScriptedPolicy()(
-        gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT"),
+        gs, 0, 7, blocker_block=_prod_block("ENDTURN_BLOCKING_PANTHEON"),
     )
     assert gs.research_set == [] and gs.civic_set == [] and gs.production_set == []
     assert gs.listed == []

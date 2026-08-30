@@ -246,6 +246,7 @@ def test_decision_blockers_is_an_explicit_closed_list():
     arena authority."""
     assert seat0.DECISION_BLOCKERS == {
         "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT",
+        "ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY",
         "ENDTURN_BLOCKING_UNIT_PROMOTION",
         "ENDTURN_BLOCKING_FILL_CIVIC_SLOT",
         "ENDTURN_BLOCKING_PRODUCTION",

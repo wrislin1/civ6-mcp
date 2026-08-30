@@ -247,6 +247,13 @@ class ScriptedPolicy:
         want_great_person = "ENDTURN_BLOCKING_CLAIM_GREAT_PERSON" in blocker_block
         want_envoy = "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" in blocker_block
         want_dedication = "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" in blocker_block
+        want_governor = any(
+            blocker in blocker_block
+            for blocker in (
+                "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT",
+                "ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY",
+            )
+        )
         want_diplomacy = "== PENDING DIPLOMACY ==" in blocker_block
 
         if want_tech or want_civic:
@@ -271,6 +278,10 @@ class ScriptedPolicy:
             dedication_actions, dedication_errors = await self._choose_dedications(gs)
             actions.extend(dedication_actions)
             errors.extend(dedication_errors)
+        if want_governor:
+            governor_actions, governor_errors = await self._choose_governor(gs)
+            actions.extend(governor_actions)
+            errors.extend(governor_errors)
         if want_diplomacy:
             diplomacy_actions, diplomacy_errors = await self._answer_diplomacy(gs)
             actions.extend(diplomacy_actions)
@@ -395,6 +406,69 @@ class ScriptedPolicy:
             except Exception as e:
                 errors.append(f"choose_dedication({choice.index}) failed {e!r}")
                 break
+        return actions, errors
+
+    async def _choose_governor(self, gs):
+        """Spend one governor title by a deterministic, strategy-neutral rule."""
+        actions: list[dict] = []
+        errors: list[str] = []
+        try:
+            status = await gs.get_governors()
+        except Exception as e:
+            return actions, [f"get_governors failed {e!r}"]
+        if status.points_available <= 0:
+            return actions, ["no governor titles available"]
+        if status.can_appoint and status.available_to_appoint:
+            governor = min(
+                status.available_to_appoint,
+                key=lambda item: (item.name, item.governor_type),
+            )
+            try:
+                result = await gs.appoint_governor(governor.governor_type)
+                actions.append({
+                    "tool": "appoint_governor",
+                    "item": governor.name,
+                    "governor_type": governor.governor_type,
+                    "result": result,
+                })
+            except Exception as e:
+                errors.append(
+                    f"appoint_governor({governor.governor_type}) failed {e!r}"
+                )
+            return actions, errors
+
+        candidates = [
+            (governor, promotion)
+            for governor in status.appointed
+            for promotion in governor.available_promotions
+        ]
+        if not candidates:
+            return actions, ["no governor can be appointed or promoted"]
+        governor, promotion = min(
+            candidates,
+            key=lambda pair: (
+                pair[1].level,
+                pair[1].column,
+                pair[0].governor_type,
+                pair[1].promotion_type,
+            ),
+        )
+        try:
+            result = await gs.promote_governor(
+                governor.governor_type, promotion.promotion_type
+            )
+            actions.append({
+                "tool": "promote_governor",
+                "item": f"{governor.name}: {promotion.name}",
+                "governor_type": governor.governor_type,
+                "promotion_type": promotion.promotion_type,
+                "result": result,
+            })
+        except Exception as e:
+            errors.append(
+                f"promote_governor({governor.governor_type}, "
+                f"{promotion.promotion_type}) failed {e!r}"
+            )
         return actions, errors
 
     async def _answer_diplomacy(self, gs):
