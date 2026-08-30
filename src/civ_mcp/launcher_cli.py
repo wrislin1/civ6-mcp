@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from collections.abc import Sequence
@@ -31,6 +32,34 @@ def _build_parser() -> argparse.ArgumentParser:
     ):
         command_parser = commands.add_parser(command, help=help_text)
         command_parser.add_argument("save_name", help="save name without .Civ6Save")
+
+    install = commands.add_parser(
+        "install-save",
+        help="atomically deploy a hash-verified benchmark save into the save directory",
+    )
+    install.add_argument("--archive", required=True, help="path to the source .Civ6Save archive")
+    install.add_argument("--name", required=True, help="destination save name (no extension)")
+    install.add_argument("--sha256", required=True, help="expected sha256 of the archive")
+    install.add_argument("--json", action="store_true", help="emit a single JSON result object")
+
+    boot_health = commands.add_parser(
+        "boot-health",
+        help="poll the native Profile.csv for evidence the game booted cleanly",
+    )
+    boot_health.add_argument(
+        "--min-frame",
+        type=int,
+        default=game_launcher._BOOT_HEALTH_MIN_FRAME,
+        help="frame counter that must be exceeded to count as healthy",
+    )
+    boot_health.add_argument(
+        "--timeout",
+        type=float,
+        default=game_launcher._BOOT_HEALTH_TIMEOUT_S,
+        help="seconds to poll before failing closed",
+    )
+    boot_health.add_argument("--json", action="store_true", help="emit a single JSON result object")
+
     return parser
 
 
@@ -60,6 +89,53 @@ def _preflight() -> None:
     )
 
 
+def _install_save(args: argparse.Namespace) -> int:
+    """Deploy a benchmark save and report the outcome as JSON or text.
+
+    Failures (bad name, hash mismatch at either checkpoint) are caught here
+    rather than the generic top-level handler so a ``--json`` caller always
+    gets exactly one JSON object on stdout, success or failure.
+    """
+    try:
+        result = game_launcher.deploy_benchmark_save(args.archive, args.name, args.sha256)
+        payload: dict = {"ok": True, **result}
+    except Exception as exc:
+        payload = {"ok": False, "error": str(exc)}
+
+    if args.json:
+        print(json.dumps(payload))
+    elif payload["ok"]:
+        print(f"Installed {payload['save_name']} -> {payload['dest_path']}")
+    else:
+        print(payload["error"], file=sys.stderr)
+
+    return 0 if payload["ok"] else 1
+
+
+def _boot_health(args: argparse.Namespace) -> int:
+    """Poll boot health from a freshly recorded offset and report the result.
+
+    Never kills or relaunches the game -- this only observes and reports;
+    the caller decides what to do with a failure.
+    """
+    profile_path = game_launcher._profile_csv_path()
+    start_offset = os.path.getsize(profile_path) if os.path.exists(profile_path) else 0
+    result = game_launcher.wait_for_boot_health(
+        profile_path, start_offset, min_frame=args.min_frame, timeout_s=args.timeout
+    )
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        status = "OK" if result.get("ok") else "FAILED"
+        print(
+            f"{status}: frame={result.get('last_frame')} "
+            f"elapsed={result.get('elapsed_s', 0.0):.1f}s reason={result.get('reason')}"
+        )
+
+    return 0 if result.get("ok") else 1
+
+
 def _launcher_failed(result: str) -> bool:
     return (
         "FAILED:" in result
@@ -81,6 +157,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "press-escape":
             return 0 if game_launcher._press_escape_win32() else 1
+
+        if args.command == "install-save":
+            return _install_save(args)
+
+        if args.command == "boot-health":
+            return _boot_health(args)
 
         launcher = (
             game_launcher.load_save_from_menu

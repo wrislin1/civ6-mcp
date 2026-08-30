@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import asyncio
 import glob
+import hashlib
 import logging
 import ctypes
 import os
+import re
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable
 from typing import NamedTuple
@@ -2727,3 +2730,252 @@ async def restart_and_load(save_name: str | None = None) -> str:
     results.append(f"Load: {load_result}")
 
     return " | ".join(results)
+
+
+# ---------------------------------------------------------------------------
+# Benchmark save deployment
+# ---------------------------------------------------------------------------
+
+_SAVE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+_HASH_CHUNK_SIZE = 1024 * 1024  # 1 MiB
+
+
+def _sha256_file(path: str) -> str:
+    """Hash a file's contents in 1 MiB chunks (no full-file memory load)."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(_HASH_CHUNK_SIZE), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def deploy_benchmark_save(source, save_name: str, expected_sha256: str) -> dict:
+    """Atomically install a controlled-position benchmark save.
+
+    Runs on the native Windows side (SINGLE_SAVE_DIR is only meaningful
+    there). Guards, in order:
+
+    1. ``save_name`` must match ``^[A-Za-z0-9_-]+$`` -- no path separators or
+       traversal sequences reach ``os.path.join``.
+    2. The source archive's hash must equal ``expected_sha256`` *before* any
+       byte is copied -- a corrupted or wrong archive is rejected up front.
+    3. The copy lands in a ``NamedTemporaryFile`` inside ``SINGLE_SAVE_DIR``,
+       flushed and ``fsync``'d, then hashed again -- a mismatch here means
+       the copy itself corrupted the payload -- before ``os.replace`` makes
+       it visible at the final name. ``os.replace`` is atomic on both POSIX
+       and Windows, so a benchmark save name is never observed half-written.
+
+    Raises ``ValueError`` (never returns a dict) on any guard failure, and
+    always removes its temp file first.
+    """
+    if not _SAVE_NAME_PATTERN.match(save_name):
+        raise ValueError(
+            f"unsafe save name {save_name!r}: must match "
+            f"{_SAVE_NAME_PATTERN.pattern!r}"
+        )
+
+    source_path = str(source)
+    archive_sha256 = _sha256_file(source_path)
+    if archive_sha256 != expected_sha256:
+        raise ValueError(
+            f"source hash mismatch for {source_path}: "
+            f"expected {expected_sha256}, got {archive_sha256}"
+        )
+
+    dest_path = os.path.join(SINGLE_SAVE_DIR, f"{save_name}.Civ6Save")
+    tmp = tempfile.NamedTemporaryFile(
+        dir=SINGLE_SAVE_DIR,
+        prefix=f".{save_name}.",
+        suffix=".tmp",
+        delete=False,
+    )
+    try:
+        with open(source_path, "rb") as src:
+            for chunk in iter(lambda: src.read(_HASH_CHUNK_SIZE), b""):
+                tmp.write(chunk)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+
+        deployed_sha256 = _sha256_file(tmp.name)
+        if deployed_sha256 != expected_sha256 or deployed_sha256 != archive_sha256:
+            raise ValueError(
+                f"deployed hash mismatch for {tmp.name}: "
+                f"expected {expected_sha256}, got {deployed_sha256}"
+            )
+
+        os.replace(tmp.name, dest_path)
+    except Exception:
+        tmp.close()
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+        raise
+
+    return {
+        "source": source_path,
+        "save_name": save_name,
+        "dest_path": dest_path,
+        "archive_sha256": archive_sha256,
+        "deployed_sha256": deployed_sha256,
+        "expected_sha256": expected_sha256,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Boot health
+# ---------------------------------------------------------------------------
+
+_BOOT_HEALTH_MIN_FRAME = 100
+_BOOT_HEALTH_TIMEOUT_S = 240.0
+_BOOT_HEALTH_POLL_INTERVAL_S = 2.0
+_PROFILE_CSV_COMPLETE_MARKER = "COMPLETE"
+
+
+def _profile_csv_path() -> str:
+    """Native Windows path to the per-user Profile.csv boot/frame log."""
+    local_appdata = os.environ.get("LOCALAPPDATA") or os.path.expanduser(
+        r"~\AppData\Local"
+    )
+    return os.path.join(
+        local_appdata,
+        "Firaxis Games",
+        "Sid Meier's Civilization VI",
+        "Logs",
+        "Profile.csv",
+    )
+
+
+def _file_identity(path: str) -> dict:
+    st = os.stat(path)
+    return {"dev": st.st_dev, "ino": st.st_ino}
+
+
+def _iter_complete_frames(text: str):
+    """Yield the frame number of each syntactically complete row in ``text``.
+
+    A row counts only if its last comma-separated field is the literal
+    ``COMPLETE`` marker (a row still being written by the game lacks it) and
+    its first field parses as an integer. Anything else -- a partial row,
+    garbled bytes, an unexpected schema -- is silently skipped rather than
+    raised: malformed content must never crash the poll, only fail to count.
+    """
+    for line in text.splitlines():
+        fields = line.strip().split(",")
+        if len(fields) < 2 or fields[-1] != _PROFILE_CSV_COMPLETE_MARKER:
+            continue
+        try:
+            yield int(fields[0])
+        except ValueError:
+            continue
+
+
+def wait_for_boot_health(
+    profile_path: str,
+    start_offset: int,
+    min_frame: int = _BOOT_HEALTH_MIN_FRAME,
+    timeout_s: float = _BOOT_HEALTH_TIMEOUT_S,
+) -> dict:
+    """Poll a native Profile.csv for evidence the game booted cleanly.
+
+    Only rows appended *after* ``start_offset`` are ever considered -- a
+    stale healthy frame left over from a previous session must never count
+    as evidence for this one. Passes as soon as any newly appended complete
+    row's frame counter exceeds ``min_frame``. Never kills or relaunches the
+    game; every outcome (pass, timeout, truncation, rotation) is returned as
+    a structured dict, never raised.
+    """
+    started = time.monotonic()
+    deadline = started + timeout_s
+
+    try:
+        baseline_identity = _file_identity(profile_path)
+    except OSError as exc:
+        return {
+            "ok": False,
+            "reason": "profile_missing",
+            "detail": str(exc),
+            "baseline_offset": start_offset,
+            "last_frame": None,
+            "elapsed_s": 0.0,
+            "file_identity": None,
+            "profile_path": str(profile_path),
+        }
+
+    offset = start_offset
+    last_frame: int | None = None
+
+    while True:
+        try:
+            identity = _file_identity(profile_path)
+            size = os.path.getsize(profile_path)
+        except OSError as exc:
+            return {
+                "ok": False,
+                "reason": "profile_missing",
+                "detail": str(exc),
+                "baseline_offset": start_offset,
+                "last_frame": last_frame,
+                "elapsed_s": time.monotonic() - started,
+                "file_identity": baseline_identity,
+                "profile_path": str(profile_path),
+            }
+
+        if identity != baseline_identity:
+            return {
+                "ok": False,
+                "reason": "log_rotated",
+                "baseline_offset": start_offset,
+                "last_frame": last_frame,
+                "elapsed_s": time.monotonic() - started,
+                "file_identity": identity,
+                "profile_path": str(profile_path),
+            }
+
+        if size < offset:
+            return {
+                "ok": False,
+                "reason": "log_truncated",
+                "baseline_offset": start_offset,
+                "last_frame": last_frame,
+                "elapsed_s": time.monotonic() - started,
+                "file_identity": identity,
+                "profile_path": str(profile_path),
+            }
+
+        if size > offset:
+            with open(profile_path, "rb") as fh:
+                fh.seek(offset)
+                chunk = fh.read()
+            # Only fully-written lines count -- a trailing partial line (no
+            # newline yet) is still being appended by the game and is left
+            # unconsumed so the next poll re-reads it complete.
+            last_newline = chunk.rfind(b"\n")
+            consumed = chunk[: last_newline + 1] if last_newline != -1 else b""
+            if consumed:
+                text = consumed.decode("utf-8", errors="replace")
+                for frame in _iter_complete_frames(text):
+                    last_frame = frame
+                    if frame > min_frame:
+                        return {
+                            "ok": True,
+                            "reason": None,
+                            "baseline_offset": start_offset,
+                            "last_frame": frame,
+                            "elapsed_s": time.monotonic() - started,
+                            "file_identity": identity,
+                            "profile_path": str(profile_path),
+                        }
+                offset += len(consumed)
+
+        if time.monotonic() >= deadline:
+            return {
+                "ok": False,
+                "reason": "timeout",
+                "baseline_offset": start_offset,
+                "last_frame": last_frame,
+                "elapsed_s": time.monotonic() - started,
+                "file_identity": identity,
+                "profile_path": str(profile_path),
+            }
+
+        time.sleep(_BOOT_HEALTH_POLL_INTERVAL_S)

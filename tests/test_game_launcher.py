@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import builtins
 import ctypes
+import hashlib
+import os
 import sys
 import uuid
 from types import ModuleType, SimpleNamespace
@@ -679,3 +681,299 @@ def test_press_escape_uses_windows_bridge_from_wsl(monkeypatch):
     monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: False)
     assert game_launcher._press_escape() is False
     assert runs == []
+
+
+# ---------------------------------------------------------------------------
+# Benchmark save deployment
+# ---------------------------------------------------------------------------
+
+
+def test_deploy_benchmark_save_atomically_replaces_and_verifies(monkeypatch, tmp_path):
+    source = tmp_path / "archive.Civ6Save"
+    source.write_bytes(b"canonical")
+    saves = tmp_path / "Single"
+    saves.mkdir()
+    monkeypatch.setattr(game_launcher, "SINGLE_SAVE_DIR", str(saves))
+    digest = hashlib.sha256(b"canonical").hexdigest()
+
+    result = game_launcher.deploy_benchmark_save(source, "BUILDER_ECONOMY_CAL_V1", digest)
+
+    assert (saves / "BUILDER_ECONOMY_CAL_V1.Civ6Save").read_bytes() == b"canonical"
+    assert result["deployed_sha256"] == digest
+    assert result["archive_sha256"] == digest
+    # No stray temp file left behind after the atomic replace.
+    assert list(saves.iterdir()) == [saves / "BUILDER_ECONOMY_CAL_V1.Civ6Save"]
+
+
+def test_deploy_benchmark_save_rejects_source_hash_mismatch(monkeypatch, tmp_path):
+    source = tmp_path / "archive.Civ6Save"
+    source.write_bytes(b"canonical")
+    saves = tmp_path / "Single"
+    saves.mkdir()
+    monkeypatch.setattr(game_launcher, "SINGLE_SAVE_DIR", str(saves))
+    wrong_digest = hashlib.sha256(b"not canonical").hexdigest()
+
+    with pytest.raises(ValueError, match="source hash mismatch"):
+        game_launcher.deploy_benchmark_save(source, "NAME", wrong_digest)
+
+    assert list(saves.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    ["../escape", "with space", "trailing/slash", "semi;colon", "dotted.name"],
+)
+def test_deploy_benchmark_save_rejects_unsafe_save_names(
+    monkeypatch, tmp_path, unsafe_name
+):
+    source = tmp_path / "archive.Civ6Save"
+    source.write_bytes(b"canonical")
+    saves = tmp_path / "Single"
+    saves.mkdir()
+    monkeypatch.setattr(game_launcher, "SINGLE_SAVE_DIR", str(saves))
+    digest = hashlib.sha256(b"canonical").hexdigest()
+
+    with pytest.raises(ValueError, match="unsafe save name"):
+        game_launcher.deploy_benchmark_save(source, unsafe_name, digest)
+
+    assert list(saves.iterdir()) == []
+
+
+def test_deploy_benchmark_save_fails_closed_on_post_copy_mismatch(monkeypatch, tmp_path):
+    source = tmp_path / "archive.Civ6Save"
+    source.write_bytes(b"canonical")
+    saves = tmp_path / "Single"
+    saves.mkdir()
+    monkeypatch.setattr(game_launcher, "SINGLE_SAVE_DIR", str(saves))
+    digest = hashlib.sha256(b"canonical").hexdigest()
+
+    real_hash = game_launcher._sha256_file
+    calls = {"n": 0}
+
+    def flaky_hash(path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real_hash(path)  # source hash checks out
+        return "0" * 64  # simulate corruption introduced by the copy itself
+
+    monkeypatch.setattr(game_launcher, "_sha256_file", flaky_hash)
+
+    with pytest.raises(ValueError, match="deployed hash mismatch"):
+        game_launcher.deploy_benchmark_save(source, "NAME", digest)
+
+    # The atomic replace must never have happened, and no temp file survives.
+    assert list(saves.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# Boot health
+# ---------------------------------------------------------------------------
+
+
+class _FakeMonotonicClock:
+    """Deterministic stand-in for time.monotonic(), advanced by fake sleeps."""
+
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float) -> None:
+        self.t += seconds
+
+
+def _install_fake_clock(monkeypatch):
+    clock = _FakeMonotonicClock()
+    monkeypatch.setattr(game_launcher.time, "monotonic", clock)
+    return clock
+
+
+def test_wait_for_boot_health_passes_once_a_fresh_row_exceeds_min_frame(
+    monkeypatch, tmp_path
+):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    clock = _install_fake_clock(monkeypatch)
+    writes = ["3,COMPLETE\n", "5,COMPLETE\n", "150,COMPLETE\n"]
+
+    def fake_sleep(_seconds):
+        clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
+        if writes:
+            with open(profile, "a") as fh:
+                fh.write(writes.pop(0))
+
+    monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
+
+    result = game_launcher.wait_for_boot_health(
+        str(profile), start_offset=0, min_frame=100, timeout_s=60
+    )
+
+    assert result["ok"] is True
+    assert result["reason"] is None
+    assert result["last_frame"] == 150
+    assert result["baseline_offset"] == 0
+    assert result["profile_path"] == str(profile)
+    assert result["file_identity"] is not None
+
+
+def test_wait_for_boot_health_ignores_stale_pre_offset_rows(monkeypatch, tmp_path):
+    """Counterfactual: a pre-existing healthy row from a *previous* session
+    must never count. If the implementation ignored start_offset and read
+    from byte 0 instead, this would incorrectly pass with last_frame=500."""
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("500,COMPLETE\n")
+    start_offset = profile.stat().st_size
+    clock = _install_fake_clock(monkeypatch)
+
+    def fake_sleep(_seconds):
+        clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
+
+    monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
+
+    result = game_launcher.wait_for_boot_health(
+        str(profile), start_offset=start_offset, min_frame=100, timeout_s=6
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "timeout"
+    assert result["last_frame"] is None
+
+
+def test_wait_for_boot_health_times_out_on_low_frame_stall(monkeypatch, tmp_path):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    clock = _install_fake_clock(monkeypatch)
+    writes = ["3,COMPLETE\n", "5,COMPLETE\n"]
+
+    def fake_sleep(_seconds):
+        clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
+        if writes:
+            with open(profile, "a") as fh:
+                fh.write(writes.pop(0))
+
+    monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
+
+    result = game_launcher.wait_for_boot_health(
+        str(profile), start_offset=0, min_frame=100, timeout_s=6
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "timeout"
+    assert result["last_frame"] == 5
+
+
+def test_wait_for_boot_health_fails_closed_on_malformed_rows(monkeypatch, tmp_path):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    clock = _install_fake_clock(monkeypatch)
+
+    def fake_sleep(_seconds):
+        clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
+        with open(profile, "a") as fh:
+            fh.write("junk line with no marker\n42,notcomplete\n")
+
+    monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
+
+    result = game_launcher.wait_for_boot_health(
+        str(profile), start_offset=0, min_frame=100, timeout_s=4
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "timeout"
+    assert result["last_frame"] is None
+
+
+def test_wait_for_boot_health_fails_closed_on_log_rotation(monkeypatch, tmp_path):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("3,COMPLETE\n")
+    clock = _install_fake_clock(monkeypatch)
+    rotated = {"done": False}
+
+    def fake_sleep(_seconds):
+        clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
+        if not rotated["done"]:
+            # Simulate rotation the way real log rotation works: a distinct
+            # file is created and swapped into place, guaranteeing a fresh
+            # inode (a plain unlink+recreate can reuse the just-freed inode
+            # number on some filesystems, masking the rotation).
+            replacement = tmp_path / "Profile.csv.new"
+            replacement.write_text("0,COMPLETE\n")
+            os.replace(replacement, profile)
+            rotated["done"] = True
+
+    monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
+
+    result = game_launcher.wait_for_boot_health(
+        str(profile), start_offset=0, min_frame=100, timeout_s=60
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "log_rotated"
+    # Detected well before the 60s deadline -- fails closed immediately.
+    assert result["elapsed_s"] < 10
+
+
+def test_wait_for_boot_health_fails_closed_on_log_truncation(monkeypatch, tmp_path):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("3,COMPLETE\n5,COMPLETE\n")
+    start_offset = profile.stat().st_size
+    clock = _install_fake_clock(monkeypatch)
+
+    def fake_sleep(_seconds):
+        clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
+        with open(profile, "r+b") as fh:
+            fh.truncate(0)  # in-place truncation: same inode, smaller size
+
+    monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
+
+    result = game_launcher.wait_for_boot_health(
+        str(profile), start_offset=start_offset, min_frame=100, timeout_s=60
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "log_truncated"
+    assert result["elapsed_s"] < 10
+
+
+def test_wait_for_boot_health_does_not_let_a_later_regressed_row_in_the_same_batch_undo_a_pass(
+    monkeypatch, tmp_path
+):
+    """Counterfactual for an implementation that inspects only the last row
+    of a newly-appended batch rather than scanning in order: two complete
+    rows can land in a single read (150 then a lower 3, e.g. a counter reset
+    logged in the same flush). The frame that already exceeded min_frame
+    must decide the outcome, not whatever the batch ends with -- an
+    implementation that tracked only the batch's last frame would time out
+    here instead of passing, since ``3`` never exceeds ``100``."""
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    clock = _install_fake_clock(monkeypatch)
+
+    def fake_sleep(_seconds):
+        clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
+        with open(profile, "a") as fh:
+            fh.write("150,COMPLETE\n3,COMPLETE\n")
+
+    monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
+
+    result = game_launcher.wait_for_boot_health(
+        str(profile), start_offset=0, min_frame=100, timeout_s=10
+    )
+
+    assert result["ok"] is True
+    assert result["last_frame"] == 150
+
+
+def test_profile_csv_path_uses_local_appdata_firaxis_logs(monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\wrisl\AppData\Local")
+
+    path = game_launcher._profile_csv_path()
+
+    assert path == os.path.join(
+        r"C:\Users\wrisl\AppData\Local",
+        "Firaxis Games",
+        "Sid Meier's Civilization VI",
+        "Logs",
+        "Profile.csv",
+    )

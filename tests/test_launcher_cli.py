@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from civ_mcp import launcher_cli
@@ -118,3 +120,181 @@ def test_press_escape_command_dispatches_focused_escape(
     )
 
     assert launcher_cli.main(["press-escape"]) == code
+
+
+def test_install_save_command_prints_json_result_on_success(monkeypatch, capsys):
+    result = {
+        "source": "archive.Civ6Save",
+        "save_name": "NAME",
+        "dest_path": "/saves/NAME.Civ6Save",
+        "archive_sha256": "abc",
+        "deployed_sha256": "abc",
+        "expected_sha256": "abc",
+    }
+    calls = []
+
+    def fake_deploy(source, name, sha256):
+        calls.append((source, name, sha256))
+        return result
+
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(launcher_cli.game_launcher, "deploy_benchmark_save", fake_deploy)
+
+    code = launcher_cli.main(
+        [
+            "install-save",
+            "--archive", "archive.Civ6Save",
+            "--name", "NAME",
+            "--sha256", "abc",
+            "--json",
+        ]
+    )
+
+    assert code == 0
+    assert calls == [("archive.Civ6Save", "NAME", "abc")]
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"ok": True, **result}
+
+
+def test_install_save_command_reports_failure_as_json(monkeypatch, capsys):
+    def boom(source, name, sha256):
+        raise ValueError("source hash mismatch for archive.Civ6Save")
+
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(launcher_cli.game_launcher, "deploy_benchmark_save", boom)
+
+    code = launcher_cli.main(
+        [
+            "install-save",
+            "--archive", "archive.Civ6Save",
+            "--name", "NAME",
+            "--sha256", "abc",
+            "--json",
+        ]
+    )
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "ok": False,
+        "error": "source hash mismatch for archive.Civ6Save",
+    }
+
+
+def test_install_save_command_without_json_prints_plain_text(monkeypatch, capsys):
+    result = {
+        "source": "archive.Civ6Save",
+        "save_name": "NAME",
+        "dest_path": "/saves/NAME.Civ6Save",
+        "archive_sha256": "abc",
+        "deployed_sha256": "abc",
+        "expected_sha256": "abc",
+    }
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        launcher_cli.game_launcher, "deploy_benchmark_save", lambda *a: result
+    )
+
+    code = launcher_cli.main(
+        ["install-save", "--archive", "archive.Civ6Save", "--name", "NAME", "--sha256", "abc"]
+    )
+
+    assert code == 0
+    assert capsys.readouterr().out == "Installed NAME -> /saves/NAME.Civ6Save\n"
+
+
+def test_boot_health_command_records_offset_and_prints_json_result(
+    monkeypatch, capsys, tmp_path
+):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("100,COMPLETE\n")
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        launcher_cli.game_launcher, "_profile_csv_path", lambda: str(profile)
+    )
+    captured = {}
+
+    def fake_wait(path, start_offset, min_frame, timeout_s):
+        captured["args"] = (path, start_offset, min_frame, timeout_s)
+        return {
+            "ok": True,
+            "reason": None,
+            "baseline_offset": start_offset,
+            "last_frame": 150,
+            "elapsed_s": 1.2,
+            "file_identity": {"dev": 1, "ino": 2},
+            "profile_path": path,
+        }
+
+    monkeypatch.setattr(launcher_cli.game_launcher, "wait_for_boot_health", fake_wait)
+
+    code = launcher_cli.main(["boot-health", "--json"])
+
+    assert code == 0
+    assert captured["args"] == (
+        str(profile),
+        profile.stat().st_size,
+        launcher_cli.game_launcher._BOOT_HEALTH_MIN_FRAME,
+        launcher_cli.game_launcher._BOOT_HEALTH_TIMEOUT_S,
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["last_frame"] == 150
+
+
+def test_boot_health_command_returns_failure_exit_code_and_json(
+    monkeypatch, capsys, tmp_path
+):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        launcher_cli.game_launcher, "_profile_csv_path", lambda: str(profile)
+    )
+    monkeypatch.setattr(
+        launcher_cli.game_launcher,
+        "wait_for_boot_health",
+        lambda *a, **k: {
+            "ok": False,
+            "reason": "timeout",
+            "baseline_offset": 0,
+            "last_frame": 5,
+            "elapsed_s": 240.0,
+            "file_identity": {"dev": 1, "ino": 2},
+            "profile_path": str(profile),
+        },
+    )
+
+    code = launcher_cli.main(["boot-health", "--json", "--min-frame", "100", "--timeout", "5"])
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["reason"] == "timeout"
+
+
+def test_boot_health_command_without_json_prints_plain_text(monkeypatch, capsys, tmp_path):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        launcher_cli.game_launcher, "_profile_csv_path", lambda: str(profile)
+    )
+    monkeypatch.setattr(
+        launcher_cli.game_launcher,
+        "wait_for_boot_health",
+        lambda *a, **k: {
+            "ok": False,
+            "reason": "timeout",
+            "baseline_offset": 0,
+            "last_frame": 5,
+            "elapsed_s": 240.0,
+            "file_identity": None,
+            "profile_path": str(profile),
+        },
+    )
+
+    code = launcher_cli.main(["boot-health"])
+
+    assert code == 1
+    assert capsys.readouterr().out == "FAILED: frame=5 elapsed=240.0s reason=timeout\n"
