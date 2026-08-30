@@ -43,6 +43,12 @@ async def test_lua_tier_matches_extensioned_names_even_on_linux(monkeypatch):
     .Civ6Save-extensioned form, and must run regardless of sys.platform."""
     real_sleep = asyncio.sleep
     monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+
+    async def fake_continue(name):
+        return f"Loaded {name}: world ready, FireTuner port is open."
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(game_launcher, "continue_after_lua_load", fake_continue)
     conn = LoadConn([
         ["QUERY_SENT"],           # handler registration
         ["RESULT|FOUND"],         # first check poll
@@ -51,18 +57,49 @@ async def test_lua_tier_matches_extensioned_names_even_on_linux(monkeypatch):
 
     result = await load_game_save(conn, "0_MCP_0306")
 
-    assert "Loading save: 0_MCP_0306" in result
+    assert "world ready" in result
     registration = conn.writes[0]
     assert '"0_MCP_0306"' in registration
     assert '"0_MCP_0306.Civ6Save"' in registration
 
 
 @pytest.mark.asyncio
-async def test_lua_tier_connection_drop_after_found_is_success(monkeypatch):
-    """Contexts tearing down after FOUND means the load is genuinely in
-    progress -- report success instead of raising."""
+async def test_ingame_lua_tier_hands_engaged_load_to_continue_helper(monkeypatch):
     real_sleep = asyncio.sleep
     monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+    continued: list[str] = []
+
+    async def fake_continue(name):
+        continued.append(name)
+        return f"Loaded {name}: world ready, FireTuner port is open."
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(game_launcher, "continue_after_lua_load", fake_continue)
+    conn = LoadConn([["QUERY_SENT"], ["RESULT|FOUND"], ["WIPED"]])
+
+    result = await load_game_save(conn, "0_MCP_0306")
+
+    assert continued == ["0_MCP_0306"]
+    assert "world ready" in result
+
+
+@pytest.mark.asyncio
+async def test_ingame_lua_tier_connection_drop_after_found_hands_to_continue_helper(
+    monkeypatch,
+):
+    """Contexts tearing down after FOUND means the load is genuinely in
+    progress -- that counts as engagement and must hand off to the continue
+    helper exactly once, rather than reporting a raw success string."""
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+    continued: list[str] = []
+
+    async def fake_continue(name):
+        continued.append(name)
+        return f"Loaded {name}: world ready, FireTuner port is open."
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(game_launcher, "continue_after_lua_load", fake_continue)
     conn = LoadConn([
         ["QUERY_SENT"],
         ["RESULT|FOUND"],
@@ -71,7 +108,8 @@ async def test_lua_tier_connection_drop_after_found_is_success(monkeypatch):
 
     result = await load_game_save(conn, "0_MCP_0306")
 
-    assert "Loading save: 0_MCP_0306" in result
+    assert continued == ["0_MCP_0306"]
+    assert "world ready" in result
 
 
 @pytest.mark.asyncio
@@ -79,9 +117,18 @@ async def test_lua_tier_found_but_inert_falls_through(monkeypatch):
     """The Aspyr Linux port prints FOUND but Network.LoadGame silently does
     nothing: the Lua state is never wiped, so the loader must NOT claim
     success -- it falls through to the tier-2 path (which reports the save
-    unfindable in this test environment)."""
+    unfindable in this test environment), and must never invoke the
+    continue helper."""
     real_sleep = asyncio.sleep
     monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+    continued: list[str] = []
+
+    async def fake_continue(name):
+        continued.append(name)
+        return "should not run"
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(game_launcher, "continue_after_lua_load", fake_continue)
     conn = LoadConn(
         [["QUERY_SENT"], ["RESULT|FOUND"]]
         + [["STILL_SET"]] * 80          # verification never wipes
@@ -90,6 +137,7 @@ async def test_lua_tier_found_but_inert_falls_through(monkeypatch):
     result = await load_game_save(conn, "0_MCP_0306")
 
     assert "Loading save" not in result
+    assert continued == []
 
 
 class MenuConn(LoadConn):

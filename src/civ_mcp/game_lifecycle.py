@@ -578,13 +578,11 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
         if found:
             # Verify the load actually engaged. A real load wipes Lua
             # state (MCPLoadResult reads nil) or tears the contexts down
-            # (execute raises); the inert Aspyr-Linux Network.LoadGame
-            # leaves the flag set, in which case fall through to Tier 2
-            # instead of claiming a load that never happened.
-            success = (
-                f"Loading save: {save_name}. Game will reload — "
-                f"wait ~10 seconds then call get_game_overview to verify."
-            )
+            # (execute raises, e.g. ConnectionError); the inert
+            # Aspyr-Linux Network.LoadGame leaves the flag set, in which
+            # case fall through to Tier 2 instead of claiming a load that
+            # never happened.
+            engaged = False
             for _ in range(40):
                 await asyncio.sleep(0.25)
                 try:
@@ -594,9 +592,21 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
                         f'print("{lq.SENTINEL}")'
                     )
                 except Exception:
-                    return success  # contexts tearing down: load in progress
+                    engaged = True  # contexts tearing down: load in progress
+                    break
                 if any("WIPED" in line for line in verify):
-                    return success
+                    engaged = True
+                    break
+
+            if engaged:
+                from . import game_launcher
+
+                log.info(
+                    "In-game Lua load engaged for '%s'; waiting through "
+                    "load screen", save_name,
+                )
+                return await game_launcher.continue_after_lua_load(save_name)
+
             log.info(
                 "Lua reported FOUND for '%s' but the load never engaged "
                 "(inert Network.LoadGame) -- falling through", save_name,
