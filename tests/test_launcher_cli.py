@@ -207,7 +207,14 @@ def test_boot_health_command_records_offset_and_prints_json_result(
     monkeypatch, capsys, tmp_path
 ):
     profile = tmp_path / "Profile.csv"
-    profile.write_text("100,COMPLETE\n")
+    # Real native Profile.csv row grammar -- wait_for_boot_health is monkeypatched below
+    # so this content is functionally inert (only its byte length feeds
+    # os.path.getsize), but it must still reflect the real schema, not an
+    # invented one.
+    profile.write_text(
+        "[2026-08-30 10:00:57]\t,----- FRAME: 0 time: 159.87ms "
+        "Moving avg: 2.50ms 1 frames since last \r\n"
+    )
     monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
     monkeypatch.setattr(
         launcher_cli.game_launcher, "_profile_csv_path", lambda: str(profile)
