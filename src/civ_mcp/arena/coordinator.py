@@ -2719,6 +2719,22 @@ async def run_arena(
                                 })
                                 drain_polls = 0
                                 continue
+                            # A disaster popup can also fire MID-INTERTURN
+                            # and hold a GameCore event until closed
+                            # (observed live: v8 T162 -- drain wedged 30m at
+                            # PLEASE WAIT under a black DisasterCinematic
+                            # lens). Dismiss popups on the same cadence.
+                            popups = await _dismiss_blocking_popups(conn)
+                            if popups not in ("POPUPS|none", "?", "err"):
+                                print(f"[arena] blocking popups dismissed "
+                                      f"during seat-0 drain: {popups}",
+                                      file=sys.stderr)
+                                log.append({
+                                    "turn": seat0_state.turn,
+                                    "popup_dismiss": popups,
+                                })
+                                drain_polls = 0
+                                continue
                         if drain_polls >= config.seat0_drain_poll_limit:
                             await _finish_seat0_channel_capture()
                             log.append({

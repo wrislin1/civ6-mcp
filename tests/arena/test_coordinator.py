@@ -8284,6 +8284,53 @@ async def test_no_live_gate_driver_preserves_result_shape_and_artifacts(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_seat0_drain_wedge_dismisses_blocking_popups(monkeypatch, tmp_path):
+    """A disaster popup can fire MID-INTERTURN and hold a GameCore event
+    (observed live: v8 T162 — drain wedged 30m at PLEASE WAIT with a black
+    DisasterCinematic lens while only the orphan sweep ran). The drain arm
+    must also dismiss blocking popups on the drain cadence."""
+    monkeypatch.setattr(coordinator_mod, "SEAT0_DIPLO_DRAIN_POLLS", 4)
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),    # admission
+        seat0_poll(7, active=False),   # wedged AI phase, repeats forever
+    ])
+    sessions = _AnsweringSessions("")   # no local-player session to find
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+
+    async def fake_sweep(_conn):
+        return "ORPHANS|none"          # sessions are not the wedge this time
+
+    monkeypatch.setattr(coordinator_mod, "_sweep_orphan_sessions", fake_sweep)
+
+    dismissals = []
+
+    async def fake_dismiss(_conn):
+        dismissals.append(True)
+        # Closing the popup releases the engine hold: the next poll advances.
+        harness._polls = iter([seat0_poll(8, active=True)])
+        return "POPUPS|NaturalDisasterPopup"
+
+    monkeypatch.setattr(coordinator_mod, "_dismiss_blocking_popups", fake_dismiss)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(
+        tmp_path, run_id="seat0-drain-popup",
+        idle_poll_limit=30, seat0_drain_poll_limit=12,
+    )
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert len(dismissals) == 1                   # fired once, on the cadence
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert not [e for e in result["log"] if e.get("event") == "seat0_drain_deadline"]
+    dismissed = [e for e in result["log"] if "popup_dismiss" in e]
+    assert dismissed and dismissed[0]["popup_dismiss"] == "POPUPS|NaturalDisasterPopup"
+
+
 async def test_seat0_drain_wedge_runs_orphan_sweep(monkeypatch, tmp_path):
     """An AI-to-AI diplomacy session opened by channel funding wedges the
     post-end-turn AI phase (observed live: v7 T163, session 2-3#131075).
