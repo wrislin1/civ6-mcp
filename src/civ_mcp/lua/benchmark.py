@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from civ_mcp.lua._helpers import SENTINEL, _int
+from civ_mcp.lua._helpers import SENTINEL, _bail, _int
 
 
 def build_benchmark_state_query(
@@ -33,7 +33,7 @@ def build_benchmark_state_query(
     return f"""
 local pid = {pid}
 local p = Players[pid]
-if p == nil then print("ERR:PLAYER_NOT_FOUND"); print("{SENTINEL}"); return end
+if p == nil then {_bail("ERR:PLAYER_NOT_FOUND")} end
 local cfg = PlayerConfigurations[pid]
 local civType = cfg and cfg:GetCivilizationTypeName() or "UNKNOWN"
 local seed = tostring(GameConfiguration.GetValue("GAME_SYNC_RANDOM_SEED"))

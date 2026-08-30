@@ -250,3 +250,28 @@ def test_lua_deal_item_rejects_injection():
     # legit values still build the expected Lua without raising
     ok = _lua_deal_item("me", {"type": "AGREEMENT", "subtype": "OPEN_BORDERS"})
     assert "DealAgreementTypes.OPEN_BORDERS" in ok
+
+
+# build_benchmark_state_query has no GameState wrapper yet — it's called
+# directly by civ_mcp.arena.benchmark_state.capture_canonical_state. Both new
+# interpolation surfaces (player_id, and each x/y in tile_coords) are coerced
+# via int() rather than a dedicated validator, so this pins that coercion:
+# a future refactor that drops it (e.g. an f-string splice with no int(...))
+# goes red here instead of silently reopening the surface.
+def test_build_benchmark_state_query_rejects_player_id_injection():
+    from civ_mcp.lua.benchmark import build_benchmark_state_query
+    with pytest.raises((ValueError, TypeError)):
+        build_benchmark_state_query("1) print(1) --", [(8, 8)])
+
+
+def test_build_benchmark_state_query_rejects_tile_coords_injection():
+    from civ_mcp.lua.benchmark import build_benchmark_state_query
+    with pytest.raises((ValueError, TypeError)):
+        build_benchmark_state_query(1, [("8) print(1) --", 8)])
+
+
+def test_build_benchmark_state_query_accepts_legit_values():
+    from civ_mcp.lua.benchmark import build_benchmark_state_query
+    lua = build_benchmark_state_query(1, [(8, 8), (9, 8)])
+    assert "local pid = 1" in lua
+    assert "{8,8}" in lua and "{9,8}" in lua

@@ -14,7 +14,12 @@ must change the hash. That's the whole job of this module:
 - `diff_state` reports a path -> [old, new] mapping between two captures,
   matching list rows by id/(x, y) rather than position.
 - `capture_canonical_state` ties a live FireTuner connection to the two
-  above: query, parse, normalize.
+  above: query, parse, normalize. It checks for an `ERR:`-prefixed line
+  before parsing — `parse_benchmark_state` only recognizes IDENTITY/UNIT/
+  CITY/TILE prefixes and silently drops anything else, so an unguarded
+  caller would hash a near-empty "default" state instead of learning the
+  query failed (e.g. a stale/wrong manifest `player_id`). Same anti-pattern
+  guard as `GameState.get_district_advisor` in `game_state.py`.
 """
 from __future__ import annotations
 
@@ -24,6 +29,11 @@ from typing import Callable, Mapping, Sequence
 
 from civ_mcp import lua as lq
 from civ_mcp.connection import GameConnection
+
+
+class BenchmarkStateError(RuntimeError):
+    """Raised when the benchmark-state Lua query reports an error line
+    (e.g. ``ERR:PLAYER_NOT_FOUND``) instead of returning parseable state."""
 
 # List-valued fields whose row order is not meaningful, and how to key a row
 # for order-independent comparison.
@@ -116,8 +126,16 @@ async def capture_canonical_state(
     Sends `build_benchmark_state_query`, parses the response, and sorts the
     declared-list fields before returning — the result is ready to feed
     straight to `state_digest` / `diff_state`.
+
+    Raises `BenchmarkStateError` if the query reports an `ERR:`-prefixed
+    line (e.g. the manifest's `player_id` doesn't resolve in-game) — this
+    must surface as a clear failure, never as a near-empty state that later
+    just looks like "everything differs" in a digest mismatch.
     """
     query = lq.build_benchmark_state_query(player_id, tile_coords)
     lines = await connection.execute_read(query)
+    for line in lines:
+        if line.startswith("ERR:"):
+            raise BenchmarkStateError(line)
     state = lq.parse_benchmark_state(lines)
     return normalize_state(state)

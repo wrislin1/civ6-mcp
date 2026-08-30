@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from civ_mcp.arena.benchmark_state import (
+    BenchmarkStateError,
     capture_canonical_state,
     diff_state,
     normalize_state,
@@ -117,3 +118,30 @@ async def test_capture_canonical_state_queries_parses_and_normalizes():
     assert "local pid = 0" in fake.sent[0]
     assert [u["id"] for u in state["units"]] == [1, 2]
     assert state["turn"] == 157
+
+
+@pytest.mark.asyncio
+async def test_capture_canonical_state_raises_on_err_line_instead_of_hashing_empty_state():
+    """A stale/wrong manifest player_id must surface as a clear error, not as
+    a near-empty state that silently hashes to "everything differs" later.
+    parse_benchmark_state only recognizes IDENTITY/UNIT/CITY/TILE prefixes
+    and drops anything else — so without this guard, an ERR: line reaches
+    the parser, matches no prefix, and capture_canonical_state would return
+    the all-None/empty default state instead of raising."""
+
+    class ErrConnection:
+        async def execute_read(self, lua_code, timeout=5.0):
+            return ["ERR:PLAYER_NOT_FOUND"]
+
+    with pytest.raises(BenchmarkStateError, match="ERR:PLAYER_NOT_FOUND"):
+        await capture_canonical_state(ErrConnection(), player_id=99, tile_coords=[])
+
+
+@pytest.mark.asyncio
+async def test_capture_canonical_state_raises_on_err_line_anywhere_in_response():
+    class ErrConnection:
+        async def execute_read(self, lua_code, timeout=5.0):
+            return ["UNIT|1|UNIT_BUILDER|8|8|2", "ERR:SOMETHING_WENT_WRONG"]
+
+    with pytest.raises(BenchmarkStateError, match="ERR:SOMETHING_WENT_WRONG"):
+        await capture_canonical_state(ErrConnection(), player_id=0, tile_coords=[])
