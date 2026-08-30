@@ -259,6 +259,7 @@ def test_decision_blockers_is_an_explicit_closed_list():
         "ENDTURN_BLOCKING_CONSIDER_RAZE_CITY",
         "ENDTURN_BLOCKING_CONSIDER_DISLOYAL_CITY",
         "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN",
+        "ENDTURN_BLOCKING_CLAIM_GREAT_PERSON",
     }
 
 
