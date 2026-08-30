@@ -478,7 +478,9 @@ class BenchmarkRunner:
 # health) is out of this task's file scope and is intentionally left for
 # Task 13's integration pass, which inspects the live game before writing
 # the position-authoring plan. Treat this section as a working scaffold,
-# not yet a fully gated admission path.
+# not yet a fully gated admission path -- `_run_async` fails closed on this
+# (refusing to run at all) unless `--ungated-smoke` explicitly opts into a
+# marked, non-counted smoke session instead.
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -496,6 +498,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="OpenAI-compatible gateway base URL for the counted backend (required to run)",
     )
     parser.add_argument("--api-key-env", default="LITELLM_OPENAI_API_KEY")
+    parser.add_argument(
+        "--ungated-smoke",
+        action="store_true",
+        help=(
+            "Run without the live admission gate pipeline (check_clean_checkout / "
+            "check_gpu_conflicts / admit_model_block / build_session_lock -- not yet "
+            "wired into this CLI; see benchmark_gates.py). For NON-COUNTED SMOKE "
+            "TESTING ONLY: evidence from this run is stamped ungated_smoke=true in "
+            "the session lock so a scorer/report can refuse or flag it -- it must "
+            "never be treated as a counted session."
+        ),
+    )
     return parser
 
 
@@ -568,6 +582,29 @@ def _build_live_dependencies(
 
 
 async def _run_async(args: argparse.Namespace) -> int:
+    # Fail-closed FIRST, before touching the suite/position manifests, the
+    # live game connection, or the store: this CLI does not yet call the
+    # admission gates in benchmark_gates.py (check_clean_checkout /
+    # check_gpu_conflicts / admit_model_block / build_session_lock). Without
+    # this guard, once suite/position fixtures exist, `civ-arena-benchmark`
+    # would silently run a fully counted session with no admission evidence
+    # at all -- a hard architecture violation. `--ungated-smoke` is the one
+    # deliberate override, for non-counted smoke testing only; it stamps
+    # `ungated_smoke: True` into the session lock so the artifact itself
+    # carries the mark for a future scorer/report to refuse or flag.
+    if not args.ungated_smoke:
+        print(
+            "civ-arena-benchmark: refusing to run -- the live admission gate "
+            "pipeline (check_clean_checkout / check_gpu_conflicts / "
+            "admit_model_block / build_session_lock in benchmark_gates.py) is not "
+            "yet wired into this CLI, so a counted session cannot be admitted. "
+            "This is tracked as a Task 13 follow-up. Pass --ungated-smoke to run "
+            "an explicitly non-counted smoke session instead (its evidence is "
+            "stamped ungated_smoke=true and must never be scored as a counted run).",
+            file=sys.stderr,
+        )
+        return 1
+
     suite_path = Path(args.suite)
     try:
         suite = load_suite_manifest(suite_path)
@@ -611,6 +648,10 @@ async def _run_async(args: argparse.Namespace) -> int:
             {"suite_id": suite.suite_id, "position_id": position_id}
         ),
         "schedule_fingerprint": fingerprint(schedule_payload),
+        # Always True here (the function returns above when it's False) --
+        # stamped explicitly, never omitted, so the artifact itself always
+        # carries the mark for a future scorer/report to check.
+        "ungated_smoke": True,
     }
     try:
         store = BenchmarkStore.create(run_dir, lock)

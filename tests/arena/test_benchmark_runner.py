@@ -14,6 +14,7 @@ import openai
 import pytest
 from unittest.mock import AsyncMock
 
+import civ_mcp.arena.benchmark_runner as benchmark_runner
 from civ_mcp.arena.benchmark_agent import EpisodeEvidence, EpisodeTerminal, EpisodeTimedOut
 from civ_mcp.arena.benchmark_backend import HealthProbe
 from civ_mcp.arena.benchmark_runner import (
@@ -220,7 +221,11 @@ async def test_run_trial_calls_reload_popup_checksum_in_order(tmp_path):
 async def test_checksum_mismatch_aborts_session_with_no_attempt_recorded(tmp_path):
     store = BenchmarkStore.create(tmp_path / "run", _lock())
     wrong_state = {**CANONICAL, "turn": 999}
-    deps = _deps(capture_state=AsyncMock(return_value=wrong_state))
+    make_agent_calls: list[int] = []
+    deps = _deps(
+        capture_state=AsyncMock(return_value=wrong_state),
+        make_agent=lambda spec: make_agent_calls.append(spec.index) or _FinishingAgent(),
+    )
     runner = _runner(store, deps)
 
     with pytest.raises(SessionAborted, match="checksum"):
@@ -228,6 +233,9 @@ async def test_checksum_mismatch_aborts_session_with_no_attempt_recorded(tmp_pat
 
     assert runner.store.completed_indices() == set()
     assert runner.store.attempt_count(1) == 0
+    # A checksum mismatch aborts before a fresh agent is ever constructed --
+    # no episode, no model observation of any kind.
+    assert make_agent_calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -543,3 +551,143 @@ async def test_scorer_absence_never_replays_a_committed_trial(tmp_path):
 
     assert make_agent_calls == []
     assert runner.store.completed_indices() == {1}
+
+
+# ---------------------------------------------------------------------------
+# CLI fail-closed guard: no admission gates are wired into `main`/`_run_async`
+# yet, so a counted-looking session must be refused outright unless the
+# operator deliberately opts into a marked, non-counted smoke run.
+# ---------------------------------------------------------------------------
+
+
+def _write_fixture_suite_and_position(tmp_path) -> "object":
+    from pathlib import Path
+
+    benchmarks_dir = tmp_path / "benchmarks"
+    suites_dir = benchmarks_dir / "suites"
+    positions_dir = benchmarks_dir / "positions"
+    suites_dir.mkdir(parents=True)
+    positions_dir.mkdir(parents=True)
+
+    (positions_dir / "builder-cal-v1.yaml").write_text(
+        """
+position_id: builder-cal-v1
+version: 1
+archive: positions/builder-cal-v1.Civ6Save
+archive_sha256: "abc123"
+game_save_name: builder-cal-v1
+player_id: 0
+expected_state:
+  turn: 42
+expected_state_sha256: "def456"
+relevant_tiles:
+  - [9, 24]
+objectives:
+  - id: obj1
+    description: improve the farm tile
+rubric:
+  - id: r1
+    weight: 1.0
+split: calibration
+""",
+        encoding="utf-8",
+    )
+
+    suite_path = suites_dir / "builder-cal.yaml"
+    suite_path.write_text(
+        """
+suite_id: builder-cal-v1
+driver: single_turn
+positions:
+  - builder-cal-v1
+models:
+  - qwen3.6-27b
+arms:
+  - arm_id: minimal
+    tools: minimal
+    options: {}
+seeds: [101]
+order: abba
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  seed: null
+  max_tokens: 6144
+max_steps: 15
+result_char_cap: 6000
+audit_indices: []
+""",
+        encoding="utf-8",
+    )
+    return Path(suite_path)
+
+
+def test_main_without_ungated_smoke_flag_refuses_before_touching_the_live_game(
+    tmp_path, monkeypatch, capsys
+):
+    def _boom_create(*_args, **_kwargs):
+        raise AssertionError("BenchmarkStore.create must not be called without --ungated-smoke")
+
+    class _BoomConnection:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError("GameConnection must not be constructed without --ungated-smoke")
+
+    monkeypatch.setattr(benchmark_runner.BenchmarkStore, "create", staticmethod(_boom_create))
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _BoomConnection)
+
+    # Deliberately points at a suite file that doesn't even exist: the guard
+    # must fire before the suite/position manifests are ever loaded.
+    exit_code = benchmark_runner.main(
+        ["--suite", str(tmp_path / "missing-suite.yaml"), "--run-id", "smoke-run"]
+    )
+
+    assert exit_code == 1
+    err = capsys.readouterr().err.lower()
+    assert "admission gate" in err
+    assert "ungated-smoke" in err
+
+
+@pytest.mark.asyncio
+async def test_ungated_smoke_flag_proceeds_and_stamps_the_session_lock(tmp_path, monkeypatch):
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    captured_locks: list[dict] = []
+    real_create = benchmark_runner.BenchmarkStore.create.__func__
+
+    def _capturing_create(cls, run_dir_arg, lock):
+        captured_locks.append(dict(lock))
+        return real_create(cls, run_dir_arg, lock)
+
+    monkeypatch.setattr(benchmark_runner.BenchmarkStore, "create", classmethod(_capturing_create))
+
+    class _FakeConnection:
+        async def connect(self):
+            return None
+
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+
+    class _FakeRunner:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def run(self, schedule):
+            return None
+
+    monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _FakeRunner)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--suite", str(suite_path),
+            "--run-id", "smoke-run",
+            "--run-dir", str(run_dir),
+            "--gateway-url", "http://example.invalid/v1",
+            "--ungated-smoke",
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    assert len(captured_locks) == 1
+    assert captured_locks[0]["ungated_smoke"] is True
