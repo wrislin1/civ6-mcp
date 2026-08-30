@@ -1979,6 +1979,98 @@ def _press_escape_win32() -> bool:
     return _send_key_win32(0x1B)  # VK_ESCAPE
 
 
+def _press_escape() -> bool:
+    """Press Escape in the game, wherever this process runs.
+
+    Native win32 injects directly; under WSL (sys.platform == 'linux' while
+    the game runs on Windows) the press is delivered through the Windows
+    companion checkout's signed Python via the launcher bootstrap."""
+    if sys.platform == "win32":
+        return _press_escape_win32()
+    if sys.platform == "linux":
+        return _press_escape_windows_bridge()
+    return False
+
+
+_WSL_WINDOWS_PYTHON = (
+    "/mnt/c/Users/wrisl/AppData/Local/Programs/Python/Python312/python.exe"
+)
+_WSL_WINDOWS_BOOTSTRAP = (
+    "/mnt/c/Users/wrisl/dev/civ6-mcp/tools/windows/civ6_launcher_bootstrap.py"
+)
+
+
+def _press_escape_windows_bridge() -> bool:
+    """Deliver one Escape press via the Windows companion checkout.
+
+    Paths are overridable with CIV6_WINDOWS_PYTHON / CIV6_WINDOWS_BOOTSTRAP
+    (WSL-visible paths); the bootstrap argument is translated to a Windows
+    path for the signed interpreter."""
+    python_exe = os.environ.get("CIV6_WINDOWS_PYTHON", _WSL_WINDOWS_PYTHON)
+    bootstrap = os.environ.get("CIV6_WINDOWS_BOOTSTRAP", _WSL_WINDOWS_BOOTSTRAP)
+    if not (os.path.exists(python_exe) and os.path.exists(bootstrap)):
+        log.debug("Windows bridge unavailable (%s, %s)", python_exe, bootstrap)
+        return False
+    win_bootstrap = bootstrap
+    if bootstrap.startswith("/mnt/") and len(bootstrap) > 7:
+        win_bootstrap = (
+            bootstrap[5].upper() + ":" + bootstrap[6:].replace("/", "\\")
+        )
+    try:
+        proc = subprocess.run(
+            [python_exe, win_bootstrap, "press-escape"],
+            capture_output=True,
+            timeout=60,
+        )
+    except Exception as exc:
+        log.warning("Windows bridge escape failed: %s", exc)
+        return False
+    return proc.returncode == 0
+
+
+async def continue_after_lua_load(
+    save_name: str,
+    *,
+    engage_polls: int = 30,
+    world_polls: int = 150,
+    press_every: int = 7,
+) -> str:
+    """Carry a frontend Network.LoadGame through to a playable world.
+
+    Observed live 2026-08-29: the FireTuner port drops for the whole load
+    and reopens only in-world; the leader screen in between accepts only
+    VK_ESCAPE. Wait for the drop (proof the load engaged), then press
+    Escape periodically until the port returns. Never presses while the
+    port is open, so a live game is never poked."""
+    engaged = False
+    for _ in range(engage_polls):
+        if not _is_tuner_port_open():
+            engaged = True
+            break
+        await asyncio.sleep(2.0)
+    if not engaged:
+        return (
+            f"WARNING: FireTuner port never dropped after the Lua load of "
+            f"'{save_name}' -- the load may not have engaged; no Escape "
+            f"was sent."
+        )
+    polls = 0
+    while polls < world_polls:
+        if _is_tuner_port_open():
+            return (
+                f"Loaded {save_name}: world ready, FireTuner port is open. "
+                f"Reconnect and verify with get_game_overview."
+            )
+        if polls % press_every == 0:
+            _press_escape()
+        polls += 1
+        await asyncio.sleep(2.0)
+    return (
+        f"WARNING: FireTuner port did not reopen within the wait window "
+        f"for '{save_name}'. Check the game manually."
+    )
+
+
 def _winrt_ocr_available() -> bool:
     """Return whether Windows has an OCR engine for the current user."""
     from winrt.windows.media.ocr import OcrEngine

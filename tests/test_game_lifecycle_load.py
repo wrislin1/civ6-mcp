@@ -90,3 +90,88 @@ async def test_lua_tier_found_but_inert_falls_through(monkeypatch):
     result = await load_game_save(conn, "0_MCP_0306")
 
     assert "Loading save" not in result
+
+
+class MenuConn(LoadConn):
+    """LoadConn that is sitting at the main menu: no GameCore/InGame states,
+    frontend states only, with execute_in_state scripted separately."""
+
+    def __init__(self, state_results, write_results=()):
+        super().__init__(write_results)
+        self.gamecore_index = None
+        self.ingame_index = None
+        self.lua_states = {0: "Main State", 5: "LoadGameMenu", 30: "FrontEnd"}
+        self.state_calls: list[tuple[int, str]] = []
+        self._state_results = list(state_results)
+
+    async def execute_in_state(self, state_index, lua, timeout=5.0):
+        self.state_calls.append((state_index, lua))
+        if not self._state_results:
+            return []
+        result = self._state_results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+@pytest.mark.asyncio
+async def test_frontend_tier_loads_from_main_menu(monkeypatch):
+    """At the main menu the InGame tier cannot run (no GameCore/InGame
+    states), but the LoadGameMenu frontend state can query and fire
+    Network.LoadGame directly (proven live 2026-08-29). The loader must use
+    it instead of OCR menu navigation, then hand off to the continue helper
+    that dismisses the leader screen."""
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+    continues: list[str] = []
+
+    async def fake_continue(save_name):
+        continues.append(save_name)
+        return "Loaded CHANNELS_GATE_V1_T157: world ready, FireTuner port open."
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(
+        game_launcher, "continue_after_lua_load", fake_continue, raising=False
+    )
+    conn = MenuConn(state_results=[
+        ["QUERY_SENT"],          # frontend handler registration + query
+        ["RESULT|FOUND"],        # poll: matched and Network.LoadGame fired
+    ])
+
+    result = await load_game_save(conn, "CHANNELS_GATE_V1_T157")
+
+    assert continues == ["CHANNELS_GATE_V1_T157"]
+    assert "world ready" in result
+    assert conn.writes == []                 # never touched the InGame tier
+    assert conn.state_calls and conn.state_calls[0][0] == 5
+    registration = conn.state_calls[0][1]
+    assert "Network.LoadGame" in registration
+    assert '"CHANNELS_GATE_V1_T157"' in registration
+    assert '"CHANNELS_GATE_V1_T157.Civ6Save"' in registration
+
+
+@pytest.mark.asyncio
+async def test_frontend_tier_not_found_falls_through(monkeypatch):
+    """A save the frontend query cannot match must fall through to the
+    filesystem tier (which reports it unfindable here), never to the
+    continue helper."""
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+    continues: list[str] = []
+
+    async def fake_continue(save_name):
+        continues.append(save_name)
+        return "should not run"
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(
+        game_launcher, "continue_after_lua_load", fake_continue, raising=False
+    )
+    import os.path
+    monkeypatch.setattr(os.path, "exists", lambda _p: False)
+    conn = MenuConn(state_results=[["QUERY_SENT"], ["RESULT|NOT_FOUND"]])
+
+    result = await load_game_save(conn, "NO_SUCH_SAVE")
+
+    assert continues == []
+    assert "not found" in result

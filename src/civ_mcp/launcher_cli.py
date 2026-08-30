@@ -21,6 +21,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "preflight",
         help="validate Windows GUI dependencies and report launcher state",
     )
+    commands.add_parser(
+        "press-escape",
+        help="press Escape in the focused game (dismiss load screen/modals)",
+    )
     for command, help_text in (
         ("load", "load a named save from the main menu"),
         ("restart-and-load", "kill Civ VI, relaunch it, and load a named save"),
@@ -74,6 +78,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "preflight":
             _preflight()
             return 0
+
+        if args.command == "press-escape":
+            return 0 if game_launcher._press_escape_win32() else 1
 
         launcher = (
             game_launcher.load_save_from_menu

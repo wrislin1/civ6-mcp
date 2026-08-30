@@ -456,6 +456,72 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
     """
     import asyncio
 
+    # Tier 0: frontend Lua (main menu). Proven live 2026-08-29: the
+    # LoadGameMenu Lua state can query the save list and fire
+    # Network.LoadGame directly, replacing OCR menu navigation entirely.
+    # Only returns on a FOUND load; anything else falls through to the
+    # in-game tier (harmlessly, at the menu) and then the filesystem tier.
+    if getattr(conn, "gamecore_index", None) is None:
+        menu_idx = next(
+            (
+                idx
+                for idx, name in (getattr(conn, "lua_states", {}) or {}).items()
+                if name == "LoadGameMenu"
+            ),
+            None,
+        )
+        if menu_idx is not None:
+            try:
+                await conn.execute_in_state(
+                    menu_idx,
+                    f"MCP_FE_RESULT = nil; MCP_FE_DONE = false; "
+                    f"local function OnResults(fileList, qid) "
+                    f"  UI.CloseFileListQuery(qid); "
+                    f"  LuaEvents.FileListQueryResults.Remove(OnResults); "
+                    f"  for i, s in ipairs(fileList) do "
+                    f'    if s.Name == "{save_name}" or s.Name == "{save_name}.Civ6Save" then '
+                    f'      MCP_FE_RESULT = "FOUND"; '
+                    f"      MCP_FE_DONE = true; "
+                    f"      Network.LeaveGame(); "
+                    f"      Network.LoadGame(s, ServerType.SERVER_TYPE_NONE); "
+                    f"      return "
+                    f"    end "
+                    f"  end; "
+                    f'  MCP_FE_RESULT = "NOT_FOUND"; '
+                    f"  MCP_FE_DONE = true; "
+                    f"end; "
+                    f"LuaEvents.FileListQueryResults.Add(OnResults); "
+                    f"local opts = SaveLocationOptions.NORMAL + SaveLocationOptions.AUTOSAVE "
+                    f"  + SaveLocationOptions.QUICKSAVE + SaveLocationOptions.LOAD_METADATA; "
+                    f"UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
+                    f'print("QUERY_SENT"); '
+                    f'print("{lq.SENTINEL}")',
+                )
+                for _ in range(20):
+                    await asyncio.sleep(0.25)
+                    check = await conn.execute_in_state(
+                        menu_idx,
+                        f"if MCP_FE_DONE then "
+                        f'  print("RESULT|" .. tostring(MCP_FE_RESULT)) '
+                        f'else print("PENDING") end; '
+                        f'print("{lq.SENTINEL}")',
+                    )
+                    if any(line == "RESULT|FOUND" for line in check):
+                        from . import game_launcher
+
+                        log.info(
+                            "Frontend Lua load engaged for '%s'; waiting "
+                            "through the load screen",
+                            save_name,
+                        )
+                        return await game_launcher.continue_after_lua_load(
+                            save_name
+                        )
+                    if any(line == "RESULT|NOT_FOUND" for line in check):
+                        break
+            except Exception:
+                log.debug("frontend load_game_save tier failed", exc_info=True)
+
     # Tier 1: Lua query-match-load. Always attempted -- gating on
     # sys.platform tests where PYTHON runs, not where the game runs (WSL
     # drives the WINDOWS build on the gaming PC; observed live 2026-07-15).

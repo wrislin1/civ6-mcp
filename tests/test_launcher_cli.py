@@ -103,3 +103,18 @@ def test_load_command_returns_failure_for_unusable_result(
 
     assert launcher_cli.main([command, "DOES_NOT_EXIST"]) == 1
     assert capsys.readouterr().err == result + "\n"
+
+
+@pytest.mark.parametrize(("pressed", "code"), [(True, 0), (False, 1)])
+def test_press_escape_command_dispatches_focused_escape(
+    monkeypatch, capsys, pressed, code
+):
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        launcher_cli.game_launcher,
+        "_press_escape_win32",
+        lambda: pressed,
+        raising=False,
+    )
+
+    assert launcher_cli.main(["press-escape"]) == code

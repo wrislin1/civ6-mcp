@@ -600,3 +600,82 @@ def test_windows_escape_sends_keydown_and_keyup_via_sendinput(monkeypatch):
 
     assert game_launcher._press_escape_win32() is True
     assert sendinput_calls == [(2, 40)]   # keydown + keyup, correct cbSize
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_presses_escape_until_world_ready(monkeypatch):
+    """After a frontend Network.LoadGame the tuner port drops for the whole
+    load and reopens only once the leader screen is dismissed (observed live
+    2026-08-29). The helper must wait for the drop, press Escape while the
+    port stays closed, stop the moment it reopens, and report success."""
+    port_states = iter([True, False, False, False, True])
+    seen: list[bool] = []
+
+    def fake_port():
+        state = next(port_states, True)
+        seen.append(state)
+        return state
+
+    presses: list[bool] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", fake_port)
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", press_every=1
+    )
+
+    assert presses          # pressed while the port was closed
+    assert "FireTuner port is open" in result
+    assert seen[-1] is True
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_warns_when_load_never_engages(monkeypatch):
+    """If the port never drops, Network.LoadGame did not actually engage —
+    report a warning instead of pressing Escape at a live game."""
+    presses: list[bool] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: True)
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=3
+    )
+
+    assert presses == []
+    assert "WARNING" in result
+
+
+def test_press_escape_uses_windows_bridge_from_wsl(monkeypatch):
+    """Under WSL (sys.platform == 'linux') the game runs on Windows: Escape
+    must be delivered by the Windows companion checkout's signed Python via
+    the launcher bootstrap, and only when both are present."""
+    runs: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        runs.append(list(cmd))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher.subprocess, "run", fake_run)
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: True)
+
+    assert game_launcher._press_escape() is True
+    assert len(runs) == 1
+    assert runs[0][-1] == "press-escape"
+
+    runs.clear()
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: False)
+    assert game_launcher._press_escape() is False
+    assert runs == []
