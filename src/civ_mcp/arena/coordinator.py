@@ -2628,6 +2628,22 @@ async def run_arena(
                             ):
                                 drain_polls = 0
                                 continue
+                            # An AI-to-AI session (e.g. opened by a channel
+                            # funding proposal) also wedges this phase and is
+                            # invisible to the local-player probe above
+                            # (observed live: v7 T163, session 2-3#131075).
+                            # Sweep orphans on the same cadence.
+                            swept_sessions = await _sweep_orphan_sessions(conn)
+                            if swept_sessions not in ("ORPHANS|none", "?", "err"):
+                                print(f"[arena] orphan diplomacy sessions "
+                                      f"closed during seat-0 drain: "
+                                      f"{swept_sessions}", file=sys.stderr)
+                                log.append({
+                                    "turn": seat0_state.turn,
+                                    "orphan_sweep": swept_sessions,
+                                })
+                                drain_polls = 0
+                                continue
                         if drain_polls >= config.seat0_drain_poll_limit:
                             await _finish_seat0_channel_capture()
                             log.append({

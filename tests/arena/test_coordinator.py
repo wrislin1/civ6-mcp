@@ -8269,3 +8269,47 @@ async def test_no_live_gate_driver_preserves_result_shape_and_artifacts(tmp_path
         "log",
     }
     assert not (tmp_path / "disabled-gate" / "live_gate").exists()
+
+
+@pytest.mark.asyncio
+async def test_seat0_drain_wedge_runs_orphan_sweep(monkeypatch, tmp_path):
+    """An AI-to-AI diplomacy session opened by channel funding wedges the
+    post-end-turn AI phase (observed live: v7 T163, session 2-3#131075).
+    `query_local_player_sessions` cannot see it, so the drain arm must also
+    run the orphan sweep on the drain cadence; the turn then advances instead
+    of dying at the drain deadline."""
+    monkeypatch.setattr(coordinator_mod, "SEAT0_DIPLO_DRAIN_POLLS", 4)
+    harness = Seat0Harness(monkeypatch, [
+        seat0_poll(7, active=True),    # admission
+        seat0_poll(7, active=False),   # wedged AI phase, repeats forever
+    ])
+    sessions = _AnsweringSessions("")   # no local-player session to find
+    monkeypatch.setattr(seat0_mod, "query_local_player_sessions", sessions)
+
+    sweeps = []
+
+    async def fake_sweep(_conn):
+        sweeps.append(True)
+        # Closing the orphan un-wedges the engine: the next poll advances.
+        harness._polls = iter([seat0_poll(8, active=True)])
+        return "ORPHANS|2-3#131075"
+
+    monkeypatch.setattr(coordinator_mod, "_sweep_orphan_sessions", fake_sweep)
+
+    conn = Seat0CapsConn()
+    gs = FakeGSWithConn(conn)
+    sink = EventSink(harness)
+    pol = Seat0RecordingPolicy(harness)
+    cfg = _seat0_cfg(
+        tmp_path, run_id="seat0-drain-orphan",
+        idle_poll_limit=30, seat0_drain_poll_limit=12,
+    )
+
+    result = await run_arena(conn, gs, cfg, policy=pol, transcript=sink)
+
+    assert len(sweeps) == 1                       # fired once, on the cadence
+    assert len(sink.records) == 1
+    assert sink.records[0]["seat0"]["terminal_state"] == "advanced"
+    assert not [e for e in result["log"] if e.get("event") == "seat0_drain_deadline"]
+    swept = [e for e in result["log"] if "orphan_sweep" in e]
+    assert swept and swept[0]["orphan_sweep"] == "ORPHANS|2-3#131075"
