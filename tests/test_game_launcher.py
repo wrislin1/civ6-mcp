@@ -789,13 +789,34 @@ def _install_fake_clock(monkeypatch):
     return clock
 
 
+def _frame_row(frame: int) -> str:
+    """A real native Profile.csv frame-summary row, e.g.:
+
+    ``[2026-08-30 10:00:57]\t,----- FRAME: 0 time: 159.87ms Moving avg: 2.50ms 1 frames since last ``
+
+    Sampled from the live file at
+    ``AppData/Local/Firaxis Games/Sid Meier's Civilization VI/Logs/Profile.csv``.
+    """
+    return (
+        "[2026-08-30 10:00:57]\t,----- FRAME: "
+        f"{frame} time: 159.87ms Moving avg: 2.50ms 1 frames since last \r\n"
+    )
+
+
+def _profiling_row(name: str = "UIManager_Update", ms: str = "144.91") -> str:
+    """A real native Profile.csv per-call profiling row -- no frame counter
+    (most rows in the real file look like this); must be skipped for frame
+    evidence but still consumed as bytes."""
+    return f"[2026-08-30 10:00:57]\t,            {name}, {ms} ms\r\n"
+
+
 def test_wait_for_boot_health_passes_once_a_fresh_row_exceeds_min_frame(
     monkeypatch, tmp_path
 ):
     profile = tmp_path / "Profile.csv"
     profile.write_text("")
     clock = _install_fake_clock(monkeypatch)
-    writes = ["3,COMPLETE\n", "5,COMPLETE\n", "150,COMPLETE\n"]
+    writes = [_frame_row(3), _frame_row(5), _frame_row(150)]
 
     def fake_sleep(_seconds):
         clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
@@ -822,7 +843,7 @@ def test_wait_for_boot_health_ignores_stale_pre_offset_rows(monkeypatch, tmp_pat
     must never count. If the implementation ignored start_offset and read
     from byte 0 instead, this would incorrectly pass with last_frame=500."""
     profile = tmp_path / "Profile.csv"
-    profile.write_text("500,COMPLETE\n")
+    profile.write_text(_frame_row(500))
     start_offset = profile.stat().st_size
     clock = _install_fake_clock(monkeypatch)
 
@@ -844,7 +865,7 @@ def test_wait_for_boot_health_times_out_on_low_frame_stall(monkeypatch, tmp_path
     profile = tmp_path / "Profile.csv"
     profile.write_text("")
     clock = _install_fake_clock(monkeypatch)
-    writes = ["3,COMPLETE\n", "5,COMPLETE\n"]
+    writes = [_frame_row(3), _frame_row(5)]
 
     def fake_sleep(_seconds):
         clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
@@ -871,7 +892,7 @@ def test_wait_for_boot_health_fails_closed_on_malformed_rows(monkeypatch, tmp_pa
     def fake_sleep(_seconds):
         clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
         with open(profile, "a") as fh:
-            fh.write("junk line with no marker\n42,notcomplete\n")
+            fh.write(_profiling_row("SerialEvent::QuerySaveGames", "32.64") + "garbled \xff not a frame row\r\n")
 
     monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
 
@@ -886,7 +907,7 @@ def test_wait_for_boot_health_fails_closed_on_malformed_rows(monkeypatch, tmp_pa
 
 def test_wait_for_boot_health_fails_closed_on_log_rotation(monkeypatch, tmp_path):
     profile = tmp_path / "Profile.csv"
-    profile.write_text("3,COMPLETE\n")
+    profile.write_text(_frame_row(3))
     clock = _install_fake_clock(monkeypatch)
     rotated = {"done": False}
 
@@ -898,7 +919,7 @@ def test_wait_for_boot_health_fails_closed_on_log_rotation(monkeypatch, tmp_path
             # inode (a plain unlink+recreate can reuse the just-freed inode
             # number on some filesystems, masking the rotation).
             replacement = tmp_path / "Profile.csv.new"
-            replacement.write_text("0,COMPLETE\n")
+            replacement.write_text(_frame_row(0))
             os.replace(replacement, profile)
             rotated["done"] = True
 
@@ -916,7 +937,7 @@ def test_wait_for_boot_health_fails_closed_on_log_rotation(monkeypatch, tmp_path
 
 def test_wait_for_boot_health_fails_closed_on_log_truncation(monkeypatch, tmp_path):
     profile = tmp_path / "Profile.csv"
-    profile.write_text("3,COMPLETE\n5,COMPLETE\n")
+    profile.write_text(_frame_row(3) + _frame_row(5))
     start_offset = profile.stat().st_size
     clock = _install_fake_clock(monkeypatch)
 
@@ -953,7 +974,7 @@ def test_wait_for_boot_health_does_not_let_a_later_regressed_row_in_the_same_bat
     def fake_sleep(_seconds):
         clock.advance(game_launcher._BOOT_HEALTH_POLL_INTERVAL_S)
         with open(profile, "a") as fh:
-            fh.write("150,COMPLETE\n3,COMPLETE\n")
+            fh.write(_frame_row(150) + _frame_row(3))
 
     monkeypatch.setattr(game_launcher.time, "sleep", fake_sleep)
 

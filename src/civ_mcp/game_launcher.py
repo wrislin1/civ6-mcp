@@ -2828,7 +2828,15 @@ def deploy_benchmark_save(source, save_name: str, expected_sha256: str) -> dict:
 _BOOT_HEALTH_MIN_FRAME = 100
 _BOOT_HEALTH_TIMEOUT_S = 240.0
 _BOOT_HEALTH_POLL_INTERVAL_S = 2.0
-_PROFILE_CSV_COMPLETE_MARKER = "COMPLETE"
+
+# Native Profile.csv rows look like:
+#   [2026-08-30 10:00:57]\t,            UIManager_Update, 144.91 ms
+#   [2026-08-30 10:00:57]\t,----- FRAME: 0 time: 159.87ms Moving avg: 2.50ms 1 frames since last
+# Most rows are per-call profiling entries with no frame counter; only the
+# periodic frame-summary row (payload starting with "----- FRAME: <n>")
+# carries frame evidence. There is no "complete row" marker field in the
+# real format -- a row counts as complete once it is newline-terminated.
+_FRAME_ROW_PATTERN = re.compile(r"-----\s+FRAME:\s+(\d+)")
 
 
 def _profile_csv_path() -> str:
@@ -2851,20 +2859,22 @@ def _file_identity(path: str) -> dict:
 
 
 def _iter_complete_frames(text: str):
-    """Yield the frame number of each syntactically complete row in ``text``.
+    """Yield the frame number from each ``----- FRAME: <n> ...`` row in ``text``.
 
-    A row counts only if its last comma-separated field is the literal
-    ``COMPLETE`` marker (a row still being written by the game lacks it) and
-    its first field parses as an integer. Anything else -- a partial row,
-    garbled bytes, an unexpected schema -- is silently skipped rather than
-    raised: malformed content must never crash the poll, only fail to count.
+    Every native Profile.csv line is ``[YYYY-MM-DD HH:MM:SS]\t,<payload>``.
+    The vast majority of payloads are per-call profiling entries with no
+    frame counter at all -- those lines are simply not yielded (they are
+    still bytes the caller advances past, they just carry no frame
+    evidence). Anything that fails to match -- a partial row, garbled
+    bytes, an unexpected schema -- is silently skipped rather than raised:
+    malformed content must never crash the poll, only fail to count.
     """
     for line in text.splitlines():
-        fields = line.strip().split(",")
-        if len(fields) < 2 or fields[-1] != _PROFILE_CSV_COMPLETE_MARKER:
+        match = _FRAME_ROW_PATTERN.search(line)
+        if not match:
             continue
         try:
-            yield int(fields[0])
+            yield int(match.group(1))
         except ValueError:
             continue
 
