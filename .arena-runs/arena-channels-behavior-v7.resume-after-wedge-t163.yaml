@@ -1,0 +1,64 @@
+# Operational resume of committed v7 after the T163 funding hard-interturn
+# (same wedge class as v6: AI<->AI diplomacy sessions from the engine gold
+# transfers; drain arm only probes local-player sessions so the coordinator
+# waited to its drain deadline). Recovery 2026-08-29: watcher self-terminated
+# at seat0_drain_deadline, orphan sessions swept via tuner Lua, no reload —
+# funding remained applied on the surviving timeline.
+# Budgets: rounds T157-T163 fully admitted = 7 rounds x 4 seats = 28 charged.
+# Remaining window T164-T186 = 23 rounds x 4 seats.
+run_id: arena-channels-behavior-v7
+max_puppet_turns: 92
+max_game_turns: 116
+channel_rules:
+  acceptance_turns: 3
+  funding_turns: 2
+  payment_response_turns: 2
+civs:
+  - player: 0
+    provider: scripted
+    model: seat0-smoke
+    attention: {mode: "off"}
+  - player: 1
+    provider: local
+    model: gemma4-26b
+    gateway: http://192.168.20.196:11440/v1
+    tools: minimal
+    max_steps: 15
+    task_tracker: {enabled: true}
+    channels: {enabled: true, guidance: true}
+  - player: 2
+    provider: local
+    model: qwen3.6-27b
+    gateway: http://192.168.20.196:11441/v1
+    tools: minimal
+    max_steps: 15
+    task_tracker: {enabled: true}
+    channels: {enabled: true, guidance: true}
+  - player: 3
+    provider: scripted
+    channels:
+      enabled: true
+      auto_accept: true
+      script:
+        - turn: 157
+          action: propose_deal
+          args:
+            to_player: 1
+            text: "I'll pay you 50 gold if you keep your military units at least 3 tiles away from my lands for the next few turns. A simple deal to build trust between us."
+            favor:
+              term_type: keep_units_away
+              params: {player_id: 3, min_distance: 3, unit_scope: military}
+            payment_gold: 50
+            timing: on_delivery
+            within: 5
+        - turn: 157
+          action: propose_deal
+          args:
+            to_player: 2
+            text: "I'll pay you 50 gold if you keep your military units at least 3 tiles away from my lands for the next few turns. A simple deal to build trust between us."
+            favor:
+              term_type: keep_units_away
+              params: {player_id: 3, min_distance: 3, unit_scope: military}
+            payment_gold: 50
+            timing: on_delivery
+            within: 5

@@ -1,0 +1,7 @@
+{"turn": 314, "player_id": 1, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 6880, "completion_tokens": 43, "usd": 0.0}
+{"turn": 314, "player_id": 1, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 7191, "completion_tokens": 215, "usd": 0.0}
+{"turn": 314, "player_id": 1, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 7392, "completion_tokens": 132, "usd": 0.0}
+{"turn": 314, "player_id": 1, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 8083, "completion_tokens": 445, "usd": 0.0}
+{"turn": 314, "player_id": 1, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 8418, "completion_tokens": 595, "usd": 0.0}
+{"turn": 314, "player_id": 1, "provider": "local", "model": "gemma4-26b", "prompt_tokens": 9200, "completion_tokens": 30, "usd": 0.0}
+{"turn": 314, "player_id": 2, "provider": "cli-codex", "model": "gpt-5.5", "prompt_tokens": 714212, "completion_tokens": 4179, "usd": 0.0}

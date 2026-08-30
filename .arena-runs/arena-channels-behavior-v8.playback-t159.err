@@ -1,0 +1,3 @@
+[arena] blocking popups dismissed during seat-0 recheck: POPUPS|NaturalDisasterPopup
+[arena] seat-0 guarded refire on turn 159: quiet radar clear after idle-recheck budget
+[arena] CRITICAL seat0_human_pending turn 159: blockers=[] normal_error='' repair_error=''

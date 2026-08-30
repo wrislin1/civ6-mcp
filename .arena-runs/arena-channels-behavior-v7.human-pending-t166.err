@@ -1,0 +1,3 @@
+[arena] seat-0 guarded refire on turn 165: quiet radar clear after idle-recheck budget
+[arena] CRITICAL seat0_human_pending turn 165: blockers=[] normal_error='' repair_error=''
+[arena] CRITICAL seat0_human_pending turn 166: blockers=['ENDTURN_BLOCKING_PRODUCTION'] normal_error='' repair_error=''

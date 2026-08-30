@@ -1,0 +1,1815 @@
+{
+  "by_player": {
+    "1": {
+      "player_id": 1,
+      "model": "gemma4-26b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 157,
+          "turn_kind": "played",
+          "score": 320,
+          "cities": 7,
+          "units": 13,
+          "science": 49.7,
+          "culture": 43.1,
+          "prompt_tokens": 59079,
+          "completion_tokens": 536,
+          "wall_clock_s": 21.725687742233276,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Medieval Faires"
+          }
+        },
+        {
+          "turn": 158,
+          "turn_kind": "played",
+          "score": 327,
+          "cities": 7,
+          "units": 13,
+          "science": 50.2,
+          "culture": 43.4,
+          "prompt_tokens": 58111,
+          "completion_tokens": 515,
+          "wall_clock_s": 19.936513900756836,
+          "step_count": 13,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Machinery",
+            "civic": "Medieval Faires"
+          }
+        },
+        {
+          "turn": 159,
+          "turn_kind": "played",
+          "score": 328,
+          "cities": 7,
+          "units": 13,
+          "science": 50.2,
+          "culture": 43.4,
+          "prompt_tokens": 58800,
+          "completion_tokens": 380,
+          "wall_clock_s": 13.560565710067749,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Medieval Faires"
+          }
+        },
+        {
+          "turn": 160,
+          "turn_kind": "played",
+          "score": 328,
+          "cities": 7,
+          "units": 13,
+          "science": 50.2,
+          "culture": 43.4,
+          "prompt_tokens": 59514,
+          "completion_tokens": 502,
+          "wall_clock_s": 14.473271131515503,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Medieval Faires"
+          }
+        },
+        {
+          "turn": 161,
+          "turn_kind": "played",
+          "score": 328,
+          "cities": 7,
+          "units": 14,
+          "science": 50.2,
+          "culture": 43.4,
+          "prompt_tokens": 64079,
+          "completion_tokens": 605,
+          "wall_clock_s": 17.98302412033081,
+          "step_count": 14,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Medieval Faires"
+          }
+        },
+        {
+          "turn": 162,
+          "turn_kind": "played",
+          "score": 329,
+          "cities": 7,
+          "units": 14,
+          "science": 50.7,
+          "culture": 44.2,
+          "prompt_tokens": 37225,
+          "completion_tokens": 441,
+          "wall_clock_s": 13.229185104370117,
+          "step_count": 9,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Medieval Faires"
+          }
+        },
+        {
+          "turn": 163,
+          "turn_kind": "played",
+          "score": 330,
+          "cities": 7,
+          "units": 14,
+          "science": 51.9,
+          "culture": 46.1,
+          "prompt_tokens": 59413,
+          "completion_tokens": 321,
+          "wall_clock_s": 12.194674015045166,
+          "step_count": 13,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Medieval Faires"
+          }
+        },
+        {
+          "turn": 164,
+          "turn_kind": "played",
+          "score": 332,
+          "cities": 7,
+          "units": 14,
+          "science": 51.9,
+          "culture": 46.1,
+          "prompt_tokens": 23596,
+          "completion_tokens": 195,
+          "wall_clock_s": 5.568764925003052,
+          "step_count": 4,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Divine Right"
+          }
+        },
+        {
+          "turn": 165,
+          "turn_kind": "played",
+          "score": 336,
+          "cities": 7,
+          "units": 15,
+          "science": 51.9,
+          "culture": 46.1,
+          "prompt_tokens": 21128,
+          "completion_tokens": 255,
+          "wall_clock_s": 6.400928735733032,
+          "step_count": 5,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Divine Right"
+          }
+        },
+        {
+          "turn": 166,
+          "turn_kind": "played",
+          "score": 337,
+          "cities": 7,
+          "units": 15,
+          "science": 51.9,
+          "culture": 46.1,
+          "prompt_tokens": 25456,
+          "completion_tokens": 258,
+          "wall_clock_s": 6.7214508056640625,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Divine Right"
+          }
+        },
+        {
+          "turn": 167,
+          "turn_kind": "played",
+          "score": 337,
+          "cities": 7,
+          "units": 15,
+          "science": 51.9,
+          "culture": 46.1,
+          "prompt_tokens": 69926,
+          "completion_tokens": 343,
+          "wall_clock_s": 20.17864179611206,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Divine Right"
+          }
+        },
+        {
+          "turn": 168,
+          "turn_kind": "played",
+          "score": 338,
+          "cities": 7,
+          "units": 15,
+          "science": 51.0,
+          "culture": 45.3,
+          "prompt_tokens": 70303,
+          "completion_tokens": 440,
+          "wall_clock_s": 19.80049729347229,
+          "step_count": 14,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Divine Right"
+          }
+        },
+        {
+          "turn": 169,
+          "turn_kind": "played",
+          "score": 339,
+          "cities": 7,
+          "units": 15,
+          "science": 47.8,
+          "culture": 42.0,
+          "prompt_tokens": 39543,
+          "completion_tokens": 323,
+          "wall_clock_s": 13.240328311920166,
+          "step_count": 9,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 170,
+          "turn_kind": "played",
+          "score": 344,
+          "cities": 7,
+          "units": 16,
+          "science": 47.8,
+          "culture": 42.0,
+          "prompt_tokens": 53666,
+          "completion_tokens": 440,
+          "wall_clock_s": 15.795512437820435,
+          "step_count": 12,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 171,
+          "turn_kind": "played",
+          "score": 344,
+          "cities": 7,
+          "units": 16,
+          "science": 47.8,
+          "culture": 42.0,
+          "prompt_tokens": 52911,
+          "completion_tokens": 359,
+          "wall_clock_s": 15.436344623565674,
+          "step_count": 11,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 172,
+          "turn_kind": "played",
+          "score": 344,
+          "cities": 8,
+          "units": 15,
+          "science": 48.3,
+          "culture": 42.3,
+          "prompt_tokens": 39115,
+          "completion_tokens": 322,
+          "wall_clock_s": 12.678655862808228,
+          "step_count": 9,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.5,
+            "culture": 0.29999999999999716,
+            "faith": 0.0,
+            "cities": 1,
+            "units": -1,
+            "research": "Machinery",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 173,
+          "turn_kind": "played",
+          "score": 353,
+          "cities": 8,
+          "units": 15,
+          "science": 48.3,
+          "culture": 42.3,
+          "prompt_tokens": 48187,
+          "completion_tokens": 416,
+          "wall_clock_s": 13.969261169433594,
+          "step_count": 11,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 174,
+          "turn_kind": "played",
+          "score": 356,
+          "cities": 8,
+          "units": 15,
+          "science": 48.7,
+          "culture": 43.0,
+          "prompt_tokens": 25514,
+          "completion_tokens": 320,
+          "wall_clock_s": 7.312529563903809,
+          "step_count": 6,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 175,
+          "turn_kind": "played",
+          "score": 357,
+          "cities": 8,
+          "units": 15,
+          "science": 48.7,
+          "culture": 43.0,
+          "prompt_tokens": 69869,
+          "completion_tokens": 454,
+          "wall_clock_s": 13.986576557159424,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 176,
+          "turn_kind": "played",
+          "score": 359,
+          "cities": 8,
+          "units": 17,
+          "science": 52.8,
+          "culture": 47.3,
+          "prompt_tokens": 58671,
+          "completion_tokens": 485,
+          "wall_clock_s": 15.561584234237671,
+          "step_count": 13,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Printing",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 177,
+          "turn_kind": "played",
+          "score": 361,
+          "cities": 8,
+          "units": 17,
+          "science": 52.8,
+          "culture": 50.4,
+          "prompt_tokens": 34961,
+          "completion_tokens": 325,
+          "wall_clock_s": 9.588658094406128,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 178,
+          "turn_kind": "played",
+          "score": 365,
+          "cities": 8,
+          "units": 18,
+          "science": 53.4,
+          "culture": 50.8,
+          "prompt_tokens": 44594,
+          "completion_tokens": 433,
+          "wall_clock_s": 10.630155563354492,
+          "step_count": 10,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Ballistics",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 179,
+          "turn_kind": "played",
+          "score": 370,
+          "cities": 8,
+          "units": 19,
+          "science": 53.4,
+          "culture": 50.8,
+          "prompt_tokens": 49107,
+          "completion_tokens": 416,
+          "wall_clock_s": 11.923773527145386,
+          "step_count": 11,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 180,
+          "turn_kind": "played",
+          "score": 376,
+          "cities": 8,
+          "units": 19,
+          "science": 53.4,
+          "culture": 50.8,
+          "prompt_tokens": 63518,
+          "completion_tokens": 379,
+          "wall_clock_s": 12.186123609542847,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Ballistics",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 181,
+          "turn_kind": "played",
+          "score": 376,
+          "cities": 8,
+          "units": 19,
+          "science": 53.4,
+          "culture": 50.8,
+          "prompt_tokens": 39502,
+          "completion_tokens": 294,
+          "wall_clock_s": 8.835689067840576,
+          "step_count": 9,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Ballistics",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 182,
+          "turn_kind": "played",
+          "score": 376,
+          "cities": 8,
+          "units": 19,
+          "science": 52.6,
+          "culture": 52.1,
+          "prompt_tokens": 64196,
+          "completion_tokens": 702,
+          "wall_clock_s": 15.684314966201782,
+          "step_count": 14,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Humanism"
+          }
+        },
+        {
+          "turn": 183,
+          "turn_kind": "played",
+          "score": 384,
+          "cities": 8,
+          "units": 19,
+          "science": 52.6,
+          "culture": 52.1,
+          "prompt_tokens": 35143,
+          "completion_tokens": 266,
+          "wall_clock_s": 9.02815556526184,
+          "step_count": 8,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Humanism"
+          }
+        },
+        {
+          "turn": 184,
+          "turn_kind": "played",
+          "score": 384,
+          "cities": 8,
+          "units": 19,
+          "science": 54.3,
+          "culture": 52.1,
+          "prompt_tokens": 64140,
+          "completion_tokens": 378,
+          "wall_clock_s": 14.692542552947998,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Ballistics",
+            "civic": "Humanism"
+          }
+        },
+        {
+          "turn": 185,
+          "turn_kind": "played",
+          "score": 385,
+          "cities": 8,
+          "units": 19,
+          "science": 54.1,
+          "culture": 54.0,
+          "prompt_tokens": 63795,
+          "completion_tokens": 461,
+          "wall_clock_s": 14.470164060592651,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Ballistics",
+            "civic": "Humanism"
+          }
+        },
+        {
+          "turn": 186,
+          "turn_kind": "played",
+          "score": 389,
+          "cities": 8,
+          "units": 19,
+          "science": 54.1,
+          "culture": 55.9,
+          "prompt_tokens": 63305,
+          "completion_tokens": 293,
+          "wall_clock_s": 11.202208757400513,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Ballistics",
+            "civic": "Humanism"
+          }
+        }
+      ],
+      "failed_turns": 0,
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.125
+      },
+      "rubric": {
+        "founded_extra_city": null,
+        "explored_vs_idle": null,
+        "set_research_or_production": null,
+        "wasted_move": null,
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      },
+      "behavior": {
+        "driver": "in_process",
+        "provider": "local",
+        "model": "gemma4-26b",
+        "standing_memory_injected_turns": 0,
+        "standing_memory_captured_turns": 0,
+        "task_follow_through_attempts": 0,
+        "task_completions": 0,
+        "task_blocked": 0,
+        "task_lost": 0,
+        "task_failed": 0,
+        "great_people_tool_calls": 0,
+        "trade_route_tool_calls": 0,
+        "religion_wc_tool_calls": 0
+      }
+    },
+    "2": {
+      "player_id": 2,
+      "model": "qwen3.6-27b",
+      "provider": "local",
+      "series": [
+        {
+          "turn": 157,
+          "turn_kind": "played",
+          "score": 308,
+          "cities": 5,
+          "units": 8,
+          "science": 35.5,
+          "culture": 71.9,
+          "prompt_tokens": 62359,
+          "completion_tokens": 756,
+          "wall_clock_s": 85.47044849395752,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Military Engineering",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 158,
+          "turn_kind": "played",
+          "score": 309,
+          "cities": 5,
+          "units": 8,
+          "science": 35.5,
+          "culture": 71.9,
+          "prompt_tokens": 31417,
+          "completion_tokens": 1050,
+          "wall_clock_s": 46.53086495399475,
+          "step_count": 16,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 159,
+          "turn_kind": "played",
+          "score": 311,
+          "cities": 5,
+          "units": 8,
+          "science": 35.5,
+          "culture": 71.9,
+          "prompt_tokens": 76659,
+          "completion_tokens": 1111,
+          "wall_clock_s": 57.14592623710632,
+          "step_count": 18,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 160,
+          "turn_kind": "played",
+          "score": 311,
+          "cities": 5,
+          "units": 8,
+          "science": 37.4,
+          "culture": 73.5,
+          "prompt_tokens": 57110,
+          "completion_tokens": 1768,
+          "wall_clock_s": 69.45015120506287,
+          "step_count": 14,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 161,
+          "turn_kind": "played",
+          "score": 312,
+          "cities": 5,
+          "units": 8,
+          "science": 37.4,
+          "culture": 73.5,
+          "prompt_tokens": 68641,
+          "completion_tokens": 1290,
+          "wall_clock_s": 65.26228380203247,
+          "step_count": 24,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Military Tactics",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 162,
+          "turn_kind": "played",
+          "score": 313,
+          "cities": 5,
+          "units": 8,
+          "science": 37.9,
+          "culture": 73.9,
+          "prompt_tokens": 68971,
+          "completion_tokens": 1201,
+          "wall_clock_s": 57.09759330749512,
+          "step_count": 14,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Diplomatic Service"
+          }
+        },
+        {
+          "turn": 163,
+          "turn_kind": "played",
+          "score": 314,
+          "cities": 5,
+          "units": 9,
+          "science": 37.9,
+          "culture": 73.9,
+          "prompt_tokens": 69941,
+          "completion_tokens": 1206,
+          "wall_clock_s": 52.469372034072876,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "The Enlightenment"
+          }
+        },
+        {
+          "turn": 164,
+          "turn_kind": "played",
+          "score": 323,
+          "cities": 5,
+          "units": 9,
+          "science": 37.9,
+          "culture": 73.9,
+          "prompt_tokens": 73527,
+          "completion_tokens": 822,
+          "wall_clock_s": 43.628588914871216,
+          "step_count": 14,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Steel",
+            "civic": "The Enlightenment"
+          }
+        },
+        {
+          "turn": 165,
+          "turn_kind": "played",
+          "score": 323,
+          "cities": 5,
+          "units": 9,
+          "science": 37.9,
+          "culture": 73.9,
+          "prompt_tokens": 81922,
+          "completion_tokens": 1809,
+          "wall_clock_s": 84.40169954299927,
+          "step_count": 33,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Steel",
+            "civic": "The Enlightenment"
+          }
+        },
+        {
+          "turn": 166,
+          "turn_kind": "played",
+          "score": 323,
+          "cities": 5,
+          "units": 11,
+          "science": 37.9,
+          "culture": 73.9,
+          "prompt_tokens": 79006,
+          "completion_tokens": 1438,
+          "wall_clock_s": 67.09447288513184,
+          "step_count": 21,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Steel",
+            "civic": "The Enlightenment"
+          }
+        },
+        {
+          "turn": 167,
+          "turn_kind": "played",
+          "score": 323,
+          "cities": 5,
+          "units": 11,
+          "science": 37.9,
+          "culture": 73.9,
+          "prompt_tokens": 71595,
+          "completion_tokens": 1023,
+          "wall_clock_s": 53.18006873130798,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Steel",
+            "civic": "The Enlightenment"
+          }
+        },
+        {
+          "turn": 168,
+          "turn_kind": "played",
+          "score": 323,
+          "cities": 5,
+          "units": 10,
+          "science": 38.5,
+          "culture": 74.2,
+          "prompt_tokens": 71085,
+          "completion_tokens": 1032,
+          "wall_clock_s": 48.71902918815613,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Steel",
+            "civic": "The Enlightenment"
+          }
+        },
+        {
+          "turn": 169,
+          "turn_kind": "played",
+          "score": 324,
+          "cities": 5,
+          "units": 10,
+          "science": 38.5,
+          "culture": 74.2,
+          "prompt_tokens": 73026,
+          "completion_tokens": 1638,
+          "wall_clock_s": 77.36693739891052,
+          "step_count": 29,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "The Enlightenment"
+          }
+        },
+        {
+          "turn": 170,
+          "turn_kind": "played",
+          "score": 324,
+          "cities": 5,
+          "units": 11,
+          "science": 39.0,
+          "culture": 72.3,
+          "prompt_tokens": 72288,
+          "completion_tokens": 832,
+          "wall_clock_s": 47.6137158870697,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Military Tactics",
+            "civic": "The Enlightenment"
+          }
+        },
+        {
+          "turn": 171,
+          "turn_kind": "played",
+          "score": 325,
+          "cities": 5,
+          "units": 11,
+          "science": 39.2,
+          "culture": 70.4,
+          "prompt_tokens": 80244,
+          "completion_tokens": 921,
+          "wall_clock_s": 48.933988094329834,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 172,
+          "turn_kind": "played",
+          "score": 332,
+          "cities": 5,
+          "units": 11,
+          "science": 39.0,
+          "culture": 72.4,
+          "prompt_tokens": 80941,
+          "completion_tokens": 947,
+          "wall_clock_s": 52.17564940452576,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 173,
+          "turn_kind": "played",
+          "score": 333,
+          "cities": 5,
+          "units": 11,
+          "science": 39.0,
+          "culture": 72.4,
+          "prompt_tokens": 71572,
+          "completion_tokens": 879,
+          "wall_clock_s": 49.1059844493866,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 174,
+          "turn_kind": "played",
+          "score": 339,
+          "cities": 5,
+          "units": 12,
+          "science": 39.0,
+          "culture": 72.4,
+          "prompt_tokens": 73636,
+          "completion_tokens": 1072,
+          "wall_clock_s": 53.22951912879944,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 175,
+          "turn_kind": "played",
+          "score": 339,
+          "cities": 5,
+          "units": 12,
+          "science": 39.0,
+          "culture": 72.4,
+          "prompt_tokens": 73902,
+          "completion_tokens": 994,
+          "wall_clock_s": 51.498321533203125,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 176,
+          "turn_kind": "played",
+          "score": 339,
+          "cities": 5,
+          "units": 12,
+          "science": 39.0,
+          "culture": 72.4,
+          "prompt_tokens": 65109,
+          "completion_tokens": 1811,
+          "wall_clock_s": 80.390629529953,
+          "step_count": 33,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 177,
+          "turn_kind": "played",
+          "score": 339,
+          "cities": 5,
+          "units": 12,
+          "science": 39.0,
+          "culture": 66.9,
+          "prompt_tokens": 78524,
+          "completion_tokens": 1940,
+          "wall_clock_s": 92.15500330924988,
+          "step_count": 33,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 178,
+          "turn_kind": "played",
+          "score": 339,
+          "cities": 5,
+          "units": 12,
+          "science": 39.5,
+          "culture": 67.3,
+          "prompt_tokens": 72811,
+          "completion_tokens": 857,
+          "wall_clock_s": 48.060275077819824,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 179,
+          "turn_kind": "played",
+          "score": 340,
+          "cities": 5,
+          "units": 11,
+          "science": 39.2,
+          "culture": 67.1,
+          "prompt_tokens": 81531,
+          "completion_tokens": 1028,
+          "wall_clock_s": 51.56667876243591,
+          "step_count": 18,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 180,
+          "turn_kind": "played",
+          "score": 340,
+          "cities": 5,
+          "units": 11,
+          "science": 41.7,
+          "culture": 67.1,
+          "prompt_tokens": 72027,
+          "completion_tokens": 740,
+          "wall_clock_s": 47.06643724441528,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Gunpowder",
+            "civic": "Mercantilism"
+          }
+        },
+        {
+          "turn": 181,
+          "turn_kind": "played",
+          "score": 341,
+          "cities": 5,
+          "units": 12,
+          "science": 41.7,
+          "culture": 67.1,
+          "prompt_tokens": 73115,
+          "completion_tokens": 875,
+          "wall_clock_s": 46.04494261741638,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Industrialization",
+            "civic": "Nationalism"
+          }
+        },
+        {
+          "turn": 182,
+          "turn_kind": "played",
+          "score": 348,
+          "cities": 5,
+          "units": 12,
+          "science": 42.2,
+          "culture": 71.7,
+          "prompt_tokens": 71591,
+          "completion_tokens": 715,
+          "wall_clock_s": 41.50954294204712,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Industrialization",
+            "civic": "Nationalism"
+          }
+        },
+        {
+          "turn": 183,
+          "turn_kind": "played",
+          "score": 350,
+          "cities": 5,
+          "units": 11,
+          "science": 42.2,
+          "culture": 71.7,
+          "prompt_tokens": 71817,
+          "completion_tokens": 978,
+          "wall_clock_s": 49.712851762771606,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Industrialization",
+            "civic": "Nationalism"
+          }
+        },
+        {
+          "turn": 184,
+          "turn_kind": "played",
+          "score": 350,
+          "cities": 5,
+          "units": 12,
+          "science": 42.2,
+          "culture": 71.7,
+          "prompt_tokens": 74839,
+          "completion_tokens": 1003,
+          "wall_clock_s": 52.22518467903137,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Industrialization",
+            "civic": "Nationalism"
+          }
+        },
+        {
+          "turn": 185,
+          "turn_kind": "played",
+          "score": 350,
+          "cities": 5,
+          "units": 13,
+          "science": 42.2,
+          "culture": 71.7,
+          "prompt_tokens": 83958,
+          "completion_tokens": 1767,
+          "wall_clock_s": 83.62465047836304,
+          "step_count": 33,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Industrialization",
+            "civic": "Nationalism"
+          }
+        },
+        {
+          "turn": 186,
+          "turn_kind": "played",
+          "score": 350,
+          "cities": 5,
+          "units": 13,
+          "science": 42.2,
+          "culture": 71.7,
+          "prompt_tokens": 74652,
+          "completion_tokens": 867,
+          "wall_clock_s": 52.03343844413757,
+          "step_count": 15,
+          "state_delta": {
+            "score": 0,
+            "gold": 0.0,
+            "science": 0.0,
+            "culture": 0.0,
+            "faith": 0.0,
+            "cities": 0,
+            "units": 0,
+            "research": "Industrialization",
+            "civic": "Nationalism"
+          }
+        }
+      ],
+      "failed_turns": 0,
+      "rates": {
+        "invalid_call_rate": 0.0,
+        "truncation_incident_rate": 0.06666666666666667
+      },
+      "rubric": {
+        "founded_extra_city": null,
+        "explored_vs_idle": null,
+        "set_research_or_production": null,
+        "wasted_move": null,
+        "hallucinated_tools": null,
+        "truncation_bad_move": null
+      },
+      "behavior": {
+        "driver": "in_process",
+        "provider": "local",
+        "model": "qwen3.6-27b",
+        "standing_memory_injected_turns": 0,
+        "standing_memory_captured_turns": 0,
+        "task_follow_through_attempts": 0,
+        "task_completions": 0,
+        "task_blocked": 0,
+        "task_lost": 0,
+        "task_failed": 0,
+        "great_people_tool_calls": 0,
+        "trade_route_tool_calls": 0,
+        "religion_wc_tool_calls": 0
+      }
+    }
+  },
+  "config_summary": {
+    "1": {
+      "model": "gemma4-26b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 15,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        },
+        "memory": {
+          "enabled": false,
+          "max_chars": 1200,
+          "max_age_turns": 10
+        },
+        "task_tracker": {
+          "enabled": false,
+          "max_tasks": 8
+        },
+        "attention": {
+          "mode": "off",
+          "max_skip": 5,
+          "max_streak": 5,
+          "threat_radius": 4
+        },
+        "channels": {
+          "enabled": true,
+          "guidance": true,
+          "script": [],
+          "auto_accept": false
+        }
+      },
+      "n_ctx": null,
+      "turns": 30,
+      "avg_steps": 11.466666666666667,
+      "avg_model_turns": 11.466666666666667,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    },
+    "2": {
+      "model": "qwen3.6-27b",
+      "provider": "local",
+      "civ_options": {
+        "tools": "minimal",
+        "result_char_cap": 1500,
+        "max_steps": 15,
+        "playbook": "none",
+        "context_budget": "auto",
+        "briefing": {
+          "enabled": false,
+          "map_radius": 3,
+          "sections": [
+            "overview",
+            "units",
+            "cities",
+            "map",
+            "research",
+            "production_options"
+          ]
+        },
+        "memory": {
+          "enabled": false,
+          "max_chars": 1200,
+          "max_age_turns": 10
+        },
+        "task_tracker": {
+          "enabled": false,
+          "max_tasks": 8
+        },
+        "attention": {
+          "mode": "off",
+          "max_skip": 5,
+          "max_streak": 5,
+          "threat_radius": 4
+        },
+        "channels": {
+          "enabled": true,
+          "guidance": true,
+          "script": [],
+          "auto_accept": false
+        }
+      },
+      "n_ctx": null,
+      "turns": 30,
+      "avg_steps": 18.5,
+      "avg_model_turns": 14.033333333333333,
+      "invalid_call_rate": 0.0,
+      "avg_briefing_tokens": 0.0,
+      "avg_score_delta": 0.0
+    }
+  },
+  "behavior": {
+    "failed_turns": 0,
+    "standing_memory_turns": 0,
+    "standing_memory_captured_turns": 0,
+    "task_tracker_turns": 0,
+    "task_pre_model_actions": 0,
+    "task_completed": 0,
+    "task_blocked_visible_hostile": 0,
+    "task_lost": 0,
+    "task_failed": 0,
+    "drivers": {
+      "in_process": 60,
+      "cli": 0
+    },
+    "puppeted_players": [
+      1,
+      2
+    ]
+  },
+  "attention": {},
+  "channels": {
+    "schema_version": 1,
+    "current_turn": 186,
+    "messages": 2,
+    "deals": 2,
+    "rejected_actions": {
+      "total": 2,
+      "by_player": {
+        "2": 1,
+        "1": 1
+      },
+      "by_reason": {
+        "only the proposer may fund a deal": 1,
+        "deal has no linked payment awaiting response": 1
+      }
+    },
+    "messages_by_player": {
+      "1": 1,
+      "2": 1,
+      "3": 2
+    },
+    "players": {
+      "1": {
+        "messages": 1,
+        "sent_messages": 0,
+        "received_messages": 1,
+        "deals": 1,
+        "payments": {
+          "not_due": 0,
+          "due": 0,
+          "offered": 0,
+          "settled": 1,
+          "failed": 0,
+          "waived": 0
+        },
+        "outcomes": {
+          "honored": 1,
+          "broken": 0,
+          "declined": 0,
+          "expired": 0,
+          "unverifiable": 0
+        },
+        "grievances": {
+          "count": 0,
+          "raw_magnitude": 0.0,
+          "effective_magnitude": 0.0
+        }
+      },
+      "2": {
+        "messages": 1,
+        "sent_messages": 0,
+        "received_messages": 1,
+        "deals": 1,
+        "payments": {
+          "not_due": 0,
+          "due": 0,
+          "offered": 0,
+          "settled": 1,
+          "failed": 0,
+          "waived": 0
+        },
+        "outcomes": {
+          "honored": 1,
+          "broken": 0,
+          "declined": 0,
+          "expired": 0,
+          "unverifiable": 0
+        },
+        "grievances": {
+          "count": 0,
+          "raw_magnitude": 0.0,
+          "effective_magnitude": 0.0
+        }
+      },
+      "3": {
+        "messages": 2,
+        "sent_messages": 2,
+        "received_messages": 0,
+        "deals": 2,
+        "payments": {
+          "not_due": 0,
+          "due": 0,
+          "offered": 0,
+          "settled": 2,
+          "failed": 0,
+          "waived": 0
+        },
+        "outcomes": {
+          "honored": 2,
+          "broken": 0,
+          "declined": 0,
+          "expired": 0,
+          "unverifiable": 0
+        },
+        "grievances": {
+          "count": 0,
+          "raw_magnitude": 0.0,
+          "effective_magnitude": 0.0
+        }
+      }
+    },
+    "pairs": {
+      "3->1": {
+        "messages": 1,
+        "deals": 1,
+        "payments": {
+          "not_due": 0,
+          "due": 0,
+          "offered": 0,
+          "settled": 1,
+          "failed": 0,
+          "waived": 0
+        },
+        "outcomes": {
+          "honored": 1,
+          "broken": 0,
+          "declined": 0,
+          "expired": 0,
+          "unverifiable": 0
+        },
+        "grievances": {
+          "count": 0,
+          "raw_magnitude": 0.0,
+          "effective_magnitude": 0.0,
+          "by_source": {}
+        }
+      },
+      "3->2": {
+        "messages": 1,
+        "deals": 1,
+        "payments": {
+          "not_due": 0,
+          "due": 0,
+          "offered": 0,
+          "settled": 1,
+          "failed": 0,
+          "waived": 0
+        },
+        "outcomes": {
+          "honored": 1,
+          "broken": 0,
+          "declined": 0,
+          "expired": 0,
+          "unverifiable": 0
+        },
+        "grievances": {
+          "count": 0,
+          "raw_magnitude": 0.0,
+          "effective_magnitude": 0.0,
+          "by_source": {}
+        }
+      }
+    },
+    "payments": {
+      "not_due": 0,
+      "due": 0,
+      "offered": 0,
+      "settled": 2,
+      "failed": 0,
+      "waived": 0
+    },
+    "outcomes": {
+      "honored": 2,
+      "broken": 0,
+      "declined": 0,
+      "expired": 0,
+      "unverifiable": 0
+    },
+    "grievances": {
+      "count": 0,
+      "raw_magnitude": 0.0,
+      "effective_magnitude": 0.0
+    },
+    "adjudication_sources": {
+      "deterministic": 2
+    }
+  }
+}

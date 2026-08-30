@@ -1,0 +1,34 @@
+Deal-lifecycle probe result — 2026-07-20, save CHANNELS_GATE_V1_T157 post-v3-failure,
+game turn 158 (human turn held, no turn advance during the probe).
+
+Probe: create a 1-gold player-1 -> player-2 official deal via
+DealManager SendWorkingDeal(PROPOSED, 1, 2) with explicit ids (mirrors
+build_channel_payment_offer), then poll HasPendingDeal(1,2) and both
+treasuries (GetGoldBalance, 3 decimals) every ~2.3 s for 300 s.
+
+PRE  | pending=False p1=215.582 p2=307.828 turn=158
+CREATE | OK:SENT
+T+0.0s | pending=False p1=214.582 p2=308.828        <- first poll, sub-second after send
+T+2.6s .. T+301.4s (131 polls, every ~2.3 s):
+        pending=False p1=214.582 (d=-1.000) p2=308.828 (d=+1.000) turn=158
+        (every poll identical; no other treasury movement whatsoever)
+
+Findings:
+1. The deal never became observable as pending: HasPendingDeal(1,2) was false
+   on the first poll after SendWorkingDeal returned.
+2. The gold transfer was already complete on that first poll: exactly
+   -1.000 / +1.000 against the pre-send read.
+3. The transfer is permanent (stable for the full 300 s window, same turn).
+4. Gate-seat treasuries are otherwise static mid-turn: zero movement across
+   300 s on all polled values.
+
+Conclusion: the engine enacts an AI->AI PROPOSED deal synchronously at send.
+"Auto-resolved within minutes" (v1/v2 evidence) was a sampling artifact; the
+enactment is part of the send itself. Basis for spec revision 3 (Locked
+Decision 14): settlement must be verified in the funding seat window, and the
+payee's respond_to_payment can never observe an exact pending offer.
+
+Corroborating v3 run evidence (live_gate/events.jsonl seq 27-34): fund_deal
+verified at turn 158 in the seat-1 window; the seat-2 (CLI) window's first
+poll in the same game turn recorded pre_acceptance_payment_status=absent ->
+terminal gate_failed official_payment_auto_resolved.

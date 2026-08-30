@@ -1,0 +1,14 @@
+{
+  "result": {
+    "puppet_turns_played": 0,
+    "turns_slept": 0,
+    "seat0_turns_played": 0,
+    "seat0_turns_failed": 0,
+    "seat0_human_pending": 0,
+    "log": []
+  },
+  "cost": {
+    "by_player": {},
+    "total_usd": 0.0
+  }
+}

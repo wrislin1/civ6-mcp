@@ -1,0 +1,71 @@
+{
+  "result": {
+    "puppet_turns_played": 1,
+    "turns_slept": 0,
+    "seat0_turns_played": 0,
+    "seat0_turns_failed": 0,
+    "seat0_human_pending": 0,
+    "log": [
+      {
+        "player": 1,
+        "turn": 314,
+        "summary": "max_steps reached",
+        "actions": [
+          {
+            "tool": "get_overview",
+            "result": "Turn 314 | Phoenicia (Dido) | Score: 292 | Prince\nGold: 486 (+43/turn) | Income: 59 | Maintenance: -16 (units: 0) | Science: 38.1 | Culture: 17.4 | Faith: 1494 | Favor: 46 (+3/turn)\nResearch: Flight | Civic: Scorched Earth\nCities: 3 | Population: 11 | Units: 4 \u2014 2 Builder, 1 Great Scientist, 1 Great"
+          },
+          {
+            "tool": "get_units",
+            "result": "4 units:\n  Charles Darwin (UNIT_GREAT_SCIENTIST) at (68,59) \u2014 moves 4/4 charges:1 [id:3735552, idx:0]\n  Gaius Duilius (UNIT_GREAT_ADMIRAL) at (68,59) \u2014 moves 5/5 charges:1 [id:1638406, idx:6]\n  Builder (UNIT_BUILDER) at (69,60) \u2014 moves 2/2 charges:2 [id:4653068, idx:12]\n  Builder (UNIT_BUILDER) at ("
+          },
+          {
+            "tool": "get_cities",
+            "result": "3 cities:\n  Aynook (pop 6) at (68,59) \u2014 Food 15 Prod 17 Gold 24 Sci 33 Cul 16 | Housing 12 Amenities 7 | Growth: 43/66 food (8t, +3.0/t) | Building: UNIT_CUIRASSIER (2 turns) | Walls 300/300 Garrison 200/200 Def:61 Gar:none [id:131073]\n    Districts: COTHON(69,59) CAMPUS(67,59) AQUEDUCT(68,60)\n    B"
+          },
+          {
+            "tool": "get_builder_tasks",
+            "result": "=== BUILDER TASKS (6 tasks, 2 idle builders) ===\n\nURGENT:\n  (71,61): NITER* \u2014 build MINE [city: Aynook] \u2014 nearest builder id:4521997, 1 tile\n\nHIGH:\n  (67,62): COPPER \u2014 build MINE [city: Aynook] \u2014 nearest builder id:4653068, 3 tiles\n  (72,63): COPPER \u2014 build MINE [city: Byblos] \u2014 nearest builder id:4"
+          },
+          {
+            "tool": "get_map_area",
+            "result": "25 tiles:\n  (69,59): COAST [COTHON] {F:0 P:0} (owned by Phoenicia)\n  (70,59): TUNDRA FOREST Coast (LUMBER_MILL) {F:1 P:1} (owned by Phoenicia) [mv:2]\n  (71,59): TUNDRA FOREST (LUMBER_MILL) (Road) {F:1 P:1} (owned by Macedon)\n  (72,59): TUNDRA {F:1 P:0} (owned by Macedon)\n  (73,59): TUNDRA FOREST [DE"
+          },
+          {
+            "tool": "move_unit",
+            "result": "MOVING_TO|71,61|from:70,61|now_at:71,61|(moved dx:+1 dy:+0)"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      }
+    ]
+  },
+  "cost": {
+    "by_player": {
+      "1": {
+        "prompt_tokens": 47164,
+        "completion_tokens": 1460,
+        "usd": 0.0
+      }
+    },
+    "total_usd": 0.0
+  }
+}

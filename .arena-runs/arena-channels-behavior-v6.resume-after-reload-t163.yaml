@@ -1,0 +1,57 @@
+# Third operational resume of committed v6 after recovering a Civ AI hard
+# interturn with 0_MCP_0163. Seventeen successful captures remain on the final
+# timeline; the rolled-back T163 seat0/player1/player2 attempts are excluded.
+run_id: arena-channels-behavior-v6
+max_puppet_turns: 103
+max_game_turns: 127
+channel_rules:
+  acceptance_turns: 3
+  funding_turns: 2
+  payment_response_turns: 2
+civs:
+  - player: 0
+    provider: scripted
+    model: seat0-smoke
+    attention: {mode: "off"}
+  - player: 1
+    provider: local
+    model: gemma4-26b
+    gateway: http://192.168.20.196:11440/v1
+    tools: minimal
+    max_steps: 15
+    channels: {enabled: true, guidance: true}
+  - player: 2
+    provider: local
+    model: qwen3.6-27b
+    gateway: http://192.168.20.196:11441/v1
+    tools: minimal
+    max_steps: 15
+    channels: {enabled: true, guidance: true}
+  - player: 3
+    provider: scripted
+    channels:
+      enabled: true
+      auto_accept: true
+      script:
+        - turn: 157
+          action: propose_deal
+          args:
+            to_player: 1
+            text: "I'll pay you 50 gold if you keep your military units at least 3 tiles away from my lands for the next few turns. A simple deal to build trust between us."
+            favor:
+              term_type: keep_units_away
+              params: {player_id: 3, min_distance: 3, unit_scope: military}
+            payment_gold: 50
+            timing: on_delivery
+            within: 5
+        - turn: 157
+          action: propose_deal
+          args:
+            to_player: 2
+            text: "I'll pay you 50 gold if you keep your military units at least 3 tiles away from my lands for the next few turns. A simple deal to build trust between us."
+            favor:
+              term_type: keep_units_away
+              params: {player_id: 3, min_distance: 3, unit_scope: military}
+            payment_gold: 50
+            timing: on_delivery
+            within: 5

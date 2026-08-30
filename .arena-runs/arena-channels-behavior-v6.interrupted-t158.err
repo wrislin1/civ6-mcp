@@ -1,0 +1,3 @@
+[scripted-policy] channel dispatch OK: player=3 turn=157 action=propose_deal
+[scripted-policy] channel dispatch OK: player=3 turn=157 action=propose_deal
+[arena] CRITICAL seat0_human_pending turn 158: blockers=['ENDTURN_BLOCKING_PRODUCTION'] normal_error='' repair_error=''

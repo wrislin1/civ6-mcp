@@ -1,0 +1,4 @@
+[scripted-policy] channel dispatch OK: player=3 turn=157 action=propose_deal
+[scripted-policy] channel dispatch OK: player=3 turn=157 action=propose_deal
+[arena] seat-0 diplomacy pass completed on turn 162 (sessions 1#1, attempt 1)
+[arena] CRITICAL seat0_drain_deadline: turn 163 stuck in ai_processing after 1800 polls; game presumed hung

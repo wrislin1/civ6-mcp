@@ -1,0 +1,742 @@
+{
+  "result": {
+    "puppet_turns_played": 6,
+    "turns_slept": 0,
+    "seat0_turns_played": 0,
+    "seat0_turns_failed": 0,
+    "seat0_human_pending": 0,
+    "log": [
+      {
+        "player": 1,
+        "turn": 157,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 2,
+          "error": ""
+        }
+      },
+      {
+        "player": 2,
+        "turn": 157,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 1,
+          "error": ""
+        }
+      },
+      {
+        "player": 3,
+        "turn": 157,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 1,
+        "turn": 158,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 1,
+          "error": ""
+        }
+      },
+      {
+        "player": 2,
+        "turn": 158,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 1,
+          "error": ""
+        }
+      },
+      {
+        "player": 3,
+        "turn": 158,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      }
+    ],
+    "live_gate": {
+      "status": "restart_required",
+      "phase": "restart_required",
+      "reason": "",
+      "restart_count": 1,
+      "run_id": "arena-channels-core-gate-v4"
+    }
+  },
+  "cost": {
+    "by_player": {},
+    "total_usd": 0.0
+  }
+}
+LIVE_GATE {"phase":"restart_required","reason":"","restart_count":1,"run_id":"arena-channels-core-gate-v4","status":"restart_required"}
+{
+  "result": {
+    "puppet_turns_played": 18,
+    "turns_slept": 0,
+    "seat0_turns_played": 0,
+    "seat0_turns_failed": 0,
+    "seat0_human_pending": 0,
+    "log": [
+      {
+        "player": 1,
+        "turn": 159,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 2,
+        "turn": 159,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 3,
+        "turn": 159,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 1,
+        "turn": 160,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 2,
+        "turn": 160,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 1,
+          "error": ""
+        }
+      },
+      {
+        "player": 3,
+        "turn": 160,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 1,
+        "turn": 161,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 1,
+          "error": ""
+        }
+      },
+      {
+        "player": 2,
+        "turn": 161,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 3,
+        "turn": 161,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 1,
+        "turn": 162,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 2,
+        "turn": 162,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 3,
+        "turn": 162,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 1,
+        "turn": 163,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 2,
+        "turn": 163,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 3,
+        "turn": 163,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 1,
+        "turn": 164,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 2,
+        "turn": 164,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      },
+      {
+        "player": 3,
+        "turn": 164,
+        "summary": "scripted: observed + skipped unit 0",
+        "actions": [
+          {
+            "tool": "skip_unit"
+          }
+        ],
+        "promotion_sweep": [],
+        "standing_memory": {
+          "loaded": false,
+          "injected": false,
+          "injected_chars": 0,
+          "captured_chars": 0,
+          "error": ""
+        },
+        "task_tracker": {
+          "active_before": 0,
+          "pre_model_results": [],
+          "active_after": 0,
+          "error": ""
+        },
+        "channels": {
+          "enabled": true,
+          "acknowledgements": 0,
+          "error": ""
+        }
+      }
+    ],
+    "live_gate": {
+      "status": "passed",
+      "phase": "verify_terminal_gate",
+      "reason": "",
+      "restart_count": 1,
+      "run_id": "arena-channels-core-gate-v4"
+    }
+  },
+  "cost": {
+    "by_player": {},
+    "total_usd": 0.0
+  }
+}
+LIVE_GATE {"phase":"verify_terminal_gate","reason":"","restart_count":1,"run_id":"arena-channels-core-gate-v4","status":"passed"}
