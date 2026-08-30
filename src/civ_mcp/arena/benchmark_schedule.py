@@ -26,6 +26,21 @@ the raw arena "standard" tier includes `end_turn` (it is stripped and
 `finish_trial` appended only when the benchmark agent builds the live tool
 surface), so resolving it at schedule time would wrongly reject a perfectly
 valid arm.
+
+Indices are 1-based (the first trial is index 1, not 0) to match every other
+task in this plan: the store's `commit_trial(1, ...)` fixture, the runner's
+`TrialSpec(index=1, ...)` / `TrialSpec(index=2, ...)` test pair, and the
+report task's `schedule.json` fixture (indices 1..3) all assume the first
+trial is 1. Under 1-based ABBA, `index % 4` is 1 or 0 for the first arm and
+2 or 3 for the second.
+
+`audit_indices` balance is checked by exact per-arm count equality: each
+audit index is resolved to the arm it actually lands on in the compiled
+schedule (not inferred from index arithmetic), and every arm named in
+`suite.arms` must appear the same number of times among the audited trials
+(including zero, if audited at all) -- a mere `len(audit_indices) % len(arms)
+== 0` divisibility check is not sufficient, since a same-size set can still
+land unevenly across arms depending on where it falls in the ABBA cycle.
 """
 from __future__ import annotations
 
@@ -83,31 +98,34 @@ def _validate_arms(arms: tuple[TreatmentArm, ...]) -> None:
 
 
 def _validate_audit_indices(
-    audit_indices: tuple[int, ...], total_trials: int, num_arms: int
+    audit_indices: tuple[int, ...], trials: tuple[TrialSpec, ...], arm_ids: list[str]
 ) -> None:
+    total_trials = len(trials)
     if len(audit_indices) != len(set(audit_indices)):
         raise ValueError(f"audit_indices contains duplicate indices: {audit_indices}")
     for i in audit_indices:
-        if not (0 <= i < total_trials):
+        if not (1 <= i <= total_trials):
             raise ValueError(
-                f"audit index {i} is out of range for a schedule of {total_trials} trials"
+                f"audit index {i} is out of range for a schedule of {total_trials} "
+                f"1-based trials (valid range 1..{total_trials})"
             )
-    if audit_indices and num_arms and len(audit_indices) % num_arms != 0:
+    if not audit_indices:
+        return
+
+    arm_by_index = {t.index: t.arm_id for t in trials}
+    counts = {arm_id: 0 for arm_id in arm_ids}
+    for i in audit_indices:
+        counts[arm_by_index[i]] += 1
+    if len(set(counts.values())) > 1:
         raise ValueError(
-            f"audit_indices ({len(audit_indices)}) must be balanced across arms "
-            f"({num_arms}); {len(audit_indices)} does not divide evenly"
+            f"audit_indices must be balanced across arms (equal count per arm); "
+            f"got counts {counts}"
         )
 
 
-def compile_schedule(suite: SuiteManifest) -> tuple[TrialSpec, ...]:
-    _validate_order(suite.order)
-    _validate_arms(suite.arms)
-
-    total_trials = len(suite.positions) * len(suite.models) * len(suite.seeds) * len(suite.arms)
-    _validate_audit_indices(suite.audit_indices, total_trials, len(suite.arms))
-
+def _generate_trials(suite: SuiteManifest) -> tuple[TrialSpec, ...]:
     trials: list[TrialSpec] = []
-    index = 0
+    index = 1
     for position_id in suite.positions:
         for model in suite.models:
             for block_index, seed in enumerate(suite.seeds):
@@ -125,9 +143,19 @@ def compile_schedule(suite: SuiteManifest) -> tuple[TrialSpec, ...]:
                         )
                     )
                     index += 1
+    return tuple(trials)
+
+
+def compile_schedule(suite: SuiteManifest) -> tuple[TrialSpec, ...]:
+    _validate_order(suite.order)
+    _validate_arms(suite.arms)
+
+    trials = _generate_trials(suite)
 
     seen_indices = {t.index for t in trials}
     if len(seen_indices) != len(trials):
         raise ValueError("compiled schedule produced duplicate trial indices")
 
-    return tuple(trials)
+    _validate_audit_indices(suite.audit_indices, trials, [arm.arm_id for arm in suite.arms])
+
+    return trials

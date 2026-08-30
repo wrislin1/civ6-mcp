@@ -37,9 +37,10 @@ def test_calibration_schedule_is_twelve_abba_pairs_with_shared_pair_seed():
         assert left.seed == right.seed
 
 
-def test_compile_schedule_assigns_sequential_unique_indices():
+def test_compile_schedule_assigns_sequential_unique_indices_starting_at_one():
     trials = compile_schedule(_base_suite())
-    assert [t.index for t in trials] == list(range(24))
+    assert [t.index for t in trials] == list(range(1, 25))
+    assert trials[0].index == 1
 
 
 def test_compile_schedule_trial_spec_has_only_schedule_fields():
@@ -60,9 +61,27 @@ def test_compile_schedule_rejects_out_of_range_audit_index():
         compile_schedule(suite)
 
 
+def test_compile_schedule_rejects_zero_audit_index_since_indices_are_one_based():
+    suite = _base_suite(audit_indices=(0, 4, 9, 14, 19, 22))
+    with pytest.raises(ValueError, match="out of range"):
+        compile_schedule(suite)
+
+
+def test_compile_schedule_brief_audit_indices_land_exactly_three_per_arm():
+    # 1-based ABBA: index % 4 in {1, 0} -> minimal, {2, 3} -> standard.
+    # (1, 4, 9, 14, 19, 22) resolves to minimal={1,4,9}, standard={14,19,22}.
+    suite = _base_suite()
+    trials = compile_schedule(suite)
+    by_index = {t.index: t.arm_id for t in trials}
+    audited_arms = [by_index[i] for i in suite.audit_indices]
+    assert audited_arms == ["minimal", "minimal", "minimal", "standard", "standard", "standard"]
+
+
 def test_compile_schedule_rejects_unbalanced_audit_indices():
-    # 5 indices cannot split evenly across 2 arms.
-    suite = _base_suite(audit_indices=(1, 4, 9, 14, 19))
+    # Same size as the brief's balanced set (6), but resolves to 4 minimal / 2
+    # standard trials under 1-based ABBA -- exact per-arm counts must match,
+    # not merely the divisibility of len(audit_indices) by len(arms).
+    suite = _base_suite(audit_indices=(1, 4, 9, 13, 14, 22))
     with pytest.raises(ValueError, match="balanced"):
         compile_schedule(suite)
 
