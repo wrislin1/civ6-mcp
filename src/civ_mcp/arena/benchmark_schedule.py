@@ -20,12 +20,15 @@ Two arm-tool-surface checks belong here rather than in the benchmark agent
 the live tool registry: a tier name must be one this runner knows how to
 resolve, and an arm's explicit tool override (if a `TreatmentArm.options`
 carries one) must not defeat the runner's `finish_trial`-required /
-`end_turn`-forbidden tool-surface contract. Resolving a raw tool tier (e.g.
-turning "standard" into an actual tool list) is deliberately NOT done here --
-the raw arena "standard" tier includes `end_turn` (it is stripped and
-`finish_trial` appended only when the benchmark agent builds the live tool
-surface), so resolving it at schedule time would wrongly reject a perfectly
-valid arm.
+`end_turn`-forbidden tool-surface contract. Resolving a raw tool tier into
+its actual tool list (e.g. turning "standard" into the tuple of tool names
+it names in `registry.TIERS`) is deliberately NOT done here -- that
+resolution, plus the `end_turn`-strip / `finish_trial`-append transform that
+turns a raw tier into a *benchmark-safe* live tool surface, is the benchmark
+agent's job in a later task. Duplicating that transform here would only
+create a second place for it to drift; this module validates the tier
+*name* (via `ALLOWED_TIERS`, below) and an arm's own declared `options`
+override, and nothing more.
 
 Indices are 1-based (the first trial is index 1, not 0) to match every other
 task in this plan: the store's `commit_trial(1, ...)` fixture, the runner's
@@ -47,8 +50,21 @@ from __future__ import annotations
 import dataclasses
 
 from civ_mcp.arena.benchmark_manifest import SuiteManifest, TreatmentArm
+from civ_mcp.arena.registry import TIERS
 
-ALLOWED_TIERS = frozenset({"minimal", "standard"})
+# ALLOWED_TIERS is derived from registry.TIERS (the single source of truth
+# for tier -> tool-name membership) rather than hardcoded, so a tier rename
+# or addition in registry.py can never silently drift out of sync with what
+# compile_schedule accepts. "full" is deliberately excluded: it is
+# `tuple(TOOL_REGISTRY)`, the entire uncurated tool surface (every tool ever
+# registered, present or future) rather than a hand-picked, audited tier --
+# nothing guarantees it stays free of a turn-ending or otherwise
+# benchmark-unsafe tool (e.g. an `end_turn`-like tool) if one is ever added
+# to TOOL_REGISTRY. Only the curated "minimal" and "standard" tiers, which
+# are hand-maintained to exclude such tools, are benchmark-eligible.
+# test_allowed_tiers_tracks_registry_tiers_minus_full pins this relationship
+# so registry drift breaks loudly instead of silently.
+ALLOWED_TIERS = frozenset(TIERS) - {"full"}
 SUPPORTED_ORDERS = frozenset({"abba"})
 
 

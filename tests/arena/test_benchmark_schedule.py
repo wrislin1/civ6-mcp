@@ -1,8 +1,20 @@
 import pytest
 
+from civ_mcp.arena import registry
 from civ_mcp.arena.backends import SamplingConfig
 from civ_mcp.arena.benchmark_manifest import SuiteManifest, TreatmentArm
-from civ_mcp.arena.benchmark_schedule import TrialSpec, compile_schedule
+from civ_mcp.arena.benchmark_schedule import ALLOWED_TIERS, TrialSpec, compile_schedule
+
+
+def test_allowed_tiers_tracks_registry_tiers_minus_full():
+    # ALLOWED_TIERS must be derived from registry.TIERS, not a second,
+    # independent literal -- if registry.TIERS ever gains/renames a tier,
+    # this must break loudly instead of silently drifting out of sync.
+    # "full" (the uncurated tuple(TOOL_REGISTRY)) is deliberately excluded:
+    # only hand-curated tiers are benchmark-eligible.
+    assert ALLOWED_TIERS == frozenset(registry.TIERS) - {"full"}
+    assert "full" not in ALLOWED_TIERS
+    assert {"minimal", "standard"} <= ALLOWED_TIERS
 
 
 def _base_suite(**overrides) -> SuiteManifest:
