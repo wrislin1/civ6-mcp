@@ -1,0 +1,545 @@
+"""Tests for the strictly-serial controlled-position benchmark runner.
+
+Every test here uses plain async fakes / `AsyncMock` -- no live game, no
+network. `RunnerDependencies` is the seam: production wiring (in
+`benchmark_runner._build_live_dependencies` / `main`) is not exercised here.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+
+import httpx
+import openai
+import pytest
+from unittest.mock import AsyncMock
+
+from civ_mcp.arena.benchmark_agent import EpisodeEvidence, EpisodeTerminal, EpisodeTimedOut
+from civ_mcp.arena.benchmark_backend import HealthProbe
+from civ_mcp.arena.benchmark_runner import (
+    BenchmarkRunner,
+    FailureClass,
+    RunnerDependencies,
+    SessionAborted,
+)
+from civ_mcp.arena.benchmark_schedule import TrialSpec
+from civ_mcp.arena.benchmark_state import BenchmarkStateError
+from civ_mcp.arena.benchmark_store import BenchmarkStore
+
+CANONICAL = {"turn": 157, "player_id": 0, "units": [], "cities": [], "tiles": []}
+
+
+def _lock() -> dict:
+    return {"session_fingerprint": "abc123", "schedule_fingerprint": "def456"}
+
+
+def _spec(
+    index: int,
+    arm_id: str,
+    *,
+    position_id: str = "builder-cal-v1",
+    model: str = "qwen3.6-27b",
+    seed: int = 101,
+    pair_id: str = "pair-001",
+) -> TrialSpec:
+    return TrialSpec(
+        index=index, pair_id=pair_id, position_id=position_id, model=model, arm_id=arm_id, seed=seed
+    )
+
+
+class _FinishingAgent:
+    """A normal, complete finish_trial episode."""
+
+    async def run(self, gs, player_id, turn):
+        return EpisodeEvidence(
+            terminal=EpisodeTerminal.FINISH_TRIAL,
+            steps=[{"idx": 0, "tool_name": "get_units"}],
+            invalid_tool_calls=[],
+            final_summary="done",
+            wall_clock_s=1.2,
+            prompt_tokens=10,
+            completion_tokens=5,
+        )
+
+
+class _RaisingAgent:
+    def __init__(self, exc: Exception):
+        self._exc = exc
+
+    async def run(self, gs, player_id, turn):
+        raise self._exc
+
+
+def _healthy_probe(model: str = "qwen3.6-27b") -> HealthProbe:
+    return HealthProbe(healthy=True, model=model, latency_s=0.2, error=None)
+
+
+def _unhealthy_probe() -> HealthProbe:
+    return HealthProbe(healthy=False, model=None, latency_s=None, error="down")
+
+
+def _deps(**overrides) -> RunnerDependencies:
+    base = dict(
+        reload_position=AsyncMock(return_value=None),
+        dismiss_popups=AsyncMock(return_value="POPUPS|none"),
+        capture_state=AsyncMock(return_value=dict(CANONICAL)),
+        make_agent=lambda spec: _FinishingAgent(),
+        probe_health=AsyncMock(return_value=_healthy_probe()),
+    )
+    base.update(overrides)
+    return RunnerDependencies(**base)
+
+
+def _runner(store: BenchmarkStore, deps: RunnerDependencies, *, expected_state=None, player_id: int = 0):
+    return BenchmarkRunner(
+        store=store,
+        dependencies=deps,
+        expected_state=expected_state if expected_state is not None else dict(CANONICAL),
+        player_id=player_id,
+    )
+
+
+def _attempt_payload(run_dir, index: int, ordinal: int = 1) -> dict:
+    path = run_dir / "attempts" / f"trial-{index:03d}-attempt-{ordinal:03d}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# Step 1 (brief): timeout health discriminator. Adapted to the actual, pinned
+# `HealthProbe` fields (healthy/model/latency_s/error) from Task 4's
+# `benchmark_backend.py` -- the brief's example used identity_ok/detail
+# kwargs that don't exist on that frozen dataclass; see task-11-report.md.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_healthy_timeout_is_raw_trial_but_dead_endpoint_is_retry(tmp_path):
+    class TimeoutAgent:
+        async def run(self, gs, player_id, turn):
+            raise EpisodeTimedOut("episode wall reached")
+
+    health_results = iter(
+        [
+            HealthProbe(healthy=True, model="qwen3.6-27b", latency_s=0.2, error=None),
+            HealthProbe(healthy=False, model=None, latency_s=10.0, error="timeout"),
+        ]
+    )
+
+    async def probe_after_timeout():
+        return next(health_results)
+
+    canonical = {"turn": 157, "player_id": 0, "units": [], "cities": [], "tiles": []}
+    store = BenchmarkStore.create(
+        tmp_path / "run",
+        {"session_fingerprint": "abc123", "schedule_fingerprint": "def456"},
+    )
+    deps = RunnerDependencies(
+        reload_position=AsyncMock(return_value=None),
+        dismiss_popups=AsyncMock(return_value="POPUPS|none"),
+        capture_state=AsyncMock(return_value=canonical),
+        make_agent=lambda _trial: TimeoutAgent(),
+        probe_health=probe_after_timeout,
+    )
+    runner = BenchmarkRunner(store=store, dependencies=deps, expected_state=canonical, player_id=0)
+
+    await runner.run_trial(_spec(1, "minimal"))
+    await runner.run_trial(_spec(2, "standard"))
+
+    assert runner.store.completed_indices() == {1}
+    assert runner.store.attempt_count(2) == 1
+    assert runner.store.trial(1)["terminal"] == "runaway_timeout"
+
+
+# ---------------------------------------------------------------------------
+# Strict serial execution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_processes_trials_strictly_serially(tmp_path):
+    order: list[str] = []
+
+    class OrderedAgent:
+        def __init__(self, label):
+            self.label = label
+
+        async def run(self, gs, player_id, turn):
+            order.append(f"{self.label}-start")
+            await asyncio.sleep(0)
+            order.append(f"{self.label}-end")
+            return EpisodeEvidence(EpisodeTerminal.FINISH_TRIAL, [], [], "", 0.1, 1, 1)
+
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(make_agent=lambda spec: OrderedAgent(spec.index))
+    runner = _runner(store, deps)
+
+    await runner.run([_spec(1, "minimal"), _spec(2, "standard")])
+
+    assert order == ["1-start", "1-end", "2-start", "2-end"]
+    assert runner.store.completed_indices() == {1, 2}
+
+
+# ---------------------------------------------------------------------------
+# reload -> popup -> checksum order
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_trial_calls_reload_popup_checksum_in_order(tmp_path):
+    calls: list[str] = []
+
+    async def reload_position(position_id):
+        calls.append("reload")
+
+    async def dismiss_popups():
+        calls.append("popups")
+        return "POPUPS|none"
+
+    async def capture_state():
+        calls.append("capture")
+        return dict(CANONICAL)
+
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(reload_position=reload_position, dismiss_popups=dismiss_popups, capture_state=capture_state)
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    # capture_state is called twice (checksum verification, then final-state
+    # capture) -- only the first three calls establish the mandated order.
+    assert calls[:3] == ["reload", "popups", "capture"]
+    assert runner.store.completed_indices() == {1}
+
+
+# ---------------------------------------------------------------------------
+# Checksum mismatch aborts the session
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_checksum_mismatch_aborts_session_with_no_attempt_recorded(tmp_path):
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    wrong_state = {**CANONICAL, "turn": 999}
+    deps = _deps(capture_state=AsyncMock(return_value=wrong_state))
+    runner = _runner(store, deps)
+
+    with pytest.raises(SessionAborted, match="checksum"):
+        await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 0
+
+
+# ---------------------------------------------------------------------------
+# Three-attempt cap, including across process resume
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_trial_stops_session_after_three_attempts_across_resume(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    for _ in range(3):
+        store.record_attempt(1, {"failure_class": FailureClass.RELOAD_OR_RECONNECT.value})
+
+    # Simulate a resumed process: a brand-new BenchmarkStore instance reopens
+    # the same run directory and sees the three attempts purely from disk.
+    resumed_store = BenchmarkStore.open(run_dir, _lock())
+    reload_position = AsyncMock(return_value=None)
+    deps = _deps(reload_position=reload_position)
+    runner = _runner(resumed_store, deps)
+
+    with pytest.raises(SessionAborted, match="attempt"):
+        await runner.run_trial(_spec(1, "minimal"))
+
+    reload_position.assert_not_awaited()
+    assert resumed_store.completed_indices() == set()
+
+
+# ---------------------------------------------------------------------------
+# Zero-action / step-limit / malformed-output episodes are admitted
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_step_limit_zero_action_and_malformed_output_are_admitted_as_scoreable(tmp_path):
+    class NullAgent:
+        async def run(self, gs, player_id, turn):
+            return EpisodeEvidence(
+                terminal=EpisodeTerminal.STEP_LIMIT,
+                steps=[],
+                invalid_tool_calls=[
+                    {"tool_name": "frobnicate", "arguments": "{bad json", "reason": "bad_arguments"}
+                ],
+                final_summary="",
+                wall_clock_s=5.0,
+                prompt_tokens=3,
+                completion_tokens=0,
+            )
+
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(make_agent=lambda spec: NullAgent())
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == {1}
+    trial = runner.store.trial(1)
+    assert trial["terminal"] == "step_limit"
+    assert trial["steps"] == []
+    assert trial["invalid_tool_calls"][0]["reason"] == "bad_arguments"
+    assert runner.store.attempt_count(1) == 0
+
+
+# ---------------------------------------------------------------------------
+# Reload / popup / harness-crash failures before a complete episode are
+# infrastructure attempts, never a scoreable trial.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reload_failure_is_an_infrastructure_attempt(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(reload_position=AsyncMock(side_effect=RuntimeError("reload boom")))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.RELOAD_OR_RECONNECT.value
+
+
+@pytest.mark.asyncio
+async def test_popup_failure_is_an_infrastructure_attempt(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(dismiss_popups=AsyncMock(side_effect=RuntimeError("popup boom")))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.POPUP_HYGIENE.value
+
+
+@pytest.mark.asyncio
+async def test_pre_episode_capture_state_failure_is_a_harness_crash_attempt(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(capture_state=AsyncMock(side_effect=BenchmarkStateError("ERR:PLAYER_NOT_FOUND")))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.HARNESS_CRASH.value
+
+
+@pytest.mark.asyncio
+async def test_mid_episode_capture_state_failure_is_a_harness_crash_attempt(tmp_path):
+    """`BenchmarkStateError` raised from inside `agent.run()` (e.g. the
+    agent's own per-step capture hook hitting a stale connection) is a
+    harness failure per `SingleTurnAgent.run()`'s pinned exception contract
+    -- never scored as a model outcome."""
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(make_agent=lambda spec: _RaisingAgent(BenchmarkStateError("ERR:STALE_CONN")))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.HARNESS_CRASH.value
+
+
+@pytest.mark.asyncio
+async def test_final_state_capture_failure_after_episode_is_a_harness_crash_attempt(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    capture_state = AsyncMock(side_effect=[dict(CANONICAL), RuntimeError("final capture boom")])
+    deps = _deps(capture_state=capture_state)
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.HARNESS_CRASH.value
+
+
+# ---------------------------------------------------------------------------
+# Immediate health classification of timeouts and transport failures
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_episode_timeout_with_healthy_canary_admits_runaway_timeout(tmp_path):
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        make_agent=lambda spec: _RaisingAgent(EpisodeTimedOut("wall reached")),
+        probe_health=AsyncMock(return_value=_healthy_probe()),
+    )
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == {1}
+    assert runner.store.trial(1)["terminal"] == "runaway_timeout"
+    assert runner.store.attempt_count(1) == 0
+
+
+@pytest.mark.asyncio
+async def test_episode_timeout_with_unhealthy_canary_is_an_infrastructure_attempt(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(
+        make_agent=lambda spec: _RaisingAgent(EpisodeTimedOut("wall reached")),
+        probe_health=AsyncMock(return_value=_unhealthy_probe()),
+    )
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.EPISODE_TIMEOUT_UNHEALTHY.value
+
+
+@pytest.mark.asyncio
+async def test_request_timeout_exception_with_healthy_canary_admits_runaway_timeout(tmp_path):
+    req = httpx.Request("POST", "http://example.invalid/v1/chat/completions")
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        make_agent=lambda spec: _RaisingAgent(openai.APITimeoutError(request=req)),
+        probe_health=AsyncMock(return_value=_healthy_probe()),
+    )
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == {1}
+    assert runner.store.trial(1)["terminal"] == "runaway_timeout"
+
+
+@pytest.mark.asyncio
+async def test_transport_failure_with_unhealthy_canary_is_an_infrastructure_attempt(tmp_path):
+    req = httpx.Request("POST", "http://example.invalid/v1/chat/completions")
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(
+        make_agent=lambda spec: _RaisingAgent(openai.APIConnectionError(request=req)),
+        probe_health=AsyncMock(return_value=_unhealthy_probe()),
+    )
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.TRANSPORT_FAILURE_UNHEALTHY.value
+
+
+@pytest.mark.asyncio
+async def test_transport_failure_with_healthy_canary_stops_session_not_scoreable(tmp_path):
+    req = httpx.Request("POST", "http://example.invalid/v1/chat/completions")
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        make_agent=lambda spec: _RaisingAgent(openai.APIConnectionError(request=req)),
+        probe_health=AsyncMock(return_value=_healthy_probe()),
+    )
+    runner = _runner(store, deps)
+
+    with pytest.raises(SessionAborted) as exc_info:
+        await runner.run_trial(_spec(1, "minimal"))
+    assert exc_info.value.code == "healthy_transport_exception_not_scoreable"
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 0
+
+
+# ---------------------------------------------------------------------------
+# Unknown exceptions stop the session; never auto-retried
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unknown_exception_stops_session_without_retry(tmp_path):
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(make_agent=lambda spec: _RaisingAgent(ValueError("totally unexpected")))
+    runner = _runner(store, deps)
+
+    with pytest.raises(SessionAborted) as exc_info:
+        await runner.run_trial(_spec(1, "minimal"))
+    assert exc_info.value.code == "unknown_failure"
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 0
+
+
+# ---------------------------------------------------------------------------
+# Resume skips committed trials; scorer absence never replays one
+# ---------------------------------------------------------------------------
+
+
+def _committed_trial_payload(index: int) -> dict:
+    return {
+        "index": index,
+        "pair_id": "pair-001",
+        "position_id": "builder-cal-v1",
+        "model": "qwen3.6-27b",
+        "arm_id": "minimal",
+        "seed": 101,
+        "attempt_count": 1,
+        "terminal": "finish_trial",
+        "steps": [],
+        "invalid_tool_calls": [],
+        "final_summary": "",
+        "initial_state": dict(CANONICAL),
+        "final_state": dict(CANONICAL),
+        "wall_clock_s": 1.0,
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_skips_already_committed_trials_on_resume(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    store.commit_trial(1, _committed_trial_payload(1))
+
+    reopened = BenchmarkStore.open(run_dir, _lock())
+    make_agent_calls: list[int] = []
+    deps = _deps(make_agent=lambda spec: make_agent_calls.append(spec.index) or _FinishingAgent())
+    runner = _runner(reopened, deps)
+
+    await runner.run([_spec(1, "minimal"), _spec(2, "standard")])
+
+    assert make_agent_calls == [2]
+    assert runner.store.completed_indices() == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_scorer_absence_never_replays_a_committed_trial(tmp_path):
+    """No report.json/report.md/scorer artifacts exist anywhere in the run
+    directory -- committed-trial resume-skip must not depend on their
+    presence."""
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    store.commit_trial(1, _committed_trial_payload(1))
+    assert not (run_dir / "report.json").exists()
+    assert not (run_dir / "report.md").exists()
+
+    make_agent_calls: list[int] = []
+    deps = _deps(make_agent=lambda spec: make_agent_calls.append(spec.index) or _FinishingAgent())
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert make_agent_calls == []
+    assert runner.store.completed_indices() == {1}
