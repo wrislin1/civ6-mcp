@@ -4165,6 +4165,7 @@ class _ScriptedGS:
         production=None,
         diplomacy_sessions=None,
         great_people=None,
+        city_states=None,
     ):
         self.overview_calls = 0
         self.units_calls = 0
@@ -4174,6 +4175,7 @@ class _ScriptedGS:
         self.production_set: list[tuple] = []
         self.diplomacy_responses: list[tuple[int, str]] = []
         self.great_people_recruited: list[int] = []
+        self.envoys_sent: list[int] = []
         self.listed: list[int] = []
         self._techs = list(techs or [])
         self._civics = list(civics or [])
@@ -4181,6 +4183,7 @@ class _ScriptedGS:
         self._production = dict(production or {})   # city_id -> [ProductionOption]
         self._diplomacy_sessions = list(diplomacy_sessions or [])
         self._great_people = list(great_people or [])
+        self._city_states = city_states or lq.EnvoyStatus(tokens_available=0)
         self.raise_on: set[str] = set()
 
     async def get_game_overview(self):
@@ -4263,6 +4266,17 @@ class _ScriptedGS:
             raise RuntimeError("recruit great person boom")
         self.great_people_recruited.append(individual_id)
         return f"OK:RECRUITED|{individual_id}"
+
+    async def get_city_states(self):
+        if "city_states" in self.raise_on:
+            raise RuntimeError("city states boom")
+        return self._city_states
+
+    async def send_envoy(self, player_id):
+        if "send_envoy" in self.raise_on:
+            raise RuntimeError("send envoy boom")
+        self.envoys_sent.append(player_id)
+        return f"OK:ENVOY_SENT|{player_id}"
 
 
 def _tech(tech_type, turns):
@@ -4623,6 +4637,33 @@ async def test_scripted_repair_claims_each_currently_recruitable_great_person():
     assert [action["tool"] for action in result["actions"]] == [
         "recruit_great_person",
         "recruit_great_person",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_scripted_repair_sends_each_available_envoy_deterministically():
+    gs = _ScriptedGS(
+        city_states=lq.EnvoyStatus(
+            tokens_available=2,
+            city_states=[
+                lq.CityStateInfo(9, "Venice", "Trade", 2, 1, "Khmer", True),
+                lq.CityStateInfo(10, "Wolin", "Militaristic", 1, -1, "None", True),
+                lq.CityStateInfo(62, "Free Cities", "Unknown", 0, -1, "None", False),
+            ],
+        )
+    )
+
+    result = await ScriptedPolicy()(
+        gs,
+        0,
+        172,
+        blocker_block=_prod_block("ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN"),
+    )
+
+    assert gs.envoys_sent == [10, 9]
+    assert [action["tool"] for action in result["actions"]] == [
+        "send_envoy",
+        "send_envoy",
     ]
 
 

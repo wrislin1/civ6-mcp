@@ -245,6 +245,7 @@ class ScriptedPolicy:
         want_civic = "ENDTURN_BLOCKING_CIVIC" in blocker_block
         want_production = "ENDTURN_BLOCKING_PRODUCTION" in blocker_block
         want_great_person = "ENDTURN_BLOCKING_CLAIM_GREAT_PERSON" in blocker_block
+        want_envoy = "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" in blocker_block
         want_diplomacy = "== PENDING DIPLOMACY ==" in blocker_block
 
         if want_tech or want_civic:
@@ -261,6 +262,10 @@ class ScriptedPolicy:
             gp_actions, gp_errors = await self._claim_great_people(gs)
             actions.extend(gp_actions)
             errors.extend(gp_errors)
+        if want_envoy:
+            envoy_actions, envoy_errors = await self._send_envoys(gs)
+            actions.extend(envoy_actions)
+            errors.extend(envoy_errors)
         if want_diplomacy:
             diplomacy_actions, diplomacy_errors = await self._answer_diplomacy(gs)
             actions.extend(diplomacy_actions)
@@ -309,6 +314,54 @@ class ScriptedPolicy:
                 errors.append(
                     f"recruit_great_person({person.individual_id}) failed {e!r}"
                 )
+        return actions, errors
+
+    async def _send_envoys(self, gs):
+        """Spend available envoy tokens with a deterministic neutral policy.
+
+        Favor the eligible city-state with the fewest existing envoys, then
+        break ties by name and player ID. Local counts are advanced after each
+        send so multiple tokens are distributed rather than piled onto an
+        arbitrary first result.
+        """
+        actions: list[dict] = []
+        errors: list[str] = []
+        try:
+            status = await gs.get_city_states()
+        except Exception as e:
+            return actions, [f"get_city_states failed {e!r}"]
+        candidates = [
+            {
+                "player_id": city_state.player_id,
+                "name": city_state.name,
+                "envoys_sent": city_state.envoys_sent,
+            }
+            for city_state in status.city_states
+            if city_state.can_send_envoy
+        ]
+        if status.tokens_available and not candidates:
+            return actions, ["no city-state can receive an envoy"]
+        for _ in range(status.tokens_available):
+            target = min(
+                candidates,
+                key=lambda city_state: (
+                    city_state["envoys_sent"],
+                    city_state["name"],
+                    city_state["player_id"],
+                ),
+            )
+            try:
+                result = await gs.send_envoy(target["player_id"])
+                actions.append({
+                    "tool": "send_envoy",
+                    "item": target["name"],
+                    "player_id": target["player_id"],
+                    "result": result,
+                })
+                target["envoys_sent"] += 1
+            except Exception as e:
+                errors.append(f"send_envoy({target['player_id']}) failed {e!r}")
+                break
         return actions, errors
 
     async def _answer_diplomacy(self, gs):
