@@ -6,10 +6,14 @@ import openai
 import pytest
 
 from civ_mcp.arena.backends import (
+    MAX_ATTEMPTS,
     MAX_COMPLETION_TOKENS,
     REQUEST_TIMEOUT_S,
+    RETRY_BACKOFF_S,
     OpenAICompatBackend,
     Reply,
+    RetryPolicy,
+    SamplingConfig,
 )
 
 
@@ -36,10 +40,12 @@ class _CapturingCompletions:
         return _FakeResp()
 
 
-def _backend_with_capture():
+def _backend_with_capture(*, sampling=None, retry_policy=None):
     b = OpenAICompatBackend.__new__(OpenAICompatBackend)
     b.model = "gemma4-26b"
     b.base_url = "http://x/v1"
+    b.sampling = sampling or SamplingConfig()
+    b.retry_policy = retry_policy or RetryPolicy()
     cap = _CapturingCompletions()
     b._client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=cap))
     return b, cap
@@ -60,12 +66,41 @@ def test_chat_sends_max_tokens_timeout_and_thinking_off_without_tools():
     assert "tools" not in cap.kwargs
 
 
+def test_benchmark_backend_sends_exact_sampling_and_disables_resampling():
+    sampling = SamplingConfig(temperature=0.2, top_p=0.95, seed=41, max_tokens=2048)
+    backend, capture = _backend_with_capture(
+        sampling=sampling,
+        retry_policy=RetryPolicy(max_attempts=1, backoff_s=0.0),
+    )
+    asyncio.run(backend.chat([{"role": "user", "content": "act"}], []))
+    assert capture.kwargs["temperature"] == 0.2
+    assert capture.kwargs["top_p"] == 0.95
+    assert capture.kwargs["seed"] == 41
+    assert capture.kwargs["max_tokens"] == 2048
+
+
 def test_chat_passes_tools_with_cap_and_thinking_off():
     b, cap = _backend_with_capture()
     asyncio.run(b.chat([{"role": "user", "content": "hi"}], tools=[{"type": "function"}]))
     assert cap.kwargs["tool_choice"] == "auto"
     assert cap.kwargs["max_tokens"] == MAX_COMPLETION_TOKENS
     assert cap.kwargs["extra_body"] == _thinking_off_extra_body()
+
+
+def test_default_construction_omits_sampling_keys_and_keeps_three_attempts():
+    """Hard backward-compat gate: an arena caller that passes no `sampling` or
+    `retry_policy` must see identical wire behavior to before this task --
+    no temperature/top_p/seed on the request, and the legacy 3-attempt retry."""
+    b = OpenAICompatBackend("http://x/v1", "k", "m")
+    assert b.sampling == SamplingConfig()
+    assert b.retry_policy == RetryPolicy(max_attempts=MAX_ATTEMPTS, backoff_s=RETRY_BACKOFF_S)
+    cap = _CapturingCompletions()
+    b._client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=cap))
+    asyncio.run(b.chat([{"role": "user", "content": "hi"}], tools=[]))
+    assert "temperature" not in cap.kwargs
+    assert "top_p" not in cap.kwargs
+    assert "seed" not in cap.kwargs
+    assert cap.kwargs["max_tokens"] == MAX_COMPLETION_TOKENS
 
 
 def test_caps_are_bounded():
@@ -80,6 +115,8 @@ def _backend_with_create(create_fn):
     b = OpenAICompatBackend.__new__(OpenAICompatBackend)
     b.model = "gemma4-26b"
     b.base_url = "http://x/v1"
+    b.sampling = SamplingConfig()
+    b.retry_policy = RetryPolicy()
     b._client = types.SimpleNamespace(
         chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create_fn))
     )
