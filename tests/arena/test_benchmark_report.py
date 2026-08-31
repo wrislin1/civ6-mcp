@@ -659,7 +659,7 @@ def test_calibration_reports_ten_of_twelve_wins_and_median_delta_four(tmp_path):
     assert calibration["win_counts"]["standard"] == 10
     assert calibration["win_counts"].get("minimal", 0) == 2
     assert calibration["tie_count"] == 0
-    assert calibration["median_delta"] >= 4
+    assert calibration["median_abs_delta"] >= 4
 
 
 def test_calibration_ties_do_not_count_as_wins_for_either_arm(tmp_path):
@@ -672,7 +672,41 @@ def test_calibration_ties_do_not_count_as_wins_for_either_arm(tmp_path):
     assert calibration["win_counts"].get("standard", 0) == 0
     assert calibration["win_counts"].get("minimal", 0) == 0
     assert calibration["tie_count"] == 3
-    assert calibration["median_delta"] == 0
+    assert calibration["median_abs_delta"] == 0
+    assert calibration["median_signed_delta"] == 0
+
+
+def test_calibration_median_signed_delta_is_oriented_second_arm_minus_first_arm(tmp_path):
+    # _calibration_run's schedule.json always lists "standard" first and
+    # "minimal" second within each pair (and across the whole schedule) --
+    # so the declared arm order here is (standard=first/baseline,
+    # minimal=second/treatment) and the signed delta is minimal - standard.
+    standard_scores = [0, 0, 0, 0]
+    minimal_scores = [10, 8, 6, 4]
+    run_dir = _calibration_run(tmp_path, standard_scores, minimal_scores)
+
+    report = build_report(run_dir)
+    calibration = report["calibration"]
+    assert calibration["median_signed_delta"] == 7
+    assert calibration["median_abs_delta"] == 7
+
+
+def test_calibration_median_signed_delta_moves_down_when_baseline_wins_a_pair_but_abs_does_not(
+    tmp_path,
+):
+    # Counterfactual: flip the first pair so the *first-declared* (baseline)
+    # arm wins it, keeping the absolute magnitude of every delta identical
+    # to the all-second-arm-wins case above. median_abs_delta must be
+    # unchanged (it does not care which arm won); median_signed_delta must
+    # move down, since a baseline win now contributes a negative delta.
+    standard_scores = [10, 0, 0, 0]
+    minimal_scores = [0, 8, 6, 4]
+    run_dir = _calibration_run(tmp_path, standard_scores, minimal_scores)
+
+    report = build_report(run_dir)
+    calibration = report["calibration"]
+    assert calibration["median_abs_delta"] == 7
+    assert calibration["median_signed_delta"] == 5
 
 
 # ---------------------------------------------------------------------------

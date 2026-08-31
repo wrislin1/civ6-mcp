@@ -355,16 +355,59 @@ def _position_summary(position_id: str, scored: Sequence[Mapping[str, object]]) 
     }
 
 
-def _calibration_section(scored_by_pair: Mapping[str, list[Mapping[str, object]]]) -> dict[str, object] | None:
+def _declared_arm_order(schedule_trials: Sequence[Mapping[str, object]]) -> tuple[str, str] | None:
+    """The suite's declared two-arm order (arms[0]=baseline, arms[1]=treatment),
+    derived from `schedule.json` alone (this module never reads the suite
+    manifest). `compile_schedule` always emits the first (position, model)
+    group's first seed-block in unreversed `suite.arms` order (index 1 is
+    arms[0], index 2 is arms[1]) -- every later block may reverse for ABBA
+    balancing, but the very first two distinct arm_ids encountered walking
+    the schedule in ascending index order are always arms[0] then arms[1].
+    Returns `None` if fewer than two distinct arm_ids appear at all.
+    """
+    ordered_entries = sorted(
+        (e for e in schedule_trials if isinstance(e, Mapping) and e.get("index") is not None),
+        key=lambda e: e["index"],
+    )
+    seen: list[str] = []
+    for entry in ordered_entries:
+        arm_id = entry.get("arm_id")
+        if arm_id is None:
+            continue
+        arm_id = str(arm_id)
+        if arm_id not in seen:
+            seen.append(arm_id)
+        if len(seen) == 2:
+            return (seen[0], seen[1])
+    return None
+
+
+def _calibration_section(
+    scored_by_pair: Mapping[str, list[Mapping[str, object]]],
+    arm_order: tuple[str, str] | None,
+) -> dict[str, object] | None:
     """Pairs trials that share a `pair_id` from `schedule.json` and compare
     two distinct arms' raw rubric scores. Ties count for neither arm (design
     doc: "ties count as non-wins"). Pairs with anything other than exactly
     two distinct-arm trials are skipped (an in-progress/partial run).
+
+    Two delta statistics are reported: `median_abs_delta` (the magnitude of
+    each pair's score difference, blind to which arm won -- feeds "how far
+    apart do the arms land") and `median_signed_delta` (each pair's delta
+    oriented as second-arm-minus-first-arm in `arm_order`, i.e.
+    treatment-minus-baseline when `arm_order` is (baseline, treatment) --
+    this is the statistic the preregistered "median paired improvement >= 4"
+    rule actually needs, since a pair the baseline wins must pull it DOWN,
+    not up). A pair whose two arm_ids don't both appear in `arm_order`
+    (more than two arms declared in the suite) contributes to
+    `median_abs_delta` but is excluded from the signed statistic, since its
+    orientation is undefined.
     """
     pairs: list[dict[str, object]] = []
     win_counts: dict[str, int] = {}
     tie_count = 0
-    deltas: list[float] = []
+    abs_deltas: list[float] = []
+    signed_deltas: list[float] = []
 
     for pair_id in sorted(scored_by_pair):
         members = scored_by_pair[pair_id]
@@ -377,8 +420,16 @@ def _calibration_section(scored_by_pair: Mapping[str, list[Mapping[str, object]]
             (members[0]["arm_id"], members[0]["rubric"]["raw_total"]),
             (members[1]["arm_id"], members[1]["rubric"]["raw_total"]),
         )
-        delta = abs(score_a - score_b)
-        deltas.append(delta)
+        abs_delta = abs(score_a - score_b)
+        abs_deltas.append(abs_delta)
+
+        signed_delta = None
+        if arm_order is not None and {str(arm_a), str(arm_b)} == set(arm_order):
+            baseline_id, treatment_id = arm_order
+            by_arm = {str(arm_a): score_a, str(arm_b): score_b}
+            signed_delta = by_arm[treatment_id] - by_arm[baseline_id]
+            signed_deltas.append(signed_delta)
+
         if score_a == score_b:
             tie_count += 1
             winner = None
@@ -393,7 +444,8 @@ def _calibration_section(scored_by_pair: Mapping[str, list[Mapping[str, object]]
                 "pair_id": pair_id,
                 "scores": {str(arm_a): score_a, str(arm_b): score_b},
                 "winner": winner,
-                "delta": delta,
+                "delta": abs_delta,
+                "signed_delta": signed_delta,
             }
         )
 
@@ -405,7 +457,8 @@ def _calibration_section(scored_by_pair: Mapping[str, list[Mapping[str, object]]
         "win_counts": win_counts,
         "tie_count": tie_count,
         "pair_count": len(pairs),
-        "median_delta": statistics.median(deltas) if deltas else 0,
+        "median_abs_delta": statistics.median(abs_deltas) if abs_deltas else 0,
+        "median_signed_delta": statistics.median(signed_deltas) if signed_deltas else 0,
     }
 
 
@@ -547,7 +600,7 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
         },
     }
 
-    calibration = _calibration_section(scored_by_pair)
+    calibration = _calibration_section(scored_by_pair, _declared_arm_order(schedule_trials))
     if calibration is not None:
         report["calibration"] = calibration
 
@@ -692,7 +745,11 @@ def render_markdown(report: Mapping[str, object]) -> str:
         lines.append(f"- Pairs compared: {calibration['pair_count']}")
         lines.append(f"- Win counts: {calibration['win_counts']}")
         lines.append(f"- Ties (count for neither arm): {calibration['tie_count']}")
-        lines.append(f"- Median paired delta: {_fmt(calibration['median_delta'])}")
+        lines.append(f"- Median paired absolute delta: {_fmt(calibration['median_abs_delta'])}")
+        lines.append(
+            f"- Median paired signed delta (treatment - baseline): "
+            f"{_fmt(calibration['median_signed_delta'])}"
+        )
         lines.append("")
 
     return "\n".join(lines) + "\n"
