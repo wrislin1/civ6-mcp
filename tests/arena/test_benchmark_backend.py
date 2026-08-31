@@ -62,6 +62,18 @@ class _FakeWrongModelBackend(_FakeExactBackend):
                      completion_tokens=1, model="some-other-model")
 
 
+class _FakeNonDeterministicGreedyBackend(_FakeExactBackend):
+    """G7 repro: claims temperature=0 (greedy) but its repeated calls at
+    the SAME locked config disagree with each other -- a genuinely
+    non-deterministic backend, not honoring anything, masquerading as
+    "not applicable" under the old unconditional temp==0 verdict."""
+
+    async def chat(self, messages, tools):
+        self.calls += 1
+        return Reply(text=f"call={self.calls}", tool_calls=[], prompt_tokens=1,
+                     completion_tokens=1, model=self.model)
+
+
 @pytest.mark.asyncio
 async def test_probe_backend_confirms_model_and_honored_seed():
     backend = _FakeExactBackend(
@@ -93,8 +105,37 @@ async def test_probe_backend_records_seed_verdict_not_applicable_at_temperature_
     backend = _FakeExactBackend()  # default sampling: temperature=0.0
     probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=10)
     assert probe.seed_verdict == "not_applicable_greedy"
+    # G7: repeated_consistent must be recorded on the probe, not silently
+    # computed-and-discarded -- admission never sees it otherwise.
+    assert probe.repeated_consistent is True
     # the verification call's config swap (if any) must never leak
     assert backend.sampling.seed == 41
+
+
+@pytest.mark.asyncio
+async def test_probe_backend_temp_zero_inconsistent_output_is_not_honored():
+    """G7 repro: at temperature==0 the verdict was unconditionally
+    "not_applicable_greedy", even when the backend's own repeated calls at
+    the same config disagree with each other -- a non-deterministic
+    "greedy" backend must fail admission (seed_verdict "not_honored"),
+    not slip through as "not applicable"."""
+    backend = _FakeNonDeterministicGreedyBackend(
+        sampling=SamplingConfig(temperature=0.0, top_p=1.0, seed=41, max_tokens=64)
+    )
+    probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=10)
+    assert probe.repeated_consistent is False
+    assert probe.seed_verdict == "not_honored"
+    assert probe.seed_honored is False
+
+
+def test_backend_probe_repeated_consistent_defaults_false_for_old_constructors():
+    """Pre-G7 callers/tests construct BackendProbe without repeated_consistent
+    -- it must default to False rather than raising a TypeError."""
+    probe = BackendProbe(
+        samples=10, model="qwen3.6-27b", model_confirmed=True,
+        seed_honored=True, latencies_s=[1.0] * 10, errors=[],
+    )
+    assert probe.repeated_consistent is False
 
 
 @pytest.mark.asyncio

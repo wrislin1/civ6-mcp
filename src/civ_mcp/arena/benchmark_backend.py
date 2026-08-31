@@ -55,6 +55,12 @@ class BackendProbe:
     # "probe_error". `None` only for a BackendProbe constructed without this
     # field (pre-F15 callers/tests).
     seed_verdict: str | None = None
+    # G7: whether the `samples` identical, exact-sampling calls all agreed
+    # with each other. Always computed by probe_backend regardless of the
+    # seed-verdict path taken; `False` by default for a BackendProbe
+    # constructed without this field (pre-G7 callers/tests) so the field's
+    # mere absence never silently reads as "consistent".
+    repeated_consistent: bool = False
 
 
 @dataclass(frozen=True)
@@ -129,9 +135,13 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
         # honoring is unobservable and irrelevant -- varying the seed
         # cannot change a genuinely greedy backend's output, so the
         # differing-seed call below would always (mis)report "not
-        # honored" for a perfectly healthy backend. Skip it entirely;
-        # repeated-consistency (already checked above) is still required.
-        seed_verdict = "not_applicable_greedy"
+        # honored" for a perfectly healthy backend. Skip it entirely --
+        # but only when repeated-consistency actually held (G7): a
+        # backend that disagrees with itself across the `samples` calls
+        # at the SAME locked config is not honoring anything, greedy or
+        # not, and must still fail admission via "not_honored" rather
+        # than slip through as "not applicable".
+        seed_verdict = "not_applicable_greedy" if repeated_consistent else "not_honored"
     elif repeated_consistent:
         varied = replace(sampling, seed=locked_seed + 1)
         backend.sampling = varied
@@ -156,6 +166,7 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
         latencies_s=latencies,
         errors=errors,
         seed_verdict=seed_verdict,
+        repeated_consistent=repeated_consistent,
     )
 
 
