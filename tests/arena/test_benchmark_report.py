@@ -808,6 +808,35 @@ def test_build_report_requires_scorer_fingerprint(tmp_path):
         build_report(run_dir)
 
 
+def test_build_report_fails_closed_on_a_trial_session_fingerprint_mismatch(tmp_path):
+    """F8 repro: a stale/copied trial-NNN.json is indistinguishable from
+    current-lock evidence by filename alone. Once trials carry their own
+    session_fingerprint stamp (see benchmark_runner._finalize_trial),
+    build_report must validate it against session.json's
+    session_fingerprint and fail closed on a mismatch rather than silently
+    scoring evidence that does not belong to this session's current lock."""
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    payload["session_fingerprint"] = "STALE_FINGERPRINT"
+    _write_json(trial_path, payload)
+
+    with pytest.raises(Exception):
+        build_report(run_dir)
+
+
+def test_build_report_accepts_a_trial_stamped_with_the_matching_session_fingerprint(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    payload["session_fingerprint"] = "abc123"  # matches _build_basic_run's session.json
+    _write_json(trial_path, payload)
+
+    build_report(run_dir)  # must not raise
+
+
 def test_build_report_surfaces_ungated_smoke_flag(tmp_path):
     run_dir = tmp_path / "run"
     _build_basic_run(run_dir)

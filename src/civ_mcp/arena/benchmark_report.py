@@ -612,6 +612,26 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
         if not isinstance(trial, Mapping):
             raise ReportError(f"{trial_path} must be a JSON object, got {type(trial).__name__}")
 
+        # F8: a stale/copied trial-NNN.json is indistinguishable from
+        # current-lock evidence by filename alone. When both session.json
+        # and the trial carry a session_fingerprint, they must agree --
+        # fail closed rather than silently scoring evidence that doesn't
+        # belong to this session's current lock. (A trial with no stamp at
+        # all predates this provenance check and is not itself proof of a
+        # mismatch, so it is not rejected on that basis alone.)
+        lock_session_fingerprint = lock.get("session_fingerprint")
+        trial_session_fingerprint = trial.get("session_fingerprint")
+        if (
+            lock_session_fingerprint
+            and trial_session_fingerprint
+            and trial_session_fingerprint != lock_session_fingerprint
+        ):
+            raise ReportError(
+                f"{trial_path}: session_fingerprint {trial_session_fingerprint!r} does not "
+                f"match session.json's session_fingerprint {lock_session_fingerprint!r} -- "
+                "refusing to score evidence that does not belong to this session's current lock"
+            )
+
         position_lock = positions_lock.get(position_id)
         if not isinstance(position_lock, Mapping) or "rubric" not in position_lock:
             raise ReportError(

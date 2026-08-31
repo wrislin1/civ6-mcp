@@ -209,8 +209,36 @@ class BenchmarkRunner:
         incomplete trial until it commits or `run_trial` raises
         `SessionAborted` (which propagates and stops the whole run)."""
         for spec in schedule:
+            if spec.index in self.store.completed_indices():
+                self._verify_resume_provenance(spec.index)
+                continue
             while spec.index not in self.store.completed_indices():
                 await self.run_trial(spec)
+
+    def _verify_resume_provenance(self, index: int) -> None:
+        """F8: resume identifies completion by filename only
+        (`completed_indices()` just lists `trials/*.json`) -- a stale or
+        copied `trial-NNN.json` (e.g. left over from an unrelated run
+        directory) is otherwise indistinguishable from real current-lock
+        evidence. Fail closed if the committed trial's own
+        `session_fingerprint` stamp doesn't match this store's."""
+        trial = self.store.trial(index)
+        stamped = trial.get("session_fingerprint")
+        if stamped != self.store.fingerprint:
+            raise SessionAborted(
+                "session_fingerprint_mismatch",
+                {
+                    "trial_index": index,
+                    "expected_session_fingerprint": self.store.fingerprint,
+                    "found_session_fingerprint": stamped,
+                    "message": (
+                        f"trial {index}: committed evidence is stamped with "
+                        f"session_fingerprint {stamped!r}, but this session's "
+                        f"fingerprint is {self.store.fingerprint!r} -- refusing to "
+                        "treat a stale/copied trial file as current-lock completion"
+                    ),
+                },
+            )
 
     async def run_trial(self, spec: TrialSpec) -> None:
         """Attempt `spec` exactly once.
@@ -221,6 +249,7 @@ class BenchmarkRunner:
         `SessionAborted` for anything that must stop the whole session.
         """
         if spec.index in self.store.completed_indices():
+            self._verify_resume_provenance(spec.index)
             return
 
         if self.store.attempt_count(spec.index) >= self.MAX_ATTEMPTS:
@@ -486,6 +515,11 @@ class BenchmarkRunner:
             "seed": spec.seed,
             "attempt_count": attempt_count,
             "final_state": final_state,
+            # F8: stamp session provenance into every committed payload so
+            # resume/report can tell current-lock evidence apart from a
+            # stale/copied trial-NNN.json (which would otherwise be
+            # indistinguishable by filename alone).
+            "session_fingerprint": self.store.fingerprint,
             **fields,
         }
         self.store.commit_trial(spec.index, payload)

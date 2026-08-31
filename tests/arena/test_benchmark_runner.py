@@ -628,7 +628,7 @@ async def test_unknown_exception_stops_session_without_retry(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _committed_trial_payload(index: int) -> dict:
+def _committed_trial_payload(index: int, *, session_fingerprint: str = "abc123") -> dict:
     return {
         "index": index,
         "pair_id": "pair-001",
@@ -646,6 +646,9 @@ def _committed_trial_payload(index: int) -> dict:
         "wall_clock_s": 1.0,
         "prompt_tokens": 1,
         "completion_tokens": 1,
+        # Matches _lock()'s session_fingerprint ("abc123") by default -- a
+        # committed trial's own provenance stamp (see F8).
+        "session_fingerprint": session_fingerprint,
     }
 
 
@@ -685,6 +688,55 @@ async def test_scorer_absence_never_replays_a_committed_trial(tmp_path):
 
     assert make_agent_calls == []
     assert runner.store.completed_indices() == {1}
+
+
+@pytest.mark.asyncio
+async def test_finalize_trial_stamps_the_store_session_fingerprint(tmp_path):
+    """F8 repro: committed trial payloads omitted session_fingerprint, so
+    resume identified completion by filename only -- a stale/copied
+    trial-NNN.json is indistinguishable from current-lock evidence."""
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps()
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert store.fingerprint == "abc123"
+    assert runner.store.trial(1)["session_fingerprint"] == "abc123"
+
+
+@pytest.mark.asyncio
+async def test_resume_fails_closed_on_a_session_fingerprint_mismatch(tmp_path):
+    """F8 repro: a committed trial stamped with a DIFFERENT
+    session_fingerprint than the current store's (e.g. a stale/copied
+    trial-NNN.json left over from an unrelated session directory) must
+    never be silently treated as current-lock completion just because the
+    filename matches."""
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    store.commit_trial(1, _committed_trial_payload(1, session_fingerprint="STALE_FINGERPRINT"))
+
+    deps = _deps(make_agent=lambda spec: _FinishingAgent())
+    runner = _runner(store, deps)
+
+    with pytest.raises(Exception):
+        await runner.run_trial(_spec(1, "minimal"))
+
+
+@pytest.mark.asyncio
+async def test_run_fails_closed_on_a_session_fingerprint_mismatch_during_resume_skip(tmp_path):
+    """Same repro as above, but through the outer run() skip-loop (the
+    resume path that never calls run_trial() at all for an already-
+    completed index)."""
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    store.commit_trial(1, _committed_trial_payload(1, session_fingerprint="STALE_FINGERPRINT"))
+
+    deps = _deps(make_agent=lambda spec: _FinishingAgent())
+    runner = _runner(store, deps)
+
+    with pytest.raises(Exception):
+        await runner.run([_spec(1, "minimal"), _spec(2, "standard")])
 
 
 # ---------------------------------------------------------------------------
