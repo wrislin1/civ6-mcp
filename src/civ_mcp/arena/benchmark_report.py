@@ -581,14 +581,24 @@ def _completeness_section(
 #                                                    # without one); echoed into the
 #                                                    # report and cross-checked
 #                                                    # against every trial's own stamp
-#       "campaign_fingerprint": "<non-empty str>",  # optional (Task 3/4): present
-#                                                    # only for a counted campaign
-#                                                    # block's lock -- an
-#                                                    # --ungated-smoke lock never
-#                                                    # declares one. When present,
-#                                                    # cross-checked against every
-#                                                    # trial's own stamp exactly like
-#                                                    # session_fingerprint above.
+#       "campaign_fingerprint": "<non-empty str>",  # REQUIRED whenever
+#                                                    # "ungated_smoke" is not
+#                                                    # true (Task 3/4, round-1
+#                                                    # review): under Plan 2
+#                                                    # every non-smoke session
+#                                                    # IS a dual-stamped
+#                                                    # counted campaign block
+#                                                    # -- there is no
+#                                                    # legitimate non-smoke,
+#                                                    # non-campaign lock.
+#                                                    # Absent for an
+#                                                    # --ungated-smoke lock.
+#                                                    # When required, cross-
+#                                                    # checked against every
+#                                                    # trial's own stamp
+#                                                    # exactly like
+#                                                    # session_fingerprint
+#                                                    # above.
 #       "ungated_smoke": <bool>,          # optional; defaults to False
 #       ...                                # any other writer-specific evidence is ignored here
 #     }
@@ -599,9 +609,11 @@ def _completeness_section(
 # this module never silently treats absent rubric evidence as "score 0".
 # G8: whenever session.json carries a session_fingerprint, a committed trial
 # with no session_fingerprint stamp of its own is ALSO a hard ReportError --
-# not merely a mismatch check that no-ops when either side is missing. The
-# same rule applies to campaign_fingerprint whenever session.json declares
-# one (see Task 3/4).
+# not merely a mismatch check that no-ops when either side is missing. A
+# session.json whose "ungated_smoke" is not true MUST also carry a non-empty
+# "campaign_fingerprint" (and every committed trial must be stamped to
+# match) -- a non-smoke lock missing campaign_fingerprint entirely is itself
+# a hard ReportError, not a silent pass (see Task 3/4).
 
 
 def build_report(run_dir: str | Path) -> dict[str, object]:
@@ -628,6 +640,11 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
     positions_lock = lock.get("positions")
     if not isinstance(positions_lock, Mapping):
         raise ReportError("session.json is missing a 'positions' mapping")
+
+    # Computed once, up front, so both the per-trial campaign_fingerprint
+    # cross-check below and the `report["session"]` echo at the bottom of
+    # this function agree on the same value.
+    ungated_smoke = bool(lock.get("ungated_smoke", False))
 
     schedule = _read_json(run_dir / "schedule.json")
     schedule_trials = schedule.get("trials") if isinstance(schedule, Mapping) else None
@@ -708,17 +725,29 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
                     "refusing to score evidence that does not belong to this session's current lock"
                 )
 
-        # Counted-campaign provenance (Task 3/4): the SECOND stamp a
-        # counted block's trials carry alongside session_fingerprint (see
-        # BenchmarkStore.is_trial_complete / BenchmarkRunner._finalize_trial).
-        # Mirrors the session_fingerprint check above exactly, but only
-        # activates when session.json itself declares a non-empty
-        # campaign_fingerprint -- an --ungated-smoke lock never declares one
-        # (see benchmark_runner._run_async), so this is a pure no-op for
-        # every smoke run and for every pre-campaign fixture with no
-        # concept of campaign_fingerprint at all.
-        lock_campaign_fingerprint = lock.get("campaign_fingerprint")
-        if lock_campaign_fingerprint:
+        # Counted-campaign provenance (Task 3/4, tightened per round-1
+        # review): the SECOND stamp a counted block's trials carry alongside
+        # session_fingerprint (see BenchmarkStore.is_trial_complete /
+        # BenchmarkRunner._finalize_trial). Under Plan 2 there is no
+        # legitimate non-smoke, non-campaign session -- evidence is either
+        # explicitly `ungated_smoke: true` (benchmark_runner._run_async
+        # always stamps this) or dual-stamped counted (build_campaign_lock /
+        # build_session_lock always stamp both fingerprints together). So
+        # this activates on the SAME condition as "is this evidence counted
+        # at all" -- `not ungated_smoke` -- not merely "the lock happens to
+        # declare a campaign_fingerprint". A lock that is not explicitly
+        # smoke but is ALSO missing campaign_fingerprint entirely (a stale
+        # or hand-crafted session.json) is exactly the ambiguous case this
+        # must fail closed on, not silently treat as smoke-shaped evidence.
+        if not ungated_smoke:
+            lock_campaign_fingerprint = lock.get("campaign_fingerprint")
+            if not lock_campaign_fingerprint:
+                raise ReportError(
+                    "session.json is not marked ungated_smoke, but is missing a "
+                    "non-empty 'campaign_fingerprint' -- under Plan 2 every non-smoke "
+                    "session must be a dual-stamped counted campaign block; refusing "
+                    "to score ambiguous evidence that is neither"
+                )
             trial_campaign_fingerprint = trial.get("campaign_fingerprint")
             if not trial_campaign_fingerprint:
                 raise ReportError(
@@ -786,7 +815,7 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
             # match against it and must reject it outright.
             "campaign_fingerprint": lock.get("campaign_fingerprint"),
             "scorer_fingerprint": scorer_fingerprint,
-            "ungated_smoke": bool(lock.get("ungated_smoke", False)),
+            "ungated_smoke": ungated_smoke,
         },
         "scorer": {
             "fingerprint": scorer_fingerprint,

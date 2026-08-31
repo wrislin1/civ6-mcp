@@ -55,6 +55,13 @@ def _build_basic_run(run_dir: Path) -> None:
         {
             "session_fingerprint": "abc123",
             "scorer_fingerprint": "score-v1",
+            # This fixture is legacy/smoke-style evidence (single-stamped,
+            # no campaign_fingerprint) -- under Plan 2, every non-smoke
+            # session must be dual-stamped counted-campaign evidence (see
+            # build_report's campaign_fingerprint cross-check), so a fixture
+            # with no campaign_fingerprint at all must declare itself smoke
+            # explicitly rather than reading as ambiguous.
+            "ungated_smoke": True,
             "positions": {
                 "easy": {"rubric": [_mine_rubric()]},
                 "hard": {"rubric": [_mine_rubric()]},
@@ -114,6 +121,7 @@ def test_report_ignores_attempts_and_weights_positions_equally(tmp_path):
         {
             "session_fingerprint": "abc123",
             "scorer_fingerprint": "score-v1",
+            "ungated_smoke": True,  # legacy/smoke-style fixture; see _build_basic_run
             "positions": {
                 "easy": {
                     "rubric": [
@@ -408,6 +416,7 @@ def test_build_report_aggregate_is_scoped_per_model_arm_group_not_pooled(tmp_pat
         {
             "session_fingerprint": "abc123",
             "scorer_fingerprint": "score-v1",
+            "ungated_smoke": True,  # legacy/smoke-style fixture; see _build_basic_run
             "positions": {
                 "easy": {"rubric": [_mine_rubric()]},
                 "hard": {"rubric": [_mine_rubric()]},
@@ -484,6 +493,7 @@ def test_build_report_surfaces_seeds_and_endpoint_topology(tmp_path):
         {
             "session_fingerprint": "abc123",
             "scorer_fingerprint": "score-v1",
+            "ungated_smoke": True,  # legacy/smoke-style fixture; see _build_basic_run
             "positions": {"easy": {"rubric": [_mine_rubric()]}},
         },
     )
@@ -755,6 +765,7 @@ def _calibration_run(tmp_path: Path, standard_scores, minimal_scores) -> Path:
         {
             "session_fingerprint": "cal-1",
             "scorer_fingerprint": "score-v1",
+            "ungated_smoke": True,  # legacy/smoke-style fixture; see _build_basic_run
             "positions": {"cal": {"rubric": rubric}},
         },
     )
@@ -1005,6 +1016,31 @@ def test_counted_report_rejects_trial_with_a_campaign_fingerprint_from_another_b
     payload = json.loads(trial_path.read_text(encoding="utf-8"))
     payload["campaign_fingerprint"] = "camp-DIFFERENT"
     _write_json(trial_path, payload)
+
+    with pytest.raises(Exception):
+        build_report(run_dir)
+
+
+def test_counted_report_rejects_a_lock_missing_campaign_fingerprint_entirely(tmp_path):
+    """Round-1 review finding: the campaign_fingerprint cross-check must not
+    be presence-gated (`if lock.get("campaign_fingerprint"):`) -- that reads
+    a stale/hand-crafted session.json with NEITHER `ungated_smoke` NOR
+    `campaign_fingerprint` as if it were smoke evidence and silently no-ops.
+    Under Plan 2 there is no legitimate non-smoke, non-campaign session:
+    evidence is either explicitly `ungated_smoke: true` or dual-stamped
+    counted. A lock that is not explicitly smoke (`ungated_smoke` false or
+    absent) but declares no `campaign_fingerprint` at all must be a hard
+    ReportError, not a silent pass."""
+    run_dir = tmp_path / "run"
+    _build_counted_run(run_dir)
+    session_path = run_dir / "session.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    del payload["campaign_fingerprint"]
+    _write_json(session_path, payload)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    trial_payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    del trial_payload["campaign_fingerprint"]
+    _write_json(trial_path, trial_payload)
 
     with pytest.raises(Exception):
         build_report(run_dir)
