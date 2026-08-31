@@ -35,6 +35,34 @@ def test_state_digest_is_order_independent_but_changes_for_declared_tile():
     assert diff_state(left, changed)["tiles[9,8].improvement"] == ["IMPROVEMENT_MINE", None]
 
 
+def test_state_digest_normalizes_integral_floats_to_ints():
+    """F12 repro: json.dumps distinguishes 24 from 24.0 (they really are
+    different JSON values), so a hand-authored YAML int (turn: 24)
+    permanently mismatches a live-captured float (turn: 24.0) even though
+    they represent the identical game state."""
+    left = {"turn": 24, "player_id": 0, "units": [], "cities": [], "tiles": []}
+    right = {"turn": 24.0, "player_id": 0, "units": [], "cities": [], "tiles": []}
+    assert state_digest(left) == state_digest(right)
+
+
+def test_state_digest_normalizes_integral_floats_nested_in_rows():
+    left = {
+        "turn": 1, "units": [{"id": 1, "x": 8, "y": 8, "charges": 2}],
+        "cities": [], "tiles": [],
+    }
+    right = {
+        "turn": 1, "units": [{"id": 1, "x": 8.0, "y": 8.0, "charges": 2.0}],
+        "cities": [], "tiles": [],
+    }
+    assert state_digest(left) == state_digest(right)
+
+
+def test_state_digest_still_distinguishes_genuinely_different_non_integral_floats():
+    left = {"turn": 1, "gold": 42.5, "units": [], "cities": [], "tiles": []}
+    right = {"turn": 1, "gold": 42.6, "units": [], "cities": [], "tiles": []}
+    assert state_digest(left) != state_digest(right)
+
+
 def test_normalize_state_leaves_non_list_fields_untouched():
     state = {"turn": 157, "player_id": 0, "gold": 12.5, "units": [], "cities": [],
               "tiles": []}
@@ -145,3 +173,30 @@ async def test_capture_canonical_state_raises_on_err_line_anywhere_in_response()
 
     with pytest.raises(BenchmarkStateError, match="ERR:SOMETHING_WENT_WRONG"):
         await capture_canonical_state(ErrConnection(), player_id=0, tile_coords=[])
+
+
+@pytest.mark.asyncio
+async def test_capture_canonical_state_raises_on_truncated_response_missing_identity():
+    """F13 repro: execute_read swallows read timeouts and returns whatever
+    lines it collected so far. A truncated/empty response with no ERR:
+    line and no IDENTITY row parses (via parse_benchmark_state's all-None
+    defaults) to a near-empty "default" state instead of raising --
+    hashing that as real game state turns a retryable harness failure into
+    a session-killing checksum abort."""
+
+    class TruncatedConnection:
+        async def execute_read(self, lua_code, timeout=5.0):
+            return ["UNIT|1|UNIT_BUILDER|8|8|2"]  # no IDENTITY line at all
+
+    with pytest.raises(BenchmarkStateError):
+        await capture_canonical_state(TruncatedConnection(), player_id=0, tile_coords=[])
+
+
+@pytest.mark.asyncio
+async def test_capture_canonical_state_raises_on_completely_empty_response():
+    class EmptyConnection:
+        async def execute_read(self, lua_code, timeout=5.0):
+            return []
+
+    with pytest.raises(BenchmarkStateError):
+        await capture_canonical_state(EmptyConnection(), player_id=0, tile_coords=[])

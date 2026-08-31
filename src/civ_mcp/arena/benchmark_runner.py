@@ -70,6 +70,7 @@ from civ_mcp.arena.benchmark_schedule import TrialSpec, compile_schedule
 from civ_mcp.arena.benchmark_state import (
     BenchmarkStateError,
     capture_canonical_state,
+    diff_state,
     state_digest,
 )
 from civ_mcp.arena.benchmark_store import BenchmarkStore, SessionLockMismatchError
@@ -309,6 +310,11 @@ class BenchmarkRunner:
 
         observed_digest = state_digest(observed_state)
         if observed_digest != self._expected_digest:
+            # F12: journaling two opaque hashes is useless for actually
+            # seeing what differed -- include the field-level diff so a
+            # human (or a later automated triage pass) can tell "trivial
+            # numeric-type drift" from "the reload landed on the wrong
+            # save" without re-deriving it by hand.
             self.store.append_event(
                 "checksum_mismatch",
                 trial_index=spec.index,
@@ -316,6 +322,7 @@ class BenchmarkRunner:
                 details={
                     "expected_digest": self._expected_digest,
                     "observed_digest": observed_digest,
+                    "diff": diff_state(self._expected_state, observed_state),
                 },
             )
             raise SessionAborted(

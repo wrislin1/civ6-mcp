@@ -244,6 +244,35 @@ async def test_checksum_mismatch_aborts_session_with_no_attempt_recorded(tmp_pat
     assert make_agent_calls == []
 
 
+def _journal_events(run_dir, event: str) -> list[dict]:
+    lines = (run_dir / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    records = [json.loads(line) for line in lines if line.strip()]
+    return [r for r in records if r["event"] == event]
+
+
+@pytest.mark.asyncio
+async def test_checksum_mismatch_journal_includes_a_field_level_diff(tmp_path):
+    """F12 repro: the checksum-mismatch journal entry previously carried
+    only two opaque hashes (expected_digest/observed_digest) and never
+    called diff_state -- useless for actually seeing what differed."""
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    wrong_state = {**CANONICAL, "turn": 999}
+    deps = _deps(capture_state=AsyncMock(return_value=wrong_state))
+    runner = _runner(store, deps)
+
+    with pytest.raises(SessionAborted):
+        await runner.run_trial(_spec(1, "minimal"))
+
+    events = _journal_events(run_dir, "checksum_mismatch")
+    assert len(events) == 1
+    # append_event(..., details={...}) nests under record["details"]["details"]
+    # (append_event's **details catch-all collects the "details" kwarg by
+    # that literal name) -- matches every other event in this module.
+    diff = events[0]["details"]["details"]["diff"]
+    assert diff == {"turn": [157, 999]}
+
+
 # ---------------------------------------------------------------------------
 # Three-attempt cap, including across process resume
 # ---------------------------------------------------------------------------

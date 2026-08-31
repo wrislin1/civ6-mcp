@@ -50,19 +50,46 @@ def _sorted_rows(
     return sorted((dict(row) for row in rows), key=key)
 
 
-def normalize_state(state: Mapping[str, object]) -> dict[str, object]:
-    """Copy `state` with units/cities sorted by id and tiles sorted by (x, y).
+def _canonicalize_numerics(value: object) -> object:
+    """Coerce every numerically-integral float (e.g. ``24.0``) to the
+    equivalent int (``24``), recursively through dicts and lists.
 
-    Every other key is passed through untouched — normalize_state only
-    knows about the three declared-list fields whose row order is an
-    artifact of iteration, not part of the state itself.
+    `json.dumps` distinguishes ``24`` from ``24.0`` by design (they really
+    are different JSON values) -- without this, a hand-authored YAML int
+    (e.g. a position manifest's ``expected_state["turn"]: 24``) permanently
+    mismatches a live-captured float (``24.0``) that represents the
+    identical game state, digesting to two different hashes forever. This
+    applies the same canonical rule everywhere in the state, not just at
+    the top level, so a nested unit/city/tile field (x/y/charges/etc.)
+    normalizes the same way.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, Mapping):
+        return {key: _canonicalize_numerics(v) for key, v in value.items()}
+    if isinstance(value, list):
+        return [_canonicalize_numerics(v) for v in value]
+    return value
+
+
+def normalize_state(state: Mapping[str, object]) -> dict[str, object]:
+    """Copy `state` with units/cities sorted by id and tiles sorted by
+    (x, y), and every numerically-integral float canonicalized to an int
+    (see `_canonicalize_numerics`).
+
+    Every other key is passed through untouched (beyond that numeric
+    canonicalization) — normalize_state only knows about the three
+    declared-list fields whose row order is an artifact of iteration, not
+    part of the state itself.
     """
     normalized = dict(state)
     for key, key_fn in _LIST_KEYS.items():
         rows = normalized.get(key)
         if rows is not None:
             normalized[key] = _sorted_rows(rows, key=key_fn)
-    return normalized
+    return _canonicalize_numerics(normalized)
 
 
 def state_digest(state: Mapping[str, object]) -> str:
@@ -138,4 +165,20 @@ async def capture_canonical_state(
         if line.startswith("ERR:"):
             raise BenchmarkStateError(line)
     state = lq.parse_benchmark_state(lines)
+
+    # F13: execute_read swallows read timeouts and returns whatever lines it
+    # collected so far. A truncated/empty response with no ERR: line and no
+    # IDENTITY row parses to parse_benchmark_state's all-None/empty default
+    # state -- hashing that as real game state would turn a retryable
+    # harness failure into a session-killing checksum abort. Parsing here is
+    # all-or-nothing: the identity row's core fields (turn, player_id) must
+    # both be present, or this is treated as an incomplete/truncated
+    # response, never a "the state really looks like this" answer.
+    if state.get("turn") is None or state.get("player_id") is None:
+        raise BenchmarkStateError(
+            "incomplete or truncated benchmark-state response: missing identity "
+            f"row (turn={state.get('turn')!r}, player_id={state.get('player_id')!r}); "
+            f"received {len(lines)} line(s)"
+        )
+
     return normalize_state(state)
