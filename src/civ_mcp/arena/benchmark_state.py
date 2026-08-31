@@ -92,6 +92,30 @@ def normalize_state(state: Mapping[str, object]) -> dict[str, object]:
     return _canonicalize_numerics(normalized)
 
 
+def verify_expected_state_digest(
+    expected_state: Mapping[str, object], expected_state_sha256: str
+) -> None:
+    """Verify a position manifest's declared integrity anchor.
+
+    G10: `expected_state_sha256` is a required manifest field that was
+    loaded and never read again anywhere in the pipeline -- the runner
+    digests `position.expected_state` directly for the pre-episode
+    checksum, so a stale or tampered `expected_state_sha256` had nothing
+    ever catching it. Call this once at manifest-load/runner-init time,
+    before any trial runs, and fail closed naming both digests so a human
+    can actually tell which one is wrong.
+    """
+    actual = state_digest(expected_state)
+    if actual != expected_state_sha256:
+        raise BenchmarkStateError(
+            "position manifest integrity check failed: expected_state_sha256 "
+            f"{expected_state_sha256!r} does not match state_digest(expected_state) "
+            f"{actual!r} -- the manifest's expected_state and its declared integrity "
+            "anchor have diverged; refusing to run any trial against unverified "
+            "expected state"
+        )
+
+
 def state_digest(state: Mapping[str, object]) -> str:
     """Canonical-JSON digest of `normalize_state(state)`.
 

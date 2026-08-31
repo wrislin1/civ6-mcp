@@ -72,6 +72,7 @@ from civ_mcp.arena.benchmark_state import (
     capture_canonical_state,
     diff_state,
     state_digest,
+    verify_expected_state_digest,
 )
 from civ_mcp.arena.benchmark_store import BenchmarkStore, SessionLockMismatchError
 from civ_mcp.arena.popups import dismiss_blocking_popups
@@ -855,6 +856,15 @@ async def _run_async(args: argparse.Namespace) -> int:
             f"civ-arena-benchmark: failed to load position manifest {position_path}: {exc}",
             file=sys.stderr,
         )
+        return 1
+
+    # G10: verify the manifest's declared expected_state_sha256 integrity
+    # anchor actually matches its expected_state, before any trial runs --
+    # not just loaded and never read again.
+    try:
+        verify_expected_state_digest(position.expected_state, position.expected_state_sha256)
+    except BenchmarkStateError as exc:
+        print(f"civ-arena-benchmark: {exc}", file=sys.stderr)
         return 1
 
     if not args.gateway_url:

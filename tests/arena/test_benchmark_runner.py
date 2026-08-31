@@ -926,8 +926,10 @@ async def test_run_fails_closed_on_a_session_fingerprint_mismatch_during_resume_
 # ---------------------------------------------------------------------------
 
 
-def _write_fixture_suite_and_position(tmp_path) -> "object":
+def _write_fixture_suite_and_position(tmp_path, *, expected_state_sha256: str | None = None) -> "object":
     from pathlib import Path
+
+    from civ_mcp.arena.benchmark_state import state_digest
 
     benchmarks_dir = tmp_path / "benchmarks"
     suites_dir = benchmarks_dir / "suites"
@@ -935,8 +937,14 @@ def _write_fixture_suite_and_position(tmp_path) -> "object":
     suites_dir.mkdir(parents=True)
     positions_dir.mkdir(parents=True)
 
+    # G10: expected_state_sha256 must actually match
+    # state_digest({"turn": 42}) now that _run_async verifies it at
+    # startup -- a test wanting a tampered/stale digest passes one
+    # explicitly via the `expected_state_sha256` override.
+    digest = expected_state_sha256 if expected_state_sha256 is not None else state_digest({"turn": 42})
+
     (positions_dir / "builder-cal-v1.yaml").write_text(
-        """
+        f"""
 position_id: builder-cal-v1
 version: 1
 archive: positions/builder-cal-v1.Civ6Save
@@ -945,7 +953,7 @@ game_save_name: builder-cal-v1
 player_id: 0
 expected_state:
   turn: 42
-expected_state_sha256: "def456"
+expected_state_sha256: "{digest}"
 relevant_tiles:
   - [9, 24]
 objectives:
@@ -1336,6 +1344,51 @@ async def test_run_async_no_warning_when_api_key_env_var_is_set(tmp_path, monkey
     assert exit_code == 0
     err = capsys.readouterr().err
     assert "LITELLM_OPENAI_API_KEY" not in err
+
+
+# ---------------------------------------------------------------------------
+# G10 -- expected_state_sha256 is a declared manifest field that must
+# actually be verified against state_digest(expected_state) before any
+# trial runs, not just loaded and never read again.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_async_refuses_a_tampered_expected_state_sha256(tmp_path, monkeypatch, capsys):
+    suite_path = _write_fixture_suite_and_position(tmp_path, expected_state_sha256="0" * 64)
+    run_dir = tmp_path / "runs"
+    _patch_fake_connection_and_noop_runner(monkeypatch)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _minimal_smoke_args(suite_path, run_dir)
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    # Both digests must be named so a human can actually diagnose which one
+    # is stale/wrong.
+    assert "0" * 64 in err
+    from civ_mcp.arena.benchmark_state import state_digest
+    assert state_digest({"turn": 42}) in err
+
+
+@pytest.mark.asyncio
+async def test_run_async_proceeds_when_expected_state_sha256_matches(tmp_path, monkeypatch):
+    """The default fixture's expected_state_sha256 is now the real digest
+    of {"turn": 42} -- a correct manifest must not be refused."""
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+    _patch_fake_connection_and_noop_runner(monkeypatch)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _minimal_smoke_args(suite_path, run_dir)
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
 
 
 @pytest.mark.asyncio
