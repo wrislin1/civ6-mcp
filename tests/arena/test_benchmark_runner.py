@@ -576,6 +576,30 @@ async def test_final_state_capture_failure_after_episode_is_a_harness_crash_atte
 
 
 # ---------------------------------------------------------------------------
+# G4 -- agent/GameState construction must be classified like any other
+# harness step, never escape run_trial as a raw, unjournalled traceback.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_make_agent_construction_failure_is_a_harness_crash_attempt(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+
+    def boom(spec):
+        raise RuntimeError("backend construction boom")
+
+    deps = _deps(make_agent=boom)
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))  # must NOT raise
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.HARNESS_CRASH.value
+
+
+# ---------------------------------------------------------------------------
 # Immediate health classification of timeouts and transport failures
 # ---------------------------------------------------------------------------
 

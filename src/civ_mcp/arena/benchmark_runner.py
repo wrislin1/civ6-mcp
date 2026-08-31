@@ -384,13 +384,22 @@ class BenchmarkRunner:
             )
 
         # -- fresh backend/agent, episode --------------------------------------
-        agent = self._deps.make_agent(spec)
-        # Registry tools call real GameState methods (gs.get_units() etc.);
-        # a bare SimpleNamespace(conn=...) makes every dispatched game tool
-        # raise AttributeError in a live session -- swallowed into ERROR
-        # steps, so a trial would commit as evidence of a model that
-        # "couldn't act" rather than surfacing this wiring bug.
-        gs = GameState(self._deps.connection)
+        # G4: construction failures here (a bad model/backend config, a
+        # GameState construction failure) must be classified like every
+        # other harness step, not escape run_trial as a raw, unjournalled
+        # traceback.
+        try:
+            agent = self._deps.make_agent(spec)
+            # Registry tools call real GameState methods (gs.get_units()
+            # etc.); a bare SimpleNamespace(conn=...) makes every dispatched
+            # game tool raise AttributeError in a live session -- swallowed
+            # into ERROR steps, so a trial would commit as evidence of a
+            # model that "couldn't act" rather than surfacing this wiring
+            # bug.
+            gs = GameState(self._deps.connection)
+        except Exception as exc:  # noqa: BLE001
+            self._record_infra_attempt(spec.index, FailureClass.HARNESS_CRASH, exc)
+            return
         turn = observed_state.get("turn")
 
         try:
