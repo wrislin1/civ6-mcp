@@ -191,6 +191,7 @@ class SingleTurnAgent:
         char_cap: int = MODEL_FEED_CHAR_CAP,
         tile_coords: Sequence[tuple[int, int]] = (),
         capture_state: CaptureStateFn | None = capture_canonical_state,
+        user_prompt: str | None = None,
     ) -> None:
         self.backend = backend
         self._game_tool_names = _resolve_game_tool_names(tier)
@@ -200,6 +201,12 @@ class SingleTurnAgent:
         self._char_cap = char_cap
         self._tile_coords = tuple(tile_coords)
         self._capture_state = capture_state
+        # A frozen campaign's exact objective-blind user prompt, injected
+        # verbatim by the caller (see benchmark_contract.CampaignManifest.prompt)
+        # instead of this module's own smoke/legacy benchmark_prompt(turn,
+        # player_id) template. None (the default) preserves that legacy
+        # behavior for the smoke path, which has no frozen campaign prompt.
+        self.user_prompt = user_prompt
         # Reset at the start of every run() (see run()'s docstring) --
         # initialized here too so partial_evidence() is always safe to call.
         self._progress_steps: list[dict[str, Any]] = []
@@ -291,9 +298,10 @@ class SingleTurnAgent:
             ) from exc
 
     async def _run_episode(self, gs: Any, player_id: int, turn: int) -> EpisodeEvidence:
+        user_content = self.user_prompt if self.user_prompt is not None else benchmark_prompt(turn, player_id)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": BENCHMARK_SYSTEM},
-            {"role": "user", "content": benchmark_prompt(turn, player_id)},
+            {"role": "user", "content": user_content},
         ]
         # Mutated in place (never reassigned) so partial progress survives a
         # mid-flight cancellation -- see run()'s except TimeoutError branch.

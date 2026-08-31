@@ -114,6 +114,43 @@ async def test_implicit_finish_with_no_tool_calls():
     assert evidence.final_summary == "nothing to do"
 
 
+class RecordingMessagesBackend:
+    """Records the exact messages list passed on its first chat() call, then
+    finishes immediately -- used to inspect what the agent actually sent."""
+
+    def __init__(self):
+        self.seen_messages: list[dict] | None = None
+
+    async def chat(self, messages, tools):
+        if self.seen_messages is None:
+            self.seen_messages = [dict(m) for m in messages]
+        return Reply(text="done", tool_calls=[], prompt_tokens=1, completion_tokens=1)
+
+
+@pytest.mark.asyncio
+async def test_single_turn_agent_uses_injected_frozen_prompt_verbatim():
+    frozen_prompt = "Assess the current turn and call finish_trial when done."
+    backend = RecordingMessagesBackend()
+    agent = SingleTurnAgent(
+        backend, "minimal", episode_wall_s=5.0, max_steps=4, user_prompt=frozen_prompt
+    )
+
+    await agent.run(FakeGS(), player_id=99, turn=157)
+
+    assert backend.seen_messages[0] == {"role": "system", "content": BENCHMARK_SYSTEM}
+    assert backend.seen_messages[1] == {"role": "user", "content": frozen_prompt}
+
+
+@pytest.mark.asyncio
+async def test_single_turn_agent_falls_back_to_legacy_prompt_when_no_user_prompt_injected():
+    backend = RecordingMessagesBackend()
+    agent = SingleTurnAgent(backend, "minimal", episode_wall_s=5.0, max_steps=4)
+
+    await agent.run(FakeGS(), player_id=0, turn=157)
+
+    assert backend.seen_messages[1] == {"role": "user", "content": benchmark_prompt(157, 0)}
+
+
 class RepeatingBackend:
     """Never calls finish_trial -- keeps issuing game calls forever."""
 
