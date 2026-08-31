@@ -366,15 +366,42 @@ def _rules12(*, minimum_decided=10, minimum_wins=10, minimum_delta=None, require
     }
 
 
-def _write_qwen_deferral_record(campaign_dir: Path) -> None:
+def _write_qwen_deferral_record(campaign_dir: Path, *, corroboration: str = "two_attempts") -> None:
+    """Write a `REPLICATION_DEFERRED_ADMISSION` admission record for
+    `qwen`, corroborated on disk per finding 4 (final review): a single
+    failed admission of any code is refused, so every caller of this
+    helper that expects the deferral to be HONORED must also produce
+    either (a) two failed admission attempts with the same classified
+    code (`corroboration="two_attempts"`, the default) or (b) one
+    remediation record preceding the deferral
+    (`corroboration="remediation"`). Pass `corroboration=None` for the
+    negative-test helper that wants exactly the bare, uncorroborated
+    single-attempt record the old (pre-fix) behavior would have accepted.
+    """
     admissions_dir = campaign_dir / "admissions"
     admissions_dir.mkdir(parents=True, exist_ok=True)
+    code = "endpoint_unreachable"
+    ordinal = 1
+    if corroboration == "two_attempts":
+        _write_json(
+            admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
+            {"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}},
+        )
+        ordinal += 1
+    elif corroboration == "remediation":
+        _write_json(
+            admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
+            {"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": {"ok": True}},
+        )
+        ordinal += 1
+    elif corroboration is not None:
+        raise ValueError(f"unknown corroboration kind {corroboration!r}")
     _write_json(
-        admissions_dir / "qwen-attempt-001.json",
+        admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
         {
             "block_id": "qwen",
             "disposition": REPLICATION_DEFERRED_ADMISSION,
-            "underlying_failure": {"code": "endpoint_unreachable"},
+            "underlying_failure": {"code": code},
         },
     )
 
@@ -609,6 +636,79 @@ def test_gemma_pass_with_valid_qwen_deferral_is_calibrated_deferred(tmp_path):
     assert report["blocks"]["gemma"]["outcome"] == "PASS"
     assert report["blocks"]["qwen"]["status"] == "ADMISSION_DEFERRED"
     assert report["verdict"]["outcome"] == "CALIBRATED_REPLICATION_DEFERRED"
+
+
+def test_gemma_pass_with_qwen_deferral_via_preceding_remediation_is_calibrated_deferred(tmp_path):
+    """The other corroboration path (spec: "at least one journaled retry
+    after a concrete remediation"): a single failed admission preceded by
+    a remediation attempt (e.g. terminate_tuner_pid) is honored exactly
+    like two confirming same-code failures."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(campaign_dir, corroboration="remediation")
+
+    report = build_campaign_report(campaign_dir)
+
+    assert report["verdict"]["outcome"] == "CALIBRATED_REPLICATION_DEFERRED"
+
+
+def test_report_refuses_qwen_deferral_from_single_uncorroborated_failure(tmp_path):
+    """Finding 4 (final review): a single admission-attempt record is not
+    enough to mint CALIBRATED_REPLICATION_DEFERRED, even when its
+    underlying failure carries a real, classified code. Deferral requires
+    corroboration on disk -- at least one journaled retry after a concrete
+    remediation, or two confirming attempts with the same code. This is
+    the exact incident this finding closes: a bare single-attempt
+    deferral record must be refused, falling back to the ordinary
+    incomplete-schedule error."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(campaign_dir, corroboration=None)
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_from_unclassified_failure_even_if_corroborated(tmp_path):
+    """Finding 4 (final review), part (a): `unexpected_admission_error` can
+    never become a deferral, no matter how many times it repeats --
+    "Unknown failures cannot be converted into a deferral." Two
+    unclassified failures plus a disposition record must still be
+    refused."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    admissions_dir = campaign_dir / "admissions"
+    admissions_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        admissions_dir / "qwen-attempt-001.json",
+        {"block_id": "qwen", "ok": False, "failure": {"code": "unexpected_admission_error", "details": {}}},
+    )
+    _write_json(
+        admissions_dir / "qwen-attempt-002.json",
+        {
+            "block_id": "qwen",
+            "disposition": REPLICATION_DEFERRED_ADMISSION,
+            "underlying_failure": {"code": "unexpected_admission_error"},
+        },
+    )
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
 
 
 # ---------------------------------------------------------------------------

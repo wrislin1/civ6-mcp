@@ -141,7 +141,7 @@ GATE_ORDER: tuple[str, ...] = (
 
 ADMISSION_MODES = frozenset({"counted", "admit_only", "validation"})
 
-# Task 11's job is the final campaign disposition; this module only exposes
+# Task 10's job is the final campaign disposition; this module only exposes
 # the typed failure so it's there to expose -- see classify_admission_disposition.
 REPLICATION_DEFERRED_ADMISSION = "REPLICATION_DEFERRED_ADMISSION"
 
@@ -202,9 +202,19 @@ class AdmissionDependencies:
       `AdmissionPipeline` having to know what "expected" means.
     - `probe_backend(...)` (async) -> `BackendProbe` (see
       `benchmark_backend.probe_backend`) -- called once per block, using
-      the broadest (standard-tier) resolved tool schema.
+      the broadest (standard-tier) resolved tool schema. Called with
+      `sampling=block.sampling` and `chat_template_kwargs=
+      block.chat_template_kwargs` (in addition to `model`/`endpoint`/
+      `tools`) so the identity/seed/latency probe runs under the block's
+      exact locked inference configuration rather than some other default
+      -- a Qwen thinking/token misconfiguration must fail admission, not
+      calibration (spec Sec 7).
     - `probe_tool_capability(...)` (async) -> `ToolCanaryEvidence` (see
-      `benchmark_backend.probe_tool_capability`) -- called once per arm.
+      `benchmark_backend.probe_tool_capability`) -- called once per arm,
+      also with `sampling=block.sampling` and `chat_template_kwargs=
+      block.chat_template_kwargs` for the same reason: both structured
+      tool-call canaries must exercise the model under the exact sampling,
+      token limit, and chat template the counted trials will actually use.
     """
 
     checkout_evidence: Callable[..., dict]
@@ -525,6 +535,7 @@ class AdmissionPipeline:
                 model=block.model,
                 endpoint=endpoint.get("resolved_endpoint"),
                 sampling=block.sampling,
+                chat_template_kwargs=block.chat_template_kwargs,
                 tools=list(campaign.tools_by_arm[probe_arm_id]),
             )
 
@@ -535,6 +546,8 @@ class AdmissionPipeline:
                     endpoint=endpoint.get("resolved_endpoint"),
                     arm_id=arm.arm_id,
                     tools=list(campaign.tools_by_arm[arm.arm_id]),
+                    sampling=block.sampling,
+                    chat_template_kwargs=block.chat_template_kwargs,
                 )
 
             model_admission = admit_model_block(
@@ -677,15 +690,38 @@ class AdmissionPipeline:
 
 def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     """True when `block_id`'s own run directory has every one of its
-    scheduled trial indices committed. Pure filesystem inspection -- no
-    session lock needs to be in hand to ask "is this block done yet"."""
+    scheduled trial indices committed AND stamped with THIS campaign's
+    fingerprint. Pure filesystem inspection -- no session lock needs to be
+    in hand to ask "is this block done yet".
+
+    Finding 5 (final review): `select_next_incomplete_block` and
+    `classify_admission_disposition`'s `first_block_counted_complete` both
+    act on this BEFORE any report ever runs -- filename presence alone
+    would let a copied/stale trial file (e.g. lifted from another
+    campaign's run directory, same expected filename) silently satisfy
+    both. Every expected trial filename is parsed and its stamped
+    `campaign_fingerprint` compared against `store.fingerprint`; missing,
+    unparseable, or mismatched is NOT complete -- never silently promoted
+    to "counts as done" the way bare filename presence used to.
+    """
     trials_dir = store.root / CampaignStore.BLOCKS_DIR / block_id / "trials"
     if not trials_dir.is_dir():
         return False
-    committed = {path.name for path in trials_dir.iterdir() if path.is_file()}
     scheduled = store.schedule["blocks"][block_id]["trials"]
-    expected = {trial_filename(trial["index"]) for trial in scheduled}
-    return expected.issubset(committed)
+    for trial in scheduled:
+        path = trials_dir / trial_filename(trial["index"])
+        if not path.is_file():
+            return False
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        if not isinstance(payload, dict):
+            return False
+        stamped = payload.get("campaign_fingerprint")
+        if not stamped or stamped != store.fingerprint:
+            return False
+    return True
 
 
 def select_next_incomplete_block(
@@ -712,7 +748,7 @@ def classify_admission_disposition(
     and only once the first model's block (Gemma, index 0) has already
     completed a full counted session -- Gemma itself must complete a
     counted block, full stop, never deferred. The final campaign
-    disposition this typed failure feeds into is Task 11's job; this
+    disposition this typed failure feeds into is Task 10's job; this
     function only decides whether the label applies.
     """
     if block_index == 0:

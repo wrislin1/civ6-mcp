@@ -280,9 +280,10 @@ def _admission_record_paths(campaign_dir: Path, block_id: str) -> list[Path]:
     ]
 
 
-def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
-    """Every admission-attempt record for `block_id` that declares a typed
-    `disposition` field, in on-disk (numbered) order. Tolerates a missing
+def _admission_records(campaign_dir: Path, block_id: str) -> list[dict]:
+    """Every admission-attempt record for `block_id`, in on-disk (numbered,
+    i.e. chronological) order -- ordinary failed-gate records, remediation
+    records, and disposition records alike. Tolerates a missing
     `admissions/` directory and skips any file that fails to parse as JSON --
     admission evidence is diagnostic, not scoreable, so a corrupt record here
     must never abort report generation the way corrupt trial evidence does."""
@@ -292,16 +293,58 @@ def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
             record = _read_json(path)
         except (OSError, ValueError):
             continue
-        if isinstance(record, Mapping) and "disposition" in record:
+        if isinstance(record, Mapping):
             records.append(dict(record))
     return records
 
 
+def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
+    """Every admission-attempt record for `block_id` that declares a typed
+    `disposition` field, in on-disk (numbered) order."""
+    return [record for record in _admission_records(campaign_dir, block_id) if "disposition" in record]
+
+
 def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str) -> bool:
-    return any(
-        record.get("disposition") == REPLICATION_DEFERRED_ADMISSION and record.get("block_id") == block_id
-        for record in _admission_dispositions(campaign_dir, block_id)
-    )
+    """True only for a CORROBORATED `REPLICATION_DEFERRED_ADMISSION` record
+    for `block_id` -- finding 4 (final review): a single admission failure
+    of ANY code must never mint this disposition by itself. Spec: "Deferral
+    requires at least one journaled retry after a concrete remediation, or
+    two confirming attempts for a demonstrated non-remediable capability
+    failure. Unknown failures cannot be converted into a deferral."
+
+    Both requirements must hold for at least one on-disk disposition record:
+
+    - the referenced `underlying_failure.code` is present and is not the
+      catch-all `unexpected_admission_error` -- an unclassified failure can
+      never become a deferral no matter how many times it repeats; and
+    - corroboration precedes that disposition record in the same
+      append-only admissions/ sequence: either at least one remediation
+      record (a concrete fix was attempted and retried), or at least one
+      OTHER failed admission attempt carrying the SAME code (so, combined
+      with the disposition's own underlying failure, two confirming
+      attempts total).
+    """
+    records = _admission_records(campaign_dir, block_id)
+    for index, record in enumerate(records):
+        if record.get("disposition") != REPLICATION_DEFERRED_ADMISSION:
+            continue
+        if record.get("block_id") != block_id:
+            continue
+        underlying = record.get("underlying_failure")
+        code = underlying.get("code") if isinstance(underlying, Mapping) else None
+        if not code or code == "unexpected_admission_error":
+            continue
+        preceding = records[:index]
+        has_preceding_remediation = any("remediation" in r for r in preceding)
+        has_preceding_same_code_failure = any(
+            r.get("ok") is False
+            and isinstance(r.get("failure"), Mapping)
+            and r["failure"].get("code") == code
+            for r in preceding
+        )
+        if has_preceding_remediation or has_preceding_same_code_failure:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------

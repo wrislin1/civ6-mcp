@@ -358,32 +358,61 @@ def check_tuner_holder(*, holder: Mapping[str, object] | None) -> dict[str, obje
     `benchmark_live_evidence.classify_tuner_holder`: a mapping carrying at
     least `pid`, `start_ticks`, `cmdline`, `cwd`, and `known_repo_owned`.
 
-    A present holder that is not `known_repo_owned` is UNKNOWN and always
-    fails closed, with no acknowledgment path (unlike `check_gpu_conflicts`'s
-    named-service approval) -- an unidentified process holding the tuner
-    port has no safe remediation, so this gate is the only thing standing
-    between an admission run and either proceeding against it or blindly
-    terminating it. Never kills or terminates anything itself; see
+    ANY present holder always fails closed. Admission's own GameConnection
+    is not opened until gate 5 (save deployment/game state), so a holder
+    observed here at gate 3 cannot be this admission's own connection -- it
+    is necessarily a leftover from something else, stale by construction.
+    The 2026-08-31 incident was exactly this: a stale repo-owned civ-mcp
+    client that a bare `known_repo_owned` pass would have let sail through.
+
+    Two failure codes differentiate remediation, but neither has an
+    acknowledgment path (unlike `check_gpu_conflicts`'s named-service
+    approval):
+
+    - `unknown_tuner_holder` -- not `known_repo_owned`; no safe remediation
+      exists, this gate is the only thing standing between an admission run
+      and either proceeding against it or blindly terminating it.
+    - `stale_repo_owned_tuner_holder` -- `known_repo_owned`, but still stale
+      per the above; remediation is a run-scoped, identity-revalidated
+      `--terminate-tuner-pid <pid>` naming this exact PID.
+
+    Never kills or terminates anything itself; see
     `benchmark_live_evidence.terminate_tuner_pid` for the actual
     exact-PID, identity-revalidated termination path.
     """
     if holder is None:
         return {"holder": None, "ok": True}
+    pid = holder.get("pid")
     if not holder.get("known_repo_owned"):
         raise GateFailure(
             "unknown_tuner_holder",
             {
-                "pid": holder.get("pid"),
+                "pid": pid,
                 "cmdline": holder.get("cmdline"),
                 "cwd": holder.get("cwd"),
                 "message": (
-                    f"FireTuner port is held by pid {holder.get('pid')!r} whose identity "
+                    f"FireTuner port is held by pid {pid!r} whose identity "
                     "does not match a known civ-mcp checkout; an unknown tuner-port holder "
                     "always blocks -- no remediation path exists for it"
                 ),
             },
         )
-    return {"holder": dict(holder), "ok": True}
+    raise GateFailure(
+        "stale_repo_owned_tuner_holder",
+        {
+            "pid": pid,
+            "cmdline": holder.get("cmdline"),
+            "cwd": holder.get("cwd"),
+            "message": (
+                f"FireTuner port is held by pid {pid!r}, a known repo-owned civ-mcp "
+                "client -- but admission's own GameConnection is not opened until "
+                "gate 5, so ANY holder observed here is stale by construction; a "
+                "stale repo-owned holder always blocks. Remediation: revalidate "
+                f"pid {pid!r}'s identity out-of-band, then rerun admission with "
+                f"--terminate-tuner-pid {pid} to terminate exactly this PID"
+            ),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

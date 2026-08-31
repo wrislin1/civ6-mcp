@@ -9,6 +9,7 @@ directly.
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 
@@ -19,9 +20,14 @@ import yaml
 from unittest.mock import AsyncMock
 
 import civ_mcp.arena.benchmark_runner as benchmark_runner
+import civ_mcp.arena.endpoint_registry as endpoint_registry_module
+from civ_mcp._vendor.brothereye_registry import Endpoint, Registry
 from civ_mcp.arena.backends import SamplingConfig
 from civ_mcp.arena.benchmark_agent import EpisodeEvidence, EpisodeTerminal, EpisodeTimedOut
 from civ_mcp.arena.benchmark_backend import HealthProbe
+from civ_mcp.arena.benchmark_gates import GateFailure
+from civ_mcp.arena.benchmark_live_evidence import GpuProcess
+import civ_mcp.arena.benchmark_live_evidence as benchmark_live_evidence_module
 from civ_mcp.arena.benchmark_manifest import PositionManifest, SuiteManifest, TreatmentArm
 from civ_mcp.arena.benchmark_report import build_report
 from civ_mcp.arena.benchmark_runner import (
@@ -1164,6 +1170,24 @@ consumable_unit_ids: []
     return campaign_path
 
 
+async def _campaign_store_fingerprint(campaign_path: Path, run_dir: Path, run_id: str = "campaign-run") -> str:
+    """Build the SAME campaign lock `_load_campaign_context` would (deterministic
+    for fixed inputs -- including the live `git rev-parse HEAD` clean-checkout
+    commit it embeds) and return its `campaign_fingerprint`, so a test can
+    pre-seed a block's trial fixtures with the fingerprint a real admission run
+    against this exact campaign/run-dir would actually stamp them with (finding
+    5, final review: block_is_complete now requires that stamp to match, not
+    just filename presence). Safe to call before the test's own `_run_async`
+    invocation re-derives the identical lock: `CampaignStore.create` reattaches
+    to an existing campaign.json/schedule.json that matches byte-for-byte."""
+    args = benchmark_runner._build_arg_parser().parse_args(
+        ["--campaign", str(campaign_path), "--run-id", run_id, "--run-dir", str(run_dir)]
+    )
+    context = await benchmark_runner._load_campaign_context(args)
+    assert context is not None, "fixture campaign/position failed to load while deriving its fingerprint"
+    return context.store.fingerprint
+
+
 @pytest.mark.asyncio
 async def test_campaign_run_refuses_on_first_failed_live_gate(tmp_path, monkeypatch, capsys):
     """Replaces the old blanket "gates not wired" refusal: with --campaign,
@@ -1230,12 +1254,17 @@ async def test_campaign_qwen_failure_after_gemma_complete_records_disposition(tm
     gemma_block_id = campaign.models[0].block_id
 
     # Pre-seed gemma's block as already fully committed -- block_is_complete
-    # only inspects the filesystem, so a fake trial file per scheduled
-    # index is enough; content is irrelevant to that check.
+    # requires each expected trial filename to be present AND stamped with
+    # this exact campaign's fingerprint (finding 5, final review), so the
+    # fixture must carry the real fingerprint this run-dir/campaign would
+    # actually stamp, not an arbitrary placeholder.
+    campaign_fingerprint = await _campaign_store_fingerprint(campaign_path, run_dir)
     gemma_trials_dir = run_dir / "campaign-run" / "blocks" / gemma_block_id / "trials"
     gemma_trials_dir.mkdir(parents=True)
     for trial in schedule["blocks"][gemma_block_id]["trials"]:
-        (gemma_trials_dir / trial_filename(trial["index"])).write_text("{}")
+        (gemma_trials_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": campaign_fingerprint})
+        )
 
     class _QwenFailsPipeline:
         def __init__(self, _deps):
@@ -1275,6 +1304,83 @@ async def test_campaign_qwen_failure_after_gemma_complete_records_disposition(tm
     dispositions = [m for m in matches if m.get("disposition") == REPLICATION_DEFERRED_ADMISSION]
     assert len(dispositions) == 1
     assert dispositions[0]["underlying_failure"]["code"] == "tool_canary_failed"
+
+
+@pytest.mark.asyncio
+async def test_campaign_qwen_unclassified_failure_never_records_disposition(tmp_path, monkeypatch, capsys):
+    """Finding 4 (final review), part (b): an `unexpected_admission_error`
+    -- the catch-all for an unrecognized exception, never a real diagnosed
+    admission-gate code -- must never be converted into a
+    REPLICATION_DEFERRED_ADMISSION disposition by the CLI, even once Gemma
+    has completed, and even on the very first Qwen attempt. "Unknown
+    failures cannot be converted into a deferral.\""""
+    from civ_mcp.arena.benchmark_admission import (
+        REPLICATION_DEFERRED_ADMISSION,
+        AdmissionError,
+    )
+    from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
+    from civ_mcp.arena.benchmark_contract import load_campaign_manifest
+    from civ_mcp.arena.benchmark_store import trial_filename
+
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    campaign = load_campaign_manifest(campaign_path)
+    schedule = compile_campaign_schedule(campaign)
+    gemma_block_id = campaign.models[0].block_id
+
+    campaign_fingerprint = await _campaign_store_fingerprint(campaign_path, run_dir)
+    gemma_trials_dir = run_dir / "campaign-run" / "blocks" / gemma_block_id / "trials"
+    gemma_trials_dir.mkdir(parents=True)
+    for trial in schedule["blocks"][gemma_block_id]["trials"]:
+        (gemma_trials_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": campaign_fingerprint})
+        )
+
+    class _QwenFailsUnclassifiedPipeline:
+        def __init__(self, _deps):
+            pass
+
+        async def admit(self, bundle, block, store, *, mode, **_kwargs):
+            raise AdmissionError("unexpected_admission_error", {"message": "boom"})
+
+    monkeypatch.setattr(
+        benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _QwenFailsUnclassifiedPipeline(None)
+    )
+
+    def _boom_run_resolved_block(*_args, **_kwargs):
+        raise AssertionError("run_resolved_block must never run when admission fails")
+
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err.lower()
+    assert "unexpected_admission_error" in err
+    assert "refus" in err  # "refusing to record ... disposition for an unclassified failure"
+
+    qwen_block_id = campaign.models[1].block_id
+    admissions_dir = run_dir / "campaign-run" / "admissions"
+    matches = (
+        [
+            json.loads(p.read_text())
+            for p in admissions_dir.iterdir()
+            if p.name.startswith(f"{qwen_block_id}-attempt-")
+        ]
+        if admissions_dir.is_dir()
+        else []
+    )
+    dispositions = [m for m in matches if m.get("disposition") == REPLICATION_DEFERRED_ADMISSION]
+    assert dispositions == []
 
 
 @pytest.mark.asyncio
@@ -2053,10 +2159,193 @@ async def test_live_reload_position_reports_unverified_for_stable_open_port_fall
     assert verified is False
 
 
+class _FakeAdmissionConnection:
+    async def connect(self):
+        return None
+
+    async def disconnect(self):
+        return None
+
+
+def _admission_args(**overrides) -> argparse.Namespace:
+    fields = dict(wsl_repo="/wsl/repo", windows_repo="/windows/repo")
+    fields.update(overrides)
+    return argparse.Namespace(**fields)
+
+
+@pytest.mark.asyncio
+async def test_live_admission_reload_and_capture_delegates_to_reload_position(monkeypatch):
+    """Finding 2 (final review): the admission dependency's inline
+    reload_and_capture must call the shared production `reload_position`
+    rather than re-deriving its own success/verified classification --
+    otherwise reload semantics can drift between the counted trial path and
+    admission. Prove delegation directly: stub reload_position itself and
+    assert reload_and_capture returns exactly its result, never
+    re-computing verified from a raw load_game_save string."""
+    position = _position_manifest()
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeAdmissionConnection)
+    monkeypatch.setattr(
+        benchmark_runner, "dismiss_blocking_popups", AsyncMock(return_value="POPUPS|none")
+    )
+    monkeypatch.setattr(
+        benchmark_runner, "capture_canonical_state", AsyncMock(return_value={"turn": 42})
+    )
+
+    calls: list = []
+
+    async def _fake_reload_position(connection, pos):
+        calls.append(pos.position_id)
+        return True
+
+    monkeypatch.setattr(benchmark_runner, "reload_position", _fake_reload_position)
+    # If reload_and_capture still called load_game_save directly (the old
+    # re-derived-classification path) instead of delegating, this would be
+    # exercised -- assert it never is.
+    monkeypatch.setattr(
+        benchmark_runner,
+        "load_game_save",
+        AsyncMock(side_effect=AssertionError("load_game_save must not be called directly")),
+    )
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x"
+    )
+
+    result = await deps.reload_and_capture(position)
+
+    assert calls == [position.position_id]
+    assert result["reload"]["verified"] is True
+    assert result["canonical_state"] == {"turn": 42}
+
+
+@pytest.mark.asyncio
+async def test_live_admission_reload_and_capture_reports_unverified_on_reload_failure(monkeypatch):
+    """A production reload_position failure (raised RuntimeError) must
+    surface as verified=False evidence, not propagate as an unhandled
+    exception out of the admission dependency -- admission's own
+    production_reload_not_verified gate is what turns that into a fail-
+    closed refusal."""
+    position = _position_manifest()
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeAdmissionConnection)
+    monkeypatch.setattr(
+        benchmark_runner, "dismiss_blocking_popups", AsyncMock(return_value="POPUPS|none")
+    )
+    monkeypatch.setattr(
+        benchmark_runner, "capture_canonical_state", AsyncMock(return_value={"turn": 42})
+    )
+
+    async def _failing_reload_position(connection, pos):
+        raise RuntimeError(f"reload_position({pos.game_save_name!r}) failed: Error: not found")
+
+    monkeypatch.setattr(benchmark_runner, "reload_position", _failing_reload_position)
+    # Same delegation proof as the success test: if this path still called
+    # load_game_save directly instead of routing through (the stubbed,
+    # raising) reload_position, this would fire instead of the RuntimeError
+    # catch under test.
+    monkeypatch.setattr(
+        benchmark_runner,
+        "load_game_save",
+        AsyncMock(side_effect=AssertionError("load_game_save must not be called directly")),
+    )
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x"
+    )
+
+    result = await deps.reload_and_capture(position)
+
+    assert result["reload"]["verified"] is False
+
+
 # ---------------------------------------------------------------------------
 # Task 4: extract a resolved-block handoff and structurally exclude smoke
 # evidence from counted (campaign) provenance.
 # ---------------------------------------------------------------------------
+
+
+class _FakeGpuRegistry:
+    """Minimal registry fake exposing exactly what gpu_evidence's closure
+    calls: `.endpoint(endpoint_id) -> Endpoint`."""
+
+    def __init__(self, endpoint: Endpoint):
+        self._endpoint = endpoint
+
+    def endpoint(self, endpoint_id: str) -> Endpoint:
+        assert endpoint_id == self._endpoint.id
+        return self._endpoint
+
+
+def _gpu_endpoint(units=("civ-arena-gemma4",)) -> Endpoint:
+    return Endpoint(
+        id="home-gpu0-cpp",
+        kind="llamacpp",
+        host_id="riz-llm",
+        gpu_indexes=(0,),
+        port=8000,
+        urls={},
+        units=tuple(units),
+        modes=(),
+        drain_by_hosts=(),
+        acquisition="static",
+    )
+
+
+def _gpu_proc(*, service, pid=111) -> GpuProcess:
+    return GpuProcess(
+        host="riz-llm", gpu_index=0, gpu_uuid="GPU-abc", pid=pid, process_name="proc", service=service
+    )
+
+
+def _gpu_evidence_fn(monkeypatch, endpoint: Endpoint, processes: list[GpuProcess]):
+    monkeypatch.setattr(endpoint_registry_module, "_registry", lambda: _FakeGpuRegistry(endpoint))
+    monkeypatch.setattr(
+        benchmark_live_evidence_module, "collect_gpu_evidence", lambda **_kwargs: processes
+    )
+    deps = benchmark_runner._build_live_admission_dependencies(args=_admission_args(), api_key="x")
+    return deps.gpu_evidence(endpoint.id)
+
+
+def test_gpu_evidence_passes_when_declared_unit_is_resident(monkeypatch):
+    """Finding 3 (final review): the endpoint's own declared unit being
+    resident on its own GPU is the ordinary, expected case -- it must
+    pass, not require an operator to separately acknowledge it."""
+    endpoint = _gpu_endpoint(units=("civ-arena-gemma4",))
+    result = _gpu_evidence_fn(monkeypatch, endpoint, [_gpu_proc(service="civ-arena-gemma4")])
+    assert result["ok"] is True
+
+
+def test_gpu_evidence_passes_when_declared_unit_is_absent_idle_gpu(monkeypatch):
+    """The bug this finding fixes: static `set(endpoint.units)` fed as
+    `approved_services` made check_gpu_conflicts's EXACT set-equality
+    compare an idle GPU's empty observed set against {declared unit} and
+    always fail. An idle GPU (no processes at all) must pass."""
+    endpoint = _gpu_endpoint(units=("civ-arena-gemma4",))
+    result = _gpu_evidence_fn(monkeypatch, endpoint, [])
+    assert result["ok"] is True
+
+
+def test_gpu_evidence_blocks_on_foreign_service(monkeypatch):
+    endpoint = _gpu_endpoint(units=("civ-arena-gemma4",))
+    with pytest.raises(GateFailure) as exc_info:
+        _gpu_evidence_fn(
+            monkeypatch,
+            endpoint,
+            [_gpu_proc(service="civ-arena-gemma4"), _gpu_proc(service="ollama", pid=222)],
+        )
+    assert exc_info.value.code == "gpu_conflict_not_acknowledged"
+
+
+def test_gpu_evidence_blocks_on_unidentified_process(monkeypatch):
+    """Unidentified process always blocks -- this must stay intact even
+    though the endpoint's own declared unit is filtered out first."""
+    endpoint = _gpu_endpoint(units=("civ-arena-gemma4",))
+    with pytest.raises(GateFailure) as exc_info:
+        _gpu_evidence_fn(
+            monkeypatch,
+            endpoint,
+            [_gpu_proc(service="civ-arena-gemma4"), _gpu_proc(service=None, pid=333)],
+        )
+    assert exc_info.value.code == "gpu_conflict_unidentified_process"
 
 
 class _FakeBlockConnection:

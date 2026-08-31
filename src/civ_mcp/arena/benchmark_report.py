@@ -811,7 +811,7 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
             # None for every --ungated-smoke run (that lock never declares
             # one) and for every pre-campaign fixture -- nothing marks such
             # evidence as belonging to any counted campaign block, so a
-            # future campaign-level report (Task 11) has no fingerprint to
+            # future campaign-level report (Task 10) has no fingerprint to
             # match against it and must reject it outright.
             "campaign_fingerprint": lock.get("campaign_fingerprint"),
             "scorer_fingerprint": scorer_fingerprint,

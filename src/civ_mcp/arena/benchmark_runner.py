@@ -652,19 +652,21 @@ class BenchmarkRunner:
 _SMOKE_SCORER_EVALUATOR = "civ_mcp.arena.action_metrics.evaluate_predicate"
 #
 # Production wiring below assembles `RunnerDependencies` from a live game
-# connection and OpenAI-compatible backends. It is deliberately NOT exercised
-# by this task's test suite (no live game, no network, per the plan's
-# constraints) and does not yet call the admission gates in
-# `benchmark_gates` (`check_clean_checkout`, `check_gpu_conflicts`,
-# `admit_model_block`, `build_session_lock`) -- assembling their live
-# evidence (git status on both sides, a GPU process snapshot, native boot
-# health) is out of this task's file scope and is intentionally left for
-# Task 8's integration pass wires the admission gates for the --campaign
-# path (see benchmark_admission.AdmissionPipeline, imported locally inside
+# connection and OpenAI-compatible backends, for the `--suite`/
+# `--ungated-smoke` path. It is deliberately NOT exercised by this module's
+# own test suite (no live game, no network) and deliberately does NOT call
+# the admission gates in `benchmark_gates` (`check_clean_checkout`,
+# `check_gpu_conflicts`, `admit_model_block`, `build_session_lock`) --
+# `--ungated-smoke` is an explicitly non-counted escape hatch, never gated,
+# by design, not by omission.
+#
+# The counted `--campaign` path is a separate wiring, `_build_live_admission_
+# dependencies` below: it assembles the SAME live evidence (git status on
+# both sides, a GPU process snapshot, native boot health, ...) and runs it
+# through `benchmark_admission.AdmissionPipeline` (imported locally inside
 # the CLI functions below to avoid a circular top-level import --
-# benchmark_admission imports ResolvedBlock from this module). The
-# `--suite`/`--ungated-smoke` scaffold below remains exactly what it always
-# was: a deliberate, explicitly non-counted escape hatch, never gated.
+# benchmark_admission imports ResolvedBlock from this module) before ever
+# handing a resolved block to the runner.
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -1137,18 +1139,32 @@ def _build_live_admission_dependencies(
         )
 
     async def reload_and_capture(position: PositionManifest) -> dict:
+        # Finding 2 (final review): delegate to the shared production
+        # reload_position(connection, position) -- defined above this
+        # function, the SAME single reload step the counted trial path
+        # (`_reload_position_dep` below) and the capture/verify CLI use --
+        # rather than re-deriving success/verified classification from a
+        # raw load_game_save result here. Two independent copies of that
+        # classification could silently drift; one production path can't.
+        # reload_position raises RuntimeError on a failure/warning string
+        # (see its docstring); that always means an unverified reload here,
+        # never an unhandled crash out of an admission dependency.
         connection = GameConnection()
         await connection.connect()
         try:
-            result = await load_game_save(connection, position.game_save_name)
-            verified = _reload_result_is_success(result) and "UNVERIFIED" not in str(result)
+            try:
+                verified = await reload_position(connection, position)
+                reload_raw: str | None = None
+            except RuntimeError as exc:
+                verified = False
+                reload_raw = str(exc)
             popup_status = await dismiss_blocking_popups(connection)
             popup_ok = isinstance(popup_status, str) and popup_status.startswith("POPUPS|")
             canonical_state = await capture_canonical_state(
                 connection, position.player_id, position.relevant_tiles
             )
             return {
-                "reload": {"verified": verified, "raw": str(result)},
+                "reload": {"verified": verified, "raw": reload_raw},
                 "popup_hygiene": {"status": popup_status, "ok": popup_ok},
                 "canonical_state": canonical_state,
             }
@@ -1156,20 +1172,30 @@ def _build_live_admission_dependencies(
             await connection.disconnect()
 
     def gpu_evidence(endpoint_id: str) -> dict:
-        # RULING: approved services = the requested endpoint's own
-        # registry-declared units (the model server under test is always
-        # legitimately present on its own endpoint's GPU) -- anything else
-        # on the endpoint's GPUs still blocks. `approved_services=set()`
-        # here would refuse every real admission, since the endpoint's own
-        # server process is always resident; no new CLI flag introduces an
-        # operator-controlled approval list, this is derived entirely from
-        # the vendored registry.
+        # RULING (finding 3, final review): the requested endpoint's own
+        # registry-declared units are always legitimately present on its
+        # own GPU -- but `check_gpu_conflicts`'s `approved_services` is an
+        # EXACT set match (over_approved fails too), designed for an
+        # operator explicitly acknowledging a *currently observed*
+        # conflict, not for a static allowance. Feeding it a static
+        # `set(endpoint.units)` made an idle GPU (observed set = {}) always
+        # fail against approved={declared unit} -- GateFailure on a clean
+        # host every single time. Instead: filter the endpoint's own
+        # declared units OUT of the observed conflict rows first, then let
+        # `check_gpu_conflicts` apply its exact-match logic to whatever
+        # foreign/unidentified rows remain, with an EMPTY approval set.
+        # Declared-unit-resident and declared-unit-absent (idle) both leave
+        # an empty remainder and pass; any other named service or any
+        # unidentified process is never filtered and still blocks exactly
+        # as `check_gpu_conflicts` already guarantees.
         registry = _registry()
         endpoint = registry.endpoint(endpoint_id)
         processes = collect_gpu_evidence(run_ssh=_run_ssh_command, registry=registry, endpoint_id=endpoint_id)
-        return check_gpu_conflicts(
-            processes=gpu_processes_to_conflict_rows(processes), approved_services=set(endpoint.units)
-        )
+        own_units = set(endpoint.units)
+        remainder = [
+            row for row in gpu_processes_to_conflict_rows(processes) if row.get("service") not in own_units
+        ]
+        return check_gpu_conflicts(processes=remainder, approved_services=set())
 
     def resolve_endpoint(endpoint_id: str) -> dict:
         # RULING: requested_endpoint is the registry EXPECTATION for this
@@ -1202,8 +1228,22 @@ def _build_live_admission_dependencies(
             "gpu_topology": {"host_id": endpoint.host_id, "gpu_indexes": list(endpoint.gpu_indexes)},
         }
 
-    async def probe_backend_dep(*, model: str, endpoint: str, sampling, tools: list[dict]):
-        backend = OpenAICompatBackend(endpoint, api_key, model, sampling=sampling, retry_policy=RetryPolicy(max_attempts=1))
+    async def probe_backend_dep(
+        *,
+        model: str,
+        endpoint: str,
+        sampling,
+        chat_template_kwargs: Mapping[str, object] | None = None,
+        tools: list[dict],
+    ):
+        backend = OpenAICompatBackend(
+            endpoint,
+            api_key,
+            model,
+            sampling=sampling,
+            retry_policy=RetryPolicy(max_attempts=1),
+            chat_template_kwargs=chat_template_kwargs,
+        )
         try:
             return await _probe_backend_impl(
                 backend, [{"role": "user", "content": "Reply with only your model name."}], tools
@@ -1211,8 +1251,23 @@ def _build_live_admission_dependencies(
         finally:
             await backend.aclose()
 
-    async def probe_tool_capability_dep(*, model: str, endpoint: str, arm_id: str, tools: list[dict]):
-        backend = OpenAICompatBackend(endpoint, api_key, model, retry_policy=RetryPolicy(max_attempts=1))
+    async def probe_tool_capability_dep(
+        *,
+        model: str,
+        endpoint: str,
+        arm_id: str,
+        tools: list[dict],
+        sampling=None,
+        chat_template_kwargs: Mapping[str, object] | None = None,
+    ):
+        backend = OpenAICompatBackend(
+            endpoint,
+            api_key,
+            model,
+            sampling=sampling,
+            retry_policy=RetryPolicy(max_attempts=1),
+            chat_template_kwargs=chat_template_kwargs,
+        )
         try:
             return await _probe_tool_capability_impl(backend, arm_id=arm_id, tools=tools)
         finally:
@@ -1369,6 +1424,24 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
             disposition = benchmark_admission.classify_admission_disposition(
                 block_index=block_index, first_block_counted_complete=first_complete
             )
+            # Finding 4 (final review), part (b): an unclassified failure
+            # (the catch-all AdmissionPipeline.admit wraps an unrecognized
+            # exception in) must never be written as a
+            # REPLICATION_DEFERRED_ADMISSION disposition -- "Unknown
+            # failures cannot be converted into a deferral." This is a
+            # necessary condition at write time; the reporter separately
+            # requires on-disk corroboration (a preceding remediation or a
+            # second same-code failure) before honoring even a classified
+            # disposition record -- see
+            # benchmark_campaign_report._has_valid_replication_deferred_admission.
+            if disposition is not None and exc.code == "unexpected_admission_error":
+                print(
+                    f"civ-arena-benchmark: block {next_block.block_id} admission failed "
+                    f"({exc.code}); refusing to record a {disposition} disposition for an "
+                    "unclassified failure",
+                    file=sys.stderr,
+                )
+                return 1
             if disposition is not None:
                 # The admission artifact itself must expose the typed
                 # disposition -- admit() already wrote its own failed-

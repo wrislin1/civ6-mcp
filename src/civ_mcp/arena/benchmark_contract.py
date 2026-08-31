@@ -59,6 +59,11 @@ from civ_mcp.arena.registry import TOOL_REGISTRY
 # schema version would get its own loader rather than relaxing these.
 PLAN2_MODEL_COUNT = 2
 PLAN2_ARM_SPEC: tuple[tuple[str, str], ...] = (("minimal", "minimal"), ("standard", "standard"))
+# Housekeeping (final review): `_require_plan2_arms` was validating the arm
+# count against PLAN2_MODEL_COUNT -- numerically equal (2 models, 2 arms) but
+# a different concept; a future Plan revision that changed either count
+# independently would silently validate against the wrong one.
+PLAN2_ARM_COUNT = len(PLAN2_ARM_SPEC)
 PLAN2_SEED_COUNT = 12
 PLAN2_ORDER = "abba"
 PLAN2_DRIVER = "single_turn"
@@ -233,7 +238,7 @@ def _resolve_position_provenance(raw_path: str, base_dir: Path) -> str:
 
 
 def _require_plan2_arms(arms: tuple[TreatmentArm, ...]) -> None:
-    if len(arms) != PLAN2_MODEL_COUNT:
+    if len(arms) != PLAN2_ARM_COUNT:
         raise ValueError(
             f"campaign manifest.arms must declare exactly two Plan 2 arms (minimal, standard); "
             f"got {len(arms)}"

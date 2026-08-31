@@ -413,8 +413,17 @@ def terminate_tuner_pid(
     # Defense in depth: even if the caller never separately ran
     # check_tuner_holder on preceding_evidence, this is the line that
     # actually sends a real signal -- an unknown owner must never be
-    # terminated here either, matched identity or not.
-    check_tuner_holder(holder=asdict(fresh))
+    # terminated here either, matched identity or not. check_tuner_holder
+    # now fails closed on ANY present holder (a repo-owned holder observed
+    # before admission opens its own connection is stale by construction --
+    # see check_tuner_holder's docstring), but termination's entire purpose
+    # is to clear exactly that stale-repo-owned case, so only that specific
+    # code is expected and swallowed here; an unknown owner still blocks.
+    try:
+        check_tuner_holder(holder=asdict(fresh))
+    except GateFailure as exc:
+        if exc.code != "stale_repo_owned_tuner_holder":
+            raise
 
     run_local(("kill", "-TERM", str(requested_pid)))
 

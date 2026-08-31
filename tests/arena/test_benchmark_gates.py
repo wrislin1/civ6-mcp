@@ -278,7 +278,14 @@ def test_check_tuner_holder_passes_when_no_holder():
     assert check_tuner_holder(holder=None) == {"holder": None, "ok": True}
 
 
-def test_check_tuner_holder_passes_for_known_repo_owned_holder():
+def test_check_tuner_holder_blocks_known_repo_owned_holder_as_stale():
+    """Admission's own GameConnection is not opened until gate 5, so ANY
+    holder present at gate 3 -- including a known repo-owned civ-mcp client
+    -- is necessarily stale. The 2026-08-31 incident was exactly this: a
+    stale repo-owned client that a bare `known_repo_owned` pass would have
+    let sail through. Repo-owned and unknown holders get differentiated
+    failure codes (repo-owned has a named remediation path), but both
+    always block."""
     holder = {
         "pid": 4242,
         "start_ticks": 123456,
@@ -286,8 +293,10 @@ def test_check_tuner_holder_passes_for_known_repo_owned_holder():
         "cwd": "/home/riz/projects/civ6-mcp",
         "known_repo_owned": True,
     }
-    evidence = check_tuner_holder(holder=holder)
-    assert evidence == {"holder": holder, "ok": True}
+    with pytest.raises(GateFailure, match="--terminate-tuner-pid 4242") as exc_info:
+        check_tuner_holder(holder=holder)
+    assert exc_info.value.code == "stale_repo_owned_tuner_holder"
+    assert exc_info.value.details.get("pid") == 4242
 
 
 def test_check_tuner_holder_blocks_unknown_owner():

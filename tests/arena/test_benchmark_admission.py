@@ -351,6 +351,50 @@ async def test_admission_runs_all_gates_in_locked_order_then_mints_session(tmp_p
     assert (store.root / "blocks" / block.block_id / "session.json").exists()
 
 
+async def test_admission_passes_locked_sampling_and_chat_template_kwargs_to_canaries(tmp_path):
+    """Spec Sec 7: tool canaries (and the backend identity/seed/latency
+    probe) must run with the block's EXACT locked sampling, token limit,
+    and chat template -- "Qwen thinking/token misconfiguration fails
+    admission, not calibration." A canary constructed with the block's
+    model/endpoint but the wrong sampling or chat_template_kwargs would
+    validate against a configuration the counted trials never actually
+    use."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    calls: list = []
+    recorded: dict[str, list] = {"probe_backend": [], "probe_tool_capability": []}
+
+    async def _recording_probe_backend(**kwargs):
+        calls.append("probe_backend")
+        recorded["probe_backend"].append(kwargs)
+        return _good_probe(block.model)
+
+    async def _recording_probe_tool_capability(*, arm_id, **kwargs):
+        calls.append(f"probe_tool_capability:{arm_id}")
+        recorded["probe_tool_capability"].append({"arm_id": arm_id, **kwargs})
+        return _good_canary(arm_id)
+
+    deps = dataclasses.replace(
+        _make_dependencies(calls, campaign, block, position),
+        probe_backend=_recording_probe_backend,
+        probe_tool_capability=_recording_probe_tool_capability,
+    )
+    pipeline = AdmissionPipeline(deps)
+
+    result = await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert isinstance(result, ResolvedBlock)
+    assert len(recorded["probe_backend"]) == 1
+    backend_kwargs = recorded["probe_backend"][0]
+    assert backend_kwargs["sampling"] == block.sampling
+    assert backend_kwargs["chat_template_kwargs"] == block.chat_template_kwargs
+
+    assert len(recorded["probe_tool_capability"]) == 2
+    for canary_kwargs in recorded["probe_tool_capability"]:
+        assert canary_kwargs["sampling"] == block.sampling
+        assert canary_kwargs["chat_template_kwargs"] == block.chat_template_kwargs
+
+
 async def test_admission_failure_never_creates_session_or_runs_trials(tmp_path):
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block = campaign.models[0]
@@ -655,14 +699,18 @@ async def test_one_block_mode_stops_after_next_manifest_order_block(tmp_path):
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
-        (trials_dir / trial_filename(trial["index"])).write_text("{}")
+        (trials_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint})
+        )
 
     assert select_next_incomplete_block(campaign, store) is block1
 
     trials_dir1 = store.root / "blocks" / block1.block_id / "trials"
     trials_dir1.mkdir(parents=True)
     for trial in store.schedule["blocks"][block1.block_id]["trials"]:
-        (trials_dir1 / trial_filename(trial["index"])).write_text("{}")
+        (trials_dir1 / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint})
+        )
 
     assert select_next_incomplete_block(campaign, store) is None
 
@@ -675,6 +723,52 @@ async def test_one_block_mode_stops_after_next_manifest_order_block(tmp_path):
 def test_block_is_complete_false_when_no_trials_dir(tmp_path):
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     assert block_is_complete(store, campaign.models[0].block_id) is False
+
+
+def test_block_is_complete_rejects_a_trial_copied_from_another_campaign(tmp_path):
+    """Finding 5 (final review): block_is_complete/select_next_incomplete_
+    block act BEFORE any report runs, so a copied/stale trial file (right
+    filename, wrong or missing campaign_fingerprint) must never silently
+    satisfy either consumer -- exactly the scenario a copied-from-another-
+    campaign trial file reproduces."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0 = campaign.models[0]
+
+    trials_dir = store.root / "blocks" / block0.block_id / "trials"
+    trials_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block0.block_id]["trials"]:
+        (trials_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": "some-other-campaigns-fingerprint"})
+        )
+
+    assert block_is_complete(store, block0.block_id) is False
+    assert select_next_incomplete_block(campaign, store) is block0
+
+
+def test_block_is_complete_false_on_unparseable_trial_file(tmp_path):
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0 = campaign.models[0]
+
+    trials_dir = store.root / "blocks" / block0.block_id / "trials"
+    trials_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block0.block_id]["trials"]:
+        (trials_dir / trial_filename(trial["index"])).write_text("not json")
+
+    assert block_is_complete(store, block0.block_id) is False
+
+
+def test_block_is_complete_true_when_every_trial_carries_the_matching_fingerprint(tmp_path):
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0 = campaign.models[0]
+
+    trials_dir = store.root / "blocks" / block0.block_id / "trials"
+    trials_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block0.block_id]["trials"]:
+        (trials_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint})
+        )
+
+    assert block_is_complete(store, block0.block_id) is True
 
 
 def test_record_admission_disposition_is_reconstructible_from_disk(tmp_path):
