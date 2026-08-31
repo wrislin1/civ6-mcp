@@ -1,6 +1,8 @@
+import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 from civ_mcp.arena.backends import SamplingConfig
 from civ_mcp.arena.benchmark_manifest import (
@@ -196,4 +198,206 @@ def test_load_suite_manifest_rejects_sampling_missing_key(tmp_path: Path):
     path.write_text(text)
 
     with pytest.raises(ValueError, match="missing"):
+        load_suite_manifest(path)
+
+
+def _position_data() -> dict:
+    return yaml.safe_load(_position_yaml())
+
+
+def _suite_data() -> dict:
+    return yaml.safe_load(_suite_yaml())
+
+
+def _write(tmp_path: Path, name: str, data: dict) -> Path:
+    path = tmp_path / name
+    path.write_text(yaml.safe_dump(data))
+    return path
+
+
+@pytest.mark.parametrize(
+    ("manifest_kind", "field", "value", "message"),
+    [
+        ("position", "relevant_tiles", None, "position manifest.relevant_tiles must be a list"),
+        ("position", "expected_state", None, "position manifest.expected_state must be a mapping"),
+        ("suite", "arms", None, "suite manifest.arms must be a list"),
+        ("suite", "seeds", None, "suite manifest.seeds must be a list"),
+        ("suite", "max_steps", None, "suite manifest.max_steps must be an integer"),
+        ("suite", "sampling", None, "suite manifest.sampling must be a mapping"),
+        ("position", "objectives", None, "position manifest.objectives must be a list"),
+        ("position", "rubric", None, "position manifest.rubric must be a list"),
+        ("suite", "positions", None, "suite manifest.positions must be a list"),
+        ("suite", "models", None, "suite manifest.models must be a list"),
+        ("suite", "audit_indices", None, "suite manifest.audit_indices must be a list"),
+    ],
+)
+def test_manifest_nulls_raise_field_specific_value_errors(
+    tmp_path: Path, manifest_kind: str, field: str, value: object, message: str
+):
+    if manifest_kind == "position":
+        data = _position_data()
+        data[field] = value
+        path = _write(tmp_path, "position.yaml", data)
+        with pytest.raises(ValueError, match=re.escape(message)):
+            load_position_manifest(path)
+    else:
+        data = _suite_data()
+        data[field] = value
+        path = _write(tmp_path, "suite.yaml", data)
+        with pytest.raises(ValueError, match=re.escape(message)):
+            load_suite_manifest(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("version", True),
+        ("player_id", True),
+    ],
+)
+def test_load_position_manifest_rejects_boolean_for_integer_fields(
+    tmp_path: Path, field: str, value: object
+):
+    data = _position_data()
+    data[field] = value
+    path = _write(tmp_path, "position.yaml", data)
+
+    with pytest.raises(ValueError, match=re.escape(f"position manifest.{field} must be an integer")):
+        load_position_manifest(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("max_steps", True),
+        ("result_char_cap", True),
+    ],
+)
+def test_load_suite_manifest_rejects_boolean_for_integer_fields(
+    tmp_path: Path, field: str, value: object
+):
+    data = _suite_data()
+    data[field] = value
+    path = _write(tmp_path, "suite.yaml", data)
+
+    with pytest.raises(ValueError, match=re.escape(f"suite manifest.{field} must be an integer")):
+        load_suite_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "tile",
+    [
+        [9],
+        [9, 24, 1],
+        ["a", 24],
+        [9, True],
+        None,
+    ],
+)
+def test_load_position_manifest_rejects_malformed_tile(tmp_path: Path, tile: object):
+    data = _position_data()
+    data["relevant_tiles"] = [tile]
+    path = _write(tmp_path, "position.yaml", data)
+
+    with pytest.raises(ValueError, match=re.escape("position manifest.relevant_tiles[0]")):
+        load_position_manifest(path)
+
+
+@pytest.mark.parametrize("bad_seed", ["nope", True, 1.5])
+def test_load_suite_manifest_rejects_non_integer_seed(tmp_path: Path, bad_seed: object):
+    data = _suite_data()
+    data["seeds"] = [101, bad_seed]
+    path = _write(tmp_path, "suite.yaml", data)
+
+    with pytest.raises(ValueError, match=re.escape("suite manifest.seeds[1] must be an integer")):
+        load_suite_manifest(path)
+
+
+@pytest.mark.parametrize("bad_index", ["nope", True, 1.5])
+def test_load_suite_manifest_rejects_non_integer_audit_index(tmp_path: Path, bad_index: object):
+    data = _suite_data()
+    data["audit_indices"] = [1, bad_index]
+    path = _write(tmp_path, "suite.yaml", data)
+
+    with pytest.raises(ValueError, match=re.escape("suite manifest.audit_indices[1] must be an integer")):
+        load_suite_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["position_id", "archive", "archive_sha256", "game_save_name", "split"],
+)
+def test_load_position_manifest_rejects_empty_string_fields(tmp_path: Path, field: str):
+    data = _position_data()
+    data[field] = ""
+    path = _write(tmp_path, "position.yaml", data)
+
+    with pytest.raises(
+        ValueError, match=re.escape(f"position manifest.{field} must be a non-empty string")
+    ):
+        load_position_manifest(path)
+
+
+@pytest.mark.parametrize("field", ["suite_id", "driver", "order"])
+def test_load_suite_manifest_rejects_empty_string_fields(tmp_path: Path, field: str):
+    data = _suite_data()
+    data[field] = ""
+    path = _write(tmp_path, "suite.yaml", data)
+
+    with pytest.raises(
+        ValueError, match=re.escape(f"suite manifest.{field} must be a non-empty string")
+    ):
+        load_suite_manifest(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("temperature", "hot", "suite manifest.sampling.temperature must be a number or null"),
+        ("temperature", True, "suite manifest.sampling.temperature must be a number or null"),
+        ("top_p", "high", "suite manifest.sampling.top_p must be a number or null"),
+        ("seed", "abc", "suite manifest.sampling.seed must be a number or null"),
+        ("max_tokens", None, "suite manifest.sampling.max_tokens must be an integer"),
+        ("max_tokens", 1.5, "suite manifest.sampling.max_tokens must be an integer"),
+    ],
+)
+def test_load_suite_manifest_rejects_bad_sampling_values(
+    tmp_path: Path, field: str, value: object, message: str
+):
+    data = _suite_data()
+    data["sampling"][field] = value
+    path = _write(tmp_path, "suite.yaml", data)
+
+    with pytest.raises(ValueError, match=re.escape(message)):
+        load_suite_manifest(path)
+
+
+def test_load_suite_manifest_allows_sampling_numeric_fields_to_be_null(tmp_path: Path):
+    data = _suite_data()
+    data["sampling"]["temperature"] = None
+    data["sampling"]["top_p"] = None
+    path = _write(tmp_path, "suite.yaml", data)
+
+    manifest = load_suite_manifest(path)
+
+    assert manifest.sampling.temperature is None
+    assert manifest.sampling.top_p is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("arm_id", "", "suite manifest.arms[0].arm_id must be a non-empty string"),
+        ("tools", "", "suite manifest.arms[0].tools must be a non-empty string"),
+        ("options", None, "suite manifest.arms[0].options must be a mapping"),
+    ],
+)
+def test_load_suite_manifest_rejects_bad_arm_fields(
+    tmp_path: Path, field: str, value: object, message: str
+):
+    data = _suite_data()
+    data["arms"][0][field] = value
+    path = _write(tmp_path, "suite.yaml", data)
+
+    with pytest.raises(ValueError, match=re.escape(message)):
         load_suite_manifest(path)
