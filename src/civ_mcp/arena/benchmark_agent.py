@@ -33,7 +33,7 @@ isn't an object) is never dispatched -- fabricating an empty `args={}` call
 the model never specified would execute a real game mutation on the model's
 behalf. Instead it is recorded in `invalid_tool_calls` (reason
 `"bad_arguments"`, the same counted metric as an unknown-tool call), a step
-is recorded with an `"ERROR: malformed arguments"` result and no state
+is recorded with a `"MALFORMED_ARGUMENTS: not dispatched"` result and no state
 capture, and an error tool-result message is fed back into the model
 conversation so the episode continues -- a single garbled call among
 otherwise-valid ones is an invalid call, not a new terminal condition.

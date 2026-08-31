@@ -805,7 +805,7 @@ async def _run_async(args: argparse.Namespace) -> int:
     schedule_path = run_dir / "schedule.json"
     if not schedule_path.exists():
         schedule_path.write_text(
-            json.dumps(schedule_payload, sort_keys=True, separators=(",", ":")),
+            json.dumps(schedule_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
             encoding="utf-8",
         )
     else:
