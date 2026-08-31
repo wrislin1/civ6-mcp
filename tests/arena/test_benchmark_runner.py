@@ -340,6 +340,38 @@ async def test_popup_failure_is_an_infrastructure_attempt(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["err", "?", "SOMETHING_UNRECOGNIZED"])
+async def test_popup_failure_status_string_is_an_infrastructure_attempt(tmp_path, status):
+    """F5 repro: dismiss_blocking_popups never raises -- failures come back
+    as "err"/"?" strings (see civ_mcp.arena.popups.dismiss_blocking_popups).
+    The runner previously ignored the return value entirely, so a failed
+    popup-hygiene status proceeded straight into the trial instead of an
+    infra attempt."""
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(dismiss_popups=AsyncMock(return_value=status))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.POPUP_HYGIENE.value
+
+
+@pytest.mark.asyncio
+async def test_popup_success_status_proceeds_into_the_trial(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(dismiss_popups=AsyncMock(return_value="POPUPS|none"))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == {1}
+
+
+@pytest.mark.asyncio
 async def test_pre_episode_capture_state_failure_is_a_harness_crash_attempt(tmp_path):
     run_dir = tmp_path / "run"
     store = BenchmarkStore.create(run_dir, _lock())
@@ -479,6 +511,61 @@ async def test_request_timeout_exception_with_healthy_canary_admits_runaway_time
 
     assert runner.store.completed_indices() == {1}
     assert runner.store.trial(1)["terminal"] == "runaway_timeout"
+
+
+@pytest.mark.asyncio
+async def test_request_timeout_commits_partial_progress_via_agent_accessor(tmp_path):
+    """F7 repro: only EpisodeTimedOut carries partial_evidence as an
+    exception attribute. A mid-episode openai.APITimeoutError (a plain
+    request timeout, not the episode-wall EpisodeTimedOut) has no such
+    attribute, so the runner previously committed steps=[] even though
+    earlier steps in the same episode executed real mutations. The runner
+    must fall back to the live agent's own partial_evidence() accessor
+    (the same instance-level progress state EpisodeTimedOut's own
+    partial_evidence is built from) for this exception path too."""
+
+    class _AgentWithPartialProgress:
+        """Mimics SingleTurnAgent's progress-tracking contract: run() raises
+        a bare request-timeout exception (no partial_evidence attribute),
+        but partial_evidence() exposes whatever was recorded before that."""
+
+        def __init__(self, exc: Exception, partial: EpisodeEvidence):
+            self._exc = exc
+            self._partial = partial
+
+        async def run(self, gs, player_id, turn):
+            raise self._exc
+
+        def partial_evidence(self) -> EpisodeEvidence:
+            return self._partial
+
+    req = httpx.Request("POST", "http://example.invalid/v1/chat/completions")
+    partial = EpisodeEvidence(
+        terminal=EpisodeTerminal.STEP_LIMIT,
+        steps=[{"idx": 0, "tool_name": "get_units", "tool_result_full": "UNITS"}],
+        invalid_tool_calls=[],
+        final_summary="",
+        wall_clock_s=0.4,
+        prompt_tokens=9,
+        completion_tokens=4,
+    )
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        make_agent=lambda spec: _AgentWithPartialProgress(
+            openai.APITimeoutError(request=req), partial
+        ),
+        probe_health=AsyncMock(return_value=_healthy_probe()),
+    )
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == {1}
+    trial = runner.store.trial(1)
+    assert trial["terminal"] == "runaway_timeout"
+    assert trial["steps"] == partial.steps
+    assert trial["prompt_tokens"] == 9
+    assert trial["completion_tokens"] == 4
 
 
 @pytest.mark.asyncio
@@ -880,3 +967,133 @@ def test_make_agent_allows_empty_arm_options():
 
     agent = deps.make_agent(spec)
     assert agent is not None
+
+
+def test_make_agent_binds_the_trial_specs_seed_to_the_backend():
+    """F3 repro: backend_for() caches one backend per model built with the
+    suite's static sampling config -- TrialSpec.seed is never applied to the
+    backend that actually executes the trial, so a committed trial's
+    recorded seed was never sent to the endpoint at all (invalidating
+    paired-seed evidence)."""
+    position = _position_manifest()
+    arm = TreatmentArm("standard", "standard", {})
+    suite = _suite_manifest((arm,), sampling=SamplingConfig(temperature=0.2, seed=None))
+    deps = benchmark_runner._build_live_dependencies(
+        connection=None,
+        position=position,
+        suite=suite,
+        gateway_url="http://example.invalid/v1",
+        api_key="x",
+    )
+    spec_a = TrialSpec(
+        index=1, pair_id="p1", position_id="builder-cal-v1",
+        model="qwen3.6-27b", arm_id="standard", seed=101,
+    )
+    spec_b = TrialSpec(
+        index=2, pair_id="p2", position_id="builder-cal-v1",
+        model="qwen3.6-27b", arm_id="standard", seed=202,
+    )
+
+    agent_a = deps.make_agent(spec_a)
+    agent_b = deps.make_agent(spec_b)
+
+    assert agent_a.backend.sampling.seed == 101
+    assert agent_b.backend.sampling.seed == 202
+
+
+@pytest.mark.asyncio
+async def test_run_trial_hands_the_agent_a_real_game_state(tmp_path):
+    """F4 repro: run_trial constructs `SimpleNamespace(conn=connection)` as
+    the object passed to `agent.run()`. Registry tools call real GameState
+    methods (gs.get_units() etc.), so every dispatched game tool would raise
+    AttributeError in a live session -- swallowed into ERROR steps, so a
+    trial commits as evidence of a model that "couldn't act" rather than
+    surfacing the wiring bug."""
+    from civ_mcp.game_state import GameState
+
+    captured_gs: list[object] = []
+
+    class _RecordingAgent:
+        async def run(self, gs, player_id, turn):
+            captured_gs.append(gs)
+            return EpisodeEvidence(
+                terminal=EpisodeTerminal.FINISH_TRIAL,
+                steps=[],
+                invalid_tool_calls=[],
+                final_summary="done",
+                wall_clock_s=1.0,
+                prompt_tokens=1,
+                completion_tokens=1,
+            )
+
+    fake_connection = object()
+    deps = _deps(make_agent=lambda spec: _RecordingAgent(), connection=fake_connection)
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "standard"))
+
+    assert len(captured_gs) == 1
+    gs = captured_gs[0]
+    assert isinstance(gs, GameState), f"expected a real GameState, got {gs!r}"
+    assert hasattr(gs, "get_units")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failing_result",
+    [
+        "Error: Save 'foo' not found in Lua query or on filesystem. Check the name.",
+        (
+            "WARNING: FireTuner port never dropped after the Lua load of 'foo' -- "
+            "the load may not have engaged; no Escape was sent."
+        ),
+        "WARNING: FireTuner port did not reopen within the wait window for 'foo'.",
+    ],
+)
+async def test_live_reload_position_raises_on_failure_strings(monkeypatch, failing_result):
+    """F6 repro: load_game_save reports most failures as strings ("Error: ...",
+    "WARNING: FireTuner port never dropped...", menu-fallback text) rather
+    than raising. reload_position discarded the return value entirely, so a
+    failed reload proceeded to the checksum check and killed the whole
+    session as checksum_mismatch instead of a retryable
+    RELOAD_OR_RECONNECT infra attempt."""
+    position = _position_manifest()
+    arm = TreatmentArm("standard", "standard", {})
+    suite = _suite_manifest((arm,))
+    monkeypatch.setattr(
+        benchmark_runner, "load_game_save", AsyncMock(return_value=failing_result)
+    )
+    deps = benchmark_runner._build_live_dependencies(
+        connection=object(),
+        position=position,
+        suite=suite,
+        gateway_url="http://example.invalid/v1",
+        api_key="x",
+    )
+
+    with pytest.raises(Exception):
+        await deps.reload_position(position.position_id)
+
+
+@pytest.mark.asyncio
+async def test_live_reload_position_passes_on_success_string(monkeypatch):
+    position = _position_manifest()
+    arm = TreatmentArm("standard", "standard", {})
+    suite = _suite_manifest((arm,))
+    success_result = (
+        "Loaded builder-cal-v1: world ready, FireTuner port is open. "
+        "Reconnect and verify with get_game_overview."
+    )
+    monkeypatch.setattr(
+        benchmark_runner, "load_game_save", AsyncMock(return_value=success_result)
+    )
+    deps = benchmark_runner._build_live_dependencies(
+        connection=object(),
+        position=position,
+        suite=suite,
+        gateway_url="http://example.invalid/v1",
+        api_key="x",
+    )
+
+    await deps.reload_position(position.position_id)  # must not raise

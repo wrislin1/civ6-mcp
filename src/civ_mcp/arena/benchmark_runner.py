@@ -51,7 +51,6 @@ import os
 import sys
 from enum import Enum
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 import openai
@@ -77,6 +76,7 @@ from civ_mcp.arena.benchmark_store import BenchmarkStore, SessionLockMismatchErr
 from civ_mcp.arena.popups import dismiss_blocking_popups
 from civ_mcp.connection import GameConnection
 from civ_mcp.game_lifecycle import load_game_save
+from civ_mcp.game_state import GameState
 from civ_mcp.run_id import is_safe_run_id
 
 log = logging.getLogger(__name__)
@@ -254,9 +254,21 @@ class BenchmarkRunner:
 
         # -- popup hygiene ---------------------------------------------------
         try:
-            await self._deps.dismiss_popups()
+            popup_status = await self._deps.dismiss_popups()
         except Exception as exc:  # noqa: BLE001
             self._record_infra_attempt(spec.index, FailureClass.POPUP_HYGIENE, exc)
+            return
+
+        # dismiss_blocking_popups (see civ_mcp.arena.popups) never raises --
+        # failures come back as "err"/"?" strings instead. The status must
+        # be inspected here: an unrecognized/failure status must never
+        # silently proceed into the trial with unhandled popups.
+        if not isinstance(popup_status, str) or not popup_status.startswith("POPUPS|"):
+            self._record_infra_attempt(
+                spec.index,
+                FailureClass.POPUP_HYGIENE,
+                RuntimeError(f"popup hygiene reported failure status {popup_status!r}"),
+            )
             return
 
         # -- canonical checksum -----------------------------------------------
@@ -292,24 +304,29 @@ class BenchmarkRunner:
 
         # -- fresh backend/agent, episode --------------------------------------
         agent = self._deps.make_agent(spec)
-        gs = SimpleNamespace(conn=self._deps.connection)
+        # Registry tools call real GameState methods (gs.get_units() etc.);
+        # a bare SimpleNamespace(conn=...) makes every dispatched game tool
+        # raise AttributeError in a live session -- swallowed into ERROR
+        # steps, so a trial would commit as evidence of a model that
+        # "couldn't act" rather than surfacing this wiring bug.
+        gs = GameState(self._deps.connection)
         turn = observed_state.get("turn")
 
         try:
             evidence = await agent.run(gs, self.player_id, turn)
         except EpisodeTimedOut as exc:
-            await self._handle_timeout_like(spec, exc, observed_state, admits_runaway=True)
+            await self._handle_timeout_like(spec, exc, observed_state, admits_runaway=True, agent=agent)
             return
         except openai.APITimeoutError as exc:
             # A single request's own timeout -- the agent's episode wall was
             # never reached, but this is the same "request/episode timeout"
             # preregistered-terminal bucket as EpisodeTimedOut.
-            await self._handle_timeout_like(spec, exc, observed_state, admits_runaway=True)
+            await self._handle_timeout_like(spec, exc, observed_state, admits_runaway=True, agent=agent)
             return
         except openai.APIConnectionError as exc:
             # Caught after APITimeoutError (a subclass) so a genuine timeout
             # never falls through to this broader "transport failure" branch.
-            await self._handle_timeout_like(spec, exc, observed_state, admits_runaway=False)
+            await self._handle_timeout_like(spec, exc, observed_state, admits_runaway=False, agent=agent)
             return
         except BenchmarkStateError as exc:
             # SingleTurnAgent.run()'s exception contract: any exception other
@@ -356,6 +373,7 @@ class BenchmarkRunner:
         observed_state: Mapping[str, object],
         *,
         admits_runaway: bool,
+        agent: Any = None,
     ) -> None:
         """Shared handling for `EpisodeTimedOut` / request-timeout /
         transport-failure exceptions: run the immediate health canary,
@@ -397,10 +415,20 @@ class BenchmarkRunner:
                 # a healthy-canary runaway_timeout terminal must commit that
                 # partial transcript, not an empty one, since the episode
                 # did take real, scoreable actions before running out of
-                # budget. `None` only when the exception never carried
-                # partial evidence at all (e.g. a bare openai.APITimeoutError
-                # raised before SingleTurnAgent ever got a chance to run).
+                # budget. F7: EpisodeTimedOut is the only exception that
+                # carries partial_evidence as an attribute -- a mid-episode
+                # openai.APITimeoutError/APIConnectionError has none, so fall
+                # back to the live agent's own partial_evidence() accessor
+                # (the same instance-level progress state, per ruling-13's
+                # "commit whatever real evidence already happened"
+                # contract). `None` only when neither is available (e.g. a
+                # bare exception raised before the agent ever ran, or a fake
+                # agent in tests with no such accessor).
                 partial = getattr(exc, "partial_evidence", None)
+                if partial is None:
+                    accessor = getattr(agent, "partial_evidence", None)
+                    if callable(accessor):
+                        partial = accessor()
                 await self._finalize_trial(
                     spec,
                     terminal=RUNAWAY_TIMEOUT_TERMINAL,
@@ -538,6 +566,16 @@ def _resolve_position_path(suite_path: Path, position_id: str) -> Path:
     return suite_path.resolve().parent.parent / "positions" / f"{position_id}.yaml"
 
 
+def _reload_result_is_success(result: object) -> bool:
+    """Classify a raw `load_game_save` / `game_launcher.continue_after_lua_load`
+    result string. Success strings start with "Loaded " or mention "world
+    ready" (see `game_launcher.continue_after_lua_load`'s return values);
+    everything else (an "Error: ..." string, a "WARNING: ..." string, or any
+    other unrecognized text) is a failure."""
+    text = str(result)
+    return text.startswith("Loaded ") or "world ready" in text
+
+
 def _build_live_dependencies(
     *,
     connection: GameConnection,
@@ -546,22 +584,43 @@ def _build_live_dependencies(
     gateway_url: str,
     api_key: str,
 ) -> RunnerDependencies:
-    backend_cache: dict[str, OpenAICompatBackend] = {}
+    # Keyed by (model, seed): TrialSpec.seed must actually reach the backend
+    # that executes the trial (F3) -- a backend cached by model alone would
+    # always run with the suite's static `sampling.seed`, so a committed
+    # trial's recorded seed was never the seed the endpoint actually saw,
+    # invalidating paired-seed evidence.
+    backend_cache: dict[tuple[str, int], OpenAICompatBackend] = {}
     last_model: list[str] = [suite.models[0]]
+    last_seed: list[int] = [suite.seeds[0] if suite.seeds else 0]
 
-    def backend_for(model: str) -> OpenAICompatBackend:
-        if model not in backend_cache:
-            backend_cache[model] = OpenAICompatBackend(
+    def backend_for(model: str, seed: int) -> OpenAICompatBackend:
+        key = (model, seed)
+        if key not in backend_cache:
+            backend_cache[key] = OpenAICompatBackend(
                 gateway_url,
                 api_key,
                 model,
-                sampling=suite.sampling,
+                sampling=dataclasses.replace(suite.sampling, seed=seed),
                 retry_policy=RetryPolicy(max_attempts=1),
             )
-        return backend_cache[model]
+        return backend_cache[key]
 
     async def reload_position(_position_id: str) -> None:
-        await load_game_save(connection, position.game_save_name)
+        # load_game_save reports most failures as strings ("Error: ...",
+        # "WARNING: FireTuner port never dropped...", menu-fallback text)
+        # rather than raising -- RunnerDependencies.reload_position's
+        # contract is Awaitable[None], so this is the only place that ever
+        # sees the raw result. A failure/warning string must raise here so
+        # run_trial classifies it as a retryable RELOAD_OR_RECONNECT infra
+        # attempt instead of silently proceeding into the checksum check
+        # (which would then abort the whole session as checksum_mismatch --
+        # a harness failure misreported as a state defect).
+        result = await load_game_save(connection, position.game_save_name)
+        if _reload_result_is_success(result):
+            log.info("reload_position(%s): %s", _position_id, result)
+        else:
+            log.warning("reload_position(%s) failed: %s", _position_id, result)
+            raise RuntimeError(f"reload_position({_position_id!r}) failed: {result}")
 
     async def dismiss_popups() -> str:
         return await dismiss_blocking_popups(connection)
@@ -582,7 +641,8 @@ def _build_live_dependencies(
                 "options are not applied by this scaffold; Plan 2 wires treatments"
             )
         last_model[0] = spec.model
-        backend = backend_for(spec.model)
+        last_seed[0] = spec.seed
+        backend = backend_for(spec.model, spec.seed)
         # Ruling: production wiring must construct SingleTurnAgent with
         # capture_state + the position manifest's tile_coords so counted
         # trials always record per-step state digests.
@@ -598,7 +658,9 @@ def _build_live_dependencies(
 
     async def probe_health_dep() -> HealthProbe:
         model = last_model[0]
-        return await _probe_backend_health(backend_for(model), model, timeout_s=15.0)
+        return await _probe_backend_health(
+            backend_for(model, last_seed[0]), model, timeout_s=15.0
+        )
 
     return RunnerDependencies(
         reload_position=reload_position,

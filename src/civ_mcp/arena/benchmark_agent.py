@@ -200,6 +200,37 @@ class SingleTurnAgent:
         self._char_cap = char_cap
         self._tile_coords = tuple(tile_coords)
         self._capture_state = capture_state
+        # Reset at the start of every run() (see run()'s docstring) --
+        # initialized here too so partial_evidence() is always safe to call.
+        self._progress_steps: list[dict[str, Any]] = []
+        self._progress_invalid_tool_calls: list[dict[str, Any]] = []
+        self._progress_final_summary: str = ""
+        self._progress_prompt_tokens: int = 0
+        self._progress_completion_tokens: int = 0
+        self._progress_wall_clock_start: float = time.time()
+
+    def partial_evidence(self) -> EpisodeEvidence:
+        """Snapshot of progress accumulated so far in the current/most
+        recent `run()` -- the same instance-level `_progress_*` state
+        `EpisodeTimedOut.partial_evidence` is built from (see `run()`'s
+        `except TimeoutError` branch below). Exposed so a caller can
+        recover pre-failure evidence for exception paths that don't
+        themselves carry a `partial_evidence` attribute (e.g. the runner's
+        handling of a mid-episode `openai.APITimeoutError` /
+        `APIConnectionError`, per ruling-13's "commit whatever real
+        evidence already happened" contract)."""
+        return EpisodeEvidence(
+            # Placeholder: no caller of this accessor trusts this field for
+            # its own terminal -- each stamps its own preregistered
+            # terminal onto the trial itself.
+            terminal=EpisodeTerminal.STEP_LIMIT,
+            steps=list(self._progress_steps),
+            invalid_tool_calls=list(self._progress_invalid_tool_calls),
+            final_summary=self._progress_final_summary,
+            wall_clock_s=time.time() - self._progress_wall_clock_start,
+            prompt_tokens=self._progress_prompt_tokens,
+            completion_tokens=self._progress_completion_tokens,
+        )
 
     async def _capture(
         self, gs: Any, player_id: int
@@ -242,21 +273,9 @@ class SingleTurnAgent:
             async with asyncio.timeout(self.episode_wall_s):
                 return await self._run_episode(gs, player_id, turn)
         except TimeoutError as exc:
-            partial_evidence = EpisodeEvidence(
-                # Placeholder: the runner never reads this field off a
-                # timeout's partial evidence -- it always stamps the
-                # preregistered RUNAWAY_TIMEOUT_TERMINAL terminal itself.
-                terminal=EpisodeTerminal.STEP_LIMIT,
-                steps=list(self._progress_steps),
-                invalid_tool_calls=list(self._progress_invalid_tool_calls),
-                final_summary=self._progress_final_summary,
-                wall_clock_s=time.time() - self._progress_wall_clock_start,
-                prompt_tokens=self._progress_prompt_tokens,
-                completion_tokens=self._progress_completion_tokens,
-            )
             raise EpisodeTimedOut(
                 f"benchmark episode exceeded episode_wall_s={self.episode_wall_s}",
-                partial_evidence=partial_evidence,
+                partial_evidence=self.partial_evidence(),
             ) from exc
 
     async def _run_episode(self, gs: Any, player_id: int, turn: int) -> EpisodeEvidence:
