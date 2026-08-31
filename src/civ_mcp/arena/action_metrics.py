@@ -34,22 +34,27 @@ class PredicateError(Exception):
 
 
 def classify_result(result: str) -> str:
-    """Classify a raw tool-result string as "success" or "domain_rejection".
+    """Classify a raw tool-result string as "success", "domain_rejection",
+    or "not_dispatched".
 
     Mirrors ``analyze._is_error_result``'s real ``game_state.py``
     conventions exactly: title-case ``Error: ...`` and pipe-delimited
     ``...|BLOCKED`` both mean the call reached the game engine and the game
     rejected it.
 
-    Deliberately does NOT treat an ``UNAVAILABLE: ...`` prefix as a domain
-    rejection. ``agent.py``'s ``_unavailable_result`` emits that string for
-    gated / out-of-tier / unknown-tool calls that never reach the game
-    engine at all — the call is intercepted before dispatch, and the same
-    event is already recorded in ``invalid_tool_calls``. Counting it here
-    too would both double-count it and mislabel an agent-level gating
-    outcome as a legal-but-rejected game action.
+    An ``UNAVAILABLE: ...`` / ``MALFORMED_ARGUMENTS: ...`` prefix means the
+    call was intercepted before it ever reached the game engine (gated /
+    out-of-tier / unknown-tool / bad-argument calls from ``agent.py``'s
+    ``_unavailable_result`` and malformed-arguments path). Such a call is
+    neither a domain rejection (the game never saw it) nor a success (it
+    was never dispatched) — treating it as "success" would let a
+    never-dispatched call satisfy a ``successful_tool_call`` predicate,
+    scoring an out-of-tier tool call as a treatment success. The same event
+    is already recorded separately in ``invalid_tool_calls``.
     """
     normalized = (result or "").strip().lower()
+    if normalized.startswith("unavailable") or normalized.startswith("malformed_arguments"):
+        return "not_dispatched"
     if normalized.startswith("error") or "|blocked" in normalized:
         return "domain_rejection"
     return "success"
@@ -229,6 +234,17 @@ def classify_action_quality(
     useful_actions = 0
     repetitions = 0
     last_digest_by_call: dict[str, object] = {}
+    # G14: historical arena records never carried state_digest_before/after
+    # at all (key absent, not merely None) -- comparing absent-vs-absent
+    # digests silently reports "no mutation" for data that was never
+    # measured. Digest-dependent counts (successful_mutations, and
+    # repetitions/loop_excess since their loop-detection also compares
+    # digests) must report None rather than a fabricated 0 in that case. An
+    # empty step list has nothing to be uncertain about, so it stays a real
+    # 0 rather than None.
+    digest_fields_present = not steps or any(
+        "state_digest_before" in step or "state_digest_after" in step for step in steps
+    )
 
     for step in steps:
         result_kind = classify_result(str(step.get("tool_result_full", "")))
@@ -263,9 +279,9 @@ def classify_action_quality(
     return {
         "invalid_calls": len(invalid_tool_calls),
         "domain_rejections": domain_rejections,
-        "successful_mutations": successful_mutations,
+        "successful_mutations": successful_mutations if digest_fields_present else None,
         "useful_actions": useful_actions if objectives else None,
         "useful_action_coverage": "objective_verified" if objectives else "unavailable",
-        "repetitions": repetitions,
-        "loop_excess": repetitions,
+        "repetitions": repetitions if digest_fields_present else None,
+        "loop_excess": repetitions if digest_fields_present else None,
     }

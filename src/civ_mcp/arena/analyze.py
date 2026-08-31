@@ -1163,10 +1163,12 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
         aq_invalid_calls = 0
         aq_domain_rejections = 0
         aq_successful_mutations = 0
+        aq_successful_mutations_available = False
         aq_useful_actions = 0
         aq_useful_actions_available = False
         aq_repetitions = 0
         aq_loop_excess = 0
+        aq_repetitions_available = False
 
         for rec in records:
             turn: int = rec.get("turn", 0)
@@ -1228,9 +1230,13 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
                     )
                     aq_invalid_calls += action_quality["invalid_calls"]
                     aq_domain_rejections += action_quality["domain_rejections"]
-                    aq_successful_mutations += action_quality["successful_mutations"]
-                    aq_repetitions += action_quality["repetitions"]
-                    aq_loop_excess += action_quality["loop_excess"]
+                    if action_quality["successful_mutations"] is not None:
+                        aq_successful_mutations_available = True
+                        aq_successful_mutations += action_quality["successful_mutations"]
+                    if action_quality["repetitions"] is not None:
+                        aq_repetitions_available = True
+                        aq_repetitions += action_quality["repetitions"]
+                        aq_loop_excess += action_quality["loop_excess"]
                     if action_quality["useful_actions"] is not None:
                         aq_useful_actions_available = True
                         aq_useful_actions += action_quality["useful_actions"]
@@ -1299,13 +1305,15 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:  
             "action_quality": {
                 "invalid_calls": aq_invalid_calls,
                 "domain_rejections": aq_domain_rejections,
-                "successful_mutations": aq_successful_mutations,
+                "successful_mutations": (
+                    aq_successful_mutations if aq_successful_mutations_available else None
+                ),
                 "useful_actions": aq_useful_actions if aq_useful_actions_available else None,
                 "useful_action_coverage": (
                     "objective_verified" if aq_useful_actions_available else "unavailable"
                 ),
-                "repetitions": aq_repetitions,
-                "loop_excess": aq_loop_excess,
+                "repetitions": aq_repetitions if aq_repetitions_available else None,
+                "loop_excess": aq_loop_excess if aq_repetitions_available else None,
             },
         }
 

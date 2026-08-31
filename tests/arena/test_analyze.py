@@ -2539,14 +2539,15 @@ def test_action_quality_attached_to_played_series_rows(run_dir: Path) -> None:
     aq = row["action_quality"]
     assert aq is not None
     # tr_a1: 1 invalid_tool_calls entry, 3 steps all with non-error results,
-    # but no state_digest fields on this legacy fixture -> no counted mutation.
+    # but no state_digest fields on this legacy fixture -> digest-dependent
+    # counts (G14) are unmeasured, not a fabricated 0.
     assert aq["invalid_calls"] == 1
     assert aq["domain_rejections"] == 0
-    assert aq["successful_mutations"] == 0
+    assert aq["successful_mutations"] is None
     assert aq["useful_actions"] is None
     assert aq["useful_action_coverage"] == "unavailable"
-    assert aq["repetitions"] == 0
-    assert aq["loop_excess"] == 0
+    assert aq["repetitions"] is None
+    assert aq["loop_excess"] is None
 
 
 def test_action_quality_domain_rejection_detected_from_blocked_result(run_dir: Path) -> None:
@@ -2573,12 +2574,18 @@ def test_action_quality_aggregated_by_player_without_objectives(run_dir: Path) -
     assert aq_a["domain_rejections"] == 1
     assert aq_a["useful_actions"] is None
     assert aq_a["useful_action_coverage"] == "unavailable"
+    # G14: legacy fixtures carry no state_digest fields anywhere -> the
+    # aggregate must also report "unmeasured", not a fabricated 0.
+    assert aq_a["successful_mutations"] is None
+    assert aq_a["repetitions"] is None
+    assert aq_a["loop_excess"] is None
 
     aq_b = report["by_player"][2]["action_quality"]
     assert aq_b["invalid_calls"] == 0
     assert aq_b["domain_rejections"] == 0
     assert aq_b["useful_actions"] is None
     assert aq_b["useful_action_coverage"] == "unavailable"
+    assert aq_b["successful_mutations"] is None
 
 
 def test_action_quality_existing_report_keys_unchanged(run_dir: Path) -> None:
@@ -2647,7 +2654,11 @@ def test_action_quality_useful_actions_available_when_objectives_present() -> No
     row_aq = report["by_player"][1]["series"][0]["action_quality"]
     assert row_aq["useful_actions"] == 1
     assert row_aq["useful_action_coverage"] == "objective_verified"
+    # G14: this record's step carries real state_digest fields, so
+    # successful_mutations stays a real measured count, not None.
+    assert row_aq["successful_mutations"] == 1
 
     player_aq = report["by_player"][1]["action_quality"]
     assert player_aq["useful_actions"] == 1
+    assert player_aq["successful_mutations"] == 1
     assert player_aq["useful_action_coverage"] == "objective_verified"

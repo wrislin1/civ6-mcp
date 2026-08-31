@@ -114,6 +114,90 @@ def test_classify_result_unavailable_is_not_a_domain_rejection():
     assert classify_result("UNAVAILABLE: fake_tool is not a real tool.") != "domain_rejection"
 
 
+def test_classify_result_unavailable_is_not_dispatched():
+    """G1: a never-dispatched call must not classify as 'success' either --
+    that would let a minimal-arm model's out-of-tier tool call satisfy a
+    treatment-only rubric level, flipping the A/B comparison."""
+    assert classify_result("UNAVAILABLE: fake_tool is not a real tool.") == "not_dispatched"
+
+
+def test_classify_result_malformed_arguments_is_not_dispatched():
+    assert classify_result("MALFORMED_ARGUMENTS: not dispatched") == "not_dispatched"
+
+
+def test_classify_result_not_dispatched_is_case_insensitive():
+    assert classify_result("unavailable: fake_tool") == "not_dispatched"
+    assert classify_result("malformed_arguments: bad args") == "not_dispatched"
+
+
+def test_classifier_unavailable_and_malformed_steps_never_count_as_success():
+    """G1 repro: a never-dispatched call must not count as a domain rejection
+    OR a successful mutation, even if its (spoofed) digest fields show a
+    change -- a real agent never produces this combination, but the
+    classifier must not trust the digest over the dispatch outcome."""
+    steps = [
+        {"tool_name": "fake_tool", "tool_args": {},
+         "tool_result_full": "UNAVAILABLE: fake_tool is not a real tool.",
+         "state_digest_before": "a", "state_digest_after": "b"},
+        {"tool_name": "bad_args_tool", "tool_args": {},
+         "tool_result_full": "MALFORMED_ARGUMENTS: not dispatched",
+         "state_digest_before": "c", "state_digest_after": "d"},
+    ]
+    got = classify_action_quality(steps=steps, invalid_tool_calls=[])
+    assert got["domain_rejections"] == 0
+    assert got["successful_mutations"] == 0
+
+
+def test_predicate_successful_tool_call_false_when_result_is_unavailable():
+    """G1: evaluate_predicate's successful_tool_call must not treat a
+    never-dispatched call (matching tool/args) as a success."""
+    steps = [
+        {"tool_name": "improve_tile", "tool_args": {"unit_index": 8},
+         "tool_result_full": "UNAVAILABLE: improve_tile is not in this tier."},
+    ]
+    predicate = {"kind": "successful_tool_call", "tool": "improve_tile", "args": {"unit_index": 8}}
+    assert evaluate_predicate(predicate, steps=steps) is False
+
+
+# ---------------------------------------------------------------------------
+# G14 — successful_mutations / repetitions must not fabricate 0 when no step
+# carries digest fields at all (historical arena records never carried
+# state_digest_before/after; None != None silently reported "no mutation").
+# ---------------------------------------------------------------------------
+
+def test_successful_mutations_none_when_no_step_carries_digest_fields():
+    steps = [
+        {"tool_name": "set_research", "tool_args": {"tech": "TECH_POTTERY"},
+         "tool_result_full": "Research set."},
+        {"tool_name": "set_research", "tool_args": {"tech": "TECH_POTTERY"},
+         "tool_result_full": "Research set."},
+    ]
+    got = classify_action_quality(steps=steps, invalid_tool_calls=[])
+    assert got["successful_mutations"] is None
+    assert got["repetitions"] is None
+    assert got["loop_excess"] is None
+    # Digest-independent counts stay real.
+    assert got["domain_rejections"] == 0
+
+
+def test_successful_mutations_real_count_when_digest_fields_present():
+    steps = [
+        {"tool_name": "set_research", "tool_args": {"tech": "TECH_POTTERY"},
+         "tool_result_full": "Research set.", "state_digest_before": "x",
+         "state_digest_after": "y"},
+    ]
+    got = classify_action_quality(steps=steps, invalid_tool_calls=[])
+    assert got["successful_mutations"] == 1
+    assert got["repetitions"] == 0
+    assert got["loop_excess"] == 0
+
+
+def test_successful_mutations_real_zero_for_empty_steps():
+    got = classify_action_quality(steps=[], invalid_tool_calls=[])
+    assert got["successful_mutations"] == 0
+    assert got["repetitions"] == 0
+
+
 # ---------------------------------------------------------------------------
 # evaluate_predicate — one positive + one counterfactual per kind
 # ---------------------------------------------------------------------------
