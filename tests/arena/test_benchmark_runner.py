@@ -1264,6 +1264,81 @@ async def test_openai_compat_backend_aclose_closes_the_underlying_client():
     assert close_calls == [True]
 
 
+# ---------------------------------------------------------------------------
+# G6 -- an unset --api-key-env must not refuse to start (local gateways
+# need no key), but it must print a clear one-line warning naming the env
+# var, since a real remote endpoint will fail the admission probe with the
+# "x" placeholder.
+# ---------------------------------------------------------------------------
+
+
+def _minimal_smoke_args(suite_path, run_dir) -> list:
+    return [
+        "--suite", str(suite_path),
+        "--run-id", "smoke-run",
+        "--run-dir", str(run_dir),
+        "--gateway-url", "http://example.invalid/v1",
+        "--ungated-smoke",
+    ]
+
+
+def _patch_fake_connection_and_noop_runner(monkeypatch) -> None:
+    class _FakeConnection:
+        async def connect(self):
+            return None
+
+        async def disconnect(self):
+            return None
+
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+
+    class _FakeRunner:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def run(self, schedule):
+            return None
+
+    monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _FakeRunner)
+
+
+@pytest.mark.asyncio
+async def test_run_async_warns_when_api_key_env_var_is_unset(tmp_path, monkeypatch, capsys):
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+    monkeypatch.delenv("LITELLM_OPENAI_API_KEY", raising=False)
+    _patch_fake_connection_and_noop_runner(monkeypatch)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _minimal_smoke_args(suite_path, run_dir)
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    err = capsys.readouterr().err
+    assert "LITELLM_OPENAI_API_KEY" in err
+    assert "placeholder" in err.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_async_no_warning_when_api_key_env_var_is_set(tmp_path, monkeypatch, capsys):
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "sk-real-key")
+    _patch_fake_connection_and_noop_runner(monkeypatch)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _minimal_smoke_args(suite_path, run_dir)
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    err = capsys.readouterr().err
+    assert "LITELLM_OPENAI_API_KEY" not in err
+
+
 @pytest.mark.asyncio
 async def test_run_async_fails_closed_on_a_tampered_schedule_json_on_resume(tmp_path, monkeypatch):
     """Cheap fold-in: on resume, `_run_async` only checks whether

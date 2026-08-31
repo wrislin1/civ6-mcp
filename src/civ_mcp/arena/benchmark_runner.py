@@ -937,7 +937,20 @@ async def _run_async(args: argparse.Namespace) -> int:
     # can check it even if `_build_live_dependencies` itself raises.
     deps: RunnerDependencies | None = None
     try:
-        api_key = os.environ.get(args.api_key_env, "x")
+        api_key = os.environ.get(args.api_key_env)
+        if not api_key:
+            # G6: do NOT refuse to start -- local gateways need no key, and
+            # probe_backend already fails closed on a bad key against a
+            # real endpoint. Just make the placeholder visible so it's
+            # never a silent surprise when a remote endpoint later fails
+            # the admission probe.
+            print(
+                f"civ-arena-benchmark: warning: {args.api_key_env} is unset; using "
+                'placeholder api key "x" (fine for a local gateway with no auth; '
+                "a remote endpoint will fail the admission probe)",
+                file=sys.stderr,
+            )
+            api_key = "x"
         deps = _build_live_dependencies(
             connection=connection,
             position=position,
