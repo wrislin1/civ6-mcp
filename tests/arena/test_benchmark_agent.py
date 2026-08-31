@@ -297,6 +297,69 @@ async def test_unknown_tool_call_is_recorded_as_invalid_and_not_dispatched():
 
 
 @pytest.mark.asyncio
+async def test_malformed_tool_arguments_are_not_dispatched_and_episode_continues():
+    """A garbled tool call among otherwise-valid ones is an invalid call
+    (already a counted metric), NOT a new terminal condition, and it must
+    never dispatch the real game tool with a fabricated empty-args call the
+    model never actually specified."""
+
+    class MalformedArgsBackend:
+        def __init__(self):
+            self.n = 0
+            self.round_two_messages = None
+
+        async def chat(self, messages, tools):
+            self.n += 1
+            if self.n == 1:
+                return Reply(
+                    text=None,
+                    tool_calls=[
+                        {"id": "1", "name": "fortify_unit", "arguments": "{not valid json"},
+                    ],
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                )
+            self.round_two_messages = messages
+            return Reply(
+                text=None,
+                tool_calls=[{"id": "2", "name": "finish_trial", "arguments": "{}"}],
+                prompt_tokens=1,
+                completion_tokens=1,
+            )
+
+    backend = MalformedArgsBackend()
+    gs = FakeGS()
+    agent = SingleTurnAgent(backend, "minimal", episode_wall_s=5.0, max_steps=4)
+
+    evidence = await agent.run(gs, player_id=0, turn=1)
+
+    assert evidence.terminal == EpisodeTerminal.FINISH_TRIAL
+    # Never dispatched: fortify_unit would have appended to gs.calls.
+    assert gs.calls == []
+    assert len(evidence.invalid_tool_calls) == 1
+    assert evidence.invalid_tool_calls[0]["reason"] == "bad_arguments"
+    assert evidence.invalid_tool_calls[0]["tool_name"] == "fortify_unit"
+
+    assert len(evidence.steps) == 1
+    step = evidence.steps[0]
+    assert step["tool_name"] == "fortify_unit"
+    assert step["tool_result_full"] == "ERROR: malformed arguments"
+    assert step["state_before"] is None
+    assert step["state_after"] is None
+    assert step["state_digest_before"] is None
+    assert step["state_digest_after"] is None
+
+    # The error is fed back into the conversation so the episode continues
+    # coherently rather than the model seeing its call vanish.
+    tool_messages = [
+        m for m in backend.round_two_messages
+        if m.get("role") == "tool" and m.get("tool_call_id") == "1"
+    ]
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["content"] == "ERROR: malformed arguments"
+
+
+@pytest.mark.asyncio
 async def test_capture_state_failure_propagates_raw_out_of_run():
     """Pins the contract on SingleTurnAgent.run's docstring: a raising
     capture_state (e.g. BenchmarkStateError on a stale connection or a wrong

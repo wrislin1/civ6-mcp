@@ -27,6 +27,16 @@ raises `EpisodeTimedOut` rather than propagating asyncio's own
 exception type and run its health discriminator (a slow-but-alive backend
 scores a "runaway_timeout" terminal; a dead one is an infrastructure retry)
 without needing to know anything about this module's internals.
+
+A tool call with malformed arguments (invalid JSON, or valid JSON that
+isn't an object) is never dispatched -- fabricating an empty `args={}` call
+the model never specified would execute a real game mutation on the model's
+behalf. Instead it is recorded in `invalid_tool_calls` (reason
+`"bad_arguments"`, the same counted metric as an unknown-tool call), a step
+is recorded with an `"ERROR: malformed arguments"` result and no state
+capture, and an error tool-result message is fed back into the model
+conversation so the episode continues -- a single garbled call among
+otherwise-valid ones is an invalid call, not a new terminal condition.
 """
 from __future__ import annotations
 
@@ -263,23 +273,36 @@ class SingleTurnAgent:
                     continue
 
                 ts_start = time.time()
+                malformed_args = False
                 try:
                     args = json.loads(tc["arguments"] or "{}")
                     if not isinstance(args, dict):
                         args = {}
+                        malformed_args = True
                 except (json.JSONDecodeError, ValueError):
                     args = {}
+                    malformed_args = True
+
+                if malformed_args:
+                    # Fail closed: a garbled/non-dict tool call is an invalid
+                    # call (already a counted metric), not a license to
+                    # dispatch the real game tool with arguments the model
+                    # never actually specified. No dispatch, no state
+                    # capture -- just record the invalid call and feed an
+                    # error back so the episode continues.
                     invalid_tool_calls.append({
                         "tool_name": tc["name"], "arguments": tc["arguments"],
                         "reason": "bad_arguments",
                     })
-
-                if tc["name"] not in self._game_tool_names:
+                    result: Any = "ERROR: malformed arguments"
+                    state_before = state_after = None
+                    digest_before = digest_after = None
+                elif tc["name"] not in self._game_tool_names:
                     invalid_tool_calls.append({
                         "tool_name": tc["name"], "arguments": tc["arguments"],
                         "reason": "unknown_tool",
                     })
-                    result: Any = f"UNAVAILABLE: {tc['name']} is not a real tool."
+                    result = f"UNAVAILABLE: {tc['name']} is not a real tool."
                     state_before = state_after = None
                     digest_before = digest_after = None
                 else:
