@@ -360,6 +360,50 @@ def test_position_cli_accepts_exactly_twelve_cycles(tmp_path, monkeypatch):
     assert len(written["digests"]) == 12
 
 
+def test_verify_cli_does_not_write_output_on_digest_mismatch(tmp_path, monkeypatch):
+    position_path = tmp_path / "entity-cal-v1.yaml"
+    position_path.write_text(
+        yaml.safe_dump(
+            {
+                "position_id": "entity-cal-v1",
+                "version": 1,
+                "archive": "benchmarks/saves/ENTITY_CAL_V1.Civ6Save",
+                "archive_sha256": "c" * 64,
+                "game_save_name": "ENTITY_CAL_V1",
+                "player_id": 0,
+                "expected_state": _GOOD_STATE,
+                "expected_state_sha256": _GOOD_DIGEST,
+                "relevant_tiles": [[9, 8]],
+                "objectives": [],
+                "rubric": [],
+                "split": "calibration",
+                "persistent_unit_ids": [],
+                "consumable_unit_ids": [],
+            }
+        )
+    )
+    output_path = tmp_path / "out.json"
+
+    mismatched_state = {"turn": 999, "player_id": 0, "units": [], "cities": [], "tiles": []}
+    _patch_common(monkeypatch, capture=lambda conn, player_id, tiles: _mismatched(mismatched_state))
+
+    exit_code = benchmark_position.main(
+        [
+            "verify",
+            "--position", str(position_path),
+            "--cycles", "12",
+            "--output", str(output_path),
+        ]
+    )
+
+    assert exit_code == 1
+    assert not output_path.exists()
+
+
+async def _mismatched(state):
+    return dict(state)
+
+
 # ---------------------------------------------------------------------------
 # provenance validation
 # ---------------------------------------------------------------------------
