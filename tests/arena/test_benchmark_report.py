@@ -1087,3 +1087,73 @@ def test_build_report_works_when_attempts_directory_is_absent(tmp_path):
 
     report = build_report(run_dir)
     assert report["aggregate"]["unknown::unknown"]["equal_weight_mean"] == 0.5
+
+
+# ---------------------------------------------------------------------------
+# G14 follow-up: classify_action_quality returns None for digest-dependent
+# counts when steps carry no state-digest fields at all. analyze.py guards
+# that; _group_summary must too -- a digest-less trial file (hand-authored,
+# migrated, or from a future harness variant) must not crash build_report
+# with a TypeError, and the group totals must say "unavailable" (None), not
+# fabricate a 0.
+# ---------------------------------------------------------------------------
+
+
+def test_digest_less_steps_do_not_crash_group_summary(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-003.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    payload["steps"] = [
+        {
+            "tool_name": "set_research",
+            "tool_args": {"tech": "TECH_MINING"},
+            "tool_result_full": "Research set.",
+        }
+    ]
+    _write_json(trial_path, payload)
+
+    report = build_report(run_dir)
+    hard = report["positions"]["hard"]["by_group"]["unknown::unknown"]
+    aq = hard["action_quality"]
+    assert aq["successful_mutations"] is None
+    assert aq["repetitions"] is None
+    # Non-digest counts remain real measurements.
+    assert aq["invalid_calls"] == 0
+    assert aq["domain_rejections"] == 0
+
+
+def test_mixed_digest_availability_sums_only_measured_trials(tmp_path):
+    """easy has two trials: one with digest-carrying steps (a real
+    measurement) and one with digest-less steps (unavailable). The group
+    total sums only the measured trial, mirroring useful_actions."""
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    measured = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(measured.read_text(encoding="utf-8"))
+    payload["steps"] = [
+        {
+            "tool_name": "set_research",
+            "tool_args": {"tech": "TECH_MINING"},
+            "tool_result_full": "Research set.",
+            "state_digest_before": "a",
+            "state_digest_after": "b",
+        }
+    ]
+    _write_json(measured, payload)
+    unmeasured = run_dir / "trials" / "trial-002.json"
+    payload = json.loads(unmeasured.read_text(encoding="utf-8"))
+    payload["steps"] = [
+        {
+            "tool_name": "set_research",
+            "tool_args": {"tech": "TECH_MINING"},
+            "tool_result_full": "Research set.",
+        }
+    ]
+    _write_json(unmeasured, payload)
+
+    report = build_report(run_dir)
+    easy = report["positions"]["easy"]["by_group"]["unknown::unknown"]
+    aq = easy["action_quality"]
+    assert aq["successful_mutations"] == 1
+    assert aq["repetitions"] == 0

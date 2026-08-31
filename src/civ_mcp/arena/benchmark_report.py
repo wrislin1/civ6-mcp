@@ -332,15 +332,25 @@ def _group_summary(scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
         "useful_actions": 0,
     }
     any_useful_available = False
+    any_digest_available = False
     for s in scored:
         aq = s["action_quality"]
         action_quality_totals["invalid_calls"] += aq["invalid_calls"]
         action_quality_totals["domain_rejections"] += aq["domain_rejections"]
-        action_quality_totals["successful_mutations"] += aq["successful_mutations"]
-        action_quality_totals["repetitions"] += aq["repetitions"]
+        # classify_action_quality reports the digest-dependent counts as None
+        # when a trial's steps carry no state-digest fields at all (a
+        # hand-authored/migrated trial file) -- an unavailable measurement,
+        # not a 0. Sum only measured trials, mirroring useful_actions.
+        if aq["successful_mutations"] is not None:
+            any_digest_available = True
+            action_quality_totals["successful_mutations"] += aq["successful_mutations"]
+            action_quality_totals["repetitions"] += aq["repetitions"]
         if aq["useful_actions"] is not None:
             any_useful_available = True
             action_quality_totals["useful_actions"] += aq["useful_actions"]
+    if not any_digest_available:
+        action_quality_totals["successful_mutations"] = None
+        action_quality_totals["repetitions"] = None
     if not any_useful_available:
         action_quality_totals["useful_actions"] = None
         action_quality_totals["useful_action_coverage"] = "unavailable"
