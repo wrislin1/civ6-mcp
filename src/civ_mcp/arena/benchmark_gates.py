@@ -63,6 +63,9 @@ __all__ = [
     "check_tuner_holder",
     "admit_model_block",
     "build_session_lock",
+    "locked_boot_health_evidence",
+    "locked_deployment_evidence",
+    "locked_model_admission_evidence",
 ]
 
 
@@ -616,6 +619,65 @@ def admit_model_block(
 # ---------------------------------------------------------------------------
 
 
+def locked_boot_health_evidence(boot_health: Mapping[str, object]) -> dict[str, object]:
+    """The session lock's own record of the boot-health gate: proof it
+    passed, never the volatile per-boot timings/frame counts/file identity
+    that differ on every real boot and would otherwise turn every real
+    resume into a spurious `locked_identity_changed` refusal. The full,
+    volatile evidence still lives in the numbered admission attempt file
+    (see `benchmark_admission.py`) -- never in this byte-compared,
+    resume-reused lock."""
+    return {"verified": True}
+
+
+def locked_deployment_evidence(deployment: Mapping[str, object]) -> dict[str, object]:
+    """The session lock's own record of the deploy gate: which save was
+    deployed and that its hash chain verified end-to-end -- these ARE
+    stable code/position identity, unlike the volatile filesystem
+    destination path a re-deploy could land on differently each time."""
+    return {
+        "ok": bool(deployment.get("ok")),
+        "save_name": deployment.get("save_name"),
+        "archive_sha256": deployment.get("archive_sha256"),
+        "deployed_sha256": deployment.get("deployed_sha256"),
+        "expected_sha256": deployment.get("expected_sha256"),
+    }
+
+
+def locked_model_admission_evidence(model_admission: Mapping[str, object]) -> dict[str, object]:
+    """The session lock's own record of `admit_model_block`'s evidence:
+    model/endpoint identity, GPU topology, and locked sampling/retry/
+    briefing config -- never the volatile per-attempt warm-latency
+    samples, their derived p95, the live seed-honoring verdict, or raw
+    tool-canary transcripts (a fresh probe's exact timings/output text
+    differ on every attempt even against an unchanged model/endpoint).
+    Proven tool-calling capability per arm (pass/fail only, not the raw
+    observed calls or probe errors) IS kept -- that boolean outcome is
+    part of this locked session's model-capability identity, not a timing
+    measurement."""
+    tool_canaries = model_admission.get("tool_canaries") or {}
+    locked_canaries = {
+        arm_id: {
+            "finish_trial_ok": evidence.get("finish_trial_ok"),
+            "required_argument_ok": evidence.get("required_argument_ok"),
+        }
+        for arm_id, evidence in tool_canaries.items()
+    }
+    return {
+        "requested_model": model_admission.get("requested_model"),
+        "resolved_model": model_admission.get("resolved_model"),
+        "requested_endpoint": model_admission.get("requested_endpoint"),
+        "resolved_endpoint": model_admission.get("resolved_endpoint"),
+        "registry_fingerprint": model_admission.get("registry_fingerprint"),
+        "gpu_topology": model_admission.get("gpu_topology"),
+        "sampling": model_admission.get("sampling"),
+        "retry_policy": model_admission.get("retry_policy"),
+        "briefing_required": model_admission.get("briefing_required"),
+        "briefing_budget_chars": model_admission.get("briefing_budget_chars"),
+        "tool_canaries": locked_canaries,
+    }
+
+
 def build_session_lock(
     *,
     position: PositionManifest,
@@ -672,6 +734,27 @@ def build_session_lock(
     while leaving `campaign_fingerprint` untouched (tool surface identity is
     campaign evidence; exact input schemas are block-admission evidence
     only -- see `benchmark_contract`'s module docstring).
+
+    The lock's own `boot_health`/`deployment`/`model_admission` fields are
+    deliberately TRIMMED to locked-identity evidence only (see
+    `locked_boot_health_evidence` / `locked_deployment_evidence` /
+    `locked_model_admission_evidence`) -- the gate CHECKS above still run
+    against the full evidence the caller passes in, but volatile
+    per-attempt measurements (boot timings/frame counts/file identity, a
+    deploy's filesystem destination path, warm-latency samples and their
+    p95, the live seed-honoring verdict, raw tool-canary transcripts) are
+    never folded into `session_fingerprint`. Embedding them would mean a
+    resumed admission attempt -- which re-runs every live gate from
+    scratch and necessarily observes different timings each time -- could
+    never byte-match the recorded lock, turning ordinary resume into a
+    spurious `locked_identity_changed` refusal on every attempt. The full,
+    volatile evidence is not lost -- it lives in the numbered admission
+    attempt file (`benchmark_admission.py`), never in this lock.
+    `episode_wall_s` is the one derived-from-volatile-evidence value that
+    DOES stay in the lock: it is computed once, at first admission, and
+    the caller (`benchmark_admission.AdmissionPipeline`) is responsible
+    for reusing that already-locked value on every subsequent resume
+    attempt rather than passing a freshly re-derived one.
 
     Deliberately does NOT carry `manifest_fingerprint`/`prompt_fingerprint`/
     `rubric_fingerprint` as separate top-level digests any more: that shared
@@ -812,12 +895,12 @@ def build_session_lock(
         "model_config": dict(model_config),
         "episode_wall_s": episode_wall_s,
         "git": checkout,
-        "boot_health": dict(boot_health),
+        "boot_health": locked_boot_health_evidence(boot_health),
         "digests": digests,
-        "deployment": dict(deployment),
+        "deployment": locked_deployment_evidence(deployment),
         "canonical_state": dict(canonical_state),
         "canonical_state_digest": captured_digest,
-        "model_admission": dict(model_admission),
+        "model_admission": locked_model_admission_evidence(model_admission),
         "tool_names": sorted(name for name in tool_names if name),
         # Canonical keys benchmark_report.build_report requires -- see the
         # schema comment block above that function. Additive: everything

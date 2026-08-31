@@ -692,9 +692,70 @@ def test_build_session_lock_passes_and_returns_full_evidence():
     assert "session_fingerprint" in lock and lock["session_fingerprint"]
     json.dumps(lock)
 
+    # Volatile per-attempt evidence (boot timings/frame counts/file
+    # identity, the deploy's filesystem destination path, warm-latency
+    # samples/p95, the live seed-honoring verdict, raw tool-canary
+    # transcripts) must never be folded into the byte-compared,
+    # resume-reused lock -- only locked-identity evidence survives.
+    assert lock["boot_health"] == {"verified": True}
+    assert lock["deployment"] == {
+        "ok": True,
+        "save_name": "BUILDER_ECONOMY_CAL_V1",
+        "archive_sha256": "a" * 64,
+        "deployed_sha256": "a" * 64,
+        "expected_sha256": "a" * 64,
+    }
+    assert "dest_path" not in lock["deployment"]
+
     # Deterministic: identical inputs must produce an identical fingerprint.
     lock2 = build_session_lock(**_lock_kwargs())
     assert lock2["session_fingerprint"] == lock["session_fingerprint"]
+
+
+def test_build_session_lock_trims_volatile_model_admission_evidence():
+    model_admission = {
+        "ok": True,
+        "requested_model": "qwen3.6-27b",
+        "resolved_model": "qwen3.6-27b",
+        "requested_endpoint": "http://gw.invalid/v1",
+        "resolved_endpoint": "http://gw.invalid/v1",
+        "registry_fingerprint": "regfp",
+        "gpu_topology": {"gpu_indexes": [0]},
+        "sampling": {"temperature": 0.2, "top_p": 0.95, "seed": 101, "max_tokens": 3072},
+        "retry_policy": {"max_attempts": 1, "backoff_s": 0.0},
+        "briefing_required": False,
+        "briefing_budget_chars": None,
+        "seed_honored": True,
+        "warm_latencies_s": [0.11, 0.12, 0.13],
+        "p95_latency_s": 0.13,
+        "episode_wall_s": 900,
+        "tool_canaries": {
+            "minimal": {
+                "arm_id": "minimal",
+                "finish_trial_ok": True,
+                "required_argument_ok": True,
+                "observed_calls": [{"name": "finish_trial", "arguments": "{}"}],
+                "errors": [],
+            }
+        },
+    }
+
+    lock = build_session_lock(**_lock_kwargs(model_admission=model_admission))
+
+    locked = lock["model_admission"]
+    # Locked identity survives.
+    assert locked["requested_model"] == "qwen3.6-27b"
+    assert locked["resolved_endpoint"] == "http://gw.invalid/v1"
+    assert locked["gpu_topology"] == {"gpu_indexes": [0]}
+    assert locked["sampling"] == model_admission["sampling"]
+    assert locked["tool_canaries"] == {
+        "minimal": {"finish_trial_ok": True, "required_argument_ok": True}
+    }
+    # Volatile per-attempt measurements never reach the lock.
+    for volatile_key in ("seed_honored", "warm_latencies_s", "p95_latency_s", "episode_wall_s"):
+        assert volatile_key not in locked
+    assert "observed_calls" not in locked["tool_canaries"]["minimal"]
+    assert "errors" not in locked["tool_canaries"]["minimal"]
 
 
 def test_build_session_lock_fingerprint_changes_with_digest():

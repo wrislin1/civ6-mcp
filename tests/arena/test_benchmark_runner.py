@@ -1203,6 +1203,77 @@ async def test_campaign_run_refuses_on_first_failed_live_gate(tmp_path, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_campaign_qwen_failure_after_gemma_complete_records_disposition(tmp_path, monkeypatch, capsys):
+    """Gemma must complete a counted block; Qwen is mandatory-to-attempt.
+    Once Gemma has already completed a full counted session, a Qwen
+    admission failure is recorded as REPLICATION_DEFERRED_ADMISSION -- and
+    that typed disposition must reach an on-disk artifact (not just a
+    stderr message), reconstructible by scanning
+    admissions/<block-id>-attempt-*.json."""
+    from civ_mcp.arena.benchmark_admission import (
+        REPLICATION_DEFERRED_ADMISSION,
+        AdmissionError,
+    )
+    from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
+    from civ_mcp.arena.benchmark_contract import load_campaign_manifest
+    from civ_mcp.arena.benchmark_store import trial_filename
+
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    campaign = load_campaign_manifest(campaign_path)
+    schedule = compile_campaign_schedule(campaign)
+    gemma_block_id = campaign.models[0].block_id
+
+    # Pre-seed gemma's block as already fully committed -- block_is_complete
+    # only inspects the filesystem, so a fake trial file per scheduled
+    # index is enough; content is irrelevant to that check.
+    gemma_trials_dir = run_dir / "campaign-run" / "blocks" / gemma_block_id / "trials"
+    gemma_trials_dir.mkdir(parents=True)
+    for trial in schedule["blocks"][gemma_block_id]["trials"]:
+        (gemma_trials_dir / trial_filename(trial["index"])).write_text("{}")
+
+    class _QwenFailsPipeline:
+        def __init__(self, _deps):
+            pass
+
+        async def admit(self, bundle, block, store, *, mode, **_kwargs):
+            raise AdmissionError("tool_canary_failed", {"message": "qwen never emits tool calls"})
+
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _QwenFailsPipeline(None))
+
+    def _boom_run_resolved_block(*_args, **_kwargs):
+        raise AssertionError("run_resolved_block must never run when admission fails")
+
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 2
+    err = capsys.readouterr().err.lower()
+    assert "replication_deferred_admission" in err
+
+    qwen_block_id = campaign.models[1].block_id
+    admissions_dir = run_dir / "campaign-run" / "admissions"
+    matches = [
+        json.loads(p.read_text())
+        for p in admissions_dir.iterdir()
+        if p.name.startswith(f"{qwen_block_id}-attempt-")
+    ]
+    dispositions = [m for m in matches if m.get("disposition") == REPLICATION_DEFERRED_ADMISSION]
+    assert len(dispositions) == 1
+    assert dispositions[0]["underlying_failure"]["code"] == "tool_canary_failed"
+
+
+@pytest.mark.asyncio
 async def test_campaign_admit_only_exits_without_running_trials(tmp_path, monkeypatch):
     campaign_path = _write_fixture_campaign_and_position(tmp_path)
     run_dir = tmp_path / "runs"

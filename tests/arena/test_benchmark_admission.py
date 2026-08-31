@@ -14,6 +14,8 @@ from civ_mcp.arena.benchmark_admission import (
     block_is_complete,
     build_campaign_bundle,
     classify_admission_disposition,
+    record_admission_disposition,
+    record_remediation_attempt,
     select_next_incomplete_block,
 )
 from civ_mcp.arena.benchmark_agent import BENCHMARK_SYSTEM, resolved_benchmark_tools
@@ -372,6 +374,41 @@ async def test_admission_failure_never_creates_session_or_runs_trials(tmp_path):
     assert record["failure"]["code"] == "dirty_checkout"
 
 
+async def test_unexpected_exception_still_produces_a_complete_diagnostic(tmp_path):
+    """A non-GateFailure exception (a bug, a misbehaving dependency, a
+    malformed evidence shape) must never bypass diagnostics -- it is
+    wrapped in a typed code, journaled, and written to the numbered
+    admission attempt file exactly like a recognized GateFailure, then
+    re-raised as an AdmissionError rather than propagating as a bare,
+    undiagnosed crash."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+
+    def _boom_boot_health():
+        raise ValueError("boot-health bridge returned garbage")
+
+    deps = _make_dependencies([], campaign, block, position)
+    deps = dataclasses.replace(deps, boot_health=_boom_boot_health)
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "unexpected_admission_error"
+    assert isinstance(excinfo.value.__cause__, ValueError)
+    assert not (store.root / "blocks" / block.block_id).exists()
+
+    record = _read_last_admission(store, block.block_id)
+    assert record["ok"] is False
+    assert record["failure"]["code"] == "unexpected_admission_error"
+    assert record["failure"]["details"]["exception_type"] == "ValueError"
+    assert "boot-health bridge returned garbage" in record["failure"]["details"]["repr"]
+    assert "Traceback" in record["failure"]["details"]["traceback"]
+
+    order = _read_journal_gate_order(store)
+    assert order == ["clean_checkout"]
+
+
 async def test_admit_only_never_mints_reusable_session(tmp_path):
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block = campaign.models[0]
@@ -411,6 +448,37 @@ async def test_noncounting_validation_never_mints_counted_fingerprint_pair(tmp_p
     on_disk = json.loads(validation_files[0].read_text())
     assert on_disk["validation_stamp"] is True
     assert on_disk["campaign_fingerprint"] is None
+
+
+async def test_noncounting_validation_failure_writes_to_validation_not_admissions(tmp_path):
+    """A failed validation attempt must go through the SAME validation-
+    record path a successful one uses -- never admissions/, and never
+    consuming a counted-attempt ordinal there."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    dirty_checkout = {
+        "wsl": {"commit": EXPECTED_COMMIT, "status": " M dirty.py"},
+        "windows": {"commit": EXPECTED_COMMIT, "status": ""},
+    }
+    deps = _make_dependencies([], campaign, block, position, checkout=dirty_checkout)
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="validation")
+
+    assert excinfo.value.code == "dirty_checkout"
+
+    admissions_dir = store.root / CampaignStore.ADMISSIONS_DIR
+    assert not any(admissions_dir.iterdir())
+
+    validation_dir = store.root / "validation"
+    validation_files = list(validation_dir.iterdir())
+    assert len(validation_files) == 1
+    on_disk = json.loads(validation_files[0].read_text())
+    assert on_disk["validation_stamp"] is True
+    assert on_disk["ok"] is False
+    assert on_disk["failure"]["code"] == "dirty_checkout"
+    assert not (store.root / "blocks" / block.block_id).exists()
 
 
 async def test_second_model_gets_fresh_checkout_gpu_endpoint_and_canary_evidence(tmp_path):
@@ -468,23 +536,85 @@ async def test_resume_reuses_campaign_lock_but_reacquires_block_admission(tmp_pa
     assert calls_second == calls_first
 
 
+def _jittered_boot_health(*, elapsed_s: float, last_frame: int) -> dict:
+    """A boot-health reading with different volatile timings/frame counts
+    from `_good_boot_health()` -- same shape, same `ok`/`baseline_offset`,
+    but the per-boot measurements a real boot always produces differently
+    each time."""
+    return {
+        "ok": True,
+        "baseline_offset": 1024,
+        "last_frame": last_frame,
+        "elapsed_s": elapsed_s,
+        "file_identity": {"inode": 7, "size": 4096},
+        "profile_path": "C:\\Users\\x\\Profile.csv",
+        "reason": None,
+    }
+
+
+def _jittered_probe(model: str, *, latencies_s: list) -> BackendProbe:
+    """A backend probe with different warm-latency samples -- same
+    identity/seed verdict, but the real per-call timings a live probe
+    always measures differently each attempt."""
+    return BackendProbe(
+        samples=10,
+        model=model,
+        model_confirmed=True,
+        seed_honored=True,
+        latencies_s=latencies_s,
+        errors=[],
+        seed_verdict="honored",
+        repeated_consistent=True,
+    )
+
+
 async def test_resume_reuses_existing_session_lock_when_locked_identity_is_unchanged(tmp_path):
+    """A resumed admission attempt re-runs every live gate from scratch
+    (see test_resume_reuses_campaign_lock_but_reacquires_block_admission)
+    and a real boot-health poll / warm-latency probe never produces
+    byte-identical timings twice -- this must still reuse the existing
+    session.json unchanged, not raise locked_identity_changed on ordinary
+    jitter. Both admit() calls here deliberately use DIFFERENT volatile
+    evidence (boot timings, frame counts, warm latencies) to prove that."""
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block = campaign.models[0]
 
-    deps_first = _make_dependencies([], campaign, block, position)
+    deps_first = _make_dependencies(
+        [],
+        campaign,
+        block,
+        position,
+        boot_health=_jittered_boot_health(elapsed_s=9.5, last_frame=210),
+        probe=_jittered_probe(block.model, latencies_s=[0.08, 0.09, 0.10, 0.11, 0.09, 0.10, 0.08, 0.12, 0.09, 0.10]),
+    )
     await AdmissionPipeline(deps_first).admit(bundle, block, store, mode="counted")
     session_path = store.root / "blocks" / block.block_id / "session.json"
     first_bytes = session_path.read_bytes()
 
-    deps_second = _make_dependencies([], campaign, block, position)
+    deps_second = _make_dependencies(
+        [],
+        campaign,
+        block,
+        position,
+        boot_health=_jittered_boot_health(elapsed_s=41.2, last_frame=980),
+        probe=_jittered_probe(block.model, latencies_s=[0.31, 0.29, 0.33, 0.30, 0.28, 0.34, 0.30, 0.29, 0.32, 0.31]),
+    )
     result = await AdmissionPipeline(deps_second).admit(bundle, block, store, mode="counted")
 
     assert isinstance(result, ResolvedBlock)
     assert session_path.read_bytes() == first_bytes
+    # The locked episode_wall_s from the FIRST admission survives even
+    # though the second attempt's own fresh p95 (from much slower
+    # latencies) would derive a different value.
+    assert result.episode_wall_s == json.loads(first_bytes)["episode_wall_s"]
 
 
 async def test_resume_blocks_when_topology_model_or_config_differs_from_session_lock(tmp_path):
+    """`gpu_indexes` is a genuinely LOCKED identity field (GPU topology --
+    see benchmark_gates.locked_model_admission_evidence), unlike the
+    volatile boot-health timings / warm latencies varied in
+    test_resume_reuses_existing_session_lock_when_locked_identity_is_unchanged
+    above -- this mutation must block resume, not be tolerated as jitter."""
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block = campaign.models[0]
 
@@ -494,7 +624,18 @@ async def test_resume_blocks_when_topology_model_or_config_differs_from_session_
     first_bytes = session_path.read_bytes()
 
     changed_endpoint_fn = lambda endpoint_id: _good_endpoint(endpoint_id, gpu_indexes=(1,))
-    deps_second = _make_dependencies([], campaign, block, position, endpoint_fn=changed_endpoint_fn)
+    deps_second = _make_dependencies(
+        [],
+        campaign,
+        block,
+        position,
+        endpoint_fn=changed_endpoint_fn,
+        # Also vary volatile evidence alongside the genuine identity change,
+        # to prove the block is about the topology mutation, not incidental
+        # jitter sensitivity.
+        boot_health=_jittered_boot_health(elapsed_s=41.2, last_frame=980),
+        probe=_jittered_probe(block.model, latencies_s=[0.31, 0.29, 0.33, 0.30, 0.28, 0.34, 0.30, 0.29, 0.32, 0.31]),
+    )
 
     with pytest.raises(AdmissionError) as excinfo:
         await AdmissionPipeline(deps_second).admit(bundle, block, store, mode="counted")
@@ -536,6 +677,55 @@ def test_block_is_complete_false_when_no_trials_dir(tmp_path):
     assert block_is_complete(store, campaign.models[0].block_id) is False
 
 
+def test_record_admission_disposition_is_reconstructible_from_disk(tmp_path):
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block_id = campaign.models[1].block_id
+
+    dest = record_admission_disposition(
+        store,
+        block_id,
+        REPLICATION_DEFERRED_ADMISSION,
+        {"code": "tool_canary_failed", "details": {"message": "qwen never emits tool calls"}},
+    )
+
+    assert dest.exists()
+    on_disk = json.loads(dest.read_text())
+    assert on_disk["block_id"] == block_id
+    assert on_disk["disposition"] == REPLICATION_DEFERRED_ADMISSION
+    assert on_disk["underlying_failure"]["code"] == "tool_canary_failed"
+
+    # Reconstructible by scanning admissions/<block-id>-attempt-*.json.
+    admissions_dir = store.root / CampaignStore.ADMISSIONS_DIR
+    matches = [
+        json.loads(p.read_text())
+        for p in admissions_dir.iterdir()
+        if p.name.startswith(f"{block_id}-attempt-")
+    ]
+    assert any(m.get("disposition") == REPLICATION_DEFERRED_ADMISSION for m in matches)
+
+
+def test_record_remediation_attempt_is_reconstructible_from_disk(tmp_path):
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block_id = campaign.models[0].block_id
+
+    record_remediation_attempt(store, block_id, "terminate_tuner_pid", {"ok": True, "terminated_pid": 4242})
+    record_remediation_attempt(store, block_id, "drain_gpu_service:foo.service", {"ok": True})
+
+    admissions_dir = store.root / CampaignStore.ADMISSIONS_DIR
+    matches = [
+        json.loads(p.read_text())
+        for p in admissions_dir.iterdir()
+        if p.name.startswith(f"{block_id}-attempt-")
+    ]
+    remediations = [m for m in matches if "remediation" in m]
+    assert len(remediations) == 2
+    assert {m["remediation"] for m in remediations} == {
+        "terminate_tuner_pid",
+        "drain_gpu_service:foo.service",
+    }
+    assert all(m["block_id"] == block_id for m in remediations)
+
+
 def test_classify_admission_disposition_never_applies_to_first_block():
     assert classify_admission_disposition(block_index=0, first_block_counted_complete=True) is None
     assert classify_admission_disposition(block_index=0, first_block_counted_complete=False) is None
@@ -568,5 +758,33 @@ async def test_treatment_cannot_fire_blocks_admission(tmp_path):
         await pipeline.admit(bad_bundle, block, store, mode="counted")
 
     assert excinfo.value.code == "undeclared_objective_requirements"
+    assert not (store.root / "blocks" / block.block_id).exists()
+
+
+async def test_endpoint_identity_mismatch_blocks_admission(tmp_path):
+    """The endpoint-identity gate must be able to actually fire: a
+    resolve_endpoint whose requested/resolved URLs genuinely disagree
+    (e.g. a live registry resolution that has drifted from what was
+    expected) is a real admission-time drift, not jitter -- distinct from
+    the "no drift" happy-path fixture (_good_endpoint) where both sides
+    legitimately agree."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+
+    def _drifted_endpoint(endpoint_id):
+        return {
+            "requested_endpoint": f"http://{endpoint_id}.invalid/v1",
+            "resolved_endpoint": f"http://{endpoint_id}-drifted.invalid/v1",
+            "registry_fingerprint": "registry-fp",
+            "gpu_topology": {"gpu_indexes": [0]},
+        }
+
+    deps = _make_dependencies([], campaign, block, position, endpoint_fn=_drifted_endpoint)
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "endpoint_identity_mismatch"
     assert not (store.root / "blocks" / block.block_id).exists()
 

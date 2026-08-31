@@ -1128,14 +1128,37 @@ def _build_live_admission_dependencies(
             await connection.disconnect()
 
     def gpu_evidence(endpoint_id: str) -> dict:
-        registry = _registry()
-        processes = collect_gpu_evidence(run_ssh=_run_ssh_command, registry=registry, endpoint_id=endpoint_id)
-        return check_gpu_conflicts(processes=gpu_processes_to_conflict_rows(processes), approved_services=set())
-
-    def resolve_endpoint(endpoint_id: str) -> dict:
+        # RULING: approved services = the requested endpoint's own
+        # registry-declared units (the model server under test is always
+        # legitimately present on its own endpoint's GPU) -- anything else
+        # on the endpoint's GPUs still blocks. `approved_services=set()`
+        # here would refuse every real admission, since the endpoint's own
+        # server process is always resident; no new CLI flag introduces an
+        # operator-controlled approval list, this is derived entirely from
+        # the vendored registry.
         registry = _registry()
         endpoint = registry.endpoint(endpoint_id)
-        url = resolve_gateway(endpoint_id)
+        processes = collect_gpu_evidence(run_ssh=_run_ssh_command, registry=registry, endpoint_id=endpoint_id)
+        return check_gpu_conflicts(
+            processes=gpu_processes_to_conflict_rows(processes), approved_services=set(endpoint.units)
+        )
+
+    def resolve_endpoint(endpoint_id: str) -> dict:
+        # RULING: requested_endpoint is the registry EXPECTATION for this
+        # campaign-declared endpoint_id -- resolved from the vendored
+        # snapshot (_vendor/endpoints.json, the registry state pinned at
+        # this checkout's authoring time), never from the same live call
+        # `resolved_endpoint` uses. resolved_endpoint is what the live
+        # registry/probe actually yields RIGHT NOW. Computing both from one
+        # shared call (the previous bug) made this gate a tautology -- it
+        # could never fire even on a genuine registry drift (an endpoint
+        # moved/rerouted since the snapshot was vendored). With two
+        # independent resolutions, a real drift shows up as a real
+        # mismatch; the common, no-drift case still has them agree.
+        requested_url = resolve_gateway(endpoint_id, snapshot_only=True)
+        registry = _registry()
+        endpoint = registry.endpoint(endpoint_id)
+        resolved_url = resolve_gateway(endpoint_id)
         registry_fingerprint = fingerprint(
             {
                 "endpoint_id": endpoint_id,
@@ -1145,8 +1168,8 @@ def _build_live_admission_dependencies(
             }
         )
         return {
-            "requested_endpoint": url,
-            "resolved_endpoint": url,
+            "requested_endpoint": requested_url,
+            "resolved_endpoint": resolved_url,
             "registry_fingerprint": registry_fingerprint,
             "gpu_topology": {"host_id": endpoint.host_id, "gpu_indexes": list(endpoint.gpu_indexes)},
         }
@@ -1196,7 +1219,27 @@ def _resolve_campaign_position_path(campaign_path: Path, position_id: str) -> Pa
     return campaign_path.resolve().parent.parent / "positions" / f"{position_id}.yaml"
 
 
-async def _run_campaign_async(args: argparse.Namespace) -> int:
+class _CampaignContext:
+    """Everything `_run_campaign_async` and `_run_remediation_async` share:
+    the loaded campaign/position, the resolved tool bundle, and the opened
+    `CampaignStore`. Factored out so a remediation-only invocation
+    (`--terminate-tuner-pid`/`--drain-gpu-service` alongside `--campaign`)
+    can also record its attempts against the right block (see
+    `benchmark_admission.record_remediation_attempt`)."""
+
+    def __init__(self, campaign, position, bundle, store) -> None:
+        self.campaign = campaign
+        self.position = position
+        self.bundle = bundle
+        self.store = store
+
+
+async def _load_campaign_context(args: argparse.Namespace) -> "_CampaignContext | None":
+    """Load + validate the campaign/position manifests, build the campaign
+    lock, and open/create the `CampaignStore`. Returns `None` (after
+    printing the error) on any failure -- the caller just needs to know
+    whether it got a usable context, not which of several distinct load
+    steps failed."""
     from civ_mcp.arena import benchmark_admission
     from civ_mcp.arena.benchmark_agent import BENCHMARK_SYSTEM
     from civ_mcp.arena.benchmark_campaign import (
@@ -1216,20 +1259,20 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
         campaign = load_campaign_manifest(campaign_path)
     except (OSError, ValueError) as exc:
         print(f"civ-arena-benchmark: failed to load campaign {campaign_path}: {exc}", file=sys.stderr)
-        return 1
+        return None
 
     position_path = _resolve_campaign_position_path(campaign_path, campaign.position)
     try:
         position = load_position_manifest(position_path)
     except (OSError, ValueError) as exc:
         print(f"civ-arena-benchmark: failed to load position manifest {position_path}: {exc}", file=sys.stderr)
-        return 1
+        return None
 
     try:
         verify_expected_state_digest(position.expected_state, position.expected_state_sha256)
     except BenchmarkStateError as exc:
         print(f"civ-arena-benchmark: {exc}", file=sys.stderr)
-        return 1
+        return None
 
     provenance = json.loads(Path(campaign.position_provenance).read_text())
     tools_by_arm = {arm.arm_id: resolved_benchmark_tools(arm.tools) for arm in campaign.arms}
@@ -1248,16 +1291,26 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
         )
     except GateFailure as exc:
         print(f"civ-arena-benchmark: campaign lock rejected: {exc}", file=sys.stderr)
-        return 1
+        return None
 
     run_dir = Path(args.run_dir) / args.run_id
     try:
         store = CampaignStore.create(run_dir, campaign_lock, schedule)
     except CampaignLockMismatchError as exc:
         print(f"civ-arena-benchmark: {exc}", file=sys.stderr)
-        return 1
+        return None
 
     bundle = benchmark_admission.build_campaign_bundle(campaign, position)
+    return _CampaignContext(campaign, position, bundle, store)
+
+
+async def _run_campaign_async(args: argparse.Namespace) -> int:
+    from civ_mcp.arena import benchmark_admission
+
+    context = await _load_campaign_context(args)
+    if context is None:
+        return 1
+    campaign, store, bundle = context.campaign, context.store, context.bundle
 
     api_key = os.environ.get(args.api_key_env) or "x"
     pipeline = _build_admission_pipeline(args, api_key)
@@ -1289,6 +1342,16 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
                 block_index=block_index, first_block_counted_complete=first_complete
             )
             if disposition is not None:
+                # The admission artifact itself must expose the typed
+                # disposition -- admit() already wrote its own failed-
+                # attempt record; this is a SEPARATE, subsequent numbered
+                # attempt record for the same block carrying the
+                # disposition and a reference to the failure that produced
+                # it, so scanning admissions/<block-id>-attempt-*.json
+                # reconstructs the full story without out-of-band state.
+                benchmark_admission.record_admission_disposition(
+                    store, next_block.block_id, disposition, {"code": exc.code, "details": exc.details}
+                )
                 print(
                     f"civ-arena-benchmark: block {next_block.block_id} admission failed "
                     f"({exc.code}); recording disposition={disposition} and stopping "
@@ -1335,7 +1398,17 @@ async def _run_remediation_async(args: argparse.Namespace) -> int:
     `--drain-gpu-service`. Maps to Task 7's scoped functions only -- never
     constructs a wildcard/pattern kill or stop command itself (see
     benchmark_live_evidence.terminate_tuner_pid / drain_gpu_service for the
-    exact-identity revalidation / re-check-after contract)."""
+    exact-identity revalidation / re-check-after contract).
+
+    When `--campaign` is also given, each remediation invocation's result
+    is additionally recorded as its own numbered admission-attempt record
+    against the campaign's next incomplete block (see
+    `benchmark_admission.record_remediation_attempt`), so "all remediation
+    attempts" for that block is reconstructible from disk. Without
+    `--campaign` there is no block to link the attempt to -- the action
+    still runs (never silently skipped), but only its stdout/stderr record
+    survives.
+    """
     from civ_mcp.arena.benchmark_live_evidence import (
         classify_tuner_holder,
         collect_gpu_evidence,
@@ -1348,10 +1421,29 @@ async def _run_remediation_async(args: argparse.Namespace) -> int:
     windows_repo = args.windows_repo or ""
     exit_code = 0
 
+    campaign_context = await _load_campaign_context(args) if args.campaign else None
+    linked_block_id: str | None = None
+    if campaign_context is not None:
+        from civ_mcp.arena import benchmark_admission
+
+        next_block = benchmark_admission.select_next_incomplete_block(
+            campaign_context.campaign, campaign_context.store
+        )
+        linked_block_id = next_block.block_id if next_block is not None else None
+
+    def _record(action: str, result: Mapping[str, object]) -> None:
+        if campaign_context is not None and linked_block_id is not None:
+            from civ_mcp.arena import benchmark_admission
+
+            benchmark_admission.record_remediation_attempt(
+                campaign_context.store, linked_block_id, action, result
+            )
+
     if args.terminate_tuner_pid is not None:
         holder = classify_tuner_holder(run_local=_run_local_command, wsl_repo=wsl_repo, windows_repo=windows_repo)
         if holder is None:
             print("civ-arena-benchmark: FireTuner port has no holder; nothing to terminate", file=sys.stderr)
+            _record("terminate_tuner_pid", {"ok": False, "reason": "no_holder"})
             exit_code = 1
         else:
             try:
@@ -1363,8 +1455,10 @@ async def _run_remediation_async(args: argparse.Namespace) -> int:
                     windows_repo=windows_repo,
                 )
                 print(f"civ-arena-benchmark: {result}")
+                _record("terminate_tuner_pid", result)
             except GateFailure as exc:
                 print(f"civ-arena-benchmark: terminate-tuner-pid refused: {exc}", file=sys.stderr)
+                _record("terminate_tuner_pid", {"ok": False, "code": exc.code, "details": dict(exc.details)})
                 exit_code = 1
 
     for unit in args.drain_gpu_service:
@@ -1379,8 +1473,10 @@ async def _run_remediation_async(args: argparse.Namespace) -> int:
                 run_ssh=_run_ssh_command, registry=registry, endpoint_id=args.endpoint_id, processes=processes, unit=unit
             )
             print(f"civ-arena-benchmark: {result}")
+            _record(f"drain_gpu_service:{unit}", result)
         except GateFailure as exc:
             print(f"civ-arena-benchmark: drain-gpu-service {unit!r} refused: {exc}", file=sys.stderr)
+            _record(f"drain_gpu_service:{unit}", {"ok": False, "code": exc.code, "details": dict(exc.details)})
             exit_code = 1
 
     return exit_code

@@ -70,6 +70,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Mapping, Sequence
@@ -90,6 +91,7 @@ from civ_mcp.arena.benchmark_gates import (
     build_session_lock,
     check_clean_checkout,
     check_treatment_can_fire,
+    locked_model_admission_evidence,
 )
 from civ_mcp.arena.benchmark_manifest import PositionManifest, fingerprint
 from civ_mcp.arena.benchmark_schedule import TrialSpec
@@ -119,6 +121,8 @@ __all__ = [
     "block_is_complete",
     "select_next_incomplete_block",
     "classify_admission_disposition",
+    "record_admission_disposition",
+    "record_remediation_attempt",
 ]
 
 GATE_ORDER: tuple[str, ...] = (
@@ -338,6 +342,66 @@ def _write_validation_record(store: CampaignStore, block_id: str, evidence: Mapp
     return dest
 
 
+def _existing_locked_episode_wall_s(store: CampaignStore, block_id: str) -> int | None:
+    """If `block_id` already has a recorded `session.json`, return its
+    locked `episode_wall_s` -- `build_session_lock`'s contract (see its
+    docstring) is that this value is derived once, at first admission, and
+    every subsequent admission attempt (including every resume, which
+    re-runs the full live probe and necessarily observes different
+    latencies) must reuse that already-locked value rather than passing a
+    freshly re-derived one. `None` only when no prior session exists yet
+    (first admission for this block) or the existing file cannot be read/
+    parsed -- either way the caller falls back to deriving fresh."""
+    session_path = store.root / CampaignStore.BLOCKS_DIR / block_id / "session.json"
+    if not session_path.is_file():
+        return None
+    try:
+        existing = json.loads(session_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    value = existing.get("episode_wall_s") if isinstance(existing, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def record_admission_disposition(
+    store: CampaignStore, block_id: str, disposition: str, underlying_failure: Mapping[str, object]
+) -> Path:
+    """Persist a typed admission disposition (e.g.
+    `REPLICATION_DEFERRED_ADMISSION`) as its own numbered admission-attempt
+    record for `block_id`, referencing the underlying failure that
+    triggered it.
+
+    This is what makes the disposition discoverable from disk: `admit()`
+    already wrote its own failed-attempt record for the gate that actually
+    failed; this is a SEPARATE, subsequent record in the same append-only,
+    numbered `admissions/<block-id>-attempt-NNN.json` sequence, carrying
+    the disposition and a reference back to that failure -- scanning the
+    sequence for a `disposition` key reconstructs the classification
+    without any out-of-band state. Never used for `REPLICATION_DEFERRED_ADMISSION`
+    on the first model's own block -- see `classify_admission_disposition`.
+    """
+    record = {
+        "block_id": block_id,
+        "disposition": disposition,
+        "underlying_failure": dict(underlying_failure),
+    }
+    return store.record_admission(block_id, record)
+
+
+def record_remediation_attempt(
+    store: CampaignStore, block_id: str, action: str, result: Mapping[str, object]
+) -> Path:
+    """Persist one remediation invocation (`terminate_tuner_pid`,
+    `drain_gpu_service`, ...) as its own numbered admission-attempt record
+    for `block_id` -- so "all remediation attempts" for a block is
+    reconstructible from disk by scanning
+    `admissions/<block-id>-attempt-*.json` for a `remediation` key, in the
+    same append-only, numbered sequence as ordinary admission attempts and
+    disposition records."""
+    record = {"block_id": block_id, "remediation": action, "result": dict(result)}
+    return store.record_admission(block_id, record)
+
+
 class AdmissionPipeline:
     """Runs the locked gate sequence (`GATE_ORDER`) for one model block,
     immediately before it runs. See the module docstring for the three
@@ -377,21 +441,23 @@ class AdmissionPipeline:
                 store, "admission_gate", gate=name, block_id=block.block_id, mode=mode
             )
 
-        def _fail(
-            exc: GateFailure | CampaignLockMismatchError | SessionLockMismatchError,
-            *,
-            default_code: str,
-        ) -> AdmissionError:
-            if isinstance(exc, GateFailure):
-                code, details = exc.code, dict(exc.details)
-            else:
-                code, details = default_code, {"message": str(exc)}
+        def _fail(code: str, details: Mapping[str, object]) -> AdmissionError:
+            """Record a complete diagnostic for this failed attempt and
+            return (never raises itself -- callers `raise _fail(...) from
+            exc`) an `AdmissionError`. Mode-aware: a `mode="validation"`
+            failure is written through the SAME validation-record path a
+            success would use (never `admissions/`, never consuming a
+            counted-attempt ordinal) -- a validation failure must never
+            look, on disk, like a counted admission attempt."""
             evidence["ok"] = False
-            evidence["failure"] = {"code": code, "details": details}
+            evidence["failure"] = {"code": code, "details": dict(details)}
             _append_campaign_journal(
                 store, "admission_failed", block_id=block.block_id, mode=mode, code=code
             )
-            self._write_record(store, block.block_id, evidence)
+            if mode == "validation":
+                _write_validation_record(store, block.block_id, evidence)
+            else:
+                self._write_record(store, block.block_id, evidence)
             return AdmissionError(code, evidence["failure"])
 
         try:
@@ -499,6 +565,18 @@ class AdmissionPipeline:
 
             # 13. session lock creation
             block_schedule = store.schedule["blocks"][block.block_id]
+            # episode_wall_s is derived once, at first admission, then
+            # locked -- a resume's fresh probe recomputes it (needed for
+            # the model_admission gate itself) but must not rewrite the
+            # value the existing lock already carries (see
+            # build_session_lock's docstring and
+            # _existing_locked_episode_wall_s).
+            locked_episode_wall_s = _existing_locked_episode_wall_s(store, block.block_id)
+            episode_wall_s = (
+                locked_episode_wall_s
+                if locked_episode_wall_s is not None
+                else model_admission["episode_wall_s"]
+            )
             session_lock = build_session_lock(
                 position=campaign.position,
                 wsl=checkout["wsl"],
@@ -508,13 +586,22 @@ class AdmissionPipeline:
                 block_id=block.block_id,
                 model_config=dataclasses.asdict(block),
                 schedule_fingerprint=fingerprint(block_schedule),
-                admission_fingerprint=fingerprint(model_admission),
+                # Fingerprinted over the TRIMMED, locked-identity subset
+                # of model_admission (see benchmark_gates.
+                # locked_model_admission_evidence) -- never the raw
+                # evidence, which carries volatile per-attempt warm
+                # latencies/p95/seed-honoring verdict/raw tool-canary
+                # transcripts that differ on every real resume. Fingerprinting
+                # the raw dict here would defeat build_session_lock's own
+                # trimming: this digest is unconditionally part of
+                # lock["digests"], which IS byte-compared on resume.
+                admission_fingerprint=fingerprint(locked_model_admission_evidence(model_admission)),
                 tool_surface_fingerprint=store.lock["tool_surface_fingerprint"],
                 tool_input_fingerprint=fingerprint_identity(
                     tool_input_identity(dict(campaign.tools_by_arm))
                 ),
                 scorer_fingerprint=campaign.manifest.contracts.scorer_fingerprint,
-                episode_wall_s=model_admission["episode_wall_s"],
+                episode_wall_s=episode_wall_s,
                 tools_schema=_union_tool_schemas(campaign.tools_by_arm),
                 deployment=deployment,
                 canonical_state=canonical_state,
@@ -522,7 +609,21 @@ class AdmissionPipeline:
             )
             _record_gate("session_lock", {"session_fingerprint": session_lock.get("session_fingerprint")})
         except GateFailure as exc:
-            raise _fail(exc, default_code=exc.code) from exc
+            raise _fail(exc.code, exc.details) from exc
+        except Exception as exc:  # noqa: BLE001 - deliberate: every exit path gets a complete diagnostic
+            raise _fail(
+                "unexpected_admission_error",
+                {
+                    "exception_type": type(exc).__qualname__,
+                    "repr": repr(exc),
+                    "traceback": traceback.format_exc(),
+                    "message": (
+                        f"unexpected exception during admission gates: {exc!r}; this is not "
+                        "a recognized GateFailure -- treated as a fail-closed admission "
+                        "refusal rather than an unhandled crash"
+                    ),
+                },
+            ) from exc
 
         evidence["ok"] = True
         evidence["session_fingerprint"] = session_lock.get("session_fingerprint")
@@ -545,7 +646,7 @@ class AdmissionPipeline:
         try:
             benchmark_store = store.open_block(block.block_id, session_lock, block_schedule)
         except (CampaignLockMismatchError, SessionLockMismatchError) as exc:
-            raise _fail(exc, default_code="locked_identity_changed") from exc
+            raise _fail("locked_identity_changed", {"message": str(exc)}) from exc
 
         self._write_record(store, block.block_id, evidence)
 
@@ -557,7 +658,9 @@ class AdmissionPipeline:
             store=benchmark_store,
             gateway_url=str(endpoint.get("resolved_endpoint")),
             api_key=api_key,
-            episode_wall_s=int(model_admission["episode_wall_s"]),
+            # The LOCKED episode_wall_s (see above) -- never a value freshly
+            # re-derived on a resumed admission attempt.
+            episode_wall_s=int(episode_wall_s),
             chat_template_kwargs=dict(block.chat_template_kwargs),
             user_prompt=campaign.manifest.prompt,
         )
