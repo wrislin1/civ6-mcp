@@ -11,6 +11,7 @@ from civ_mcp.arena.benchmark_gates import (
     check_clean_checkout,
     check_gpu_conflicts,
     check_treatment_can_fire,
+    check_tuner_holder,
 )
 from civ_mcp.arena.benchmark_manifest import PositionManifest
 
@@ -265,6 +266,72 @@ def test_check_gpu_conflicts_never_touches_subprocess(monkeypatch):
         check_gpu_conflicts(
             processes=[{"pid": 111, "service": "ollama", "gpu_index": 0}],
             approved_services=set(),
+        )
+
+
+# ---------------------------------------------------------------------------
+# check_tuner_holder
+# ---------------------------------------------------------------------------
+
+
+def test_check_tuner_holder_passes_when_no_holder():
+    assert check_tuner_holder(holder=None) == {"holder": None, "ok": True}
+
+
+def test_check_tuner_holder_passes_for_known_repo_owned_holder():
+    holder = {
+        "pid": 4242,
+        "start_ticks": 123456,
+        "cmdline": "/usr/bin/civ-mcp",
+        "cwd": "/home/riz/projects/civ6-mcp",
+        "known_repo_owned": True,
+    }
+    evidence = check_tuner_holder(holder=holder)
+    assert evidence == {"holder": holder, "ok": True}
+
+
+def test_check_tuner_holder_blocks_unknown_owner():
+    holder = {
+        "pid": 9999,
+        "start_ticks": 1,
+        "cmdline": "/usr/bin/some-other-process",
+        "cwd": "/tmp",
+        "known_repo_owned": False,
+    }
+    with pytest.raises(GateFailure, match="unknown tuner-port holder always blocks") as exc_info:
+        check_tuner_holder(holder=holder)
+    assert exc_info.value.code == "unknown_tuner_holder"
+
+
+def test_check_tuner_holder_has_no_acknowledgment_parameter():
+    """Unlike check_gpu_conflicts, there must be no way to acknowledge an
+    unknown tuner holder past the gate -- no remediation path exists for
+    it, so the function signature itself must not offer one."""
+    import inspect
+
+    params = inspect.signature(check_tuner_holder).parameters
+    assert set(params) == {"holder"}
+
+
+def test_check_tuner_holder_never_touches_subprocess(monkeypatch):
+    """check_tuner_holder must never terminate a process -- assert no
+    subprocess/os.kill call happens even on the failing path."""
+    import subprocess
+
+    def _boom(*a, **k):
+        raise AssertionError("check_tuner_holder must never invoke subprocess")
+
+    monkeypatch.setattr(subprocess, "run", _boom)
+    monkeypatch.setattr(subprocess, "Popen", _boom)
+    with pytest.raises(GateFailure):
+        check_tuner_holder(
+            holder={
+                "pid": 1,
+                "start_ticks": 1,
+                "cmdline": "x",
+                "cwd": "/tmp",
+                "known_repo_owned": False,
+            }
         )
 
 

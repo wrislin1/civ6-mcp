@@ -9,7 +9,7 @@ that keeps every gate testable with plain fixtures and keeps the "fail
 closed" contract simple to audit: a missing or ambiguous piece of evidence
 is always a raise, never a silent default.
 
-Five gates plus the shared exception type:
+Six gates plus the shared exception type:
 
 - `check_clean_checkout` -- WSL/Windows companion git hygiene.
 - `check_treatment_can_fire` -- the minimal arm can reach rubric levels 1-2
@@ -17,6 +17,12 @@ Five gates plus the shared exception type:
 - `check_gpu_conflicts` -- conflicting GPU work is blocked unless an
   operator-approved acknowledgment names *exactly* the conflicting
   services. Never kills or drains anything itself.
+- `check_tuner_holder` -- an unidentified FireTuner-port holder is blocked
+  unconditionally; there is no acknowledgment path for it (unlike
+  `check_gpu_conflicts`'s named-service acknowledgment) because an unknown
+  process holding the tuner port has no safe remediation. Never terminates
+  anything itself -- see `benchmark_live_evidence.terminate_tuner_pid` for
+  the actual (exact-PID, revalidated) termination.
 - `admit_model_block` -- per-model-block admission: endpoint/model identity,
   a counted backend's non-hidden retry policy, a positive briefing budget
   (only when the briefing treatment is on), proven structured tool-calling
@@ -54,6 +60,7 @@ __all__ = [
     "check_clean_checkout",
     "check_treatment_can_fire",
     "check_gpu_conflicts",
+    "check_tuner_holder",
     "admit_model_block",
     "build_session_lock",
 ]
@@ -332,6 +339,48 @@ def check_gpu_conflicts(
         "process_count": len(processes),
         "ok": True,
     }
+
+
+# ---------------------------------------------------------------------------
+# check_tuner_holder
+# ---------------------------------------------------------------------------
+
+
+def check_tuner_holder(*, holder: Mapping[str, object] | None) -> dict[str, object]:
+    """Verify the FireTuner listen port's current holder (if any) is a
+    known, repo-owned civ-mcp process.
+
+    `holder` is `None` when nothing currently holds the port -- nothing to
+    check, always ok. `holder` present is evidence gathered by
+    `benchmark_live_evidence.classify_tuner_holder`: a mapping carrying at
+    least `pid`, `start_ticks`, `cmdline`, `cwd`, and `known_repo_owned`.
+
+    A present holder that is not `known_repo_owned` is UNKNOWN and always
+    fails closed, with no acknowledgment path (unlike `check_gpu_conflicts`'s
+    named-service approval) -- an unidentified process holding the tuner
+    port has no safe remediation, so this gate is the only thing standing
+    between an admission run and either proceeding against it or blindly
+    terminating it. Never kills or terminates anything itself; see
+    `benchmark_live_evidence.terminate_tuner_pid` for the actual
+    exact-PID, identity-revalidated termination path.
+    """
+    if holder is None:
+        return {"holder": None, "ok": True}
+    if not holder.get("known_repo_owned"):
+        raise GateFailure(
+            "unknown_tuner_holder",
+            {
+                "pid": holder.get("pid"),
+                "cmdline": holder.get("cmdline"),
+                "cwd": holder.get("cwd"),
+                "message": (
+                    f"FireTuner port is held by pid {holder.get('pid')!r} whose identity "
+                    "does not match a known civ-mcp checkout; an unknown tuner-port holder "
+                    "always blocks -- no remediation path exists for it"
+                ),
+            },
+        )
+    return {"holder": dict(holder), "ok": True}
 
 
 # ---------------------------------------------------------------------------
