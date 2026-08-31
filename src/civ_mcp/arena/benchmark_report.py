@@ -487,10 +487,43 @@ def _completeness_section(
     return {"by_position": by_position, "positions_missing": positions_missing}
 
 
+# ---------------------------------------------------------------------------
+# session.json canonical schema
+# ---------------------------------------------------------------------------
+#
+# This module is the only consumer of `<run_dir>/session.json`, so its
+# reading contract here IS the canonical schema every writer of session.json
+# must satisfy -- `benchmark_gates.build_session_lock` and the
+# `civ-arena-benchmark --ungated-smoke` CLI lock construction both cite this
+# block rather than duplicating it. `build_report` requires, at minimum:
+#
+#     {
+#       "scorer_fingerprint": "<non-empty str>",
+#       "positions": {
+#         "<position_id>": {
+#           "rubric": [...],       # a benchmark_report.score_rubric-shaped rubric
+#           "objectives": [...],   # optional; defaults to () if absent
+#         },
+#         ...
+#       },
+#       "session_fingerprint": "<any>",   # optional; echoed into the report, not required
+#       "ungated_smoke": <bool>,          # optional; defaults to False
+#       ...                                # any other writer-specific evidence is ignored here
+#     }
+#
+# A session.json missing `scorer_fingerprint`, missing `positions` entirely,
+# or missing a `positions[<position_id>]["rubric"]` for any position a
+# committed trial references, aborts report generation (`ReportError`) --
+# this module never silently treats absent rubric evidence as "score 0".
+
+
 def build_report(run_dir: str | Path) -> dict[str, object]:
     """Derive a full report purely from `<run_dir>/session.json`,
     `<run_dir>/schedule.json`, and `<run_dir>/trials/*.json`. Never reads
     `<run_dir>/attempts/` -- see module docstring.
+
+    `session.json` must satisfy the canonical schema documented in the
+    comment block immediately above this function.
 
     Raises `MalformedRubricError` / `action_metrics.PredicateError` /
     `ReportError` for any structural or predicate problem, aborting report

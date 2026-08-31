@@ -478,3 +478,23 @@ def test_build_session_lock_fingerprint_changes_with_digest():
     lock_a = build_session_lock(**_lock_kwargs())
     lock_b = build_session_lock(**_lock_kwargs(manifest_fingerprint="different-mfp"))
     assert lock_a["session_fingerprint"] != lock_b["session_fingerprint"]
+
+
+def test_build_session_lock_also_emits_the_canonical_report_schema_keys():
+    # benchmark_report.build_report is the only consumer of session.json and
+    # requires a top-level scorer_fingerprint plus a positions mapping with
+    # embedded rubric/objectives (see the schema comment near
+    # benchmark_report.build_report). build_session_lock's own evidence
+    # structure (digests.scorer, singular position_id, ...) stays as-is;
+    # these are additive.
+    position = _position()
+    lock = build_session_lock(**_lock_kwargs(position=position))
+
+    assert lock["scorer_fingerprint"] == "scfp"
+    assert lock["positions"] == {
+        position.position_id: {
+            "rubric": list(position.rubric),
+            "objectives": list(position.objectives),
+        }
+    }
+    json.dumps(lock)

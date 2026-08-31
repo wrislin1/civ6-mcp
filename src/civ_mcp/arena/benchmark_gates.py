@@ -479,6 +479,13 @@ def build_session_lock(
     other field, so identical inputs always produce an identical lock and
     any change to code/position/rubric/prompt/tool-schema/sampling/model
     topology changes it.
+
+    Additive: alongside this module's own evidence structure (`digests.scorer`,
+    a singular `position_id`, ...), the returned lock also carries the
+    canonical top-level `scorer_fingerprint` / `positions` keys
+    `benchmark_report.build_report` requires -- see the schema comment block
+    immediately above `benchmark_report.build_report`. This is the only
+    schema `build_report` reads; every session.json writer must satisfy it.
     """
     checkout = check_clean_checkout(wsl=wsl, windows=windows)
 
@@ -585,6 +592,16 @@ def build_session_lock(
         "canonical_state_digest": captured_digest,
         "model_admission": dict(model_admission),
         "tool_names": sorted(name for name in tool_names if name),
+        # Canonical keys benchmark_report.build_report requires -- see the
+        # schema comment block above that function. Additive: everything
+        # else on this lock is this module's own evidence structure.
+        "scorer_fingerprint": scorer_fingerprint,
+        "positions": {
+            position.position_id: {
+                "rubric": list(position.rubric),
+                "objectives": list(position.objectives),
+            }
+        },
         "ok": True,
     }
     lock["session_fingerprint"] = fingerprint(lock)

@@ -22,6 +22,7 @@ from civ_mcp.arena.backends import SamplingConfig
 from civ_mcp.arena.benchmark_agent import EpisodeEvidence, EpisodeTerminal, EpisodeTimedOut
 from civ_mcp.arena.benchmark_backend import HealthProbe
 from civ_mcp.arena.benchmark_manifest import PositionManifest, SuiteManifest, TreatmentArm
+from civ_mcp.arena.benchmark_report import build_report
 from civ_mcp.arena.benchmark_runner import (
     BenchmarkRunner,
     FailureClass,
@@ -632,8 +633,11 @@ objectives:
   - id: obj1
     description: improve the farm tile
 rubric:
-  - id: r1
-    weight: 1.0
+  - task_id: r1
+    levels:
+      - score: 0
+        predicate:
+          kind: always
 split: calibration
 """,
         encoding="utf-8",
@@ -737,6 +741,68 @@ async def test_ungated_smoke_flag_proceeds_and_stamps_the_session_lock(tmp_path,
     assert exit_code == 0
     assert len(captured_locks) == 1
     assert captured_locks[0]["ungated_smoke"] is True
+
+
+@pytest.mark.asyncio
+async def test_ungated_smoke_run_dir_is_report_ready(tmp_path, monkeypatch):
+    """Integration (finding 1): `civ-arena-benchmark --ungated-smoke`
+    followed by `civ-arena-benchmark-report <run_dir>` must not fail on a
+    missing scorer_fingerprint. Runs the smoke CLI path end to end (with
+    faked game/backend deps, one committed trial) and then calls
+    `build_report` on the resulting run dir directly."""
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir_base = tmp_path / "runs"
+
+    class _FakeConnection:
+        async def connect(self):
+            return None
+
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+
+    class _FinishingAgentForSmoke:
+        async def run(self, gs, player_id, turn):
+            return EpisodeEvidence(
+                terminal=EpisodeTerminal.FINISH_TRIAL,
+                steps=[],
+                invalid_tool_calls=[],
+                final_summary="done",
+                wall_clock_s=0.1,
+                prompt_tokens=1,
+                completion_tokens=1,
+            )
+
+    def _fake_build_live_dependencies(**_kwargs) -> RunnerDependencies:
+        return RunnerDependencies(
+            reload_position=AsyncMock(return_value=None),
+            dismiss_popups=AsyncMock(return_value="POPUPS|none"),
+            # Matches the fixture position's expected_state ({"turn": 42})
+            # so the pre-episode canonical checksum passes.
+            capture_state=AsyncMock(return_value={"turn": 42}),
+            make_agent=lambda spec: _FinishingAgentForSmoke(),
+            probe_health=AsyncMock(
+                return_value=HealthProbe(healthy=True, model="qwen3.6-27b", latency_s=0.1, error=None)
+            ),
+        )
+
+    monkeypatch.setattr(benchmark_runner, "_build_live_dependencies", _fake_build_live_dependencies)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--suite", str(suite_path),
+            "--run-id", "smoke-run",
+            "--run-dir", str(run_dir_base),
+            "--gateway-url", "http://example.invalid/v1",
+            "--ungated-smoke",
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+    assert exit_code == 0
+
+    run_dir = run_dir_base / "smoke-run"
+    report = build_report(run_dir)
+    assert report["session"]["ungated_smoke"] is True
+    assert report["completeness"]["by_position"]["builder-cal-v1"]["committed"] == 1
 
 
 def _position_manifest(**overrides) -> PositionManifest:

@@ -480,6 +480,13 @@ class BenchmarkRunner:
 # CLI
 # ---------------------------------------------------------------------------
 #
+# session.json's canonical scorer_fingerprint (see the schema comment block
+# above benchmark_report.build_report) is normally supplied by a real
+# scorer-admission step; the ungated-smoke path has none, so it fingerprints
+# a fixed evaluator identity instead -- deterministic, and truthy, which is
+# all build_report requires.
+_SMOKE_SCORER_EVALUATOR = "civ_mcp.arena.action_metrics.evaluate_predicate"
+#
 # Production wiring below assembles `RunnerDependencies` from a live game
 # connection and OpenAI-compatible backends. It is deliberately NOT exercised
 # by this task's test suite (no live game, no network, per the plan's
@@ -674,6 +681,17 @@ async def _run_async(args: argparse.Namespace) -> int:
         # stamped explicitly, never omitted, so the artifact itself always
         # carries the mark for a future scorer/report to check.
         "ungated_smoke": True,
+        # Canonical keys benchmark_report.build_report requires -- see the
+        # schema comment block above that function. Without these,
+        # `civ-arena-benchmark-report` fails on a missing scorer_fingerprint
+        # for every run this CLI produces, gated or not.
+        "scorer_fingerprint": fingerprint({"evaluator": _SMOKE_SCORER_EVALUATOR}),
+        "positions": {
+            position_id: {
+                "rubric": list(position.rubric),
+                "objectives": list(position.objectives),
+            }
+        },
     }
     try:
         store = BenchmarkStore.create(run_dir, lock)
