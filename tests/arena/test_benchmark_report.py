@@ -187,7 +187,7 @@ def test_report_ignores_attempts_and_weights_positions_equally(tmp_path):
     )
 
     report = build_report(run_dir)
-    assert report["aggregate"]["equal_weight_mean"] == 0.5
+    assert report["aggregate"]["unknown::unknown"]["equal_weight_mean"] == 0.5
 
     (run_dir / "attempts" / "noise.json").write_text('{"rubric_score": 1.0}')
     assert build_report(run_dir) == report
@@ -385,8 +385,70 @@ def test_build_report_includes_per_position_output(tmp_path):
     assert set(report["positions"]) == {"easy", "hard"}
     assert report["positions"]["easy"]["trial_count"] == 2
     assert report["positions"]["hard"]["trial_count"] == 1
-    assert report["positions"]["easy"]["rubric"]["normalized_median"] == 1.0
-    assert report["positions"]["hard"]["rubric"]["normalized_median"] == 0.0
+    easy_group = report["positions"]["easy"]["by_group"]["unknown::unknown"]
+    hard_group = report["positions"]["hard"]["by_group"]["unknown::unknown"]
+    assert easy_group["rubric"]["normalized_median"] == 1.0
+    assert hard_group["rubric"]["normalized_median"] == 0.0
+
+
+def test_build_report_aggregate_is_scoped_per_model_arm_group_not_pooled(tmp_path):
+    """F1: model_a scores perfectly at both positions; model_b scores zero
+    at both. A pooled aggregate would blend these into one meaningless
+    mixed number; the fix must report a distinct equal_weight_mean per
+    (model, arm) group, with model_a's clearly separated from model_b's."""
+    run_dir = tmp_path / "run"
+    (run_dir / "trials").mkdir(parents=True)
+    _write_json(
+        run_dir / "session.json",
+        {
+            "session_fingerprint": "abc123",
+            "scorer_fingerprint": "score-v1",
+            "positions": {
+                "easy": {"rubric": [_mine_rubric()]},
+                "hard": {"rubric": [_mine_rubric()]},
+            },
+        },
+    )
+    _write_json(
+        run_dir / "schedule.json",
+        {
+            "trials": [
+                {"index": 1, "position_id": "easy"},
+                {"index": 2, "position_id": "easy"},
+                {"index": 3, "position_id": "hard"},
+                {"index": 4, "position_id": "hard"},
+            ],
+        },
+    )
+    fixtures = [
+        (1, "easy", "model_a", "standard", True),
+        (2, "easy", "model_b", "standard", False),
+        (3, "hard", "model_a", "standard", True),
+        (4, "hard", "model_b", "standard", False),
+    ]
+    for index, position_id, model, arm_id, satisfied in fixtures:
+        _write_json(
+            run_dir / "trials" / f"trial-{index:03d}.json",
+            {
+                "index": index,
+                "position_id": position_id,
+                "attempt_count": 1,
+                "terminal": "finish_trial",
+                "model": model,
+                "arm_id": arm_id,
+                "steps": [],
+                "initial_state": {"tiles": [{"improvement": None}]},
+                "final_state": {
+                    "tiles": [{"improvement": "IMPROVEMENT_MINE" if satisfied else None}]
+                },
+            },
+        )
+
+    report = build_report(run_dir)
+    aggregate = report["aggregate"]
+    assert set(aggregate) == {"model_a::standard", "model_b::standard"}
+    assert aggregate["model_a::standard"]["equal_weight_mean"] == 1.0
+    assert aggregate["model_b::standard"]["equal_weight_mean"] == 0.0
 
 
 def test_build_report_copies_retry_counts_from_raw_trials(tmp_path):
@@ -400,12 +462,11 @@ def test_build_report_copies_retry_counts_from_raw_trials(tmp_path):
     _write_json(trial_path, payload)
 
     report = build_report(run_dir)
-    attempt_counts = {
-        t["index"]: t["attempt_count"] for t in report["positions"]["easy"]["trials"]
-    }
+    easy_group = report["positions"]["easy"]["by_group"]["unknown::unknown"]
+    attempt_counts = {t["index"]: t["attempt_count"] for t in easy_group["trials"]}
     assert attempt_counts == {1: 1, 2: 2}
-    assert report["positions"]["easy"]["attempts"]["max_attempt_count"] == 2
-    assert report["positions"]["easy"]["attempts"]["trials_with_retries"] == 1
+    assert easy_group["attempts"]["max_attempt_count"] == 2
+    assert easy_group["attempts"]["trials_with_retries"] == 1
 
 
 def test_build_report_surfaces_seeds_and_endpoint_topology(tmp_path):
@@ -462,9 +523,21 @@ def test_build_report_surfaces_seeds_and_endpoint_topology(tmp_path):
 
     report = build_report(run_dir)
     easy = report["positions"]["easy"]
-    assert easy["seeds"]["distinct"] == [11, 12]
-    assert easy["endpoint_topology"]["models"] == ["gemma4-27b", "qwen3.6-27b"]
-    assert easy["endpoint_topology"]["arms"] == ["minimal", "standard"]
+    # F1: two distinct (model, arm) trials at the same position must never
+    # be pooled into one mixed seeds/endpoint_topology view -- each group
+    # gets its own scoped summary.
+    assert easy["trial_count"] == 2
+    assert set(easy["by_group"]) == {"qwen3.6-27b::standard", "gemma4-27b::minimal"}
+
+    qwen_standard = easy["by_group"]["qwen3.6-27b::standard"]
+    assert qwen_standard["seeds"]["distinct"] == [11]
+    assert qwen_standard["endpoint_topology"]["models"] == ["qwen3.6-27b"]
+    assert qwen_standard["endpoint_topology"]["arms"] == ["standard"]
+
+    gemma_minimal = easy["by_group"]["gemma4-27b::minimal"]
+    assert gemma_minimal["seeds"]["distinct"] == [12]
+    assert gemma_minimal["endpoint_topology"]["models"] == ["gemma4-27b"]
+    assert gemma_minimal["endpoint_topology"]["arms"] == ["minimal"]
 
 
 def test_build_report_includes_terminal_conditions_latency_tokens_cost(tmp_path):
@@ -480,7 +553,7 @@ def test_build_report_includes_terminal_conditions_latency_tokens_cost(tmp_path)
     _write_json(trial_path, payload)
 
     report = build_report(run_dir)
-    hard = report["positions"]["hard"]
+    hard = report["positions"]["hard"]["by_group"]["unknown::unknown"]
     assert hard["terminal_conditions"] == {"runaway_timeout": 1}
     assert hard["latency"]["mean_s"] == 300.0
     assert hard["tokens"]["prompt_total"] == 500
@@ -532,7 +605,7 @@ def test_build_report_lists_a_zero_committed_position_in_completeness(tmp_path):
     # The aggregate is still computed only from positions with real data --
     # the completeness block is what makes that fact visible, not a change
     # to what the aggregate itself covers.
-    assert report["aggregate"]["equal_weight_mean"] == 0.5
+    assert report["aggregate"]["unknown::unknown"]["equal_weight_mean"] == 0.5
 
 
 def test_render_markdown_visibly_flags_a_missing_position(tmp_path):
@@ -830,4 +903,4 @@ def test_build_report_works_when_attempts_directory_is_absent(tmp_path):
     assert not (run_dir / "attempts").exists()
 
     report = build_report(run_dir)
-    assert report["aggregate"]["equal_weight_mean"] == 0.5
+    assert report["aggregate"]["unknown::unknown"]["equal_weight_mean"] == 0.5

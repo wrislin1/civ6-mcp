@@ -259,7 +259,23 @@ def _usd_cost(model: object, prompt_tokens: object, completion_tokens: object) -
     return round(pt / 1000 * pin + ct / 1000 * pout, 6)
 
 
-def _position_summary(position_id: str, scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
+def _group_label(model: object, arm_id: object) -> str:
+    """Key identifying one (model, arm) group within a position. Trials
+    with no model/arm recorded (single-endpoint fixtures/runs) all fall
+    into one "unknown::unknown" group, which is exactly one group -- so a
+    single-model/single-arm run's per-group summary is numerically
+    identical to the old pooled-position summary."""
+    model_label = str(model) if model is not None else "unknown"
+    arm_label = str(arm_id) if arm_id is not None else "unknown"
+    return f"{model_label}::{arm_label}"
+
+
+def _group_summary(scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """Per-(model, arm)-group scoring/evidence summary within one position.
+    This is the unit F1 requires: pooling across models/arms here would
+    hide a per-model regression behind an unrelated model's strong score,
+    and mixing A/B arms here would corrupt the exact comparison the
+    calibration section exists to make."""
     normalized_scores = [s["rubric"]["normalized"] for s in scored]
     raw_scores = [s["rubric"]["raw_total"] for s in scored]
     attempt_counts = [s["attempt_count"] for s in scored if isinstance(s["attempt_count"], (int, float))]
@@ -352,6 +368,25 @@ def _position_summary(position_id: str, scored: Sequence[Mapping[str, object]]) 
             "usd_mean": round(sum(costs) / len(costs), 6) if costs else 0.0,
         },
         "action_quality": action_quality_totals,
+    }
+
+
+def _position_summary(position_id: str, scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """One position's report section: `trial_count` is the raw total across
+    every model/arm scheduled at this position (informational only -- it is
+    never used to compute a score), and `by_group` holds one `_group_summary`
+    per distinct (model, arm) pair actually observed at this position. F1:
+    a model/arm screen must be able to read a per-model, per-arm score for
+    each position -- a single pooled median across every model and arm would
+    hide a regression in one model behind another model's strong score, and
+    would corrupt A/B arm comparisons by mixing the two arms' trials."""
+    groups: dict[str, list[Mapping[str, object]]] = {}
+    for s in scored:
+        label = _group_label(s.get("model"), s.get("arm_id"))
+        groups.setdefault(label, []).append(s)
+    return {
+        "trial_count": len(scored),
+        "by_group": {label: _group_summary(group_scored) for label, group_scored in groups.items()},
     }
 
 
@@ -593,22 +628,31 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
             scored_by_pair.setdefault(str(pair_id), []).append(scored)
 
     positions_report: dict[str, object] = {}
-    position_medians: dict[str, float] = {}
+    # F1: the equal-weight aggregate and worst-position stats must be
+    # computed per (model, arm) group, never pooled across models/arms --
+    # a single mixed-pool number would hide a per-model regression and
+    # corrupt A/B arm comparisons. `group_position_medians[group_label]` is
+    # that group's {position_id: normalized_median} map, built only from
+    # positions where the group actually has committed trials.
+    group_position_medians: dict[str, dict[str, float]] = {}
     for position_id in sorted(scored_by_position):
         summary = _position_summary(position_id, scored_by_position[position_id])
         positions_report[position_id] = summary
-        position_medians[position_id] = summary["rubric"]["normalized_median"]
+        for label, group_summary in summary["by_group"].items():
+            group_position_medians.setdefault(label, {})[position_id] = group_summary["rubric"][
+                "normalized_median"
+            ]
 
-    if position_medians:
-        equal_weight_mean = sum(position_medians.values()) / len(position_medians)
-        worst_position_id = min(
-            position_medians, key=lambda pid: (position_medians[pid], pid)
-        )
-        worst_position_median = position_medians[worst_position_id]
-    else:
-        equal_weight_mean = 0.0
-        worst_position_id = None
-        worst_position_median = 0.0
+    aggregate_by_group: dict[str, object] = {}
+    for label in sorted(group_position_medians):
+        medians = group_position_medians[label]
+        equal_weight_mean = sum(medians.values()) / len(medians)
+        worst_position_id = min(medians, key=lambda pid: (medians[pid], pid))
+        aggregate_by_group[label] = {
+            "equal_weight_mean": equal_weight_mean,
+            "worst_position_id": worst_position_id,
+            "worst_position_median": medians[worst_position_id],
+        }
 
     report: dict[str, object] = {
         "session": {
@@ -626,11 +670,11 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
             expected_by_position=expected_by_position,
             committed_by_position=committed_by_position,
         ),
-        "aggregate": {
-            "equal_weight_mean": equal_weight_mean,
-            "worst_position_id": worst_position_id,
-            "worst_position_median": worst_position_median,
-        },
+        # Keyed by "<model>::<arm>" group label -- see _group_label. There is
+        # deliberately no pooled/combined entry mixing groups together: F1
+        # requires every equal-weight/worst-position statistic to be scoped
+        # to one (model, arm) group.
+        "aggregate": aggregate_by_group,
     }
 
     calibration = _calibration_section(scored_by_pair, _declared_arm_order(schedule_trials))
@@ -653,8 +697,8 @@ def _fmt(value: object) -> str:
     return str(value)
 
 
-def _render_position(position_id: str, summary: Mapping[str, object]) -> list[str]:
-    lines = [f"## Position: {position_id}", ""]
+def _render_group(summary: Mapping[str, object]) -> list[str]:
+    lines: list[str] = []
     lines.append(f"- Trials: {summary['trial_count']}")
     lines.append(
         f"- Normalized rubric median: {_fmt(summary['rubric']['normalized_median'])}"
@@ -716,6 +760,17 @@ def _render_position(position_id: str, summary: Mapping[str, object]) -> list[st
     return lines
 
 
+def _render_position(position_id: str, summary: Mapping[str, object]) -> list[str]:
+    lines = [f"## Position: {position_id}", ""]
+    lines.append(f"- Total trials (all models/arms): {summary['trial_count']}")
+    lines.append("")
+    for label in sorted(summary["by_group"]):
+        lines.append(f"### {position_id} / {label}")
+        lines.append("")
+        lines.extend(_render_group(summary["by_group"][label]))
+    return lines
+
+
 def render_markdown(report: Mapping[str, object]) -> str:
     """Render `report` (a `build_report` mapping) to Markdown. Every
     position section is rendered before the aggregate section; positions
@@ -762,14 +817,21 @@ def render_markdown(report: Mapping[str, object]) -> str:
         lines.extend(_render_position(position_id, report["positions"][position_id]))
 
     aggregate = report["aggregate"]
-    lines.append("## Aggregate")
+    lines.append("## Aggregate (per model::arm group -- never pooled across groups)")
     lines.append("")
-    lines.append(f"- Equal-weight mean (normalized rubric median across positions): {_fmt(aggregate['equal_weight_mean'])}")
-    lines.append(
-        f"- Worst position: {_fmt(aggregate['worst_position_id'])} "
-        f"(median {_fmt(aggregate['worst_position_median'])})"
-    )
-    lines.append("")
+    for label in sorted(aggregate):
+        group_aggregate = aggregate[label]
+        lines.append(f"### {label}")
+        lines.append("")
+        lines.append(
+            "- Equal-weight mean (normalized rubric median across positions): "
+            f"{_fmt(group_aggregate['equal_weight_mean'])}"
+        )
+        lines.append(
+            f"- Worst position: {_fmt(group_aggregate['worst_position_id'])} "
+            f"(median {_fmt(group_aggregate['worst_position_median'])})"
+        )
+        lines.append("")
 
     calibration = report.get("calibration")
     if calibration is not None:
