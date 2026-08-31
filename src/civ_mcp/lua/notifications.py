@@ -351,7 +351,7 @@ def build_dismiss_blocking_popups() -> str:
     PLEASE WAIT even after a full Close()-replication restore (proven live:
     v8 T159, event id 1640). A visible disaster popup is only REPORTED as
     skipped; dismissal belongs to the context-native path in
-    `coordinator._dismiss_blocking_popups`, which runs the popup's own
+    `civ_mcp.arena.popups.dismiss_blocking_popups`, which runs the popup's own
     Close() in its Lua state. Reports 'POPUPS|none' or 'POPUPS|<name>,...'
     (with 'SKIPPED:NaturalDisasterPopup' when the disaster popup is up).
     """

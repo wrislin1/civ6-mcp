@@ -91,6 +91,16 @@ def _validate_order(order: str) -> None:
 def _validate_arms(arms: tuple[TreatmentArm, ...]) -> None:
     if not arms:
         raise ValueError("suite must declare at least one treatment arm")
+    seen_arm_ids: set[str] = set()
+    for arm in arms:
+        if arm.arm_id in seen_arm_ids:
+            raise ValueError(
+                f"suite declares duplicate arm_id {arm.arm_id!r}; duplicate arm_ids "
+                "would silently corrupt ABBA pairing and the calibration section "
+                "(same-arm pairs are skipped, so a whole run could produce zero "
+                "pairs with no error)"
+            )
+        seen_arm_ids.add(arm.arm_id)
     for arm in arms:
         if arm.tools not in ALLOWED_TIERS:
             raise ValueError(

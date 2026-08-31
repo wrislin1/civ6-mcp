@@ -150,3 +150,18 @@ def test_compile_schedule_rejects_unsupported_order():
     suite = _base_suite(order="random", audit_indices=())
     with pytest.raises(ValueError, match="order"):
         compile_schedule(suite)
+
+
+def test_compile_schedule_rejects_duplicate_arm_ids():
+    # Duplicate arm_ids would silently corrupt ABBA pairing (same-arm pairs
+    # are skipped by the calibration section) -- a whole run could produce
+    # zero pairs with no error. Must fail closed at schedule-compile time.
+    suite = _base_suite(
+        arms=(
+            TreatmentArm("standard", "minimal", {}),
+            TreatmentArm("standard", "standard", {}),
+        ),
+        audit_indices=(),
+    )
+    with pytest.raises(ValueError, match="duplicate arm_id"):
+        compile_schedule(suite)
