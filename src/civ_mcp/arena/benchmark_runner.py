@@ -140,7 +140,7 @@ class FailureClass(str, Enum):
     TRANSPORT_FAILURE_UNHEALTHY = "transport_failure_unhealthy_endpoint"
 
 
-ReloadPositionFn = Callable[[str], Awaitable[None]]
+ReloadPositionFn = Callable[[str], Awaitable[bool]]
 DismissPopupsFn = Callable[[], Awaitable[str]]
 CaptureStateFn = Callable[[], Awaitable[Mapping[str, object]]]
 MakeAgentFn = Callable[[TrialSpec], Any]
@@ -156,6 +156,16 @@ class RunnerDependencies:
     - `reload_position(position_id)`: reload the named position's save,
       confirm the game continues, and reconnect -- one failure class
       (`FailureClass.RELOAD_OR_RECONNECT`) covers this whole sub-pipeline.
+      Returns `verified: bool` -- True when the reload observed positive
+      evidence the world came back up (an observed port drop, or a Tier-2
+      OCR/menu navigation success); False when it only has a
+      success-shaped-but-unconfirmable result (G3: the F16(b) stable-
+      open-port fallback is structurally indistinguishable from an inert
+      Network.LoadGame from the launcher's side -- only the runner's own
+      checksum step can tell them apart). A caller MUST return an actual
+      bool; a legacy `None`/other non-bool return is a contract violation
+      and is NOT treated as verified=True (fail closed) -- see
+      `run_trial`.
     - `dismiss_popups()`: best-effort popup hygiene before the episode.
     - `capture_state()`: query and return the canonical queried-state
       projection -- called once for the pre-episode checksum and once more
@@ -277,7 +287,16 @@ class BenchmarkRunner:
 
         # -- reload / continue / reconnect ----------------------------------
         try:
-            await self._deps.reload_position(spec.position_id)
+            reload_verified = await self._deps.reload_position(spec.position_id)
+            if not isinstance(reload_verified, bool):
+                # G3: fail closed on a contract violation rather than
+                # silently treating a legacy `None` (or any other non-bool)
+                # return as verified=True.
+                raise TypeError(
+                    "RunnerDependencies.reload_position must return a bool "
+                    f"(verified); got {type(reload_verified).__name__}: "
+                    f"{reload_verified!r}"
+                )
         except Exception as exc:  # noqa: BLE001 - one scoped step, one failure class
             self._record_infra_attempt(spec.index, FailureClass.RELOAD_OR_RECONNECT, exc)
             return
@@ -315,6 +334,32 @@ class BenchmarkRunner:
             # human (or a later automated triage pass) can tell "trivial
             # numeric-type drift" from "the reload landed on the wrong
             # save" without re-deriving it by hand.
+            diff = diff_state(self._expected_state, observed_state)
+            if not reload_verified:
+                # G3: the immediately preceding reload could not itself
+                # confirm the world came back up (F16(b) stable-open-port
+                # fallback) -- a mismatch here is exactly what an inert
+                # Network.LoadGame would also look like, so retry the
+                # reload instead of aborting a session over what may be a
+                # harness artifact rather than a real state defect.
+                self.store.append_event(
+                    "checksum_mismatch_unverified_reload",
+                    trial_index=spec.index,
+                    failure_class=FailureClass.RELOAD_OR_RECONNECT.value,
+                    details={
+                        "expected_digest": self._expected_digest,
+                        "observed_digest": observed_digest,
+                        "diff": diff,
+                    },
+                )
+                self._record_infra_attempt(
+                    spec.index,
+                    FailureClass.RELOAD_OR_RECONNECT,
+                    RuntimeError(
+                        "checksum mismatch after unverified reload -- retrying reload"
+                    ),
+                )
+                return
             self.store.append_event(
                 "checksum_mismatch",
                 trial_index=spec.index,
@@ -322,7 +367,7 @@ class BenchmarkRunner:
                 details={
                     "expected_digest": self._expected_digest,
                     "observed_digest": observed_digest,
-                    "diff": diff_state(self._expected_state, observed_state),
+                    "diff": diff,
                 },
             )
             raise SessionAborted(
@@ -609,12 +654,28 @@ def _resolve_position_path(suite_path: Path, position_id: str) -> Path:
 
 def _reload_result_is_success(result: object) -> bool:
     """Classify a raw `load_game_save` / `game_launcher.continue_after_lua_load`
-    result string. Success strings start with "Loaded " or mention "world
-    ready" (see `game_launcher.continue_after_lua_load`'s return values);
-    everything else (an "Error: ..." string, a "WARNING: ..." string, or any
-    other unrecognized text) is a failure."""
+    / `game_launcher.restart_and_load` result string.
+
+    G2: the original check only recognized the Tier-0/1 frontend-Lua
+    strings ("Loaded " prefix / "world ready"). Real Tier-2 successes look
+    different: `_navigate_to_save_sync` returns "Save loading (Ns).
+    Steps: ..." and `restart_and_load` returns a compound
+    "Kill: ... | Launch: ... | Load: Save loading (...)" string -- both
+    were misclassified as failures, burning all infrastructure attempts on
+    a working reload.
+
+    Success requires a recognized success marker AND the absence of any
+    failure marker (a failure marker anywhere in the string -- e.g. inside
+    a compound Kill/Launch/Load string -- always wins). Unrecognized text
+    stays a failure (fail closed)."""
     text = str(result)
-    return text.startswith("Loaded ") or "world ready" in text
+    has_success_marker = (
+        text.startswith("Loaded ") or "world ready" in text or "Save loading (" in text
+    )
+    has_failure_marker = any(
+        marker in text for marker in ("FAILED", "ABORTED", "WARNING:", "Error:", "not found")
+    )
+    return has_success_marker and not has_failure_marker
 
 
 def _build_live_dependencies(
@@ -646,22 +707,31 @@ def _build_live_dependencies(
             )
         return backend_cache[key]
 
-    async def reload_position(_position_id: str) -> None:
+    async def reload_position(_position_id: str) -> bool:
         # load_game_save reports most failures as strings ("Error: ...",
         # "WARNING: FireTuner port never dropped...", menu-fallback text)
-        # rather than raising -- RunnerDependencies.reload_position's
-        # contract is Awaitable[None], so this is the only place that ever
-        # sees the raw result. A failure/warning string must raise here so
-        # run_trial classifies it as a retryable RELOAD_OR_RECONNECT infra
-        # attempt instead of silently proceeding into the checksum check
-        # (which would then abort the whole session as checksum_mismatch --
-        # a harness failure misreported as a state defect).
+        # rather than raising -- this is the only place that ever sees the
+        # raw result. A failure/warning string must raise here so run_trial
+        # classifies it as a retryable RELOAD_OR_RECONNECT infra attempt
+        # instead of silently proceeding into the checksum check (which
+        # would then abort the whole session as checksum_mismatch -- a
+        # harness failure misreported as a state defect).
         result = await load_game_save(connection, position.game_save_name)
+        text = str(result)
         if _reload_result_is_success(result):
-            log.info("reload_position(%s): %s", _position_id, result)
-        else:
-            log.warning("reload_position(%s) failed: %s", _position_id, result)
-            raise RuntimeError(f"reload_position({_position_id!r}) failed: {result}")
+            # G3: the F16(b) stable-open-port fallback returns a
+            # success-shaped string carrying an UNVERIFIED marker -- the
+            # launcher structurally cannot confirm that reload (no game
+            # connection of its own), so surface verified=False for it;
+            # every other success path (observed port drop, Tier-2
+            # OCR/menu navigation) reports verified=True.
+            verified = "UNVERIFIED" not in text
+            log.info(
+                "reload_position(%s): %s (verified=%s)", _position_id, result, verified
+            )
+            return verified
+        log.warning("reload_position(%s) failed: %s", _position_id, result)
+        raise RuntimeError(f"reload_position({_position_id!r}) failed: {result}")
 
     async def dismiss_popups() -> str:
         return await dismiss_blocking_popups(connection)

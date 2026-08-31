@@ -86,8 +86,12 @@ def _unhealthy_probe() -> HealthProbe:
 
 
 def _deps(**overrides) -> RunnerDependencies:
+    # G3: RunnerDependencies.reload_position's contract is Awaitable[bool]
+    # (verified) -- the default fake reports a verified reload so existing
+    # tests exercise the same "verified reload, mismatch aborts" behavior
+    # as before this contract change.
     base = dict(
-        reload_position=AsyncMock(return_value=None),
+        reload_position=AsyncMock(return_value=True),
         dismiss_popups=AsyncMock(return_value="POPUPS|none"),
         capture_state=AsyncMock(return_value=dict(CANONICAL)),
         make_agent=lambda spec: _FinishingAgent(),
@@ -141,7 +145,7 @@ async def test_healthy_timeout_is_raw_trial_but_dead_endpoint_is_retry(tmp_path)
         {"session_fingerprint": "abc123", "schedule_fingerprint": "def456"},
     )
     deps = RunnerDependencies(
-        reload_position=AsyncMock(return_value=None),
+        reload_position=AsyncMock(return_value=True),
         dismiss_popups=AsyncMock(return_value="POPUPS|none"),
         capture_state=AsyncMock(return_value=canonical),
         make_agent=lambda _trial: TimeoutAgent(),
@@ -197,6 +201,7 @@ async def test_run_trial_calls_reload_popup_checksum_in_order(tmp_path):
 
     async def reload_position(position_id):
         calls.append("reload")
+        return True
 
     async def dismiss_popups():
         calls.append("popups")
@@ -288,7 +293,7 @@ async def test_run_trial_stops_session_after_three_attempts_across_resume(tmp_pa
     # Simulate a resumed process: a brand-new BenchmarkStore instance reopens
     # the same run directory and sees the three attempts purely from disk.
     resumed_store = BenchmarkStore.open(run_dir, _lock())
-    reload_position = AsyncMock(return_value=None)
+    reload_position = AsyncMock(return_value=True)
     deps = _deps(reload_position=reload_position)
     runner = _runner(resumed_store, deps)
 
@@ -345,6 +350,129 @@ async def test_reload_failure_is_an_infrastructure_attempt(tmp_path):
     run_dir = tmp_path / "run"
     store = BenchmarkStore.create(run_dir, _lock())
     deps = _deps(reload_position=AsyncMock(side_effect=RuntimeError("reload boom")))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.RELOAD_OR_RECONNECT.value
+
+
+# ---------------------------------------------------------------------------
+# G2 -- _reload_result_is_success must recognize every real Tier-0/1/2
+# success shape, not just the original "Loaded "/"world ready" strings.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        # Tier-0/1 frontend-Lua engaged path.
+        "Loaded builder-cal-v1: world ready, FireTuner port is open. "
+        "Reconnect and verify with get_game_overview.",
+        # F16(b) stable-open-port fallback (G3): still success-shaped, just
+        # carrying the UNVERIFIED marker.
+        "Loaded builder-cal-v1 (UNVERIFIED: port drop not observed -- "
+        "likely faster than the poll interval): world ready, FireTuner "
+        "port is open. Reconnect and verify with get_game_overview.",
+        # Tier-2 _navigate_to_save_sync.
+        "Save loading (12s). Steps: click Continue, wait. Wait ~10s then "
+        "use get_game_overview to verify.",
+        # restart_and_load's compound Kill/Launch/Load string.
+        "Kill: ok | Launch: ok | Load: Save loading (10s). Steps: click. "
+        "Wait ~10s then use get_game_overview to verify.",
+    ],
+)
+def test_reload_result_is_success_recognizes_every_real_success_shape(result):
+    assert benchmark_runner._reload_result_is_success(result) is True
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        "Error: Save 'foo' not found in Lua query or on filesystem. Check the name.",
+        "WARNING: FireTuner port never dropped after the Lua load of 'foo' -- "
+        "the load may not have engaged; no Escape was sent.",
+        "WARNING: FireTuner port did not reopen within the wait window for 'foo'.",
+        # A "Save loading (" prefix must not override an explicit failure
+        # marker later in the same compound string.
+        "Kill: ok | Launch: FAILED | Load: Save loading (10s).",
+        "Kill: ok | Launch: ok | Load: ABORTED before Save loading (10s).",
+    ],
+)
+def test_reload_result_is_success_stays_fail_closed_on_failure_strings(result):
+    assert benchmark_runner._reload_result_is_success(result) is False
+
+
+# ---------------------------------------------------------------------------
+# G3 -- reload_position's contract is Awaitable[bool] (verified). A
+# checksum mismatch immediately after an unverified reload is a retryable
+# infrastructure attempt (the launcher structurally could not tell an inert
+# Network.LoadGame apart from a genuine stable-open-port success); a
+# checksum mismatch after a verified reload still aborts the session.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_checksum_mismatch_after_unverified_reload_is_infra_attempt_not_abort(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    wrong_state = {**CANONICAL, "turn": 999}
+    deps = _deps(
+        reload_position=AsyncMock(return_value=False),
+        capture_state=AsyncMock(return_value=wrong_state),
+    )
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))  # must NOT raise SessionAborted
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 1
+    attempt = _attempt_payload(run_dir, 1)
+    assert attempt["failure_class"] == FailureClass.RELOAD_OR_RECONNECT.value
+    assert "unverified reload" in attempt["error"]
+
+
+@pytest.mark.asyncio
+async def test_checksum_mismatch_after_verified_reload_still_aborts(tmp_path):
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    wrong_state = {**CANONICAL, "turn": 999}
+    deps = _deps(
+        reload_position=AsyncMock(return_value=True),
+        capture_state=AsyncMock(return_value=wrong_state),
+    )
+    runner = _runner(store, deps)
+
+    with pytest.raises(SessionAborted, match="checksum"):
+        await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == set()
+    assert runner.store.attempt_count(1) == 0
+
+
+@pytest.mark.asyncio
+async def test_unverified_reload_with_matching_checksum_proceeds_normally(tmp_path):
+    """An unverified reload is only a problem paired with a checksum
+    mismatch -- if the observed state matches, the trial runs normally."""
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(reload_position=AsyncMock(return_value=False))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == {1}
+
+
+@pytest.mark.asyncio
+async def test_reload_position_non_bool_return_fails_closed_as_infra_attempt(tmp_path):
+    """A legacy `None` return (or anything else non-bool) must never be
+    silently treated as verified=True -- fail closed as a retryable infra
+    attempt instead."""
+    run_dir = tmp_path / "run"
+    store = BenchmarkStore.create(run_dir, _lock())
+    deps = _deps(reload_position=AsyncMock(return_value=None))
     runner = _runner(store, deps)
 
     await runner.run_trial(_spec(1, "minimal"))
@@ -941,7 +1069,7 @@ async def test_ungated_smoke_run_dir_is_report_ready(tmp_path, monkeypatch):
 
     def _fake_build_live_dependencies(**_kwargs) -> RunnerDependencies:
         return RunnerDependencies(
-            reload_position=AsyncMock(return_value=None),
+            reload_position=AsyncMock(return_value=True),
             dismiss_popups=AsyncMock(return_value="POPUPS|none"),
             # Matches the fixture position's expected_state ({"turn": 42})
             # so the pre-episode canonical checksum passes.
@@ -1224,4 +1352,34 @@ async def test_live_reload_position_passes_on_success_string(monkeypatch):
         api_key="x",
     )
 
-    await deps.reload_position(position.position_id)  # must not raise
+    verified = await deps.reload_position(position.position_id)  # must not raise
+    assert verified is True
+
+
+@pytest.mark.asyncio
+async def test_live_reload_position_reports_unverified_for_stable_open_port_fallback(monkeypatch):
+    """G3: the F16(b) stable-open-port fallback is success-shaped text the
+    launcher cannot itself verify (no game connection) -- reload_position
+    must surface that as verified=False, not silently claim verified=True
+    like the observed-drop path."""
+    position = _position_manifest()
+    arm = TreatmentArm("standard", "standard", {})
+    suite = _suite_manifest((arm,))
+    unverified_result = (
+        "Loaded builder-cal-v1 (UNVERIFIED: port drop not observed -- "
+        "likely faster than the poll interval): world ready, FireTuner "
+        "port is open. Reconnect and verify with get_game_overview."
+    )
+    monkeypatch.setattr(
+        benchmark_runner, "load_game_save", AsyncMock(return_value=unverified_result)
+    )
+    deps = benchmark_runner._build_live_dependencies(
+        connection=object(),
+        position=position,
+        suite=suite,
+        gateway_url="http://example.invalid/v1",
+        api_key="x",
+    )
+
+    verified = await deps.reload_position(position.position_id)
+    assert verified is False

@@ -81,6 +81,27 @@ async def test_wrong_save_recovery_skips_stray_click_when_reload_reports_world_r
 
 
 @pytest.mark.asyncio
+async def test_wrong_save_recovery_skips_stray_click_for_unverified_world_ready(monkeypatch):
+    """G3: the F16(b) stable-open-port fallback reports success text
+    carrying an UNVERIFIED marker but still says "world ready" -- the
+    wrong-save recovery's substring check must still treat it as
+    reconnect-only (no positional click into an already-loaded world)."""
+    click_positional, _load = _patch_common(
+        monkeypatch,
+        load_result=(
+            "Loaded scenario (UNVERIFIED: port drop not observed -- likely "
+            "faster than the poll interval): world ready, FireTuner port "
+            "is open."
+        ),
+    )
+    conn = _FakeConn(verify_turns=[157, 1])
+
+    await server._auto_boot(conn, "scenario")
+
+    click_positional.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_wrong_save_recovery_still_clicks_when_reload_does_not_report_world_ready(monkeypatch):
     """The legacy quick-return path (a reload result that does NOT already
     say the world is ready) still needs the positional click through the

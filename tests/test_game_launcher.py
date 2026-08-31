@@ -635,6 +635,8 @@ async def test_continue_after_lua_load_presses_escape_until_world_ready(monkeypa
     assert presses          # pressed while the port was closed
     assert "FireTuner port is open" in result
     assert seen[-1] is True
+    # The observed-drop path is a confirmed success -- no UNVERIFIED marker.
+    assert "UNVERIFIED" not in result
 
 
 @pytest.mark.asyncio
@@ -656,6 +658,11 @@ async def test_continue_after_lua_load_treats_a_stable_open_port_as_world_ready(
 
     assert "world ready" in result
     assert "WARNING" not in result
+    # G3 ruling: this fallback is success-shaped text the launcher cannot
+    # itself verify (no game connection) -- it must carry an UNVERIFIED
+    # marker so the runner's reload_position can surface verified=False,
+    # distinguishing it from the observed-drop success path.
+    assert "UNVERIFIED" in result
 
 
 @pytest.mark.asyncio

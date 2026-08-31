@@ -2064,10 +2064,19 @@ async def continue_after_lua_load(
         if _is_tuner_port_open():
             await asyncio.sleep(2.0)
             if _is_tuner_port_open():
+                # G3 (benchmark runner fix brief): this stable-open-port
+                # fallback is exactly what an inert Network.LoadGame also
+                # looks like from here -- this function has no game
+                # connection of its own and structurally cannot tell the
+                # two apart. Carry an UNVERIFIED marker so a caller with
+                # more evidence (e.g. the benchmark runner's checksum
+                # step) can tell this apart from the observed-drop success
+                # path instead of treating both as equally confirmed.
                 return (
-                    f"Loaded {save_name}: world ready, FireTuner port is open "
-                    f"(drop was not observed -- likely faster than the poll "
-                    f"interval). Reconnect and verify with get_game_overview."
+                    f"Loaded {save_name} (UNVERIFIED: port drop not observed -- "
+                    f"likely faster than the poll interval): world ready, "
+                    f"FireTuner port is open. Reconnect and verify with "
+                    f"get_game_overview."
                 )
         return (
             f"WARNING: FireTuner port never dropped after the Lua load of "
