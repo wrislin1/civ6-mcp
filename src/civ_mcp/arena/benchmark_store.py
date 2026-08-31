@@ -39,6 +39,7 @@ __all__ = [
     "BenchmarkStoreError",
     "SessionLockMismatchError",
     "TrialExistsError",
+    "TrialProvenanceError",
     "trial_filename",
 ]
 
@@ -55,6 +56,19 @@ class SessionLockMismatchError(BenchmarkStoreError):
 class TrialExistsError(BenchmarkStoreError):
     """Raised when `commit_trial` targets an index that already has
     committed raw evidence. A committed trial is never re-executed."""
+
+
+class TrialProvenanceError(BenchmarkStoreError):
+    """Raised by `is_trial_complete` when a committed trial file exists on
+    disk but its stamped provenance does not prove it belongs to this
+    store's lock: a corrupt/unparseable file, a missing or mismatched
+    `session_fingerprint`, or -- for a counted campaign block (a lock that
+    carries a non-empty `campaign_fingerprint`) -- a missing or mismatched
+    `campaign_fingerprint`. Never silently treated as incomplete or
+    complete: a stale, copied, or single-stamped trial file must stop the
+    campaign for operator review, not quietly re-run (double-counting an
+    episode) or quietly pass (counting evidence that does not actually
+    belong to this lock)."""
 
 
 # `{index:03d}` (used by _trial_path/_attempt_path below) is a MINIMUM
@@ -109,6 +123,12 @@ class BenchmarkStore:
         self.run_dir = Path(run_dir)
         self.lock = dict(lock)
         self.fingerprint = fingerprint
+        # A counted campaign block's lock carries a non-empty
+        # campaign_fingerprint (see benchmark_campaign.build_campaign_lock /
+        # benchmark_gates.build_session_lock); an ungated/smoke lock has
+        # none. is_trial_complete only demands the second stamp when this
+        # store's own lock actually declares one.
+        self.campaign_fingerprint = lock.get("campaign_fingerprint")
         self._seq_lock = threading.Lock()
         self._seq = self._load_next_sequence()
 
@@ -317,6 +337,65 @@ class BenchmarkStore:
         has not been committed."""
         path = self._trial_path(index)
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def is_trial_complete(self, index: int) -> bool:
+        """True only when trial `index` is committed AND its stamped
+        provenance proves it belongs to this store's lock.
+
+        `False` means "never committed" -- an ordinary, expected state for
+        an unscheduled or not-yet-run trial. Anything else (a committed
+        file that is corrupt, unstamped, or stamped for a different lock)
+        raises `TrialProvenanceError` instead of returning `False`: treating
+        bad provenance the same as "never ran" would let a resuming runner
+        silently re-execute (double-counting an episode) or -- if the
+        stamps happen to collide -- silently accept evidence that never
+        actually ran under this lock.
+
+        For a counted campaign block (this store's lock carries a non-empty
+        `campaign_fingerprint`), BOTH the `session_fingerprint` and the
+        `campaign_fingerprint` stamps on the committed trial must be present
+        and match; a single-stamped file (e.g. carrying only
+        `session_fingerprint`) is exactly the corrupt/incomplete-provenance
+        case this method must fail closed on, not silently skip.
+        """
+        if index not in self.completed_indices():
+            return False
+
+        try:
+            trial = self.trial(index)
+        except (OSError, ValueError) as exc:
+            raise TrialProvenanceError(
+                f"trial {index} at {self._trial_path(index)} could not be read/parsed "
+                f"as JSON: {exc}"
+            ) from exc
+
+        if not isinstance(trial, dict):
+            raise TrialProvenanceError(
+                f"trial {index} at {self._trial_path(index)} is not a JSON object "
+                f"(got {type(trial).__name__}); refusing to treat unparseable "
+                "evidence as complete"
+            )
+
+        stamped_session = trial.get("session_fingerprint")
+        if not stamped_session or stamped_session != self.fingerprint:
+            raise TrialProvenanceError(
+                f"trial {index} is stamped with session_fingerprint "
+                f"{stamped_session!r}, but this store's session_fingerprint is "
+                f"{self.fingerprint!r}; refusing to treat a stale/copied/unstamped "
+                "trial as complete"
+            )
+
+        if self.campaign_fingerprint:
+            stamped_campaign = trial.get("campaign_fingerprint")
+            if not stamped_campaign or stamped_campaign != self.campaign_fingerprint:
+                raise TrialProvenanceError(
+                    f"trial {index} is stamped with campaign_fingerprint "
+                    f"{stamped_campaign!r}, but this counted block's "
+                    f"campaign_fingerprint is {self.campaign_fingerprint!r}; refusing "
+                    "to treat a stale/copied/single-stamped trial as complete"
+                )
+
+        return True
 
     def completed_indices(self) -> set[int]:
         """The set of trial indices with committed raw evidence. Incomplete

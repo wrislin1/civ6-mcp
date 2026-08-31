@@ -8,6 +8,7 @@ from civ_mcp.arena.benchmark_store import (
     BenchmarkStoreError,
     SessionLockMismatchError,
     TrialExistsError,
+    TrialProvenanceError,
     trial_filename,
 )
 
@@ -283,3 +284,93 @@ def test_committed_trial_lands_at_the_path_trial_filename_predicts(tmp_path):
     store.commit_trial(1000, {"session_fingerprint": store.fingerprint})
 
     assert (tmp_path / "run" / "trials" / trial_filename(1000)).exists()
+
+
+# ---------------------------------------------------------------------------
+# is_trial_complete -- Task 3: a counted campaign block's lock carries both a
+# session_fingerprint and a campaign_fingerprint; both stamps on a committed
+# trial must be present and match, or the campaign stops for operator review
+# (never silently skipped/re-run).
+# ---------------------------------------------------------------------------
+
+
+def _campaign_lock(**overrides) -> dict:
+    lock = {"session_fingerprint": "abc123", "campaign_fingerprint": "campfp"}
+    lock.update(overrides)
+    return lock
+
+
+def test_is_trial_complete_is_false_for_a_never_committed_trial(tmp_path):
+    store = BenchmarkStore.create(tmp_path / "run", _campaign_lock())
+    assert store.is_trial_complete(1) is False
+
+
+def test_is_trial_complete_true_when_both_stamps_match_the_lock(tmp_path):
+    lock = _campaign_lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    store.commit_trial(
+        1,
+        {
+            "session_fingerprint": store.fingerprint,
+            "campaign_fingerprint": store.campaign_fingerprint,
+        },
+    )
+
+    assert store.is_trial_complete(1) is True
+
+
+def test_block_store_requires_campaign_and_session_fingerprints(tmp_path):
+    """A trial stamped with the correct session_fingerprint but no
+    campaign_fingerprint at all (single-stamped) must not be treated as
+    complete -- it must raise, not silently pass or silently fail."""
+    lock = _campaign_lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    store.commit_trial(1, {"session_fingerprint": store.fingerprint})
+
+    with pytest.raises(TrialProvenanceError):
+        store.is_trial_complete(1)
+
+
+def test_existing_block_trial_with_wrong_campaign_fingerprint_is_not_complete(tmp_path):
+    lock = _campaign_lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    store.commit_trial(
+        1,
+        {
+            "session_fingerprint": store.fingerprint,
+            "campaign_fingerprint": "some-other-campaign-fingerprint",
+        },
+    )
+
+    with pytest.raises(TrialProvenanceError):
+        store.is_trial_complete(1)
+
+
+def test_is_trial_complete_raises_on_wrong_session_fingerprint_even_without_campaign_concept(tmp_path):
+    """Non-counted (smoke) locks carry no campaign_fingerprint at all, but
+    the session_fingerprint stamp must still be verified -- unchanged
+    behavior from before this task."""
+    lock = _lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    store.commit_trial(1, {"session_fingerprint": "not-this-store's-fingerprint"})
+
+    with pytest.raises(TrialProvenanceError):
+        store.is_trial_complete(1)
+
+
+def test_is_trial_complete_true_for_a_non_counted_lock_with_no_campaign_fingerprint(tmp_path):
+    lock = _lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    store.commit_trial(1, {"session_fingerprint": store.fingerprint})
+
+    assert store.is_trial_complete(1) is True
+
+
+def test_is_trial_complete_raises_on_a_corrupt_trial_file(tmp_path):
+    lock = _campaign_lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    trial_path = tmp_path / "run" / "trials" / trial_filename(1)
+    trial_path.write_text("{not valid json", encoding="utf-8")
+
+    with pytest.raises(TrialProvenanceError):
+        store.is_trial_complete(1)

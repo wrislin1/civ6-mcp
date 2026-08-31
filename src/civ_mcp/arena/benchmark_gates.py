@@ -498,20 +498,24 @@ def build_session_lock(
     wsl: Mapping[str, object],
     windows: Mapping[str, object],
     boot_health: Mapping[str, object] | None,
-    manifest_fingerprint: str,
+    campaign_fingerprint: str,
+    block_id: str,
+    model_config: Mapping[str, object],
     schedule_fingerprint: str,
-    prompt_fingerprint: str,
-    rubric_fingerprint: str,
-    tool_fingerprint: str,
+    admission_fingerprint: str,
+    tool_surface_fingerprint: str,
+    tool_input_fingerprint: str,
     scorer_fingerprint: str,
+    episode_wall_s: int,
     tools_schema: Sequence[Mapping[str, Any]],
     deployment: Mapping[str, object] | None,
     canonical_state: Mapping[str, object],
     model_admission: Mapping[str, object] | None,
 ) -> dict[str, object]:
     """Assemble one immutable, JSON-safe, deterministically-fingerprinted
-    session lock, or raise `GateFailure` if any piece of admission evidence
-    fails closed.
+    per-model-block lock -- this IS `session.json` (evolved; no third lock
+    artifact is ever introduced), or raise `GateFailure` if any piece of
+    admission evidence fails closed.
 
     Checks, in order:
 
@@ -520,17 +524,37 @@ def build_session_lock(
        (a missing/failed boot-health poll must never be silently skipped).
     3. `tools_schema` never exposes `end_turn` and always exposes
        `finish_trial` (the benchmark control tool).
-    4. Every digest (manifest/schedule/prompt/rubric/tool/scorer) is present.
-    5. `deployment` is present and reports `ok` (a verified save deployment).
-    6. `canonical_state`'s digest matches `state_digest(position.expected_state)`
+    4. `campaign_fingerprint` is present -- a counted block lock must always
+       reference the immutable campaign it belongs to (see
+       `benchmark_campaign.build_campaign_lock`); this is checked separately
+       from the other digests below because a missing campaign reference is
+       categorically worse than a missing schedule/tool/scorer digest: it
+       means this lock cannot be told apart from an uncounted/smoke run at
+       all.
+    5. Every remaining digest (schedule/tool_surface/tool_input/scorer/
+       admission) is present, and `block_id`/`model_config` are present.
+    6. `deployment` is present and reports `ok` (a verified save deployment).
+    7. `canonical_state`'s digest matches `state_digest(position.expected_state)`
        -- the queried-state checksum gate.
-    7. `model_admission` is present and reports `ok` (the caller already ran
-       `admit_model_block` for the session's initial model block).
+    8. `model_admission` is present and reports `ok` (the caller already ran
+       `admit_model_block` for this session's model block).
 
     The returned lock includes a `session_fingerprint` computed over every
     other field, so identical inputs always produce an identical lock and
-    any change to code/position/rubric/prompt/tool-schema/sampling/model
-    topology changes it.
+    any change to code/position/rubric/prompt/tool-surface/tool-input/
+    sampling/model topology changes it. `campaign_fingerprint` itself is
+    just one more field folded into that computation -- a description-only
+    schema edit changes `tool_input_fingerprint` (hence `session_fingerprint`)
+    while leaving `campaign_fingerprint` untouched (tool surface identity is
+    campaign evidence; exact input schemas are block-admission evidence
+    only -- see `benchmark_contract`'s module docstring).
+
+    Deliberately does NOT carry `manifest_fingerprint`/`prompt_fingerprint`/
+    `rubric_fingerprint` as separate top-level digests any more: that shared
+    campaign-wide content is now referenced through `campaign_fingerprint`
+    instead of duplicated here. `position` (and its embedded rubric/
+    objectives, below) is still retained so this lock can be scored
+    standalone, without needing `campaign.json` at hand.
 
     Additive: alongside this module's own evidence structure (`digests.scorer`,
     a singular `position_id`, ...), the returned lock also carries the
@@ -575,15 +599,38 @@ def build_session_lock(
             },
         )
 
+    # A counted block lock must always reference the immutable campaign it
+    # belongs to -- checked ahead of (and separately from) the other
+    # digests below because a missing campaign_fingerprint is categorically
+    # worse than a missing schedule/tool/scorer digest: without it this
+    # lock is indistinguishable from an ungated/smoke run, and
+    # BenchmarkStore.is_trial_complete would silently stop demanding the
+    # second stamp on every committed trial.
+    if not campaign_fingerprint:
+        raise GateFailure(
+            "missing_campaign_fingerprint",
+            {
+                "message": (
+                    "session lock is missing a non-empty campaign_fingerprint; a "
+                    "counted per-model-block lock must always reference the "
+                    "immutable campaign it belongs to"
+                ),
+            },
+        )
+
     digests = {
-        "manifest": manifest_fingerprint,
         "schedule": schedule_fingerprint,
-        "prompt": prompt_fingerprint,
-        "rubric": rubric_fingerprint,
-        "tool": tool_fingerprint,
+        "tool_surface": tool_surface_fingerprint,
+        "tool_input": tool_input_fingerprint,
         "scorer": scorer_fingerprint,
+        "admission": admission_fingerprint,
     }
     missing_digests = sorted(key for key, value in digests.items() if not value)
+    if not block_id:
+        missing_digests.append("block_id")
+    if not model_config:
+        missing_digests.append("model_config")
+    missing_digests.sort()
     if missing_digests:
         raise GateFailure(
             "missing_digest",
@@ -636,6 +683,10 @@ def build_session_lock(
 
     lock: dict[str, object] = {
         "position_id": position.position_id,
+        "block_id": block_id,
+        "campaign_fingerprint": campaign_fingerprint,
+        "model_config": dict(model_config),
+        "episode_wall_s": episode_wall_s,
         "git": checkout,
         "boot_health": dict(boot_health),
         "digests": digests,
@@ -648,6 +699,7 @@ def build_session_lock(
         # schema comment block above that function. Additive: everything
         # else on this lock is this module's own evidence structure.
         "scorer_fingerprint": scorer_fingerprint,
+        "schedule_fingerprint": schedule_fingerprint,
         "positions": {
             position.position_id: {
                 "rubric": list(position.rubric),

@@ -413,12 +413,15 @@ def _lock_kwargs(**overrides):
         wsl={"commit": "abc123", "status": ""},
         windows={"commit": "abc123", "status": ""},
         boot_health=_good_boot_health(),
-        manifest_fingerprint="mfp",
+        campaign_fingerprint="cfp",
+        block_id="qwen3.6-27b",
+        model_config={"model": "qwen3.6-27b", "endpoint_id": "home-gpu0-cpp"},
         schedule_fingerprint="sfp",
-        prompt_fingerprint="pfp",
-        rubric_fingerprint="rfp",
-        tool_fingerprint="tfp",
+        admission_fingerprint="adfp",
+        tool_surface_fingerprint="tsfp",
+        tool_input_fingerprint="tifp",
         scorer_fingerprint="scfp",
+        episode_wall_s=120,
         tools_schema=[GET_UNITS_SCHEMA, FINISH_SCHEMA],
         deployment=_good_deployment(),
         canonical_state=dict(position.expected_state),
@@ -504,11 +507,22 @@ def test_build_session_lock_rejects_unverified_model_admission():
         build_session_lock(**_lock_kwargs(model_admission={"ok": False}))
 
 
+def test_build_session_lock_rejects_missing_campaign_fingerprint():
+    with pytest.raises(GateFailure, match="campaign_fingerprint") as exc_info:
+        build_session_lock(**_lock_kwargs(campaign_fingerprint=""))
+    assert exc_info.value.code == "missing_campaign_fingerprint"
+
+
 def test_build_session_lock_passes_and_returns_full_evidence():
     lock = build_session_lock(**_lock_kwargs())
     assert lock["ok"] is True
     assert lock["position_id"] == "builder-cal-v1"
-    assert lock["digests"]["manifest"] == "mfp"
+    assert lock["block_id"] == "qwen3.6-27b"
+    assert lock["campaign_fingerprint"] == "cfp"
+    assert lock["model_config"] == {"model": "qwen3.6-27b", "endpoint_id": "home-gpu0-cpp"}
+    assert lock["episode_wall_s"] == 120
+    assert lock["digests"]["tool_surface"] == "tsfp"
+    assert lock["digests"]["tool_input"] == "tifp"
     assert lock["digests"]["scorer"] == "scfp"
     assert lock["canonical_state_digest"]
     assert "session_fingerprint" in lock and lock["session_fingerprint"]
@@ -521,7 +535,13 @@ def test_build_session_lock_passes_and_returns_full_evidence():
 
 def test_build_session_lock_fingerprint_changes_with_digest():
     lock_a = build_session_lock(**_lock_kwargs())
-    lock_b = build_session_lock(**_lock_kwargs(manifest_fingerprint="different-mfp"))
+    lock_b = build_session_lock(**_lock_kwargs(schedule_fingerprint="different-sfp"))
+    assert lock_a["session_fingerprint"] != lock_b["session_fingerprint"]
+
+
+def test_build_session_lock_fingerprint_changes_with_campaign_fingerprint():
+    lock_a = build_session_lock(**_lock_kwargs())
+    lock_b = build_session_lock(**_lock_kwargs(campaign_fingerprint="different-cfp"))
     assert lock_a["session_fingerprint"] != lock_b["session_fingerprint"]
 
 
