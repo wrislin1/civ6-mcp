@@ -224,18 +224,31 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
                     # Retry via Lua (Network.LoadGame) — bypasses OCR entirely
                     result = await load_game_save(conn, save_name)
                     log.info("Auto-boot: Lua reload result: %s", result)
-                    await asyncio.sleep(15)
-                    # Click CONTINUE again for the leader screen
-                    await asyncio.to_thread(game_launcher._click_continue_positional)
-                    await asyncio.sleep(5)
-                    for retry in range(30):
-                        try:
-                            await conn.reconnect()
-                            if conn.gamecore_index is not None:
-                                break
-                        except ConnectionError:
-                            pass
-                        await asyncio.sleep(1)
+                    if "world ready" in result:
+                        # The Tier-0/1 frontend-Lua engaged path (see
+                        # game_launcher.continue_after_lua_load) now blocks
+                        # until the world is genuinely ready before
+                        # load_game_save ever returns -- there is no leader
+                        # -screen intermission left to click through here.
+                        # A positional click at this point would land as a
+                        # stray click inside the already-loaded world. This
+                        # branch only remains for the legacy quick-return
+                        # path (a save load that returns before the world
+                        # is ready, e.g. the OCR menu-nav fallback).
+                        await conn.reconnect()
+                    else:
+                        await asyncio.sleep(15)
+                        # Click CONTINUE again for the leader screen
+                        await asyncio.to_thread(game_launcher._click_continue_positional)
+                        await asyncio.sleep(5)
+                        for retry in range(30):
+                            try:
+                                await conn.reconnect()
+                                if conn.gamecore_index is not None:
+                                    break
+                            except ConnectionError:
+                                pass
+                            await asyncio.sleep(1)
                     # Verify again
                     try:
                         verify2 = await conn.execute_read(

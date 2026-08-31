@@ -2044,7 +2044,16 @@ async def continue_after_lua_load(
     and reopens only in-world; the leader screen in between accepts only
     VK_ESCAPE. Wait for the drop (proof the load engaged), then press
     Escape periodically until the port returns. Never presses while the
-    port is open, so a live game is never poked."""
+    port is open, so a live game is never poked.
+
+    F16(b): `GameConnection`'s own auto-reconnect can re-open the port
+    faster than this function's 2s poll interval, so the drop is never
+    actually observed even though the load genuinely engaged and finished
+    -- reporting a "port never dropped" WARNING in that case would be
+    false. If `engage_polls` elapses without observing a drop, a STABLE
+    (confirmed by one more spaced re-check) open port is treated as
+    world-ready success instead; the WARNING fires only when the port is
+    not actually settled open (still not ready)."""
     engaged = False
     for _ in range(engage_polls):
         if not _is_tuner_port_open():
@@ -2052,6 +2061,14 @@ async def continue_after_lua_load(
             break
         await asyncio.sleep(2.0)
     if not engaged:
+        if _is_tuner_port_open():
+            await asyncio.sleep(2.0)
+            if _is_tuner_port_open():
+                return (
+                    f"Loaded {save_name}: world ready, FireTuner port is open "
+                    f"(drop was not observed -- likely faster than the poll "
+                    f"interval). Reconnect and verify with get_game_overview."
+                )
         return (
             f"WARNING: FireTuner port never dropped after the Lua load of "
             f"'{save_name}' -- the load may not have engaged; no Escape "

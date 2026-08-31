@@ -638,11 +638,38 @@ async def test_continue_after_lua_load_presses_escape_until_world_ready(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_continue_after_lua_load_warns_when_load_never_engages(monkeypatch):
-    """If the port never drops, Network.LoadGame did not actually engage —
-    report a warning instead of pressing Escape at a live game."""
-    presses: list[bool] = []
+async def test_continue_after_lua_load_treats_a_stable_open_port_as_world_ready(monkeypatch):
+    """F16(b) repro: GameConnection's own auto-reconnect can re-open the
+    FireTuner port faster than continue_after_lua_load's poll interval, so
+    the drop is never actually observed even though the load genuinely
+    succeeded. A verified-open, STABLE port (confirmed by one more spaced
+    check) must be treated as world-ready success rather than a false
+    "port never dropped" warning."""
     monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: True)
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=3
+    )
+
+    assert "world ready" in result
+    assert "WARNING" not in result
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_warns_when_load_never_engages(monkeypatch):
+    """If the port never drops AND does not settle open either (it
+    flickers closed again on the stability recheck), the world is
+    genuinely not ready -- report a warning instead of pressing Escape at
+    a live game."""
+    presses: list[bool] = []
+    # engage_polls=3 samples (all open, never observed dropping), then the
+    # stability recheck's first sample (open) and second sample (closed
+    # again -- a flicker, not a settled reopen).
+    port_states = iter([True, True, True, True, False])
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: next(port_states, False))
     monkeypatch.setattr(
         game_launcher, "_press_escape", lambda: presses.append(True) or True,
         raising=False,
