@@ -496,6 +496,52 @@ def test_authoring_validation_rejects_distance_predicate_for_consumable_unit():
         validate_position_contract(position)
 
 
+def test_authoring_validation_rejects_unit_at_for_consumable_unit():
+    """A consumable unit that is legitimately consumed (e.g. a settler via
+    found_city) vanishes from final state exactly like a unit lost to a
+    barbarian -- unit_at on a consumable id would silently score a correct
+    trial as a failure with no error raised. Reject it at authoring time,
+    same as unit_distance_decreased."""
+    position = _lifecycle_position(
+        consumable_unit_ids=(9,),
+        objectives=(
+            {
+                "tools": ["found_city"],
+                "progress_predicate": {
+                    "kind": "unit_at",
+                    "unit_index": 9,
+                    "x": 9,
+                    "y": 10,
+                },
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="consumable unit id 9"):
+        validate_position_contract(position)
+
+
+def test_authoring_validation_rejects_unit_exists_final_for_consumable_unit():
+    """Same rule for unit_exists_final: a consumable unit's disappearance
+    is expected, not a failure signal -- scoring it via a unit predicate at
+    all is a manifest authoring error."""
+    position = _lifecycle_position(
+        consumable_unit_ids=(9,),
+        objectives=(
+            {
+                "tools": ["found_city"],
+                "progress_predicate": {
+                    "kind": "unit_exists_final",
+                    "unit_index": 9,
+                },
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="consumable unit id 9"):
+        validate_position_contract(position)
+
+
 def test_consumable_unit_is_scored_by_resulting_tile_state_not_distance():
     """The positive counterpart of the previous test: a consumable unit's
     objective scored through tile_state_equals (not a distance predicate)

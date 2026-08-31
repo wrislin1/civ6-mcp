@@ -285,10 +285,16 @@ def validate_position_contract(position: PositionManifest) -> None:
       `unit_exists_final`) found anywhere in `objectives`/`rubric` must
       reference a declared unit id (persistent or consumable) -- an
       undeclared id is rejected.
-    - `unit_distance_decreased` must never reference a consumable unit id:
-      a consumable unit may vanish from the game entirely (e.g. a settler
-      consumed by `found_city`), at which point "distance to target" is
-      meaningless. A consumable unit's outcome must be scored through a
+    - No unit predicate (`unit_distance_decreased`, `unit_at`,
+      `unit_exists_final`) may reference a consumable unit id: a
+      consumable unit is EXPECTED to vanish from final state on a correct
+      trial (e.g. a settler consumed by `found_city`), which is
+      indistinguishable, to any unit predicate, from that unit having been
+      lost to a barbarian. `unit_distance_decreased`/`unit_at` are
+      meaningless once the unit is gone, and `unit_exists_final` would
+      silently score a CORRECT trial `False` with no error raised --
+      worse than the `PredicateError` abort this validator exists to
+      prevent. A consumable unit's outcome must be scored through a
       tile/state predicate (`tile_state_equals`, `final_state_equals`,
       `state_changed_to`) instead.
 
@@ -329,12 +335,22 @@ def validate_position_contract(position: PositionManifest) -> None:
                 f"references undeclared unit id {unit_id!r} -- every unit id used in a "
                 "unit predicate must appear in persistent_unit_ids or consumable_unit_ids"
             )
-        if kind == "unit_distance_decreased" and unit_id in consumable:
+        if kind in _UNIT_PREDICATE_KINDS and unit_id in consumable:
+            # A consumable unit is EXPECTED to vanish from final state on a
+            # correct trial (e.g. a settler consumed by found_city) -- that
+            # looks identical, to any unit predicate, to the unit having
+            # been lost to a barbarian. unit_at/unit_exists_final score
+            # that vanish as `False` (never raise -- see
+            # action_metrics.evaluate_predicate), which would silently mark
+            # a CORRECT trial as a failure with no error anywhere. That is
+            # worse than the PredicateError abort this validator exists to
+            # prevent, so ALL THREE unit-referencing kinds are barred for a
+            # consumable id, not just unit_distance_decreased.
             raise ValueError(
-                f"position manifest {position.position_id!r}: 'unit_distance_decreased' "
-                f"references consumable unit id {unit_id} -- consumable units must be "
-                "scored through a tile/state predicate (tile_state_equals, "
-                "final_state_equals, state_changed_to), never a distance predicate"
+                f"position manifest {position.position_id!r}: {kind!r} references "
+                f"consumable unit id {unit_id} -- consumable units must be scored "
+                "through a tile/state predicate (tile_state_equals, final_state_equals, "
+                "state_changed_to), never a unit predicate"
             )
 
 
