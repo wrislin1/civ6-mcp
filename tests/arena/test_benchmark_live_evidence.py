@@ -170,6 +170,7 @@ def test_checkout_evidence_treats_failed_status_query_as_dirty():
 # ---------------------------------------------------------------------------
 
 _SS_ARGV = ("ss", "-H", "-tlnp", "sport = :4318")
+_SS_ESTABLISHED_ARGV = ("ss", "-H", "-tnp", "state established dport = :4318")
 
 
 def _proc_fixtures(pid: int, *, start_ticks: int, cmdline: str, cwd: str) -> dict:
@@ -201,13 +202,85 @@ def test_known_repo_owned_tuner_holder_classifies_as_known():
 
 
 def test_no_holder_returns_none_and_reads_nothing_else():
-    run_local = _Recorder({_SS_ARGV: _ok(_SS_ARGV, stdout="")})
+    run_local = _Recorder(
+        {
+            _SS_ARGV: _ok(_SS_ARGV, stdout=""),
+            _SS_ESTABLISHED_ARGV: _ok(_SS_ESTABLISHED_ARGV, stdout=""),
+        }
+    )
 
     holder = classify_tuner_holder(run_local=run_local, wsl_repo=WSL_REPO, windows_repo=WINDOWS_REPO)
 
     assert holder is None
-    # No /proc read was attempted for a PID that was never identified.
-    assert run_local.calls == [_SS_ARGV]
+    # Both the LISTEN and ESTABLISHED queries ran (neither found anything),
+    # but no /proc read was attempted for a PID that was never identified.
+    assert run_local.calls == [_SS_ARGV, _SS_ESTABLISHED_ARGV]
+
+
+def test_established_client_connection_is_detected_as_the_tuner_holder():
+    """The 2026-08-31 incident's actual shape: the game LISTENS on the
+    Windows side, and a stale WSL civ-mcp process holds an ESTABLISHED
+    connection with 4318 as its *destination* (not a local LISTEN
+    socket). A LISTEN-only query finds nothing; the ESTABLISHED/dport
+    query must find and classify it."""
+    pid = 7777
+    fixtures = {
+        _SS_ARGV: _ok(_SS_ARGV, stdout=""),
+        _SS_ESTABLISHED_ARGV: _ok(
+            _SS_ESTABLISHED_ARGV,
+            stdout=(
+                f'ESTAB 0 0 127.0.0.1:54123 127.0.0.1:4318 users:(("civ-mcp",pid={pid},fd=12))\n'
+            ),
+        ),
+        ("cat", f"/proc/{pid}/stat"): _ok(
+            ("cat", f"/proc/{pid}/stat"),
+            stdout=(
+                f"{pid} (civ-mcp) S 1 {pid} {pid} 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 55555 "
+                "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
+            ),
+        ),
+        ("cat", f"/proc/{pid}/cmdline"): _ok(
+            ("cat", f"/proc/{pid}/cmdline"), stdout="/usr/bin/civ-mcp\x00"
+        ),
+        ("readlink", "-f", f"/proc/{pid}/cwd"): _ok(
+            ("readlink", "-f", f"/proc/{pid}/cwd"), stdout=WSL_REPO + "\n"
+        ),
+    }
+    run_local = _Recorder(fixtures)
+
+    holder = classify_tuner_holder(run_local=run_local, wsl_repo=WSL_REPO, windows_repo=WINDOWS_REPO)
+
+    assert holder == TunerHolder(
+        pid=pid, start_ticks=55555, cmdline="/usr/bin/civ-mcp", cwd=WSL_REPO, known_repo_owned=True
+    )
+    # The LISTEN query ran first (came up empty), then the ESTABLISHED
+    # query found the stale client.
+    assert run_local.calls[:2] == [_SS_ARGV, _SS_ESTABLISHED_ARGV]
+
+
+def test_failed_listen_query_raises_instead_of_reporting_no_holder():
+    run_local = _Recorder({_SS_ARGV: _err(_SS_ARGV, returncode=1, stderr="ss: permission denied")})
+
+    with pytest.raises(GateFailure) as exc_info:
+        classify_tuner_holder(run_local=run_local, wsl_repo=WSL_REPO, windows_repo=WINDOWS_REPO)
+    assert exc_info.value.code == "tuner_holder_query_failed"
+    assert exc_info.value.details["query"] == "listen"
+
+
+def test_failed_established_query_raises_instead_of_reporting_no_holder():
+    run_local = _Recorder(
+        {
+            _SS_ARGV: _ok(_SS_ARGV, stdout=""),
+            _SS_ESTABLISHED_ARGV: _err(
+                _SS_ESTABLISHED_ARGV, returncode=1, stderr="ss: permission denied"
+            ),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        classify_tuner_holder(run_local=run_local, wsl_repo=WSL_REPO, windows_repo=WINDOWS_REPO)
+    assert exc_info.value.code == "tuner_holder_query_failed"
+    assert exc_info.value.details["query"] == "established"
 
 
 def test_unknown_tuner_holder_always_blocks():
@@ -224,7 +297,12 @@ def test_unknown_tuner_holder_always_blocks():
 
 
 def test_no_tuner_holder_does_not_issue_a_kill():
-    run_local = _Recorder({_SS_ARGV: _ok(_SS_ARGV, stdout="")})
+    run_local = _Recorder(
+        {
+            _SS_ARGV: _ok(_SS_ARGV, stdout=""),
+            _SS_ESTABLISHED_ARGV: _ok(_SS_ESTABLISHED_ARGV, stdout=""),
+        }
+    )
 
     evidence = collect_tuner_evidence(run_local=run_local, wsl_repo=WSL_REPO, windows_repo=WINDOWS_REPO)
 
@@ -357,8 +435,10 @@ def test_no_termination_command_is_ever_broad_or_wildcarded():
             self.calls.append(argv)
             if argv == ("kill", "-TERM", "4242"):
                 return fixtures[argv]
-            if argv == _SS_ARGV and ("kill", "-TERM", "4242") in self.calls:
-                return _ok(_SS_ARGV, stdout="")
+            if ("kill", "-TERM", "4242") in self.calls:
+                # After the kill has been sent, both port-holder queries
+                # reflect a cleared port.
+                return _ok(argv, stdout="")
             return fixtures[argv]
 
     run_local = _SequencedRecorder(fixtures)
@@ -406,6 +486,45 @@ class _FakeRegistry:
 _HOST = "home-llm"
 _UUID_GPU0 = "GPU-aaaaaaaa-0000-0000-0000-000000000000"
 _UUID_GPU1 = "GPU-bbbbbbbb-0000-0000-0000-000000000000"
+
+
+def test_failed_gpu_index_query_raises_instead_of_reporting_no_gpus():
+    endpoint = _FakeEndpoint(host_id=_HOST, gpu_indexes=(0,), units=("ollama@0.service",))
+    registry = _FakeRegistry(endpoint)
+    gpu_argv = ("nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader")
+    run_ssh = _SshRecorder(
+        {(_HOST, gpu_argv): _err(gpu_argv, returncode=9, stderr="Failed to query GPU")}
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=registry, endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_query_failed"
+    assert exc_info.value.details["query"] == "index,uuid"
+    # The compute-apps query must never even run once the prerequisite
+    # index/uuid query has already failed.
+    assert run_ssh.calls == [(_HOST, gpu_argv)]
+
+
+def test_failed_compute_apps_query_raises_instead_of_reporting_no_processes():
+    endpoint = _FakeEndpoint(host_id=_HOST, gpu_indexes=(0,), units=("ollama@0.service",))
+    registry = _FakeRegistry(endpoint)
+    gpu_argv = ("nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader")
+    proc_argv = (
+        "nvidia-smi",
+        "--query-compute-apps=gpu_uuid,pid,process_name",
+        "--format=csv,noheader",
+    )
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, gpu_argv): _ok(gpu_argv, stdout=f"0, {_UUID_GPU0}\n"),
+            (_HOST, proc_argv): _err(proc_argv, returncode=9, stderr="Failed to query processes"),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=registry, endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_query_failed"
+    assert exc_info.value.details["query"] == "compute-apps"
 
 
 def test_gpu_snapshot_maps_uuid_to_index_and_pid_to_service():
