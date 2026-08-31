@@ -31,7 +31,18 @@ def _position(**overrides):
         expected_state_sha256="b" * 64,
         relevant_tiles=((9, 8), (10, 8), (11, 8)),
         objectives=({"task_id": "repair", "unit_index": 4, "target": [9, 8]},),
-        rubric=({"task_id": "repair", "levels": [0, 1, 2, 3, 4]},),
+        rubric=(
+            {
+                "task_id": "repair",
+                "levels": [
+                    {"score": 0, "predicate": {"kind": "always"}},
+                    {"score": 1, "predicate": {"kind": "always"}},
+                    {"score": 2, "predicate": {"kind": "always"}},
+                    {"score": 3, "predicate": {"kind": "always"}},
+                    {"score": 4, "predicate": {"kind": "always"}},
+                ],
+            },
+        ),
         split="calibration",
     )
     fields.update(overrides)
@@ -72,7 +83,18 @@ def test_calibration_gate_requires_minimal_progress_and_standard_completion():
         expected_state_sha256="b" * 64,
         relevant_tiles=((9, 8), (10, 8), (11, 8)),
         objectives=({"task_id": "repair", "unit_index": 4, "target": [9, 8]},),
-        rubric=({"task_id": "repair", "levels": [0, 1, 2, 3, 4]},),
+        rubric=(
+            {
+                "task_id": "repair",
+                "levels": [
+                    {"score": 0, "predicate": {"kind": "always"}},
+                    {"score": 1, "predicate": {"kind": "always"}},
+                    {"score": 2, "predicate": {"kind": "always"}},
+                    {"score": 3, "predicate": {"kind": "always"}},
+                    {"score": 4, "predicate": {"kind": "always"}},
+                ],
+            },
+        ),
         split="calibration",
     )
     with pytest.raises(GateFailure, match="minimal.*levels 1-2"):
@@ -498,3 +520,71 @@ def test_build_session_lock_also_emits_the_canonical_report_schema_keys():
         }
     }
     json.dumps(lock)
+
+
+def test_check_treatment_can_fire_does_not_fail_open_on_mapping_shaped_rubric_levels():
+    """F2 repro: the canonical rubric shape is a list of {"score", "predicate"}
+    mappings (per benchmark_report._validate_rubric_shape / build_session_lock).
+    The old `level in (1, 2)` check treats a mapping level as never equal to 1
+    or 2, so no task is ever considered "nontrivial" and the minimal-arm
+    reachability check passes vacuously (fail-open) even when the minimal
+    observation cannot discover the task at all."""
+    position = _position(
+        rubric=(
+            {
+                "task_id": "repair",
+                "levels": [
+                    {"score": 0, "predicate": {"kind": "always"}},
+                    {"score": 1, "predicate": {"kind": "always"}},
+                    {"score": 2, "predicate": {"kind": "always"}},
+                ],
+            },
+        ),
+        objectives=({"task_id": "repair", "requires": ["repair_improvement"]},),
+    )
+    # standard_capabilities fully satisfies the (only) objective, and
+    # discoverable_task_ids is empty -- if the level-shape bug is present,
+    # nontrivial_task_ids is wrongly computed as empty, "unreachable" is
+    # empty, and the whole gate returns ok=True with NO GateFailure raised
+    # at all (silent fail-open) instead of catching the undiscoverable task.
+    with pytest.raises(GateFailure, match="minimal.*levels 1-2"):
+        check_treatment_can_fire(
+            position=position,
+            minimal_observation={"discoverable_task_ids": []},
+            standard_capabilities={"repair_improvement"},
+        )
+
+
+def test_check_treatment_can_fire_rejects_bare_int_levels():
+    """Ruled fix: the gate accepts ONLY the {"score", "predicate"} mapping
+    shape -- bare-int levels (the plan's old T10 fixture shape) must fail
+    closed with a clear GateFailure rather than being silently tolerated."""
+    position = _position(
+        rubric=({"task_id": "repair", "levels": [0, 1, 2, 3, 4]},),
+        objectives=({"task_id": "repair", "requires": ["repair_improvement"]},),
+    )
+    with pytest.raises(GateFailure) as exc_info:
+        check_treatment_can_fire(
+            position=position,
+            minimal_observation={"discoverable_task_ids": ["repair"]},
+            standard_capabilities={"repair_improvement"},
+        )
+    assert exc_info.value.code == "malformed_rubric_level"
+
+
+def test_check_clean_checkout_rejects_absent_commits_on_both_sides():
+    """F10 repro: wsl_commit == windows_commit passes when both are None --
+    a session could admit with no code revision recorded at all."""
+    with pytest.raises(GateFailure):
+        check_clean_checkout(
+            wsl={"commit": None, "status": ""},
+            windows={"commit": None, "status": ""},
+        )
+
+
+def test_check_clean_checkout_rejects_empty_string_commits_on_both_sides():
+    with pytest.raises(GateFailure):
+        check_clean_checkout(
+            wsl={"commit": "", "status": ""},
+            windows={"commit": "", "status": ""},
+        )

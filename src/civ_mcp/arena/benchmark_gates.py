@@ -30,6 +30,13 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Iterable, Mapping, Sequence
 
+
+def _present_commit(value: object) -> bool:
+    """A commit identifier must be a non-empty string -- `None`/empty on
+    both sides must never be treated as "matching" for the clean-checkout
+    gate (that would admit a session with no code revision recorded)."""
+    return isinstance(value, str) and bool(value.strip())
+
 from civ_mcp.arena.backends import RetryPolicy, SamplingConfig
 from civ_mcp.arena.benchmark_agent import FINISH_TRIAL_TOOL_NAME
 from civ_mcp.arena.benchmark_backend import BackendProbe, episode_wall_seconds, nearest_rank_p95
@@ -102,6 +109,18 @@ def check_clean_checkout(
                 "message": f"Windows companion checkout is dirty: {windows_status.strip()!r}",
             },
         )
+    if not _present_commit(wsl_commit) or not _present_commit(windows_commit):
+        raise GateFailure(
+            "missing_commit",
+            {
+                "wsl_commit": wsl_commit,
+                "windows_commit": windows_commit,
+                "message": (
+                    "clean-checkout gate requires a non-empty commit identifier on both "
+                    f"sides; got wsl_commit={wsl_commit!r} windows_commit={windows_commit!r}"
+                ),
+            },
+        )
     if wsl_commit != windows_commit:
         raise GateFailure(
             "commit_mismatch",
@@ -149,11 +168,33 @@ def check_treatment_can_fire(
     discoverable = set(minimal_observation.get("discoverable_task_ids") or ())
     standard_caps = set(standard_capabilities)
 
+    def _reaches_level_1_or_2(task_id: object, levels: object) -> bool:
+        reached = False
+        for level in levels or ():
+            if not isinstance(level, Mapping):
+                raise GateFailure(
+                    "malformed_rubric_level",
+                    {
+                        "position_id": position.position_id,
+                        "task_id": task_id,
+                        "level": level,
+                        "message": (
+                            f"position {position.position_id}: rubric task {task_id!r} has a "
+                            f"level that is not a {{'score', 'predicate'}} mapping: {level!r}. "
+                            "check_treatment_can_fire accepts only the canonical mapping "
+                            "rubric shape."
+                        ),
+                    },
+                )
+            if level.get("score") in (1, 2):
+                reached = True
+        return reached
+
     nontrivial_task_ids = sorted(
         {
             rubric_entry["task_id"]
             for rubric_entry in position.rubric
-            if any(level in (1, 2) for level in rubric_entry.get("levels", []))
+            if _reaches_level_1_or_2(rubric_entry.get("task_id"), rubric_entry.get("levels", []))
         }
     )
     unreachable = sorted(set(nontrivial_task_ids) - discoverable)
