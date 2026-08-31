@@ -205,6 +205,60 @@ def test_load_campaign_manifest_requires_a_readable_position_provenance_file(tmp
 
 
 # ---------------------------------------------------------------------------
+# A4/A5/A6 (external review): duplicate/unsafe block_ids, and
+# required_audits_per_arm left unenforced against audit_indices
+# ---------------------------------------------------------------------------
+
+
+def test_campaign_manifest_rejects_duplicate_block_ids(tmp_path):
+    def mutate(d):
+        d["models"][1]["block_id"] = d["models"][0]["block_id"]
+
+    path = _write_campaign(tmp_path, mutate=mutate)
+
+    with pytest.raises(ValueError, match="duplicate block_id"):
+        load_campaign_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "bad_block_id",
+    ["../../escaped", "..", ".", ".hidden", "with/slash", "with space", ""],
+)
+def test_campaign_manifest_rejects_unsafe_block_id(tmp_path, bad_block_id):
+    def mutate(d):
+        d["models"][0]["block_id"] = bad_block_id
+
+    path = _write_campaign(tmp_path, mutate=mutate)
+
+    with pytest.raises(ValueError, match="block_id"):
+        load_campaign_manifest(path)
+
+
+def test_campaign_manifest_rejects_required_audits_per_arm_mismatched_with_audit_indices(tmp_path):
+    def mutate(d):
+        # 2 arms * 2 = 4, but audit_indices still declares 6 (Plan 2's
+        # fixed count) -- the count check must catch this even though the
+        # audit_indices themselves remain individually well-formed and
+        # balanced.
+        d["rules"]["required_audits_per_arm"] = 2
+
+    path = _write_campaign(tmp_path, mutate=mutate)
+
+    with pytest.raises(ValueError, match="required_audits_per_arm"):
+        load_campaign_manifest(path)
+
+
+def test_campaign_manifest_rejects_briefing_required_true(tmp_path):
+    def mutate(d):
+        d["models"][0]["briefing_required"] = True
+
+    path = _write_campaign(tmp_path, mutate=mutate)
+
+    with pytest.raises(ValueError, match="briefing_required"):
+        load_campaign_manifest(path)
+
+
+# ---------------------------------------------------------------------------
 # The objective-blind prompt fingerprint: one position, one frozen digest
 # ---------------------------------------------------------------------------
 

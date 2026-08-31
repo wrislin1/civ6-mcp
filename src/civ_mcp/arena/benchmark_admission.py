@@ -77,7 +77,7 @@ from typing import Awaitable, Callable, Mapping, Sequence
 
 from civ_mcp.arena.benchmark_agent import resolved_benchmark_tools
 from civ_mcp.arena.benchmark_backend import BackendProbe, ToolCanaryEvidence
-from civ_mcp.arena.benchmark_campaign import CampaignLockMismatchError, CampaignStore
+from civ_mcp.arena.benchmark_campaign import BenchmarkCampaignError, CampaignLockMismatchError, CampaignStore
 from civ_mcp.arena.benchmark_contract import (
     CampaignManifest,
     ModelBlockConfig,
@@ -95,7 +95,11 @@ from civ_mcp.arena.benchmark_gates import (
 )
 from civ_mcp.arena.benchmark_manifest import PositionManifest, fingerprint
 from civ_mcp.arena.benchmark_schedule import TrialSpec
-from civ_mcp.arena.benchmark_store import SessionLockMismatchError, trial_filename
+from civ_mcp.arena.benchmark_store import (
+    BenchmarkStore,
+    SessionLockMismatchError,
+    TrialProvenanceError,
+)
 from civ_mcp.arena.registry import TOOL_REGISTRY, resolve_tools
 
 # benchmark_runner imports ResolvedBlock/run_resolved_block: importing it
@@ -150,12 +154,17 @@ class AdmissionError(Exception):
     """Raised by `AdmissionPipeline.admit` on any fail-closed refusal --
     wraps the underlying `GateFailure` / `CampaignLockMismatchError`
     (`__cause__` is always set). `code`/`details` mirror `GateFailure`'s
-    shape so callers can handle both uniformly. Never raised before the
-    complete diagnostic for this attempt has already been written."""
+    shape so callers can handle both uniformly. An attempt is always made
+    to write the complete diagnostic for this attempt before this is
+    raised; if that write itself fails (A8: e.g. a full disk), the write's
+    exception is recorded on `diagnostic_write_error` rather than replacing
+    this exception -- the real gate failure this exception carries must
+    always be what a caller actually sees and handles."""
 
     def __init__(self, code: str, details: Mapping[str, object]):
         self.code = code
         self.details = dict(details)
+        self.diagnostic_write_error: str | None = None
         super().__init__(str(self.details.get("message", code)))
 
 
@@ -327,7 +336,18 @@ def _write_validation_record(store: CampaignStore, block_id: str, evidence: Mapp
     """Write one non-counting validation diagnostic under
     `<campaign root>/validation/` -- never under `admissions/`, and never
     carrying a real campaign_fingerprint/admission_fingerprint pair (the
-    caller is responsible for having already nulled those on `evidence`)."""
+    caller is responsible for having already nulled those on `evidence`).
+
+    A9: matches `CampaignStore.record_admission`'s append-only,
+    never-overwrite discipline -- the ordinal is derived from a plain
+    on-disk count (not a monotonic counter), so a gap in the numbered
+    sequence (e.g. left by an earlier interrupted write, or a concurrent
+    writer) can make a freshly-computed ordinal collide with a file that
+    already exists. `record_admission` already refuses rather than
+    silently overwriting in that case; this function did not, and could
+    clobber an existing validation record. Raises `BenchmarkCampaignError`
+    on that collision instead of ever calling `os.replace` over it.
+    """
     validation_dir = store.root / "validation"
     validation_dir.mkdir(parents=True, exist_ok=True)
     prefix = f"{block_id}-validation-"
@@ -348,6 +368,12 @@ def _write_validation_record(store: CampaignStore, block_id: str, evidence: Mapp
         fh.write(data)
         fh.flush()
         os.fsync(fh.fileno())
+    if dest.exists():
+        tmp.unlink(missing_ok=True)
+        raise BenchmarkCampaignError(
+            f"validation attempt already recorded at {dest}; _write_validation_record never "
+            "overwrites a prior attempt"
+        )
     os.replace(tmp, dest)
     return dest
 
@@ -458,17 +484,30 @@ class AdmissionPipeline:
             failure is written through the SAME validation-record path a
             success would use (never `admissions/`, never consuming a
             counted-attempt ordinal) -- a validation failure must never
-            look, on disk, like a counted admission attempt."""
+            look, on disk, like a counted admission attempt.
+
+            A8: the diagnostic write itself is best-effort from the
+            caller's point of view -- if it raises (a full disk, a
+            filesystem error, an ordinal collision), that write failure
+            must never REPLACE the `AdmissionError` this function returns
+            for the gate that actually failed. The write's exception is
+            recorded on `diagnostic_write_error` instead, and this always
+            returns (never raises) the real `AdmissionError`.
+            """
             evidence["ok"] = False
             evidence["failure"] = {"code": code, "details": dict(details)}
             _append_campaign_journal(
                 store, "admission_failed", block_id=block.block_id, mode=mode, code=code
             )
-            if mode == "validation":
-                _write_validation_record(store, block.block_id, evidence)
-            else:
-                self._write_record(store, block.block_id, evidence)
-            return AdmissionError(code, evidence["failure"])
+            admission_error = AdmissionError(code, evidence["failure"])
+            try:
+                if mode == "validation":
+                    _write_validation_record(store, block.block_id, evidence)
+                else:
+                    self._write_record(store, block.block_id, evidence)
+            except Exception as write_exc:  # noqa: BLE001 - deliberate: see docstring above
+                admission_error.diagnostic_write_error = repr(write_exc)
+            return admission_error
 
         try:
             # 1. clean checkout
@@ -561,6 +600,20 @@ class AdmissionPipeline:
                 sampling=block.sampling,
                 probe=probe,
                 briefing_required=block.briefing_required,
+                # A10 (external review, "Ruling F"): `ModelBlockConfig` has
+                # no budget field by design -- Plan 2 mandates briefing off,
+                # and `load_campaign_manifest` now rejects any loaded
+                # campaign that declares `briefing_required: true` (briefing
+                # arms are Plan-3 scope). `block.briefing_required` is
+                # therefore always `False` for any campaign that reached
+                # this call, which makes `admit_model_block`'s own
+                # briefing_required/briefing_budget_chars pairing check
+                # unreachable here -- `None` is kept rather than removed so
+                # a future Plan-3 loader that DOES allow briefing arms is
+                # forced to revisit this call site instead of silently
+                # inheriting a landmine (a `briefing_required: true` block
+                # with `briefing_budget_chars=None` would be permanently
+                # unadmittable).
                 briefing_budget_chars=None,
                 tool_canaries=tool_canaries,
                 expected_arm_ids=[arm.arm_id for arm in campaign.manifest.arms],
@@ -691,8 +744,9 @@ class AdmissionPipeline:
 def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     """True when `block_id`'s own run directory has every one of its
     scheduled trial indices committed AND stamped with THIS campaign's
-    fingerprint. Pure filesystem inspection -- no session lock needs to be
-    in hand to ask "is this block done yet".
+    fingerprint AND `block_id`'s own recorded `session.json`'s
+    `session_fingerprint`. Pure filesystem inspection -- no session lock
+    needs to be handed in to ask "is this block done yet".
 
     Finding 5 (final review): `select_next_incomplete_block` and
     `classify_admission_disposition`'s `first_block_counted_complete` both
@@ -703,23 +757,53 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     `campaign_fingerprint` compared against `store.fingerprint`; missing,
     unparseable, or mismatched is NOT complete -- never silently promoted
     to "counts as done" the way bare filename presence used to.
+
+    A3 (external review): `campaign_fingerprint` alone is NOT enough --
+    every model block in a Plan 2 campaign shares the same
+    `campaign_fingerprint` and the same `trial_filename()` convention, so
+    copying one block's committed trial files straight into a sibling
+    block's own `trials/` directory (e.g. Gemma's 24 trials into Qwen's
+    directory) would satisfy the check above by itself. This reuses
+    `BenchmarkStore.is_trial_complete`'s own discipline -- which ALSO
+    demands a matching `session_fingerprint` -- against `block_id`'s own
+    recorded `blocks/<block_id>/session.json` (never some other block's).
+    A block with committed trial files but no recorded `session.json` at
+    all is never complete: a genuinely admitted block always mints
+    `session.json` before any trial is committed under it, so trial files
+    without one are, at best, evidence copied in from elsewhere. A
+    provenance failure (`TrialProvenanceError` -- corrupt/unstamped/
+    mismatched, exactly the case `is_trial_complete` fails closed on) is
+    treated as "not complete" here, matching this function's own existing
+    fail-closed contract of returning `False` rather than raising for a
+    corrupt/mismatched trial.
     """
     trials_dir = store.root / CampaignStore.BLOCKS_DIR / block_id / "trials"
     if not trials_dir.is_dir():
         return False
     scheduled = store.schedule["blocks"][block_id]["trials"]
+
+    session_path = store.root / CampaignStore.BLOCKS_DIR / block_id / "session.json"
+    if not session_path.is_file():
+        return False
+    try:
+        session_lock = json.loads(session_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(session_lock, dict) or not session_lock.get("session_fingerprint"):
+        return False
+    # The recorded session must actually belong to THIS campaign -- a
+    # session.json copied in alongside copied trial files, declaring some
+    # OTHER campaign's fingerprint, must not be trusted just because it
+    # happens to exist. Mirrors `CampaignStore.open_block`'s own check.
+    if session_lock.get("campaign_fingerprint") != store.fingerprint:
+        return False
+
+    block_store = BenchmarkStore(trials_dir.parent, session_lock, fingerprint=session_lock.get("session_fingerprint"))
     for trial in scheduled:
-        path = trials_dir / trial_filename(trial["index"])
-        if not path.is_file():
-            return False
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return False
-        if not isinstance(payload, dict):
-            return False
-        stamped = payload.get("campaign_fingerprint")
-        if not stamped or stamped != store.fingerprint:
+            if not block_store.is_trial_complete(trial["index"]):
+                return False
+        except TrialProvenanceError:
             return False
     return True
 

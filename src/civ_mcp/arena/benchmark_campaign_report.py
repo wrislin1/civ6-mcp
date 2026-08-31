@@ -306,11 +306,12 @@ def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
 
 def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str) -> bool:
     """True only for a CORROBORATED `REPLICATION_DEFERRED_ADMISSION` record
-    for `block_id` -- finding 4 (final review): a single admission failure
-    of ANY code must never mint this disposition by itself. Spec: "Deferral
-    requires at least one journaled retry after a concrete remediation, or
-    two confirming attempts for a demonstrated non-remediable capability
-    failure. Unknown failures cannot be converted into a deferral."
+    for `block_id` -- finding 4 (final review) plus external review finding
+    A1: a single admission failure of ANY code must never mint this
+    disposition by itself. Spec: "Deferral requires at least one journaled
+    retry after a concrete remediation, or two confirming attempts for a
+    demonstrated non-remediable capability failure. Unknown failures cannot
+    be converted into a deferral."
 
     Both requirements must hold for at least one on-disk disposition record:
 
@@ -319,10 +320,22 @@ def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str)
       never become a deferral no matter how many times it repeats; and
     - corroboration precedes that disposition record in the same
       append-only admissions/ sequence: either at least one remediation
-      record (a concrete fix was attempted and retried), or at least one
-      OTHER failed admission attempt carrying the SAME code (so, combined
-      with the disposition's own underlying failure, two confirming
-      attempts total).
+      record (a concrete fix was attempted and retried), or at least TWO
+      OTHER failed admission attempts (at distinct, strictly-preceding
+      attempt ordinals) carrying the SAME code.
+
+      A1 (external review): the real CLI writes exactly ONE failed-gate
+      attempt record (the failure `admit()` itself just hit) and THEN, in
+      the very same invocation, writes the disposition record referencing
+      that same failure as `underlying_failure` -- so `records[:index]`
+      (everything strictly before the disposition) always contains that
+      one un-retried failure. Requiring only ONE preceding same-code
+      failure therefore let a single admission attempt mint a deferral by
+      itself (the disposition's own triggering failure double-counted as
+      its own corroboration). Genuine corroboration requires the failure to
+      have been independently observed at least TWICE before the
+      disposition is ever written -- i.e. at least two preceding attempt
+      records, not one.
     """
     records = _admission_records(campaign_dir, block_id)
     for index, record in enumerate(records):
@@ -336,13 +349,14 @@ def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str)
             continue
         preceding = records[:index]
         has_preceding_remediation = any("remediation" in r for r in preceding)
-        has_preceding_same_code_failure = any(
-            r.get("ok") is False
+        preceding_same_code_failure_count = sum(
+            1
+            for r in preceding
+            if r.get("ok") is False
             and isinstance(r.get("failure"), Mapping)
             and r["failure"].get("code") == code
-            for r in preceding
         )
-        if has_preceding_remediation or has_preceding_same_code_failure:
+        if has_preceding_remediation or preceding_same_code_failure_count >= 2:
             return True
     return False
 
@@ -532,7 +546,16 @@ def _metric_fidelity_section(
             "entries": [],
             "mismatches": [],
         }
-    audit = _read_json(audit_path)
+    try:
+        audit = _read_json(audit_path)
+    except json.JSONDecodeError as exc:
+        # A7 (external review): a truncated/corrupt audit.json must abort
+        # report generation with a typed, file-naming error -- never a raw
+        # JSONDecodeError, and never silently folded into the "missing
+        # file" (ok=False) shape above, which a corrupt file is NOT: unlike
+        # an absent file, corrupt evidence may have once held a real
+        # verdict that a silent "absent" treatment would erase.
+        raise CampaignReportError(f"{audit_path} is not valid JSON: {exc}") from exc
     if not isinstance(audit, Mapping):
         return {
             "ok": False,
@@ -666,7 +689,13 @@ def _tie_attribution_section(
             "attributions": {},
             "reason": f"{len(tied_pairs)} tied pair(s) but {path} does not exist",
         }
-    payload = _read_json(path)
+    try:
+        payload = _read_json(path)
+    except json.JSONDecodeError as exc:
+        # A7 (external review): same discipline as the audit.json parse
+        # above -- a truncated/corrupt tie_attribution.json must hard-abort
+        # naming the file, never silently read as "not yet reviewed".
+        raise CampaignReportError(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(payload, Mapping):
         return {
             "required": True,
@@ -974,6 +1003,34 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
                     f"schedule ({len(committed_indices)}/{len(expected_indices)} trials "
                     "committed) -- refusing to build an official campaign report over an "
                     "incomplete primary schedule"
+                )
+            # A2 (external review): replication deferral exists ONLY for an
+            # admission failure that never created any evidence at all --
+            # "Replication deferral is only for failures that create no
+            # trials." A block that has ANY committed trial, or that
+            # actually minted a counted session.json (proving admission
+            # itself succeeded at some point), was NOT the zero-evidence
+            # admission failure a deferral is meant to excuse -- honoring a
+            # disposition record here regardless would let a genuinely
+            # started-but-abandoned block masquerade as a clean deferral.
+            # These checks apply unconditionally, before even looking for a
+            # disposition record.
+            if committed_indices:
+                raise CampaignReportError(
+                    f"block {block_id!r} has {len(committed_indices)} committed trial(s) "
+                    f"despite an incomplete schedule ({len(committed_indices)}/"
+                    f"{len(expected_indices)}) -- replication deferral is only valid for a "
+                    "block that produced ZERO committed trials; refusing to honor any "
+                    f"{REPLICATION_DEFERRED_ADMISSION!r} disposition here"
+                )
+            block_session_path = block_dir / "session.json"
+            if block_session_path.is_file():
+                raise CampaignReportError(
+                    f"block {block_id!r} has a committed session.json at "
+                    f"{block_session_path} despite an incomplete schedule -- a minted, "
+                    "counted session lock means admission actually succeeded; refusing to "
+                    f"honor any {REPLICATION_DEFERRED_ADMISSION!r} disposition for a block "
+                    "that was actually admitted"
                 )
             if not _has_valid_replication_deferred_admission(campaign_dir, block_id):
                 raise CampaignReportError(

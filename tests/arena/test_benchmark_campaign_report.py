@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,7 @@ def _write_block(
     position_id: str = POSITION_ID,
     endpoint_id: str = "ep-1",
     gpu_ids: list[int] | None = None,
+    write_session: bool = True,
 ) -> tuple[list[dict], dict[int, dict]]:
     block_dir = campaign_dir / "blocks" / block_id
     schedule_trials = _pairs_schedule(pairs)
@@ -194,7 +196,13 @@ def _write_block(
             "sampling": sampling,
         },
     }
-    _write_json(block_dir / "session.json", session_payload)
+    # write_session=False simulates a block whose admission never actually
+    # minted a counted session lock -- the genuine shape of a validly
+    # deferred block (A2, external review): a real REPLICATION_DEFERRED_
+    # ADMISSION only ever applies to an admission failure that produced NO
+    # evidence at all, session.json included.
+    if write_session:
+        _write_json(block_dir / "session.json", session_payload)
     commit = commit_indices if commit_indices is not None else set(trial_payloads)
     for index in commit:
         _write_json(block_dir / "trials" / f"trial-{index:03d}.json", trial_payloads[index])
@@ -368,21 +376,35 @@ def _rules12(*, minimum_decided=10, minimum_wins=10, minimum_delta=None, require
 
 def _write_qwen_deferral_record(campaign_dir: Path, *, corroboration: str = "two_attempts") -> None:
     """Write a `REPLICATION_DEFERRED_ADMISSION` admission record for
-    `qwen`, corroborated on disk per finding 4 (final review): a single
-    failed admission of any code is refused, so every caller of this
-    helper that expects the deferral to be HONORED must also produce
-    either (a) two failed admission attempts with the same classified
-    code (`corroboration="two_attempts"`, the default) or (b) one
-    remediation record preceding the deferral
-    (`corroboration="remediation"`). Pass `corroboration=None` for the
-    negative-test helper that wants exactly the bare, uncorroborated
-    single-attempt record the old (pre-fix) behavior would have accepted.
+    `qwen`, corroborated on disk per finding 4 (final review) and A1
+    (external review): a single failed admission of any code is refused,
+    so every caller of this helper that expects the deferral to be HONORED
+    must also produce either (a) TWO preceding failed admission attempts
+    with the same classified code (`corroboration="two_attempts"`, the
+    default -- see A1: the disposition's own triggering failure is itself
+    one of the on-disk attempt records, so genuine corroboration needs a
+    SECOND, independent one before it, not just the one that trips the
+    disposition) or (b) one remediation record preceding the deferral
+    (`corroboration="remediation"`). Pass `corroboration="single_failure"`
+    for the shape A1 closes: exactly ONE preceding failure (the same
+    failure `admit()` itself just hit, immediately followed by the CLI's
+    own disposition write in the same invocation) -- this must now be
+    REFUSED. Pass `corroboration=None` for the negative-test helper that
+    wants the bare, uncorroborated disposition-only record (no preceding
+    attempt record at all).
     """
     admissions_dir = campaign_dir / "admissions"
     admissions_dir.mkdir(parents=True, exist_ok=True)
     code = "endpoint_unreachable"
     ordinal = 1
     if corroboration == "two_attempts":
+        for _ in range(2):
+            _write_json(
+                admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
+                {"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}},
+            )
+            ordinal += 1
+    elif corroboration == "single_failure":
         _write_json(
             admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
             {"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}},
@@ -487,6 +509,11 @@ def _build_campaign_with_gemma(
         campaign_fingerprint=campaign_fingerprint,
         scorer_fingerprint=scorer_fingerprint,
         commit_indices=set(),
+        # This helper's Qwen block always has zero committed trials -- the
+        # true shape of an admission that never got as far as minting a
+        # session lock, which is what a REPLICATION_DEFERRED_ADMISSION
+        # disposition actually represents (see A2, external review).
+        write_session=False,
     )
 
     if qwen_deferral_record:
@@ -676,6 +703,84 @@ def test_report_refuses_qwen_deferral_from_single_uncorroborated_failure(tmp_pat
     _write_qwen_deferral_record(campaign_dir, corroboration=None)
 
     with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_from_one_preceding_failure_plus_disposition(tmp_path):
+    """A1 (external review): the exact self-defeating shape the real CLI
+    produces on a genuine, un-retried admission failure -- `admit()` writes
+    ONE failed-gate attempt record, then (in the SAME invocation)
+    `record_admission_disposition` writes a disposition record referencing
+    that same failure as `underlying_failure`. `records[:index]` (every
+    record strictly preceding the disposition) then contains exactly that
+    ONE failure -- which the old logic accepted as "corroboration" for
+    itself. This must be refused: one real failure, however it's framed on
+    disk, is never two confirming attempts."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(campaign_dir, corroboration="single_failure")
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_when_committed_trials_exist_despite_disposition(tmp_path):
+    """A2 (external review): "Replication deferral is only for failures
+    that create no trials." A well-corroborated disposition record must
+    still be refused once the block actually has ANY committed trial
+    evidence on disk -- that is not the zero-evidence admission failure a
+    deferral exists to excuse."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=True,
+    )
+    campaign_fingerprint = json.loads((campaign_dir / "campaign.json").read_text())["campaign_fingerprint"]
+    qwen_trial_payloads = _pairs_trial_payloads(
+        _passing_pairs(12),
+        block_id="qwen",
+        session_fingerprint="qwen-session",
+        campaign_fingerprint=campaign_fingerprint,
+    )
+    _write_json(campaign_dir / "blocks" / "qwen" / "trials" / "trial-001.json", qwen_trial_payloads[1])
+
+    with pytest.raises(CampaignReportError, match="committed trial"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_when_a_session_lock_was_minted_despite_disposition(tmp_path):
+    """A2 (external review), second half: a block that actually minted a
+    counted session.json means admission SUCCEEDED at some point -- not the
+    failure-before-any-session-lock scenario deferral exists for. A
+    well-corroborated disposition record must never override that."""
+    campaign_dir, gemma_trials = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=True,
+    )
+    campaign_fingerprint = json.loads((campaign_dir / "campaign.json").read_text())["campaign_fingerprint"]
+    # Qwen: a session.json WAS minted (admission actually succeeded and
+    # created a counted session lock) but zero trials were ever committed.
+    _write_block(
+        campaign_dir,
+        "qwen",
+        pairs=_passing_pairs(12),
+        session_fingerprint="qwen-session",
+        campaign_fingerprint=campaign_fingerprint,
+        commit_indices=set(),
+        write_session=True,
+    )
+
+    with pytest.raises(CampaignReportError, match="session.json"):
         build_campaign_report(campaign_dir)
 
 
@@ -1131,6 +1236,22 @@ def test_metric_fidelity_records_every_audited_hash_not_only_mismatches(tmp_path
     assert all(isinstance(entry["trial_sha256"], str) and entry["trial_sha256"] for entry in entries)
 
 
+def test_metric_fidelity_truncated_audit_json_raises_campaign_report_error(tmp_path):
+    """A7 (external review): a truncated/corrupt audit.json must abort
+    report generation with a typed, file-naming CampaignReportError --
+    never a raw JSONDecodeError, and never silently treated the same as an
+    absent audit.json (which merely produces a soft METRIC_FIDELITY_FAILED
+    block outcome rather than aborting)."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    audit_path = campaign_dir / "blocks" / "gemma" / "audit.json"
+    audit_path.write_text('{"session_fingerprint": "gemma-session", "trials": [', encoding="utf-8")
+
+    with pytest.raises(CampaignReportError, match=re.escape(str(audit_path))):
+        build_campaign_report(campaign_dir)
+
+
 # ---------------------------------------------------------------------------
 # Round-1 review finding 6: tie-attribution refusal paths
 # ---------------------------------------------------------------------------
@@ -1194,6 +1315,25 @@ def test_tie_attribution_invalid_value_leaves_block_unresolved(tmp_path):
     assert gemma["tie_attribution"]["resolved"] is False
     assert "invalid attribution" in gemma["tie_attribution"]["reason"]
     assert gemma["outcome"] == "TIE_ATTRIBUTION_REQUIRED"
+
+
+def test_tie_attribution_truncated_json_raises_campaign_report_error(tmp_path):
+    """A7 (external review), tie_attribution.json side: same discipline as
+    the audit.json truncation test above."""
+    gemma_pairs = [(f"p{i}", 0, 6) for i in range(8)] + [(f"z{i}", 0, 0) for i in range(4)]
+    tie_attribution = {f"z{i}": "model_floor" for i in range(4)}
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=gemma_pairs,
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        gemma_tie_attribution=tie_attribution,
+    )
+    tie_path = campaign_dir / "blocks" / "gemma" / "tie_attribution.json"
+    tie_path.write_text('{"session_fingerprint": "gemma-session", "attributions": [', encoding="utf-8")
+
+    with pytest.raises(CampaignReportError, match=re.escape(str(tie_path))):
+        build_campaign_report(campaign_dir)
 
 
 # ---------------------------------------------------------------------------

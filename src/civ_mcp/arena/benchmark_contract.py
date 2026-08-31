@@ -32,6 +32,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -146,18 +147,53 @@ def _require_number(value: object, field: str) -> float:
     return float(value)
 
 
+# A5 (external review): a block_id is used verbatim as a path segment under
+# both `blocks/<block_id>/` and `admissions/<block_id>-attempt-NNN.json` --
+# it must be restricted to one safe filename segment so a value like
+# `../../escaped` can never traverse outside those directories.
+_SAFE_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _require_safe_path_segment(value: str, field: str) -> str:
+    if not _SAFE_PATH_SEGMENT_RE.match(value):
+        raise ValueError(
+            f"{field} must be a single safe filename segment matching "
+            f"{_SAFE_PATH_SEGMENT_RE.pattern!r} (got {value!r})"
+        )
+    if value in (".", "..") or value.startswith("."):
+        raise ValueError(f"{field} must not be '.', '..', or start with '.' (got {value!r})")
+    return value
+
+
 def _load_model_block(raw: object, context: str) -> ModelBlockConfig:
     mapping = _require_mapping(raw, context)
     _require_exact_keys(mapping, _MODEL_BLOCK_FIELDS, context)
+    briefing_required = _require_bool(mapping["briefing_required"], f"{context}.briefing_required")
+    if briefing_required:
+        # A10 (external review, "Ruling F"): `ModelBlockConfig` has no
+        # budget field by design -- Plan 2 mandates briefing off, so a
+        # loaded `briefing_required: true` block would sail past every
+        # loader check here and only fail, permanently and silently, deep
+        # inside admission's `admit_model_block` call (which pairs
+        # `briefing_required` against a budget `AdmissionPipeline` always
+        # passes as `None`). Refusing it here, at load time, means that
+        # failure can never happen -- and it names the real reason instead
+        # of a downstream gate failure.
+        raise ValueError(
+            f"{context}.briefing_required must be false -- briefing arms are Plan-3 scope, "
+            "not supported by this Plan-2 campaign loader"
+        )
     return ModelBlockConfig(
-        block_id=_require_str(mapping["block_id"], f"{context}.block_id"),
+        block_id=_require_safe_path_segment(
+            _require_str(mapping["block_id"], f"{context}.block_id"), f"{context}.block_id"
+        ),
         model=_require_str(mapping["model"], f"{context}.model"),
         endpoint_id=_require_str(mapping["endpoint_id"], f"{context}.endpoint_id"),
         sampling=_load_sampling(mapping["sampling"], f"{context}.sampling"),
         chat_template_kwargs=dict(
             _require_mapping(mapping["chat_template_kwargs"], f"{context}.chat_template_kwargs")
         ),
-        briefing_required=_require_bool(mapping["briefing_required"], f"{context}.briefing_required"),
+        briefing_required=briefing_required,
     )
 
 
@@ -284,6 +320,16 @@ def load_campaign_manifest(path: str | Path) -> CampaignManifest:
             f"campaign manifest.models must declare exactly 2 model blocks for Plan 2 "
             f"(Gemma then Qwen); got {len(models)}"
         )
+    # A4 (external review): distinct block_ids are load-bearing, not just
+    # cosmetic -- `compile_campaign_schedule` and every on-disk artifact
+    # path (`blocks/<block_id>/...`, `admissions/<block_id>-attempt-*.json`)
+    # key off block_id alone. A duplicate collapses both model blocks onto
+    # one shared run directory, silently merging Gemma's and Qwen's
+    # schedules/trials/admissions together.
+    block_ids = [model.block_id for model in models]
+    if len(set(block_ids)) != len(block_ids):
+        duplicates = sorted({block_id for block_id in block_ids if block_ids.count(block_id) > 1})
+        raise ValueError(f"campaign manifest.models declares duplicate block_id(s): {duplicates}")
     if "gemma" not in models[0].model.lower():
         raise ValueError(
             "campaign manifest.models[0] must be the Gemma block -- Plan 2 requires Gemma "
@@ -359,6 +405,20 @@ def load_campaign_manifest(path: str | Path) -> CampaignManifest:
         _require_str(raw["contracts"], "campaign manifest.contracts"), base_dir
     )
     rules = _load_calibration_rules(raw["rules"], "campaign manifest.rules")
+    # A6 (external review): `required_audits_per_arm` is frozen into the
+    # lock but was never checked against the actual `audit_indices` count
+    # declared alongside it -- `compile_campaign_schedule` enforces that the
+    # chosen audit indices are balanced PER ARM, but not that there are
+    # exactly `required_audits_per_arm` of them. A campaign could freeze
+    # `required_audits_per_arm=3` while `audit_indices` only ever supplies
+    # 1 per arm, silently under-auditing every block.
+    expected_audit_count = len(arms) * rules.required_audits_per_arm
+    if len(audit_indices) != expected_audit_count:
+        raise ValueError(
+            f"campaign manifest.audit_indices has {len(audit_indices)} entries, but "
+            f"rules.required_audits_per_arm={rules.required_audits_per_arm} with "
+            f"{len(arms)} arms requires exactly {expected_audit_count}"
+        )
 
     campaign = CampaignManifest(
         campaign_id=campaign_id,

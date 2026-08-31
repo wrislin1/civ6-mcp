@@ -30,6 +30,7 @@ from civ_mcp.arena.benchmark_live_evidence import GpuProcess
 import civ_mcp.arena.benchmark_live_evidence as benchmark_live_evidence_module
 from civ_mcp.arena.benchmark_manifest import PositionManifest, SuiteManifest, TreatmentArm
 from civ_mcp.arena.benchmark_report import build_report
+from civ_mcp.arena.benchmark_store import trial_filename
 from civ_mcp.arena.benchmark_runner import (
     BenchmarkRunner,
     FailureClass,
@@ -1188,6 +1189,34 @@ async def _campaign_store_fingerprint(campaign_path: Path, run_dir: Path, run_id
     return context.store.fingerprint
 
 
+def _preseed_gemma_block_complete(
+    run_dir: Path, gemma_block_id: str, schedule: dict, campaign_fingerprint: str, *, session_fingerprint: str = "gemma-preseeded-session"
+) -> None:
+    """Pre-seed gemma's block as already fully committed. A3 (external
+    review): `block_is_complete` now also requires each committed trial's
+    `session_fingerprint` to match a recorded `blocks/<block_id>/
+    session.json` -- filename presence plus a matching campaign_fingerprint
+    alone (the old fixture shape) is no longer enough, so this writes both
+    a real session.json and dual-stamped trial files."""
+    gemma_block_dir = run_dir / "campaign-run" / "blocks" / gemma_block_id
+    gemma_trials_dir = gemma_block_dir / "trials"
+    gemma_trials_dir.mkdir(parents=True)
+    gemma_block_dir_session = {
+        "session_fingerprint": session_fingerprint,
+        "campaign_fingerprint": campaign_fingerprint,
+    }
+    (gemma_block_dir / "session.json").write_text(json.dumps(gemma_block_dir_session))
+    for trial in schedule["blocks"][gemma_block_id]["trials"]:
+        (gemma_trials_dir / trial_filename(trial["index"])).write_text(
+            json.dumps(
+                {
+                    "campaign_fingerprint": campaign_fingerprint,
+                    "session_fingerprint": session_fingerprint,
+                }
+            )
+        )
+
+
 @pytest.mark.asyncio
 async def test_campaign_run_refuses_on_first_failed_live_gate(tmp_path, monkeypatch, capsys):
     """Replaces the old blanket "gates not wired" refusal: with --campaign,
@@ -1244,7 +1273,6 @@ async def test_campaign_qwen_failure_after_gemma_complete_records_disposition(tm
     )
     from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
     from civ_mcp.arena.benchmark_contract import load_campaign_manifest
-    from civ_mcp.arena.benchmark_store import trial_filename
 
     campaign_path = _write_fixture_campaign_and_position(tmp_path)
     run_dir = tmp_path / "runs"
@@ -1255,16 +1283,12 @@ async def test_campaign_qwen_failure_after_gemma_complete_records_disposition(tm
 
     # Pre-seed gemma's block as already fully committed -- block_is_complete
     # requires each expected trial filename to be present AND stamped with
-    # this exact campaign's fingerprint (finding 5, final review), so the
-    # fixture must carry the real fingerprint this run-dir/campaign would
-    # actually stamp, not an arbitrary placeholder.
+    # this exact campaign's fingerprint AND a matching, recorded
+    # session.json's session_fingerprint (finding 5, final review; A3,
+    # external review), so the fixture must carry the real fingerprint this
+    # run-dir/campaign would actually stamp, not an arbitrary placeholder.
     campaign_fingerprint = await _campaign_store_fingerprint(campaign_path, run_dir)
-    gemma_trials_dir = run_dir / "campaign-run" / "blocks" / gemma_block_id / "trials"
-    gemma_trials_dir.mkdir(parents=True)
-    for trial in schedule["blocks"][gemma_block_id]["trials"]:
-        (gemma_trials_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": campaign_fingerprint})
-        )
+    _preseed_gemma_block_complete(run_dir, gemma_block_id, schedule, campaign_fingerprint)
 
     class _QwenFailsPipeline:
         def __init__(self, _deps):
@@ -1320,7 +1344,6 @@ async def test_campaign_qwen_unclassified_failure_never_records_disposition(tmp_
     )
     from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
     from civ_mcp.arena.benchmark_contract import load_campaign_manifest
-    from civ_mcp.arena.benchmark_store import trial_filename
 
     campaign_path = _write_fixture_campaign_and_position(tmp_path)
     run_dir = tmp_path / "runs"
@@ -1330,12 +1353,7 @@ async def test_campaign_qwen_unclassified_failure_never_records_disposition(tmp_
     gemma_block_id = campaign.models[0].block_id
 
     campaign_fingerprint = await _campaign_store_fingerprint(campaign_path, run_dir)
-    gemma_trials_dir = run_dir / "campaign-run" / "blocks" / gemma_block_id / "trials"
-    gemma_trials_dir.mkdir(parents=True)
-    for trial in schedule["blocks"][gemma_block_id]["trials"]:
-        (gemma_trials_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": campaign_fingerprint})
-        )
+    _preseed_gemma_block_complete(run_dir, gemma_block_id, schedule, campaign_fingerprint)
 
     class _QwenFailsUnclassifiedPipeline:
         def __init__(self, _deps):

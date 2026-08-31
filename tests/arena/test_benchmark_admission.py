@@ -20,7 +20,12 @@ from civ_mcp.arena.benchmark_admission import (
 )
 from civ_mcp.arena.benchmark_agent import BENCHMARK_SYSTEM, resolved_benchmark_tools
 from civ_mcp.arena.benchmark_backend import BackendProbe, ToolCanaryEvidence
-from civ_mcp.arena.benchmark_campaign import CampaignStore, build_campaign_lock, compile_campaign_schedule
+from civ_mcp.arena.benchmark_campaign import (
+    BenchmarkCampaignError,
+    CampaignStore,
+    build_campaign_lock,
+    compile_campaign_schedule,
+)
 from civ_mcp.arena.benchmark_contract import (
     fingerprint_identity,
     load_campaign_manifest,
@@ -300,6 +305,19 @@ def _read_last_admission(store: CampaignStore, block_id: str) -> dict:
     return json.loads(matches[-1].read_text())
 
 
+def _write_block_session(store: CampaignStore, block_id: str, *, session_fingerprint: str) -> dict:
+    """Write a minimal, self-consistent `blocks/<block_id>/session.json`
+    directly (bypassing `BenchmarkStore.create`) -- used by
+    `block_is_complete` tests (A3, external review) that need a real,
+    on-disk session lock for its `session_fingerprint` cross-check to
+    verify against."""
+    block_dir = store.root / "blocks" / block_id
+    block_dir.mkdir(parents=True, exist_ok=True)
+    session_payload = {"session_fingerprint": session_fingerprint, "campaign_fingerprint": store.fingerprint}
+    (block_dir / "session.json").write_text(json.dumps(session_payload))
+    return session_payload
+
+
 def _read_journal_gate_order(store: CampaignStore) -> list[str]:
     """Gate names in the order they were journaled to
     campaign-journal.jsonl. `record_admission`'s own on-disk JSON is
@@ -416,6 +434,136 @@ async def test_admission_failure_never_creates_session_or_runs_trials(tmp_path):
     record = _read_last_admission(store, block.block_id)
     assert record["ok"] is False
     assert record["failure"]["code"] == "dirty_checkout"
+
+
+async def test_diagnostic_write_failure_never_masks_the_real_admission_error(tmp_path, monkeypatch):
+    """A8 (external review): if the diagnostic write itself blows up (e.g.
+    a full disk), the ORIGINAL gate failure (dirty_checkout here) must
+    still be the exception that propagates -- never replaced by the
+    write's own exception. The write failure is recorded on
+    `diagnostic_write_error` instead."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    calls: list = []
+    dirty_checkout = {
+        "wsl": {"commit": EXPECTED_COMMIT, "status": " M dirty.py"},
+        "windows": {"commit": EXPECTED_COMMIT, "status": ""},
+    }
+    deps = _make_dependencies(calls, campaign, block, position, checkout=dirty_checkout)
+    pipeline = AdmissionPipeline(deps)
+
+    def _boom_record_admission(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "record_admission", _boom_record_admission)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "dirty_checkout"
+    assert excinfo.value.diagnostic_write_error is not None
+    assert "disk full" in excinfo.value.diagnostic_write_error
+
+
+async def test_validation_record_never_overwrites_a_prior_attempt_on_ordinal_collision(tmp_path):
+    """A9 (external review): `_write_validation_record` must match
+    `record_admission`'s append-only, never-overwrite discipline. A gap in
+    the numbered validation sequence (e.g. left by an earlier interrupted
+    write) must never let a freshly-computed ordinal silently clobber a
+    file that already exists at that ordinal."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    calls: list = []
+    deps = _make_dependencies(calls, campaign, block, position)
+    pipeline = AdmissionPipeline(deps)
+
+    validation_dir = store.root / "validation"
+    validation_dir.mkdir(parents=True)
+    prefix = f"{block.block_id}-validation-"
+    # Only ONE file exists on disk, but numbered "002" -- the naive
+    # count-derived next ordinal (count=1 -> next=2) collides with it.
+    (validation_dir / f"{prefix}002.json").write_text(json.dumps({"marker": "pre-existing"}))
+
+    with pytest.raises(BenchmarkCampaignError, match="already recorded"):
+        await pipeline.admit(bundle, block, store, mode="validation")
+
+    assert json.loads((validation_dir / f"{prefix}002.json").read_text()) == {"marker": "pre-existing"}
+
+
+async def test_real_admission_failure_plus_real_cli_disposition_write_is_refused_by_the_reporter(tmp_path):
+    """A1 (external review), end-to-end: every existing CLI test stubbed
+    `admit()` itself, so the interaction between the REAL
+    `AdmissionPipeline.admit()` failure-write path and the REAL CLI
+    disposition write (`benchmark_admission.classify_admission_disposition`
+    + `record_admission_disposition`, exactly as `_run_campaign_async`
+    calls them) was never actually exercised against
+    `build_campaign_report`. This drives that real interaction end to end:
+    Gemma is genuinely admitted and its full schedule genuinely committed
+    (via the real `AdmissionPipeline`/`BenchmarkStore`), Qwen's admission
+    genuinely fails once via the real pipeline, and the disposition is
+    written via the real helper the CLI itself calls -- reproducing
+    exactly the on-disk shape one real, un-retried admission failure
+    produces. `build_campaign_report` must still refuse it (A1's fix)."""
+    from civ_mcp.arena import benchmark_campaign_report
+
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    gemma_block, qwen_block = campaign.models
+
+    # 1. Genuinely admit Gemma (mode="counted") with entirely good evidence.
+    gemma_calls: list = []
+    gemma_deps = _make_dependencies(gemma_calls, campaign, gemma_block, position)
+    gemma_pipeline = AdmissionPipeline(gemma_deps)
+    resolved = await gemma_pipeline.admit(bundle, gemma_block, store, mode="counted")
+
+    # 2. Genuinely commit Gemma's entire real, compiled schedule -- minimal
+    # payloads (this position's rubric is `always`-satisfied at every
+    # level, so the specific final_state content doesn't matter), stamped
+    # exactly as a real trial would be.
+    for trial in store.schedule["blocks"][gemma_block.block_id]["trials"]:
+        resolved.store.commit_trial(
+            trial["index"],
+            {
+                "index": trial["index"],
+                "position_id": trial["position_id"],
+                "pair_id": trial["pair_id"],
+                "arm_id": trial["arm_id"],
+                "model": trial["model"],
+                "attempt_count": 1,
+                "terminal": "finish_trial",
+                "session_fingerprint": resolved.store.fingerprint,
+                "campaign_fingerprint": store.fingerprint,
+                "steps": [],
+                "initial_state": {},
+                "final_state": {},
+            },
+        )
+    assert block_is_complete(store, gemma_block.block_id) is True
+
+    # 3. Genuinely fail Qwen's admission once via the real pipeline.
+    qwen_calls: list = []
+    dirty_checkout = {
+        "wsl": {"commit": EXPECTED_COMMIT, "status": " M dirty.py"},
+        "windows": {"commit": EXPECTED_COMMIT, "status": ""},
+    }
+    qwen_deps = _make_dependencies(qwen_calls, campaign, qwen_block, position, checkout=dirty_checkout)
+    qwen_pipeline = AdmissionPipeline(qwen_deps)
+    with pytest.raises(AdmissionError) as excinfo:
+        await qwen_pipeline.admit(bundle, qwen_block, store, mode="counted")
+
+    # 4. Mirror the real CLI's exact call sequence (see
+    # `benchmark_runner._run_campaign_async`) in the SAME "invocation".
+    first_complete = block_is_complete(store, gemma_block.block_id)
+    disposition = classify_admission_disposition(block_index=1, first_block_counted_complete=first_complete)
+    assert disposition == REPLICATION_DEFERRED_ADMISSION
+    record_admission_disposition(
+        store, qwen_block.block_id, disposition, {"code": excinfo.value.code, "details": excinfo.value.details}
+    )
+
+    # 5. A1's fix: this ONE real failure plus its disposition record is not
+    # corroboration -- the reporter must refuse it, not silently accept a
+    # deferred verdict.
+    with pytest.raises(benchmark_campaign_report.CampaignReportError, match="incomplete schedule"):
+        benchmark_campaign_report.build_campaign_report(store.root)
 
 
 async def test_unexpected_exception_still_produces_a_complete_diagnostic(tmp_path):
@@ -696,20 +844,22 @@ async def test_one_block_mode_stops_after_next_manifest_order_block(tmp_path):
 
     assert select_next_incomplete_block(campaign, store) is block0
 
+    _write_block_session(store, block0.block_id, session_fingerprint="block0-sess")
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
         (trials_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint})
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "block0-sess"})
         )
 
     assert select_next_incomplete_block(campaign, store) is block1
 
+    _write_block_session(store, block1.block_id, session_fingerprint="block1-sess")
     trials_dir1 = store.root / "blocks" / block1.block_id / "trials"
     trials_dir1.mkdir(parents=True)
     for trial in store.schedule["blocks"][block1.block_id]["trials"]:
         (trials_dir1 / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint})
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "block1-sess"})
         )
 
     assert select_next_incomplete_block(campaign, store) is None
@@ -734,11 +884,17 @@ def test_block_is_complete_rejects_a_trial_copied_from_another_campaign(tmp_path
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block0 = campaign.models[0]
 
+    _write_block_session(store, block0.block_id, session_fingerprint="block0-sess")
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
         (trials_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": "some-other-campaigns-fingerprint"})
+            json.dumps(
+                {
+                    "campaign_fingerprint": "some-other-campaigns-fingerprint",
+                    "session_fingerprint": "block0-sess",
+                }
+            )
         )
 
     assert block_is_complete(store, block0.block_id) is False
@@ -749,6 +905,7 @@ def test_block_is_complete_false_on_unparseable_trial_file(tmp_path):
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block0 = campaign.models[0]
 
+    _write_block_session(store, block0.block_id, session_fingerprint="block0-sess")
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
@@ -761,14 +918,68 @@ def test_block_is_complete_true_when_every_trial_carries_the_matching_fingerprin
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block0 = campaign.models[0]
 
+    _write_block_session(store, block0.block_id, session_fingerprint="block0-sess")
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
         (trials_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint})
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "block0-sess"})
         )
 
     assert block_is_complete(store, block0.block_id) is True
+
+
+def test_block_is_complete_false_when_trials_exist_but_no_session_json(tmp_path):
+    """A3 (external review): trial files without a recorded session.json
+    are never complete -- a genuinely admitted block always mints
+    session.json BEFORE any trial is committed under it, so trial files
+    present without one are, at best, evidence copied in from elsewhere."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0 = campaign.models[0]
+
+    trials_dir = store.root / "blocks" / block0.block_id / "trials"
+    trials_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block0.block_id]["trials"]:
+        (trials_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "whatever"})
+        )
+
+    assert not (store.root / "blocks" / block0.block_id / "session.json").exists()
+    assert block_is_complete(store, block0.block_id) is False
+
+
+def test_block_is_complete_rejects_gemma_trials_copied_into_qwen_directory(tmp_path):
+    """A3 (external review): Gemma and Qwen share one campaign_fingerprint
+    and the same trial_filename() convention -- copying Gemma's committed
+    trial files straight into Qwen's block directory must never report
+    Qwen complete just because every file carries the campaign's own
+    campaign_fingerprint. Qwen's own recorded session.json declares a
+    DIFFERENT session_fingerprint, which the copied files must not
+    satisfy."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0, block1 = campaign.models
+
+    _write_block_session(store, block0.block_id, session_fingerprint="gemma-sess")
+    gemma_dir = store.root / "blocks" / block0.block_id / "trials"
+    gemma_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block0.block_id]["trials"]:
+        (gemma_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+        )
+    assert block_is_complete(store, block0.block_id) is True
+
+    # Copy Gemma's committed trial bytes verbatim into Qwen's own trials
+    # directory. Qwen's own session.json declares a DIFFERENT
+    # session_fingerprint -- these copied files must not satisfy it.
+    _write_block_session(store, block1.block_id, session_fingerprint="qwen-sess")
+    qwen_dir = store.root / "blocks" / block1.block_id / "trials"
+    qwen_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block1.block_id]["trials"]:
+        (qwen_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+        )
+
+    assert block_is_complete(store, block1.block_id) is False
 
 
 def test_record_admission_disposition_is_reconstructible_from_disk(tmp_path):
