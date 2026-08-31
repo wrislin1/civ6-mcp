@@ -552,6 +552,16 @@ def _build_live_dependencies(
 
     def make_agent(spec: TrialSpec) -> SingleTurnAgent:
         arm = next(a for a in suite.arms if a.arm_id == spec.arm_id)
+        if arm.options:
+            # Fail closed: compile_schedule validates a declared
+            # TreatmentArm.options (e.g. a "tools" override) as a property of
+            # the schedule config, but this scaffold's make_agent only ever
+            # reads arm.tools -- it does not apply arm.options at all. A
+            # declared treatment must never silently run as the bare tier.
+            raise ValueError(
+                f"arm {arm.arm_id!r} declares options {arm.options!r}, but arm "
+                "options are not applied by this scaffold; Plan 2 wires treatments"
+            )
         last_model[0] = spec.model
         backend = backend_for(spec.model)
         # Ruling: production wiring must construct SingleTurnAgent with

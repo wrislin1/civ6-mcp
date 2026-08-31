@@ -1,8 +1,11 @@
 """Tests for the strictly-serial controlled-position benchmark runner.
 
-Every test here uses plain async fakes / `AsyncMock` -- no live game, no
-network. `RunnerDependencies` is the seam: production wiring (in
-`benchmark_runner._build_live_dependencies` / `main`) is not exercised here.
+Most tests here use plain async fakes / `AsyncMock` -- no live game, no
+network. `RunnerDependencies` is the seam: most production wiring (in
+`benchmark_runner._build_live_dependencies` / `main`) is not exercised via a
+live game or network, but `_build_live_dependencies.make_agent`'s arm-options
+fail-closed check (below) is a pure function of manifest data and is tested
+directly.
 """
 from __future__ import annotations
 
@@ -15,8 +18,10 @@ import pytest
 from unittest.mock import AsyncMock
 
 import civ_mcp.arena.benchmark_runner as benchmark_runner
+from civ_mcp.arena.backends import SamplingConfig
 from civ_mcp.arena.benchmark_agent import EpisodeEvidence, EpisodeTerminal, EpisodeTimedOut
 from civ_mcp.arena.benchmark_backend import HealthProbe
+from civ_mcp.arena.benchmark_manifest import PositionManifest, SuiteManifest, TreatmentArm
 from civ_mcp.arena.benchmark_runner import (
     BenchmarkRunner,
     FailureClass,
@@ -691,3 +696,80 @@ async def test_ungated_smoke_flag_proceeds_and_stamps_the_session_lock(tmp_path,
     assert exit_code == 0
     assert len(captured_locks) == 1
     assert captured_locks[0]["ungated_smoke"] is True
+
+
+def _position_manifest(**overrides) -> PositionManifest:
+    fields = dict(
+        position_id="builder-cal-v1",
+        version=1,
+        archive="positions/builder-cal-v1.Civ6Save",
+        archive_sha256="abc123",
+        game_save_name="builder-cal-v1",
+        player_id=0,
+        expected_state={"turn": 42},
+        expected_state_sha256="def456",
+        relevant_tiles=((9, 24),),
+        objectives=(),
+        rubric=(),
+        split="calibration",
+    )
+    fields.update(overrides)
+    return PositionManifest(**fields)
+
+
+def _suite_manifest(arms, **overrides) -> SuiteManifest:
+    fields = dict(
+        suite_id="builder-cal-v1",
+        driver="single_turn",
+        positions=("builder-cal-v1",),
+        models=("qwen3.6-27b",),
+        arms=arms,
+        seeds=(101,),
+        order="abba",
+        sampling=SamplingConfig(temperature=0.2, top_p=0.95, seed=None, max_tokens=6144),
+        max_steps=15,
+        result_char_cap=6000,
+        audit_indices=(),
+    )
+    fields.update(overrides)
+    return SuiteManifest(**fields)
+
+
+def test_make_agent_fails_closed_on_nonempty_arm_options():
+    # TreatmentArm.options is validated by compile_schedule (a tools override
+    # must expose finish_trial and never end_turn), but this scaffold's
+    # make_agent only ever reads arm.tools -- it silently drops everything
+    # else in arm.options. A declared treatment (e.g. a tools override or any
+    # other option) must never silently run as the bare tier: fail closed
+    # instead.
+    position = _position_manifest()
+    arm = TreatmentArm("standard", "standard", {"tools": ["get_units", "finish_trial"]})
+    suite = _suite_manifest((arm,))
+    deps = benchmark_runner._build_live_dependencies(
+        connection=None,
+        position=position,
+        suite=suite,
+        gateway_url="http://example.invalid/v1",
+        api_key="x",
+    )
+    spec = TrialSpec(index=1, pair_id="p", position_id="builder-cal-v1", model="qwen3.6-27b", arm_id="standard", seed=101)
+
+    with pytest.raises(ValueError, match="arm options"):
+        deps.make_agent(spec)
+
+
+def test_make_agent_allows_empty_arm_options():
+    position = _position_manifest()
+    arm = TreatmentArm("standard", "standard", {})
+    suite = _suite_manifest((arm,))
+    deps = benchmark_runner._build_live_dependencies(
+        connection=None,
+        position=position,
+        suite=suite,
+        gateway_url="http://example.invalid/v1",
+        api_key="x",
+    )
+    spec = TrialSpec(index=1, pair_id="p", position_id="builder-cal-v1", model="qwen3.6-27b", arm_id="standard", seed=101)
+
+    agent = deps.make_agent(spec)
+    assert agent is not None
