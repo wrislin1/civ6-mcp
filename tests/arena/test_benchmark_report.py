@@ -931,6 +931,110 @@ def test_build_report_accepts_a_trial_stamped_with_the_matching_session_fingerpr
 
 
 # ---------------------------------------------------------------------------
+# Task 4 -- counted (campaign) evidence requires BOTH session_fingerprint
+# AND campaign_fingerprint stamps; an --ungated-smoke lock never declares a
+# campaign_fingerprint at all, so it stays advisory-only (single-stamped)
+# and structurally excluded from counted-campaign provenance.
+# ---------------------------------------------------------------------------
+
+
+def _build_counted_run(run_dir: Path) -> None:
+    """A counted (non-smoke) run: session.json declares BOTH
+    session_fingerprint and campaign_fingerprint, and the one committed
+    trial is dual-stamped to match."""
+    (run_dir / "trials").mkdir(parents=True)
+    (run_dir / "attempts").mkdir()
+    _write_json(
+        run_dir / "session.json",
+        {
+            "session_fingerprint": "abc123",
+            "campaign_fingerprint": "camp789",
+            "scorer_fingerprint": "score-v1",
+            "ungated_smoke": False,
+            "positions": {"easy": {"rubric": [_mine_rubric()]}},
+        },
+    )
+    _write_json(
+        run_dir / "schedule.json",
+        {"trials": [{"index": 1, "position_id": "easy"}]},
+    )
+    _write_json(
+        run_dir / "trials" / "trial-001.json",
+        {
+            "index": 1,
+            "position_id": "easy",
+            "attempt_count": 1,
+            "terminal": "finish_trial",
+            "session_fingerprint": "abc123",
+            "campaign_fingerprint": "camp789",
+            "steps": [],
+            "initial_state": {"tiles": [{"improvement": None}]},
+            "final_state": {"tiles": [{"improvement": "IMPROVEMENT_MINE"}]},
+        },
+    )
+
+
+def test_counted_report_accepts_a_trial_with_both_matching_fingerprints(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_counted_run(run_dir)
+
+    report = build_report(run_dir)  # must not raise
+
+    assert report["session"]["session_fingerprint"] == "abc123"
+    assert report["session"]["campaign_fingerprint"] == "camp789"
+    assert report["session"]["ungated_smoke"] is False
+
+
+@pytest.mark.parametrize("missing_field", ["session_fingerprint", "campaign_fingerprint"])
+def test_counted_report_rejects_trial_missing_either_fingerprint(tmp_path, missing_field):
+    run_dir = tmp_path / "run"
+    _build_counted_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    del payload[missing_field]
+    _write_json(trial_path, payload)
+
+    with pytest.raises(Exception):
+        build_report(run_dir)
+
+
+def test_counted_report_rejects_trial_with_a_campaign_fingerprint_from_another_block(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_counted_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    payload["campaign_fingerprint"] = "camp-DIFFERENT"
+    _write_json(trial_path, payload)
+
+    with pytest.raises(Exception):
+        build_report(run_dir)
+
+
+def test_smoke_report_is_advisory_and_campaign_report_ineligible(tmp_path):
+    """An --ungated-smoke run's committed trial is single-stamped
+    (session_fingerprint only -- see benchmark_runner._finalize_trial) and
+    its session.json never declares a campaign_fingerprint at all.
+    build_report must still produce a report for it (advisory, retaining
+    the existing UNGATED SMOKE warning) -- but the report itself carries no
+    campaign_fingerprint, so nothing marks this evidence as belonging to
+    any counted campaign block (a future campaign-level report in Task 11
+    has no fingerprint to match against it and must reject it outright)."""
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    session_path = run_dir / "session.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    payload["ungated_smoke"] = True
+    _write_json(session_path, payload)
+
+    report = build_report(run_dir)  # advisory: must not raise
+
+    assert report["session"]["ungated_smoke"] is True
+    assert report["session"]["campaign_fingerprint"] is None
+    markdown = render_markdown(report)
+    assert "UNGATED SMOKE" in markdown.upper()
+
+
+# ---------------------------------------------------------------------------
 # G11 -- build_report must verify schedule.json against session.json's own
 # schedule_fingerprint exactly as the runner does on resume; a swapped arm
 # order in schedule.json otherwise silently flips calibration deltas.

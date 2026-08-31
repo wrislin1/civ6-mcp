@@ -74,7 +74,11 @@ from civ_mcp.arena.benchmark_state import (
     state_digest,
     verify_expected_state_digest,
 )
-from civ_mcp.arena.benchmark_store import BenchmarkStore, SessionLockMismatchError
+from civ_mcp.arena.benchmark_store import (
+    BenchmarkStore,
+    SessionLockMismatchError,
+    TrialProvenanceError,
+)
 from civ_mcp.arena.popups import dismiss_blocking_popups
 from civ_mcp.connection import GameConnection
 from civ_mcp.game_lifecycle import load_game_save
@@ -90,6 +94,8 @@ __all__ = [
     "SessionAborted",
     "RUNAWAY_TIMEOUT_TERMINAL",
     "MAX_INFRASTRUCTURE_ATTEMPTS",
+    "ResolvedBlock",
+    "run_resolved_block",
     "main",
 ]
 
@@ -236,26 +242,42 @@ class BenchmarkRunner:
                 await self.run_trial(spec)
 
     def _verify_resume_provenance(self, index: int) -> None:
-        """F8: resume identifies completion by filename only
-        (`completed_indices()` just lists `trials/*.json`) -- a stale or
-        copied `trial-NNN.json` (e.g. left over from an unrelated run
-        directory) is otherwise indistinguishable from real current-lock
-        evidence. Fail closed if the committed trial's own
-        `session_fingerprint` stamp doesn't match this store's."""
-        trial = self.store.trial(index)
-        stamped = trial.get("session_fingerprint")
-        if stamped != self.store.fingerprint:
+        """F8/campaign-provenance: resume identifies completion by filename
+        only (`completed_indices()` just lists `trials/*.json`) -- a stale
+        or copied `trial-NNN.json` (e.g. left over from an unrelated run
+        directory, or copied from a DIFFERENT counted campaign block) is
+        otherwise indistinguishable from real current-lock evidence.
+
+        Delegates to `BenchmarkStore.is_trial_complete`, which fails closed
+        on exactly this: a missing/mismatched `session_fingerprint`, and --
+        for a counted block whose own lock carries a `campaign_fingerprint`
+        -- a missing/mismatched `campaign_fingerprint` too. A trial copied
+        from a different campaign's block that happens to carry a matching
+        `session_fingerprint` but a different (or absent)
+        `campaign_fingerprint` must never be treated as this block's own
+        completed evidence."""
+        try:
+            complete = self.store.is_trial_complete(index)
+        except TrialProvenanceError as exc:
             raise SessionAborted(
-                "session_fingerprint_mismatch",
+                "trial_provenance_invalid",
                 {
                     "trial_index": index,
-                    "expected_session_fingerprint": self.store.fingerprint,
-                    "found_session_fingerprint": stamped,
+                    "message": str(exc),
+                },
+            ) from exc
+        if not complete:
+            # Every caller only reaches this method for an index it already
+            # observed in `completed_indices()` -- this branch defends only
+            # against a TOCTOU change to the store between that check and
+            # this call, not an expected steady-state outcome.
+            raise SessionAborted(
+                "trial_missing_on_resume",
+                {
+                    "trial_index": index,
                     "message": (
-                        f"trial {index}: committed evidence is stamped with "
-                        f"session_fingerprint {stamped!r}, but this session's "
-                        f"fingerprint is {self.store.fingerprint!r} -- refusing to "
-                        "treat a stale/copied trial file as current-lock completion"
+                        f"trial {index}: expected committed evidence during resume "
+                        "but none was found"
                     ),
                 },
             )
@@ -592,6 +614,14 @@ class BenchmarkRunner:
             "session_fingerprint": self.store.fingerprint,
             **fields,
         }
+        if self.store.campaign_fingerprint:
+            # Counted evidence requires BOTH stamps (see
+            # BenchmarkStore.is_trial_complete / TrialProvenanceError). A
+            # non-counted --ungated-smoke store's lock carries no
+            # campaign_fingerprint at all, so this branch never fires for
+            # smoke and a smoke trial payload stays single-stamped, exactly
+            # as before this dual-stamp change.
+            payload["campaign_fingerprint"] = self.store.campaign_fingerprint
         self.store.commit_trial(spec.index, payload)
 
     def _record_infra_attempt(
@@ -703,7 +733,28 @@ def _build_live_dependencies(
     suite: SuiteManifest,
     gateway_url: str,
     api_key: str,
+    episode_wall_s: int = 300,
+    chat_template_kwargs: Mapping[str, object] | None = None,
+    user_prompt: str = "",
 ) -> RunnerDependencies:
+    # `chat_template_kwargs` is threaded onto every cached backend as a
+    # plain instance attribute rather than a constructor kwarg:
+    # `OpenAICompatBackend.__init__` doesn't accept one yet (see backends.py
+    # -- Task 5 wires the read side, `chat()` sending it as `extra_body`).
+    # `None` here preserves `chat()`'s own current hardcoded literal
+    # (`{"enable_thinking": False}`) exactly.
+    resolved_chat_template_kwargs: dict[str, object] = (
+        dict(chat_template_kwargs) if chat_template_kwargs is not None else {"enable_thinking": False}
+    )
+    # `user_prompt=""` (the empty string, NOT None) is ResolvedBlock's
+    # smoke-path default -- its field is a plain `str`, not `str | None`.
+    # SingleTurnAgent's own contract treats `None` as "no frozen campaign
+    # prompt; fall back to the legacy per-turn benchmark_prompt(turn,
+    # player_id) template" (see benchmark_agent.SingleTurnAgent.run()) -- so
+    # an empty string is folded to None here, and only a genuinely non-empty
+    # frozen prompt (a counted campaign's CampaignManifest.prompt) is passed
+    # through verbatim.
+    resolved_user_prompt = user_prompt or None
     # Keyed by (model, seed): TrialSpec.seed must actually reach the backend
     # that executes the trial (F3) -- a backend cached by model alone would
     # always run with the suite's static `sampling.seed`, so a committed
@@ -716,13 +767,15 @@ def _build_live_dependencies(
     def backend_for(model: str, seed: int) -> OpenAICompatBackend:
         key = (model, seed)
         if key not in backend_cache:
-            backend_cache[key] = OpenAICompatBackend(
+            backend = OpenAICompatBackend(
                 gateway_url,
                 api_key,
                 model,
                 sampling=dataclasses.replace(suite.sampling, seed=seed),
                 retry_policy=RetryPolicy(max_attempts=1),
             )
+            backend.chat_template_kwargs = dict(resolved_chat_template_kwargs)
+            backend_cache[key] = backend
         return backend_cache[key]
 
     async def reload_position(_position_id: str) -> bool:
@@ -767,7 +820,8 @@ def _build_live_dependencies(
             # declared treatment must never silently run as the bare tier.
             raise ValueError(
                 f"arm {arm.arm_id!r} declares options {arm.options!r}, but arm "
-                "options are not applied by this scaffold; Plan 2 wires treatments"
+                "options are not applied by this scaffold; applying arm options "
+                "is deferred to Plan 3"
             )
         last_model[0] = spec.model
         last_seed[0] = spec.seed
@@ -778,11 +832,12 @@ def _build_live_dependencies(
         return SingleTurnAgent(
             backend,
             arm.tools,
-            episode_wall_s=300.0,
+            episode_wall_s=float(episode_wall_s),
             max_steps=suite.max_steps,
             char_cap=suite.result_char_cap,
             tile_coords=position.relevant_tiles,
             capture_state=capture_canonical_state,
+            user_prompt=resolved_user_prompt,
         )
 
     async def probe_health_dep() -> HealthProbe:
@@ -806,6 +861,100 @@ def _build_live_dependencies(
         connection=connection,
         aclose=aclose,
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class ResolvedBlock:
+    """Every input `run_resolved_block` needs to run one already-admitted
+    block's compiled schedule to completion -- the whole production
+    assembly boundary around the trusted `BenchmarkRunner`, collapsed into
+    one frozen value so a caller (the `--ungated-smoke` CLI path today; a
+    real gated campaign block in a later task) only has to build this once.
+
+    `store` is a fully constructed `BenchmarkStore` (already `.create`d or
+    `.open`ed against this block's own run directory) -- assembling ITS
+    lock (deciding whether `campaign_fingerprint` is present, i.e. whether
+    this is counted or smoke evidence) is the caller's job, not
+    `run_resolved_block`'s. `schedule` is the exact, already-compiled
+    trial order (`benchmark_schedule.compile_schedule`'s output, or a
+    single campaign block's slice of it) -- `run_resolved_block` hands it
+    to `BenchmarkRunner.run()` unchanged and in order; it never recompiles,
+    reorders, or filters it.
+
+    `episode_wall_s` / `chat_template_kwargs` / `user_prompt` are resolved
+    model-facing settings threaded into every `SingleTurnAgent` / cached
+    backend this block constructs (see `_build_live_dependencies`) -- for a
+    counted campaign block these come from that block's admitted evidence
+    (the tool-canary-derived episode wall, the locked chat template
+    kwargs, the frozen campaign prompt); for the non-counted
+    `--ungated-smoke` path they are fixed literals matching this scaffold's
+    pre-existing hardcoded smoke behavior exactly (see `_run_async`).
+    `user_prompt=""` (the empty string, not `None`) is how the smoke path
+    spells "no frozen prompt" through this non-Optional field --
+    `_build_live_dependencies` folds an empty string back to `None`, which
+    is `SingleTurnAgent`'s own "use the legacy per-turn benchmark_prompt"
+    sentinel.
+    """
+
+    position: PositionManifest
+    suite: SuiteManifest
+    schedule: tuple[TrialSpec, ...]
+    store: BenchmarkStore
+    gateway_url: str
+    api_key: str
+    episode_wall_s: int
+    chat_template_kwargs: dict[str, object]
+    user_prompt: str
+
+
+async def run_resolved_block(block: ResolvedBlock) -> int:
+    """Run `block`'s already-compiled schedule to completion (or session
+    abort) against the trusted, unmodified `BenchmarkRunner`.
+
+    This function IS the production assembly boundary: it connects to the
+    live game, calls `_build_live_dependencies`, constructs
+    `BenchmarkRunner`, calls `runner.run(block.schedule)` -- passing that
+    exact schedule object straight through, never replicating or modifying
+    any part of the retry/attempt/commit trial loop that lives inside
+    `BenchmarkRunner` -- and closes every resource this function itself
+    opened (the game connection, every cached backend client) on every
+    exit path, mirroring the cleanup contract `_run_async` upheld before
+    this extraction (see G5).
+    """
+    connection = GameConnection()
+    await connection.connect()
+
+    deps: RunnerDependencies | None = None
+    try:
+        deps = _build_live_dependencies(
+            connection=connection,
+            position=block.position,
+            suite=block.suite,
+            gateway_url=block.gateway_url,
+            api_key=block.api_key,
+            episode_wall_s=block.episode_wall_s,
+            chat_template_kwargs=block.chat_template_kwargs,
+            user_prompt=block.user_prompt,
+        )
+
+        runner = BenchmarkRunner(
+            store=block.store,
+            dependencies=deps,
+            expected_state=block.position.expected_state,
+            player_id=block.position.player_id,
+        )
+
+        try:
+            await runner.run(block.schedule)
+        except SessionAborted as exc:
+            print(f"civ-arena-benchmark: session aborted ({exc.code}): {exc}", file=sys.stderr)
+            return 1
+
+        return 0
+    finally:
+        if deps is not None and deps.aclose is not None:
+            await deps.aclose()
+        await connection.disconnect()
 
 
 async def _run_async(args: argparse.Namespace) -> int:
@@ -937,56 +1086,40 @@ async def _run_async(args: argparse.Namespace) -> int:
             )
             return 1
 
-    connection = GameConnection()
-    await connection.connect()
-
-    # G5: GameConnection and every cached per-(model, seed) backend client
-    # must be closed on every exit path -- normal completion, a caught
-    # SessionAborted, or any exception that propagates -- not just the
-    # happy path. `deps` is declared before the try so the finally block
-    # can check it even if `_build_live_dependencies` itself raises.
-    deps: RunnerDependencies | None = None
-    try:
-        api_key = os.environ.get(args.api_key_env)
-        if not api_key:
-            # G6: do NOT refuse to start -- local gateways need no key, and
-            # probe_backend already fails closed on a bad key against a
-            # real endpoint. Just make the placeholder visible so it's
-            # never a silent surprise when a remote endpoint later fails
-            # the admission probe.
-            print(
-                f"civ-arena-benchmark: warning: {args.api_key_env} is unset; using "
-                'placeholder api key "x" (fine for a local gateway with no auth; '
-                "a remote endpoint will fail the admission probe)",
-                file=sys.stderr,
-            )
-            api_key = "x"
-        deps = _build_live_dependencies(
-            connection=connection,
-            position=position,
-            suite=suite,
-            gateway_url=args.gateway_url,
-            api_key=api_key,
+    api_key = os.environ.get(args.api_key_env)
+    if not api_key:
+        # G6: do NOT refuse to start -- local gateways need no key, and
+        # probe_backend already fails closed on a bad key against a real
+        # endpoint. Just make the placeholder visible so it's never a
+        # silent surprise when a remote endpoint later fails the admission
+        # probe.
+        print(
+            f"civ-arena-benchmark: warning: {args.api_key_env} is unset; using "
+            'placeholder api key "x" (fine for a local gateway with no auth; '
+            "a remote endpoint will fail the admission probe)",
+            file=sys.stderr,
         )
+        api_key = "x"
 
-        runner = BenchmarkRunner(
-            store=store,
-            dependencies=deps,
-            expected_state=position.expected_state,
-            player_id=position.player_id,
-        )
-
-        try:
-            await runner.run(schedule)
-        except SessionAborted as exc:
-            print(f"civ-arena-benchmark: session aborted ({exc.code}): {exc}", file=sys.stderr)
-            return 1
-
-        return 0
-    finally:
-        if deps is not None and deps.aclose is not None:
-            await deps.aclose()
-        await connection.disconnect()
+    # This is the whole non-counted smoke assembly: connect / build deps /
+    # construct BenchmarkRunner / run / close every resource on every exit
+    # path all live in run_resolved_block now (see G5's cleanup contract,
+    # preserved there unchanged). episode_wall_s / chat_template_kwargs /
+    # user_prompt are fixed literals matching this scaffold's pre-existing
+    # hardcoded smoke behavior exactly -- no admission gate ever ran to
+    # produce real evidence for them (see the fail-closed guard above).
+    block = ResolvedBlock(
+        position=position,
+        suite=suite,
+        schedule=schedule,
+        store=store,
+        gateway_url=args.gateway_url,
+        api_key=api_key,
+        episode_wall_s=300,
+        chat_template_kwargs={"enable_thinking": False},
+        user_prompt="",
+    )
+    return await run_resolved_block(block)
 
 
 def main(argv: list[str] | None = None) -> int:

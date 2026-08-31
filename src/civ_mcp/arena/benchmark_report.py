@@ -581,6 +581,14 @@ def _completeness_section(
 #                                                    # without one); echoed into the
 #                                                    # report and cross-checked
 #                                                    # against every trial's own stamp
+#       "campaign_fingerprint": "<non-empty str>",  # optional (Task 3/4): present
+#                                                    # only for a counted campaign
+#                                                    # block's lock -- an
+#                                                    # --ungated-smoke lock never
+#                                                    # declares one. When present,
+#                                                    # cross-checked against every
+#                                                    # trial's own stamp exactly like
+#                                                    # session_fingerprint above.
 #       "ungated_smoke": <bool>,          # optional; defaults to False
 #       ...                                # any other writer-specific evidence is ignored here
 #     }
@@ -591,7 +599,9 @@ def _completeness_section(
 # this module never silently treats absent rubric evidence as "score 0".
 # G8: whenever session.json carries a session_fingerprint, a committed trial
 # with no session_fingerprint stamp of its own is ALSO a hard ReportError --
-# not merely a mismatch check that no-ops when either side is missing.
+# not merely a mismatch check that no-ops when either side is missing. The
+# same rule applies to campaign_fingerprint whenever session.json declares
+# one (see Task 3/4).
 
 
 def build_report(run_dir: str | Path) -> dict[str, object]:
@@ -698,6 +708,32 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
                     "refusing to score evidence that does not belong to this session's current lock"
                 )
 
+        # Counted-campaign provenance (Task 3/4): the SECOND stamp a
+        # counted block's trials carry alongside session_fingerprint (see
+        # BenchmarkStore.is_trial_complete / BenchmarkRunner._finalize_trial).
+        # Mirrors the session_fingerprint check above exactly, but only
+        # activates when session.json itself declares a non-empty
+        # campaign_fingerprint -- an --ungated-smoke lock never declares one
+        # (see benchmark_runner._run_async), so this is a pure no-op for
+        # every smoke run and for every pre-campaign fixture with no
+        # concept of campaign_fingerprint at all.
+        lock_campaign_fingerprint = lock.get("campaign_fingerprint")
+        if lock_campaign_fingerprint:
+            trial_campaign_fingerprint = trial.get("campaign_fingerprint")
+            if not trial_campaign_fingerprint:
+                raise ReportError(
+                    f"{trial_path}: has no campaign_fingerprint stamp, but session.json "
+                    f"carries one ({lock_campaign_fingerprint!r}) -- refusing to score "
+                    "unstamped counted evidence under a stamped campaign lock"
+                )
+            if trial_campaign_fingerprint != lock_campaign_fingerprint:
+                raise ReportError(
+                    f"{trial_path}: campaign_fingerprint {trial_campaign_fingerprint!r} does not "
+                    f"match session.json's campaign_fingerprint {lock_campaign_fingerprint!r} -- "
+                    "refusing to score evidence that does not belong to this counted "
+                    "campaign block's current lock"
+                )
+
         position_lock = positions_lock.get(position_id)
         if not isinstance(position_lock, Mapping) or "rubric" not in position_lock:
             raise ReportError(
@@ -743,6 +779,12 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
     report: dict[str, object] = {
         "session": {
             "session_fingerprint": lock.get("session_fingerprint"),
+            # None for every --ungated-smoke run (that lock never declares
+            # one) and for every pre-campaign fixture -- nothing marks such
+            # evidence as belonging to any counted campaign block, so a
+            # future campaign-level report (Task 11) has no fingerprint to
+            # match against it and must reject it outright.
+            "campaign_fingerprint": lock.get("campaign_fingerprint"),
             "scorer_fingerprint": scorer_fingerprint,
             "ungated_smoke": bool(lock.get("ungated_smoke", False)),
         },

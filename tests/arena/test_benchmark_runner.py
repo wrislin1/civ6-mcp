@@ -1676,3 +1676,226 @@ async def test_live_reload_position_reports_unverified_for_stable_open_port_fall
 
     verified = await deps.reload_position(position.position_id)
     assert verified is False
+
+
+# ---------------------------------------------------------------------------
+# Task 4: extract a resolved-block handoff and structurally exclude smoke
+# evidence from counted (campaign) provenance.
+# ---------------------------------------------------------------------------
+
+
+class _FakeBlockConnection:
+    async def connect(self):
+        return None
+
+    async def disconnect(self):
+        return None
+
+
+def _resolved_block(schedule, store, **overrides) -> "benchmark_runner.ResolvedBlock":
+    fields = dict(
+        position=_position_manifest(),
+        suite=_suite_manifest((TreatmentArm("minimal", "minimal", {}),)),
+        schedule=schedule,
+        store=store,
+        gateway_url="http://example.invalid/v1",
+        api_key="x",
+        episode_wall_s=300,
+        chat_template_kwargs={"enable_thinking": False},
+        user_prompt="",
+    )
+    fields.update(overrides)
+    return benchmark_runner.ResolvedBlock(**fields)
+
+
+@pytest.mark.asyncio
+async def test_run_resolved_block_delegates_to_existing_benchmark_runner(tmp_path, monkeypatch):
+    """run_resolved_block must not replicate or modify the trial loop: it
+    hands the exact compiled schedule to the existing, unmodified
+    BenchmarkRunner.run() -- unchanged (the very same tuple object) and in
+    order -- and does nothing else with it."""
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeBlockConnection)
+
+    build_calls: list[dict] = []
+
+    def _fake_build_live_dependencies(**kwargs):
+        build_calls.append(kwargs)
+        return _deps()
+
+    monkeypatch.setattr(benchmark_runner, "_build_live_dependencies", _fake_build_live_dependencies)
+
+    run_calls: list[object] = []
+    constructor_calls: list[dict] = []
+
+    class _SpyRunner:
+        def __init__(self, **kwargs):
+            constructor_calls.append(kwargs)
+
+        async def run(self, schedule_arg):
+            run_calls.append(schedule_arg)
+
+    monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _SpyRunner)
+
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    schedule = (_spec(1, "minimal"), _spec(2, "minimal"))
+    block = _resolved_block(schedule, store)
+
+    exit_code = await benchmark_runner.run_resolved_block(block)
+
+    assert exit_code == 0
+    # The exact same tuple object, unchanged and in order -- not a copy,
+    # not reordered, not filtered.
+    assert run_calls == [schedule]
+    assert run_calls[0] is schedule
+    assert constructor_calls[0]["store"] is store
+    assert build_calls[0]["position"] is block.position
+    assert build_calls[0]["suite"] is block.suite
+    assert build_calls[0]["episode_wall_s"] == 300
+    assert build_calls[0]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert build_calls[0]["user_prompt"] == ""
+
+
+@pytest.mark.asyncio
+async def test_run_resolved_block_closes_connection_and_backends(tmp_path, monkeypatch):
+    disconnect_calls: list = []
+
+    class _FakeConnection:
+        async def connect(self):
+            return None
+
+        async def disconnect(self):
+            disconnect_calls.append(True)
+
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+
+    aclose_calls: list = []
+
+    def _fake_build_live_dependencies(**_kwargs):
+        async def aclose():
+            aclose_calls.append(True)
+
+        return _deps(aclose=aclose)
+
+    monkeypatch.setattr(benchmark_runner, "_build_live_dependencies", _fake_build_live_dependencies)
+
+    class _NoopRunner:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def run(self, schedule):
+            return None
+
+    monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _NoopRunner)
+
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    block = _resolved_block((_spec(1, "minimal"),), store)
+
+    exit_code = await benchmark_runner.run_resolved_block(block)
+
+    assert exit_code == 0
+    assert disconnect_calls == [True]
+    assert aclose_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_finalize_trial_stamps_campaign_and_session_fingerprints(tmp_path):
+    """A counted campaign block's lock carries a non-empty
+    campaign_fingerprint alongside session_fingerprint (see
+    benchmark_campaign.build_campaign_lock) -- _finalize_trial must copy
+    BOTH stamps from the store's own lock into every committed trial
+    payload, not just session_fingerprint."""
+    lock = {**_lock(), "campaign_fingerprint": "camp789"}
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    deps = _deps()
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    trial = runner.store.trial(1)
+    assert trial["session_fingerprint"] == "abc123"
+    assert trial["campaign_fingerprint"] == "camp789"
+
+
+@pytest.mark.asyncio
+async def test_finalize_trial_omits_campaign_fingerprint_for_a_smoke_lock(tmp_path):
+    """A non-counted (--ungated-smoke) store's lock carries no
+    campaign_fingerprint at all -- a committed trial under it must stay
+    single-stamped (session_fingerprint only), exactly as before Task 4's
+    dual-stamp change, so it can never be mistaken for counted-campaign
+    evidence."""
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps()
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    trial = runner.store.trial(1)
+    assert trial["session_fingerprint"] == "abc123"
+    assert "campaign_fingerprint" not in trial
+
+
+@pytest.mark.asyncio
+async def test_resume_rejects_copied_trial_from_another_campaign(tmp_path):
+    """A trial file copied from a DIFFERENT counted campaign block --
+    stamped with a session_fingerprint that matches this store's, but a
+    DIFFERENT campaign_fingerprint -- must never be treated as this
+    block's own completed evidence on resume."""
+    lock = {**_lock(), "campaign_fingerprint": "camp-A"}
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    payload = _committed_trial_payload(1)
+    payload["campaign_fingerprint"] = "camp-B"  # a different campaign block
+    store.commit_trial(1, payload)
+
+    deps = _deps(make_agent=lambda spec: _FinishingAgent())
+    runner = _runner(store, deps)
+
+    with pytest.raises(SessionAborted):
+        await runner.run([_spec(1, "minimal"), _spec(2, "standard")])
+
+
+@pytest.mark.asyncio
+async def test_resume_accepts_a_trial_stamped_with_the_matching_campaign_fingerprint(tmp_path):
+    lock = {**_lock(), "campaign_fingerprint": "camp-A"}
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    payload = _committed_trial_payload(1)
+    payload["campaign_fingerprint"] = "camp-A"
+    store.commit_trial(1, payload)
+
+    make_agent_calls: list[int] = []
+    deps = _deps(make_agent=lambda spec: make_agent_calls.append(spec.index) or _FinishingAgent())
+    runner = _runner(store, deps)
+
+    await runner.run([_spec(1, "minimal"), _spec(2, "standard")])  # must not raise
+
+    assert make_agent_calls == [2]
+    assert runner.store.completed_indices() == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_smoke_lock_never_contains_campaign_fingerprint(tmp_path, monkeypatch):
+    """The --ungated-smoke CLI path must never mint a campaign_fingerprint
+    at all -- counted evidence requires both fingerprints, and
+    --ungated-smoke never produces the pair."""
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    captured_locks: list[dict] = []
+    real_create = benchmark_runner.BenchmarkStore.create.__func__
+
+    def _capturing_create(cls, run_dir_arg, lock):
+        captured_locks.append(dict(lock))
+        return real_create(cls, run_dir_arg, lock)
+
+    monkeypatch.setattr(benchmark_runner.BenchmarkStore, "create", classmethod(_capturing_create))
+    _patch_fake_connection_and_noop_runner(monkeypatch)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _minimal_smoke_args(suite_path, run_dir)
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    assert len(captured_locks) == 1
+    assert "campaign_fingerprint" not in captured_locks[0]
+    assert captured_locks[0]["ungated_smoke"] is True
