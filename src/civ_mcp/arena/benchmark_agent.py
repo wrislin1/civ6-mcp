@@ -270,9 +270,21 @@ class SingleTurnAgent:
         self._progress_completion_tokens: int = 0
         self._progress_wall_clock_start: float = time.time()
         try:
-            async with asyncio.timeout(self.episode_wall_s):
+            async with asyncio.timeout(self.episode_wall_s) as cm:
                 return await self._run_episode(gs, player_id, turn)
         except TimeoutError as exc:
+            # `except TimeoutError` here catches ANY builtin TimeoutError
+            # raised from inside the episode, not just asyncio.timeout's
+            # own expiry -- socket.timeout IS a TimeoutError in modern
+            # Python, so e.g. an OS-level ETIMEDOUT from an injected
+            # capture_state would otherwise be misconverted into
+            # EpisodeTimedOut (a scoreable-candidate terminal) instead of
+            # propagating as the harness failure it actually is.
+            # `cm.expired()` is only True when asyncio.timeout's own
+            # deadline actually fired -- re-raise unchanged for any other
+            # TimeoutError.
+            if not cm.expired():
+                raise
             raise EpisodeTimedOut(
                 f"benchmark episode exceeded episode_wall_s={self.episode_wall_s}",
                 partial_evidence=self.partial_evidence(),

@@ -499,3 +499,43 @@ async def test_capture_state_connection_failure_is_not_reclassified_as_timeout()
     with pytest.raises(ConnectionError) as exc_info:
         await agent.run(gs, player_id=0, turn=1)
     assert not isinstance(exc_info.value, EpisodeTimedOut)
+
+
+@pytest.mark.asyncio
+async def test_foreign_timeout_error_propagates_raw_not_as_episode_timeout():
+    """F17 repro: `except TimeoutError` after `asyncio.timeout` catches ANY
+    builtin TimeoutError raised from inside the episode, not just the
+    episode wall's own expiry -- socket.timeout IS a TimeoutError in
+    modern Python, so e.g. an OS-level ETIMEDOUT from capture_state was
+    misconverted into EpisodeTimedOut (a scoreable-candidate terminal)
+    instead of propagating as the harness failure it actually is. The
+    episode_wall_s budget here (5.0s) is nowhere close to expiring -- this
+    is a foreign TimeoutError, not the wall."""
+    async def failing_capture_state(conn, player_id, tile_coords):
+        raise TimeoutError("ETIMEDOUT from capture_state")
+
+    agent = SingleTurnAgent(
+        OneShotFinishBackend(),
+        "minimal",
+        episode_wall_s=5.0,
+        max_steps=4,
+        tile_coords=[(9, 10)],
+        capture_state=failing_capture_state,
+    )
+    gs = RecordingGS()
+
+    with pytest.raises(TimeoutError) as exc_info:
+        await agent.run(gs, player_id=0, turn=1)
+    assert not isinstance(exc_info.value, EpisodeTimedOut)
+
+
+@pytest.mark.asyncio
+async def test_genuine_episode_wall_expiry_still_converts_to_episode_timed_out():
+    """Counterfactual to the foreign-TimeoutError test above: a real
+    episode_wall_s expiry (the backend hangs forever) must still convert
+    to EpisodeTimedOut -- the fix must not make asyncio.timeout's own
+    genuine expiry propagate as a raw TimeoutError instead."""
+    agent = SingleTurnAgent(HangingBackend(), "minimal", episode_wall_s=0.05, max_steps=4)
+
+    with pytest.raises(EpisodeTimedOut):
+        await agent.run(RecordingGS(), player_id=0, turn=1)
