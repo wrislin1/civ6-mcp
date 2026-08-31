@@ -93,8 +93,19 @@ def normalize_state(state: Mapping[str, object]) -> dict[str, object]:
 
 
 def state_digest(state: Mapping[str, object]) -> str:
+    """Canonical-JSON digest of `normalize_state(state)`.
+
+    Uses the same canonical JSON rule as every other digest/fingerprint in
+    this package (`benchmark_manifest.fingerprint`, `benchmark_report.
+    _canonical_bytes`, `benchmark_store._canonical_bytes`): sorted keys, no
+    incidental whitespace, `ensure_ascii=False`. Omitting `ensure_ascii=False`
+    here used to mean a state containing a non-ASCII character digested
+    differently than an equivalent canonical encoding elsewhere in the
+    pipeline -- unified so "canonical JSON" means exactly one thing
+    everywhere this codebase computes a digest or fingerprint.
+    """
     normalized = normalize_state(state)
-    payload = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+    payload = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

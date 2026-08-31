@@ -973,6 +973,53 @@ async def test_ungated_smoke_run_dir_is_report_ready(tmp_path, monkeypatch):
     assert report["completeness"]["by_position"]["builder-cal-v1"]["committed"] == 1
 
 
+@pytest.mark.asyncio
+async def test_run_async_fails_closed_on_a_tampered_schedule_json_on_resume(tmp_path, monkeypatch):
+    """Cheap fold-in: on resume, `_run_async` only checks whether
+    schedule.json already exists -- it never re-verifies the FILE'S
+    CONTENT against the session lock's schedule_fingerprint. A schedule.json
+    corrupted or partially written by a prior crash (distinct from
+    session.json, which BenchmarkStore.create already verifies byte-for-
+    byte) would otherwise be silently trusted on resume."""
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir_base = tmp_path / "runs"
+
+    class _FakeConnection:
+        async def connect(self):
+            return None
+
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+
+    class _FakeRunner:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def run(self, schedule):
+            return None
+
+    monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _FakeRunner)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--suite", str(suite_path),
+            "--run-id", "smoke-run",
+            "--run-dir", str(run_dir_base),
+            "--gateway-url", "http://example.invalid/v1",
+            "--ungated-smoke",
+        ]
+    )
+
+    first_exit_code = await benchmark_runner._run_async(args)
+    assert first_exit_code == 0
+
+    schedule_path = run_dir_base / "smoke-run" / "schedule.json"
+    assert schedule_path.exists()
+    schedule_path.write_text(json.dumps({"trials": []}), encoding="utf-8")
+
+    second_exit_code = await benchmark_runner._run_async(args)
+    assert second_exit_code == 1
+
+
 def _position_manifest(**overrides) -> PositionManifest:
     fields = dict(
         position_id="builder-cal-v1",

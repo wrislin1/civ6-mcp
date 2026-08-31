@@ -808,6 +808,30 @@ async def _run_async(args: argparse.Namespace) -> int:
             json.dumps(schedule_payload, sort_keys=True, separators=(",", ":")),
             encoding="utf-8",
         )
+    else:
+        # Cheap fold-in: on resume, verify the file on disk still matches
+        # the session lock's schedule_fingerprint. BenchmarkStore.create
+        # already verifies session.json byte-for-byte, but schedule.json is
+        # a separate file with no such check -- one corrupted or partially
+        # written by a prior crash would otherwise be silently trusted.
+        try:
+            existing_schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+            existing_fingerprint = fingerprint(existing_schedule)
+        except (OSError, ValueError) as exc:
+            print(
+                f"civ-arena-benchmark: failed to read/verify {schedule_path}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+        if existing_fingerprint != lock["schedule_fingerprint"]:
+            print(
+                f"civ-arena-benchmark: {schedule_path} does not match the session "
+                f"lock's schedule_fingerprint (expected {lock['schedule_fingerprint']!r}, "
+                f"found {existing_fingerprint!r}); refusing to resume against "
+                "mismatched schedule evidence",
+                file=sys.stderr,
+            )
+            return 1
 
     connection = GameConnection()
     await connection.connect()

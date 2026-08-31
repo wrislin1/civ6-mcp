@@ -7,6 +7,9 @@ compare "expected" vs "actual" state independent of Lua iteration order.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+
 import pytest
 
 from civ_mcp.arena.benchmark_state import (
@@ -61,6 +64,26 @@ def test_state_digest_still_distinguishes_genuinely_different_non_integral_float
     left = {"turn": 1, "gold": 42.5, "units": [], "cities": [], "tiles": []}
     right = {"turn": 1, "gold": 42.6, "units": [], "cities": [], "tiles": []}
     assert state_digest(left) != state_digest(right)
+
+
+def test_state_digest_uses_ensure_ascii_false_matching_other_canonical_encoders():
+    """Cheap fold-in: state_digest's canonical JSON drifted from every
+    other canonical encoder in this codebase (benchmark_manifest.
+    fingerprint, benchmark_report._canonical_bytes, benchmark_store.
+    _canonical_bytes -- all explicitly ensure_ascii=False). state_digest
+    omitted it (defaulting to True), so a state containing a non-ASCII
+    character would digest differently here than an equivalent canonical
+    encoding elsewhere in the pipeline."""
+    state = {
+        "turn": 1, "player_id": 0, "units": [], "tiles": [],
+        "cities": [{"id": 1, "name": "Ки́їв", "x": 0, "y": 0, "population": 1}],
+    }
+    expected = hashlib.sha256(
+        json.dumps(
+            normalize_state(state), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    ).hexdigest()
+    assert state_digest(state) == expected
 
 
 def test_normalize_state_leaves_non_list_fields_untouched():
