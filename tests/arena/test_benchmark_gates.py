@@ -3,7 +3,7 @@ import json
 import pytest
 
 from civ_mcp.arena.backends import RetryPolicy, SamplingConfig
-from civ_mcp.arena.benchmark_backend import BackendProbe
+from civ_mcp.arena.benchmark_backend import BackendProbe, ToolCanaryEvidence
 from civ_mcp.arena.benchmark_gates import (
     GateFailure,
     admit_model_block,
@@ -284,6 +284,18 @@ def _good_probe(*, seed_honored=True, model="qwen3.6-27b", model_confirmed=True,
     )
 
 
+def _good_canary(arm_id="standard", **overrides):
+    defaults = dict(
+        arm_id=arm_id,
+        finish_trial_ok=True,
+        required_argument_ok=True,
+        observed_calls=(),
+        errors=(),
+    )
+    defaults.update(overrides)
+    return ToolCanaryEvidence(**defaults)
+
+
 def _admit_kwargs(**overrides):
     kwargs = dict(
         requested_model="qwen3.6-27b",
@@ -295,7 +307,13 @@ def _admit_kwargs(**overrides):
         retry_policy=RetryPolicy(max_attempts=1),
         sampling=SamplingConfig(seed=101),
         probe=_good_probe(),
-        briefing_budget_chars=4000,
+        # This calibration runs with briefing_required=False -- the locked
+        # evidence must explicitly record briefing_budget_chars as null
+        # rather than requiring a positive value that is never produced.
+        briefing_required=False,
+        briefing_budget_chars=None,
+        tool_canaries={"standard": _good_canary("standard")},
+        expected_arm_ids=("standard",),
         max_steps=6,
     )
     kwargs.update(overrides)
@@ -321,10 +339,89 @@ def test_admit_model_block_rejects_counted_backend_with_hidden_retries():
     assert exc_info.value.code == "counted_backend_hidden_retries"
 
 
-def test_admit_model_block_rejects_zero_briefing_budget():
+def test_admission_allows_zero_briefing_budget_when_briefing_is_off():
+    """This calibration runs with briefing_required=False -- a null/zero
+    briefing budget must not block admission, and the returned evidence must
+    record briefing_budget_chars as the null value it actually was, not
+    silently substitute or enforce a positive number that was never asked
+    for."""
+    evidence = admit_model_block(
+        **_admit_kwargs(briefing_required=False, briefing_budget_chars=None)
+    )
+    assert evidence["ok"] is True
+    assert evidence["briefing_required"] is False
+    assert evidence["briefing_budget_chars"] is None
+    json.dumps(evidence)
+
+
+def test_admission_requires_positive_budget_when_briefing_is_on():
     with pytest.raises(GateFailure, match="briefing budget") as exc_info:
-        admit_model_block(**_admit_kwargs(briefing_budget_chars=0))
+        admit_model_block(**_admit_kwargs(briefing_required=True, briefing_budget_chars=0))
     assert exc_info.value.code == "zero_briefing_budget"
+
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(**_admit_kwargs(briefing_required=True, briefing_budget_chars=None))
+    assert exc_info.value.code == "zero_briefing_budget"
+
+    evidence = admit_model_block(
+        **_admit_kwargs(briefing_required=True, briefing_budget_chars=4000)
+    )
+    assert evidence["ok"] is True
+    assert evidence["briefing_budget_chars"] == 4000
+
+
+def test_admission_requires_canaries_for_every_arm():
+    """`admit_model_block` must require BOTH tool canaries to have passed for
+    EVERY arm in `expected_arm_ids` -- a missing arm and a present-but-failed
+    arm are distinct fail-closed reasons."""
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={"standard": _good_canary("standard")},
+                expected_arm_ids=("minimal", "standard"),
+            )
+        )
+    assert exc_info.value.code == "missing_tool_canary"
+    assert "minimal" in exc_info.value.details["missing_arm_ids"]
+
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={
+                    "minimal": _good_canary("minimal"),
+                    "standard": _good_canary("standard", finish_trial_ok=False),
+                },
+                expected_arm_ids=("minimal", "standard"),
+            )
+        )
+    assert exc_info.value.code == "tool_canary_failed"
+    assert "standard" in exc_info.value.details["failed_arms"]
+
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={
+                    "minimal": _good_canary("minimal", required_argument_ok=False),
+                    "standard": _good_canary("standard"),
+                },
+                expected_arm_ids=("minimal", "standard"),
+            )
+        )
+    assert exc_info.value.code == "tool_canary_failed"
+    assert "minimal" in exc_info.value.details["failed_arms"]
+
+    evidence = admit_model_block(
+        **_admit_kwargs(
+            tool_canaries={
+                "minimal": _good_canary("minimal"),
+                "standard": _good_canary("standard"),
+            },
+            expected_arm_ids=("minimal", "standard"),
+        )
+    )
+    assert evidence["ok"] is True
+    assert set(evidence["tool_canaries"]) == {"minimal", "standard"}
+    json.dumps(evidence)
 
 
 def test_admit_model_block_rejects_insufficient_warm_latency_samples():

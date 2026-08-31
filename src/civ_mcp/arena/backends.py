@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
+from typing import Mapping
 import openai
 from openai import AsyncOpenAI
 
@@ -65,6 +66,7 @@ class OpenAICompatBackend:
         model: str,
         sampling: SamplingConfig | None = None,
         retry_policy: RetryPolicy | None = None,
+        chat_template_kwargs: Mapping[str, object] | None = None,
     ):
         self.model = model
         self.base_url = base_url
@@ -74,6 +76,14 @@ class OpenAICompatBackend:
         # keys sent, three-attempt retry.
         self.sampling = sampling or SamplingConfig()
         self.retry_policy = retry_policy or RetryPolicy()
+        # `None` reproduces the pre-Task-5 hardcoded literal exactly (ordinary
+        # arena callers never pass this). A counted block passes the exact
+        # mapping from `ModelBlockConfig.chat_template_kwargs`. Stored as a
+        # defensive copy so a caller mutating its own dict afterward can
+        # never reach into a cached backend's locked config.
+        self.chat_template_kwargs = dict(
+            {"enable_thinking": False} if chat_template_kwargs is None else chat_template_kwargs
+        )
 
     async def aclose(self) -> None:
         """Close the underlying AsyncOpenAI client's connection pool.
@@ -91,7 +101,9 @@ class OpenAICompatBackend:
             messages=messages,
             max_tokens=self.sampling.max_tokens,
             timeout=REQUEST_TIMEOUT_S,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            # Defensive copy: every request gets its own dict, never a shared
+            # reference into `self.chat_template_kwargs`.
+            extra_body={"chat_template_kwargs": dict(self.chat_template_kwargs)},
         )
         if self.sampling.temperature is not None:
             kw["temperature"] = self.sampling.temperature

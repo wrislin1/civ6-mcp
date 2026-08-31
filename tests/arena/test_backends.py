@@ -40,12 +40,15 @@ class _CapturingCompletions:
         return _FakeResp()
 
 
-def _backend_with_capture(*, sampling=None, retry_policy=None):
+def _backend_with_capture(*, sampling=None, retry_policy=None, chat_template_kwargs=None):
     b = OpenAICompatBackend.__new__(OpenAICompatBackend)
     b.model = "gemma4-26b"
     b.base_url = "http://x/v1"
     b.sampling = sampling or SamplingConfig()
     b.retry_policy = retry_policy or RetryPolicy()
+    b.chat_template_kwargs = dict(
+        {"enable_thinking": False} if chat_template_kwargs is None else chat_template_kwargs
+    )
     cap = _CapturingCompletions()
     b._client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=cap))
     return b, cap
@@ -103,6 +106,34 @@ def test_default_construction_omits_sampling_keys_and_keeps_three_attempts():
     assert cap.kwargs["max_tokens"] == MAX_COMPLETION_TOKENS
 
 
+def test_backend_sends_locked_chat_template_kwargs_and_sampling():
+    """Task 5: `chat_template_kwargs` becomes a constructor input -- a counted
+    block passes the exact mapping from `ModelBlockConfig`, and it must be
+    forwarded verbatim (as a defensive copy, both at construction and at
+    send-time) rather than the hardcoded `{"enable_thinking": False}`."""
+    sampling = SamplingConfig(temperature=0.2, top_p=0.9, seed=7, max_tokens=2048)
+    locked_kwargs = {"enable_thinking": True, "custom_flag": "x"}
+    backend = OpenAICompatBackend(
+        "http://x/v1", "k", "m", sampling=sampling, chat_template_kwargs=locked_kwargs,
+    )
+    cap = _CapturingCompletions()
+    backend._client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=cap))
+
+    asyncio.run(backend.chat([{"role": "user", "content": "act"}], []))
+    assert cap.kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": True, "custom_flag": "x"}}
+    assert cap.kwargs["extra_body"]["chat_template_kwargs"] is not locked_kwargs
+    assert cap.kwargs["temperature"] == 0.2
+    assert cap.kwargs["top_p"] == 0.9
+    assert cap.kwargs["seed"] == 7
+    assert cap.kwargs["max_tokens"] == 2048
+
+    # Mutating the caller's dict after construction must never leak into the
+    # backend's stored config or a subsequent request.
+    locked_kwargs["custom_flag"] = "mutated"
+    asyncio.run(backend.chat([{"role": "user", "content": "act"}], []))
+    assert cap.kwargs["extra_body"]["chat_template_kwargs"]["custom_flag"] == "x"
+
+
 def test_caps_are_bounded():
     # guard against someone loosening the cap back into runaway territory
     assert 256 <= MAX_COMPLETION_TOKENS <= 8192
@@ -117,6 +148,7 @@ def _backend_with_create(create_fn):
     b.base_url = "http://x/v1"
     b.sampling = SamplingConfig()
     b.retry_policy = RetryPolicy()
+    b.chat_template_kwargs = {"enable_thinking": False}
     b._client = types.SimpleNamespace(
         chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create_fn))
     )

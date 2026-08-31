@@ -6,6 +6,7 @@ with fake backends.
 """
 from __future__ import annotations
 import asyncio
+import json
 import math
 import time
 from dataclasses import dataclass, field, replace
@@ -187,3 +188,137 @@ async def probe_health(backend, expected_model: str, timeout_s: float) -> Health
     healthy = reported == expected_model
     error = None if healthy else f"model mismatch: expected {expected_model!r}, got {reported!r}"
     return HealthProbe(healthy=healthy, model=reported, latency_s=latency, error=error)
+
+
+# ---------------------------------------------------------------------------
+# probe_tool_capability
+# ---------------------------------------------------------------------------
+
+# A smoke run proved gemma3-12b via llama.cpp silently ignores the OpenAI
+# `tools` field and replies in prose -- an A/B on tool surfaces then measures
+# nothing. These two canaries prove structured tool calling per arm before
+# any counted trial: one requires calling `finish_trial` (the benchmark
+# control tool, present on every arm's schema), the other requires calling
+# `move_unit` with an exact required-argument sentinel. Both are deliberately
+# generic, position-blind prompts -- this is a pre-flight capability check,
+# not a scored trial -- and neither is ever routed to a real tool handler:
+# this module has no dispatcher/game-connection dependency at all, so there
+# is nothing here that COULD dispatch even by accident.
+FINISH_TRIAL_CANARY_TOOL_NAME = "finish_trial"
+REQUIRED_ARGUMENT_CANARY_TOOL_NAME = "move_unit"
+REQUIRED_ARGUMENT_SENTINEL: dict[str, object] = {"unit_index": 7, "x": 11, "y": 13}
+
+FINISH_TRIAL_CANARY_PROMPT = (
+    "This is a pre-flight tool-capability check, not a real turn -- no game "
+    "state exists yet. Call the finish_trial tool now, with no other tool "
+    "call and no other text."
+)
+
+REQUIRED_ARGUMENT_CANARY_PROMPT = (
+    "This is a pre-flight tool-capability check, not a real turn -- no game "
+    "state exists yet. Call the move_unit tool now with exactly these "
+    "arguments: unit_index=7, x=11, y=13. Make no other tool call."
+)
+
+
+@dataclass(frozen=True)
+class ToolCanaryEvidence:
+    """JSON-safe verdict from probing one arm's structured tool-calling
+    capability. Both `finish_trial_ok` and `required_argument_ok` must be
+    True for `benchmark_gates.admit_model_block` to admit this arm --
+    neither canary is ever routed to a real tool handler."""
+
+    arm_id: str
+    finish_trial_ok: bool
+    required_argument_ok: bool
+    observed_calls: tuple[dict[str, object], ...]
+    errors: tuple[str, ...]
+
+
+def _parse_tool_call_arguments(raw: object) -> tuple[object, str | None]:
+    """Best-effort JSON parse of a tool call's `arguments` string. Returns
+    `(parsed, None)` on success or `(None, error)` on any failure -- never
+    raises, since a malformed reply from the model under test is exactly the
+    condition this probe exists to detect, not an infrastructure error."""
+    if not isinstance(raw, str):
+        return None, f"arguments is not a string: {raw!r}"
+    try:
+        return json.loads(raw), None
+    except (TypeError, ValueError) as exc:
+        return None, f"malformed JSON arguments {raw!r}: {exc}"
+
+
+async def probe_tool_capability(
+    backend, *, arm_id: str, tools: list[dict]
+) -> ToolCanaryEvidence:
+    """Exercise `backend` with two fresh, generic, non-dispatching prompts to
+    prove it can actually emit structured tool calls through `tools` --
+    admission evidence, never a step in a scored episode.
+
+    Canary 1 asks for a bare `finish_trial` call. Canary 2 asks for
+    `move_unit` with the exact required-argument sentinel
+    `{"unit_index": 7, "x": 11, "y": 13}` -- the returned JSON arguments are
+    parsed and compared for an EXACT match (a backend that emits x=12, or
+    prose instead of a tool call, or unparseable JSON, fails this canary).
+    Both prompts are sent through the same `backend.chat(...)` used for a
+    real trial step, but neither reply's tool calls are ever passed to
+    `registry.dispatch` or any other tool handler -- this function only
+    reads and compares `reply.tool_calls`.
+    """
+    observed_calls: list[dict[str, object]] = []
+    errors: list[str] = []
+
+    finish_trial_ok = False
+    try:
+        reply = await backend.chat(
+            [{"role": "user", "content": FINISH_TRIAL_CANARY_PROMPT}], tools
+        )
+        calls = list(reply.tool_calls or [])
+        observed_calls.extend(dict(tc) for tc in calls)
+        finish_trial_ok = any(
+            tc.get("name") == FINISH_TRIAL_CANARY_TOOL_NAME for tc in calls
+        )
+        if not finish_trial_ok:
+            errors.append(
+                "finish_trial canary: expected a finish_trial tool call, got "
+                f"tool_calls={[tc.get('name') for tc in calls]!r} text={reply.text!r}"
+            )
+    except Exception as exc:
+        errors.append(f"finish_trial canary raised: {exc}")
+
+    required_argument_ok = False
+    try:
+        reply = await backend.chat(
+            [{"role": "user", "content": REQUIRED_ARGUMENT_CANARY_PROMPT}], tools
+        )
+        calls = list(reply.tool_calls or [])
+        observed_calls.extend(dict(tc) for tc in calls)
+        move_calls = [
+            tc for tc in calls if tc.get("name") == REQUIRED_ARGUMENT_CANARY_TOOL_NAME
+        ]
+        if not move_calls:
+            errors.append(
+                "required-argument canary: expected a move_unit tool call, got "
+                f"tool_calls={[tc.get('name') for tc in calls]!r} text={reply.text!r}"
+            )
+        for tc in move_calls:
+            parsed, parse_error = _parse_tool_call_arguments(tc.get("arguments"))
+            if parse_error is not None:
+                errors.append(f"required-argument canary: {parse_error}")
+            elif parsed == REQUIRED_ARGUMENT_SENTINEL:
+                required_argument_ok = True
+            else:
+                errors.append(
+                    "required-argument canary: expected arguments "
+                    f"{REQUIRED_ARGUMENT_SENTINEL!r}, got {parsed!r}"
+                )
+    except Exception as exc:
+        errors.append(f"required-argument canary raised: {exc}")
+
+    return ToolCanaryEvidence(
+        arm_id=arm_id,
+        finish_trial_ok=finish_trial_ok,
+        required_argument_ok=required_argument_ok,
+        observed_calls=tuple(observed_calls),
+        errors=tuple(errors),
+    )

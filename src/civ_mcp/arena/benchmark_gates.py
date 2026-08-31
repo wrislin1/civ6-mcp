@@ -18,9 +18,10 @@ Five gates plus the shared exception type:
   operator-approved acknowledgment names *exactly* the conflicting
   services. Never kills or drains anything itself.
 - `admit_model_block` -- per-model-block admission: endpoint/model identity,
-  a counted backend's non-hidden retry policy, a positive briefing budget,
-  ten warm-latency samples with no probe errors, seed-honoring, and the
-  derived episode wall.
+  a counted backend's non-hidden retry policy, a positive briefing budget
+  (only when the briefing treatment is on), proven structured tool-calling
+  capability for every expected arm (`ToolCanaryEvidence`), ten warm-latency
+  samples with no probe errors, seed-honoring, and the derived episode wall.
 - `build_session_lock` -- assembles the above plus boot-health, digests,
   deployment evidence, and a canonical-state checksum into one immutable,
   JSON-safe, deterministically-fingerprinted session lock.
@@ -39,7 +40,12 @@ def _present_commit(value: object) -> bool:
 
 from civ_mcp.arena.backends import RetryPolicy, SamplingConfig
 from civ_mcp.arena.benchmark_agent import FINISH_TRIAL_TOOL_NAME
-from civ_mcp.arena.benchmark_backend import BackendProbe, episode_wall_seconds, nearest_rank_p95
+from civ_mcp.arena.benchmark_backend import (
+    BackendProbe,
+    ToolCanaryEvidence,
+    episode_wall_seconds,
+    nearest_rank_p95,
+)
 from civ_mcp.arena.benchmark_manifest import PositionManifest, fingerprint
 from civ_mcp.arena.benchmark_state import state_digest
 
@@ -344,7 +350,10 @@ def admit_model_block(
     retry_policy: RetryPolicy,
     sampling: SamplingConfig,
     probe: BackendProbe,
-    briefing_budget_chars: int,
+    briefing_required: bool,
+    briefing_budget_chars: int | None,
+    tool_canaries: Mapping[str, ToolCanaryEvidence],
+    expected_arm_ids: Sequence[str],
     max_steps: int,
 ) -> dict[str, object]:
     """Admit one strictly-serial model block, immediately before it runs.
@@ -357,7 +366,17 @@ def admit_model_block(
       never sufficient;
     - a counted backend whose `retry_policy` would hide a resampled request
       attempt (`max_attempts != 1`);
-    - a zero (or negative) briefing budget;
+    - a zero, negative, or missing briefing budget -- but ONLY when
+      `briefing_required` is True. This calibration runs with
+      `briefing_required=False`, so `briefing_budget_chars` is expected to be
+      `None` and is recorded as such in the returned evidence rather than
+      enforced;
+    - `tool_canaries` missing evidence for any id in `expected_arm_ids`, or
+      carrying evidence where either canary (`finish_trial_ok` /
+      `required_argument_ok`) did not pass -- proof that a model can emit
+      structured tool calls, and specifically the exact required-argument
+      shape a real trial depends on, is required for every arm before any
+      trial against it is counted (see `benchmark_backend.probe_tool_capability`);
     - fewer than ten warm-latency samples (the pre-flight probe didn't
       complete its full sample set);
     - any error recorded by the pre-flight probe (including the seed
@@ -405,14 +424,59 @@ def admit_model_block(
             },
         )
 
-    if briefing_budget_chars <= 0:
+    # Only enforced when the treatment is actually on: this calibration runs
+    # with briefing_required=False, and briefing_budget_chars is expected to
+    # be None in that case -- enforcing positivity on a budget that was never
+    # asked for would refuse a legitimately-off treatment.
+    if briefing_required and (briefing_budget_chars is None or briefing_budget_chars <= 0):
         raise GateFailure(
             "zero_briefing_budget",
             {
                 "briefing_budget_chars": briefing_budget_chars,
                 "message": (
                     f"briefing budget is {briefing_budget_chars}; a counted model "
-                    "block requires a positive briefing budget"
+                    "block with briefing_required=True requires a positive briefing budget"
+                ),
+            },
+        )
+
+    missing_arm_ids = sorted(
+        arm_id for arm_id in expected_arm_ids if arm_id not in tool_canaries
+    )
+    if missing_arm_ids:
+        raise GateFailure(
+            "missing_tool_canary",
+            {
+                "missing_arm_ids": missing_arm_ids,
+                "message": (
+                    "tool-canary evidence is missing for arm(s) "
+                    f"{missing_arm_ids}; every expected arm must be probed for "
+                    "structured tool-calling capability "
+                    "(benchmark_backend.probe_tool_capability) before a model "
+                    "block can be admitted"
+                ),
+            },
+        )
+
+    failed_arms: dict[str, object] = {}
+    for arm_id in expected_arm_ids:
+        canary = tool_canaries[arm_id]
+        if not (canary.finish_trial_ok and canary.required_argument_ok):
+            failed_arms[arm_id] = {
+                "finish_trial_ok": canary.finish_trial_ok,
+                "required_argument_ok": canary.required_argument_ok,
+                "errors": list(canary.errors),
+            }
+    if failed_arms:
+        raise GateFailure(
+            "tool_canary_failed",
+            {
+                "failed_arms": failed_arms,
+                "message": (
+                    f"tool-canary probe failed for arm(s) {sorted(failed_arms)}; a "
+                    "model block must not be admitted without proven structured "
+                    "tool-calling capability (including the exact required-argument "
+                    "shape) for every arm"
                 ),
             },
         )
@@ -482,7 +546,18 @@ def admit_model_block(
         "warm_latencies_s": warm_latencies_s,
         "p95_latency_s": p95_latency_s,
         "episode_wall_s": episode_wall_s,
+        "briefing_required": briefing_required,
         "briefing_budget_chars": briefing_budget_chars,
+        "tool_canaries": {
+            arm_id: {
+                "arm_id": tool_canaries[arm_id].arm_id,
+                "finish_trial_ok": tool_canaries[arm_id].finish_trial_ok,
+                "required_argument_ok": tool_canaries[arm_id].required_argument_ok,
+                "observed_calls": list(tool_canaries[arm_id].observed_calls),
+                "errors": list(tool_canaries[arm_id].errors),
+            }
+            for arm_id in expected_arm_ids
+        },
         "ok": True,
     }
 

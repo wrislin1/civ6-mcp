@@ -1,14 +1,18 @@
 import asyncio
+import json
 
 import pytest
 
+from civ_mcp.arena import registry as arena_registry
 from civ_mcp.arena.backends import Reply, SamplingConfig
 from civ_mcp.arena.benchmark_backend import (
     BackendProbe,
     HealthProbe,
+    ToolCanaryEvidence,
     episode_wall_seconds,
     probe_backend,
     probe_health,
+    probe_tool_capability,
 )
 
 
@@ -218,3 +222,84 @@ async def test_probe_health_flags_model_mismatch():
     verdict = await probe_health(_FakeMismatchedBackend(), expected_model="gemma4-26b", timeout_s=5.0)
     assert verdict.healthy is False
     assert verdict.model == "wrong-model"
+
+
+# ---------------------------------------------------------------------------
+# probe_tool_capability
+# ---------------------------------------------------------------------------
+
+# The exact sentinel the required-argument canary asks for and must observe
+# back verbatim -- x=11, never x=12 (see the counterfactual in Task 5's brief).
+REQUIRED_ARGUMENT_SENTINEL = {"unit_index": 7, "x": 11, "y": 13}
+
+
+def _tool_call(name: str, arguments) -> dict[str, object]:
+    args = arguments if isinstance(arguments, str) else json.dumps(arguments)
+    return {"id": f"call-{name}", "name": name, "arguments": args}
+
+
+class _ScriptedCanaryBackend:
+    """Returns one scripted Reply per `chat()` call, in order -- mirrors
+    `probe_tool_capability`'s exactly-two-calls-in-order contract (one
+    finish_trial-eliciting prompt, one move_unit-eliciting prompt)."""
+
+    def __init__(self, replies: list[Reply]):
+        self._replies = list(replies)
+        self.calls: list[dict[str, object]] = []
+
+    async def chat(self, messages, tools):
+        self.calls.append({"messages": messages, "tools": tools})
+        return self._replies.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_requires_finish_trial_call():
+    backend = _ScriptedCanaryBackend([
+        Reply(text=None, tool_calls=[_tool_call("finish_trial", {})]),
+        Reply(text=None, tool_calls=[_tool_call("move_unit", REQUIRED_ARGUMENT_SENTINEL)]),
+    ])
+    evidence = await probe_tool_capability(backend, arm_id="standard", tools=[])
+    assert isinstance(evidence, ToolCanaryEvidence)
+    assert evidence.arm_id == "standard"
+    assert evidence.finish_trial_ok is True
+    assert evidence.required_argument_ok is True
+    assert evidence.errors == ()
+    assert len(backend.calls) == 2
+    # Two distinct, generic prompts -- not the same message twice.
+    assert backend.calls[0]["messages"] != backend.calls[1]["messages"]
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_requires_exact_move_unit_arguments_without_dispatching(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise AssertionError("probe_tool_capability must never dispatch a tool call")
+
+    monkeypatch.setattr(arena_registry, "dispatch", _boom)
+
+    backend = _ScriptedCanaryBackend([
+        Reply(text=None, tool_calls=[_tool_call("finish_trial", {})]),
+        Reply(text=None, tool_calls=[_tool_call("move_unit", {"unit_index": 7, "x": 12, "y": 13})]),
+    ])
+    evidence = await probe_tool_capability(backend, arm_id="standard", tools=[])
+    assert evidence.required_argument_ok is False
+    assert any("move_unit" in e or "argument" in e for e in evidence.errors)
+
+    # Restoring the exact sentinel (x=11, not x=12) must flip the verdict.
+    backend_ok = _ScriptedCanaryBackend([
+        Reply(text=None, tool_calls=[_tool_call("finish_trial", {})]),
+        Reply(text=None, tool_calls=[_tool_call("move_unit", REQUIRED_ARGUMENT_SENTINEL)]),
+    ])
+    evidence_ok = await probe_tool_capability(backend_ok, arm_id="standard", tools=[])
+    assert evidence_ok.required_argument_ok is True
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_rejects_text_only_and_malformed_json_replies():
+    backend = _ScriptedCanaryBackend([
+        Reply(text="Sure, I am done for this turn.", tool_calls=[]),
+        Reply(text=None, tool_calls=[_tool_call("move_unit", "{not valid json")]),
+    ])
+    evidence = await probe_tool_capability(backend, arm_id="standard", tools=[])
+    assert evidence.finish_trial_ok is False
+    assert evidence.required_argument_ok is False
+    assert len(evidence.errors) == 2
