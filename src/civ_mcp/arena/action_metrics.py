@@ -96,6 +96,42 @@ def _find_unit(state: object, unit_index: object) -> Mapping[str, object]:
     raise PredicateError(f"unit {unit_index!r} not found in state['units']")
 
 
+def _find_unit_optional(state: object, unit_index: object) -> Mapping[str, object] | None:
+    """Same lookup as `_find_unit`, but returns `None` instead of raising
+    when the unit is absent from `state`.
+
+    Used for the FINAL-state half of every unit predicate: a
+    `persistent_unit_ids`-declared unit is expected to survive the whole
+    trial, but a live episode can still capture/kill it. That runtime
+    disappearance must score the predicate `False` -- the model failed to
+    keep the unit alive/at-position/progressing -- never raise
+    `PredicateError`, which would abort a whole trial's scoring over an
+    entirely legitimate (if unwanted) outcome. The INITIAL-state lookup
+    stays on `_find_unit` (raises): a unit missing from canonical initial
+    state is an authoring/manifest error, not a runtime outcome.
+    """
+    units = _resolve_path(state, ["units"])
+    if not isinstance(units, Sequence) or isinstance(units, (str, bytes)):
+        raise PredicateError("state['units'] is not a list")
+    for unit in units:
+        if isinstance(unit, Mapping) and unit.get("id") == unit_index:
+            return unit
+    return None
+
+
+def _find_tile(state: object, x: object, y: object) -> Mapping[str, object]:
+    """Locate the tile at `(x, y)` in `state['tiles']` by coordinate
+    equality -- never by list position/offset, since capture order is not
+    meaningful (see `benchmark_state.normalize_state`)."""
+    tiles = _resolve_path(state, ["tiles"])
+    if not isinstance(tiles, Sequence) or isinstance(tiles, (str, bytes)):
+        raise PredicateError("state['tiles'] is not a list")
+    for tile in tiles:
+        if isinstance(tile, Mapping) and tile.get("x") == x and tile.get("y") == y:
+            return tile
+    raise PredicateError(f"tile ({x!r}, {y!r}) not found in state['tiles']")
+
+
 def _offset_to_cube(x: int, y: int) -> tuple[int, int, int]:
     """Convert Civ6 offset hex coordinates (x=column, y=row, +y = south --
     see repo CLAUDE.md) to cube coordinates, using an odd-r offset layout
@@ -136,9 +172,21 @@ def evaluate_predicate(
 
     Supports exactly: ``always``, ``all``, ``any``, ``successful_tool_call``
     (tool plus exact argument subset), ``final_state_equals`` (typed path
-    plus value), ``state_changed_to``, and ``unit_distance_decreased``.
-    Unknown kinds and typed paths that don't resolve raise
-    ``PredicateError`` — never a false/zero score.
+    plus value), ``state_changed_to``, ``unit_distance_decreased``,
+    ``unit_at``, ``unit_exists_final``, and ``tile_state_equals``. Unknown
+    kinds and typed paths that don't resolve raise ``PredicateError`` —
+    never a false/zero score.
+
+    The three unit-referencing kinds (``unit_distance_decreased``,
+    ``unit_at``, ``unit_exists_final``) share one safety rule: the unit
+    MUST be present in ``initial_state`` (a `PredicateError` there is a
+    manifest/authoring bug — see
+    ``benchmark_manifest.validate_position_contract``, which is meant to
+    catch this before any trial runs) but its absence from ``final_state``
+    is a legitimate runtime outcome (the unit was captured/killed/consumed
+    mid-episode) and always scores the predicate ``False``, never raises.
+    ``tile_state_equals`` locates its tile by ``(x, y)`` coordinates, never
+    list offset, since capture order is not meaningful.
     """
     if not isinstance(predicate, Mapping):
         raise PredicateError(f"predicate must be a mapping, got {type(predicate).__name__}")
@@ -197,8 +245,39 @@ def evaluate_predicate(
         if target is None:
             raise PredicateError("'unit_distance_decreased' requires a 'target'")
         before_unit = _find_unit(initial_state, unit_index)
-        after_unit = _find_unit(final_state, unit_index)
+        after_unit = _find_unit_optional(final_state, unit_index)
+        if after_unit is None:
+            # The tracked unit disappeared (captured/killed) before the
+            # final capture -- a legitimate runtime outcome for a
+            # `persistent_unit_ids` unit, not an unresolved predicate.
+            return False
         return _unit_distance(after_unit, target) < _unit_distance(before_unit, target)
+
+    if kind == "unit_at":
+        unit_index = predicate.get("unit_index")
+        x = predicate.get("x")
+        y = predicate.get("y")
+        if x is None or y is None:
+            raise PredicateError("'unit_at' requires 'x' and 'y'")
+        _find_unit(initial_state, unit_index)  # contract: must exist initially
+        unit = _find_unit_optional(final_state, unit_index)
+        if unit is None:
+            return False
+        return unit.get("x") == x and unit.get("y") == y
+
+    if kind == "unit_exists_final":
+        unit_index = predicate.get("unit_index")
+        _find_unit(initial_state, unit_index)  # contract: must exist initially
+        return _find_unit_optional(final_state, unit_index) is not None
+
+    if kind == "tile_state_equals":
+        x = predicate.get("x")
+        y = predicate.get("y")
+        field = predicate.get("field")
+        if x is None or y is None or field is None:
+            raise PredicateError("'tile_state_equals' requires 'x', 'y', and 'field'")
+        tile = _find_tile(final_state, x, y)
+        return tile.get(field) == predicate.get("value")
 
     raise PredicateError(f"unknown predicate kind: {kind!r}")
 

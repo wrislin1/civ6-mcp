@@ -141,3 +141,5 @@ rubric:
       tool: move_unit
       args: {}
 split: smoke
+persistent_unit_ids: []
+consumable_unit_ids: []

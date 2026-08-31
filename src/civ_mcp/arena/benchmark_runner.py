@@ -97,6 +97,7 @@ __all__ = [
     "MAX_INFRASTRUCTURE_ATTEMPTS",
     "ResolvedBlock",
     "run_resolved_block",
+    "reload_position",
     "main",
 ]
 
@@ -785,6 +786,50 @@ def _reload_result_is_success(result: object) -> bool:
     return has_success_marker and not has_failure_marker
 
 
+async def reload_position(connection: GameConnection, position: PositionManifest) -> bool:
+    """Reload `position`'s save via `load_game_save` and classify the raw
+    result with `_reload_result_is_success`.
+
+    THE single production reload step: both the live `RunnerDependencies`
+    wiring (`_build_live_dependencies`, below) and the
+    `civ-arena-benchmark-position` CLI's `capture`/`verify` commands import
+    and call this exact function -- neither re-implements the
+    success/failure/verified classification.
+
+    `load_game_save` reports most failures as strings ("Error: ...",
+    "WARNING: FireTuner port never dropped...", menu-fallback text) rather
+    than raising -- this is the only place that ever sees the raw result. A
+    failure/warning string must raise here so a caller (e.g. `run_trial`)
+    classifies it as a retryable infra attempt instead of silently
+    proceeding into a checksum check (which would then abort the whole
+    session as a state defect that was really a harness failure).
+
+    Returns `verified: bool` -- True when the reload observed positive
+    evidence the world came back up (an observed port drop, or a Tier-2
+    OCR/menu navigation success); False when it only has a
+    success-shaped-but-unconfirmable result (G3: the F16(b) stable-open-port
+    fallback is structurally indistinguishable from an inert
+    Network.LoadGame from the launcher's side -- only a caller's own
+    checksum step can tell them apart).
+    """
+    result = await load_game_save(connection, position.game_save_name)
+    text = str(result)
+    if _reload_result_is_success(result):
+        # G3: the F16(b) stable-open-port fallback returns a
+        # success-shaped string carrying an UNVERIFIED marker -- the
+        # launcher structurally cannot confirm that reload (no game
+        # connection of its own), so surface verified=False for it; every
+        # other success path (observed port drop, Tier-2 OCR/menu
+        # navigation) reports verified=True.
+        verified = "UNVERIFIED" not in text
+        log.info(
+            "reload_position(%s): %s (verified=%s)", position.game_save_name, result, verified
+        )
+        return verified
+    log.warning("reload_position(%s) failed: %s", position.game_save_name, result)
+    raise RuntimeError(f"reload_position({position.game_save_name!r}) failed: {result}")
+
+
 def _build_live_dependencies(
     *,
     connection: GameConnection,
@@ -835,31 +880,14 @@ def _build_live_dependencies(
             backend_cache[key] = backend
         return backend_cache[key]
 
-    async def reload_position(_position_id: str) -> bool:
-        # load_game_save reports most failures as strings ("Error: ...",
-        # "WARNING: FireTuner port never dropped...", menu-fallback text)
-        # rather than raising -- this is the only place that ever sees the
-        # raw result. A failure/warning string must raise here so run_trial
-        # classifies it as a retryable RELOAD_OR_RECONNECT infra attempt
-        # instead of silently proceeding into the checksum check (which
-        # would then abort the whole session as checksum_mismatch -- a
-        # harness failure misreported as a state defect).
-        result = await load_game_save(connection, position.game_save_name)
-        text = str(result)
-        if _reload_result_is_success(result):
-            # G3: the F16(b) stable-open-port fallback returns a
-            # success-shaped string carrying an UNVERIFIED marker -- the
-            # launcher structurally cannot confirm that reload (no game
-            # connection of its own), so surface verified=False for it;
-            # every other success path (observed port drop, Tier-2
-            # OCR/menu navigation) reports verified=True.
-            verified = "UNVERIFIED" not in text
-            log.info(
-                "reload_position(%s): %s (verified=%s)", _position_id, result, verified
-            )
-            return verified
-        log.warning("reload_position(%s) failed: %s", _position_id, result)
-        raise RuntimeError(f"reload_position({_position_id!r}) failed: {result}")
+    async def _reload_position_dep(_position_id: str) -> bool:
+        # Thin adapter to the `RunnerDependencies.reload_position` contract
+        # (Callable[[str], Awaitable[bool]], keyed by position_id): the
+        # single production reload step itself lives in the top-level
+        # `reload_position(connection, position)` (defined above this
+        # function) -- shared verbatim with the `civ-arena-benchmark-position`
+        # CLI, never duplicated here.
+        return await reload_position(connection, position)
 
     async def dismiss_popups() -> str:
         return await dismiss_blocking_popups(connection)
@@ -910,7 +938,7 @@ def _build_live_dependencies(
             await backend.aclose()
 
     return RunnerDependencies(
-        reload_position=reload_position,
+        reload_position=_reload_position_dep,
         dismiss_popups=dismiss_popups,
         capture_state=capture_state,
         make_agent=make_agent,

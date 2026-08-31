@@ -86,6 +86,7 @@ civ-arena = "civ_mcp.arena.arena:main"
 civ-arena-analyze = "civ_mcp.arena.analyze:main"
 civ-arena-benchmark = "civ_mcp.arena.benchmark_runner:main"
 civ-arena-benchmark-report = "civ_mcp.arena.benchmark_report:main"
+civ-arena-benchmark-position = "civ_mcp.arena.benchmark_position:main"
 civ6-launcher = "civ_mcp.launcher_cli:main"
 
 [tool.hatch.build.targets.wheel]

@@ -372,3 +372,122 @@ def test_evaluate_predicate_unit_not_found_raises():
             initial_state={"units": [{"id": 8, "x": 0, "y": 0}]},
             final_state={"units": [{"id": 8, "x": 0, "y": 0}]},
         )
+
+
+# ---------------------------------------------------------------------------
+# Safe entity predicates (Task 9): a unit predicate must raise on a unit
+# missing from canonical INITIAL state (a manifest/authoring error), but
+# score `False` -- never raise -- when a `persistent_unit_ids` unit simply
+# disappears (captured/killed/consumed) by the time of the FINAL capture.
+# ---------------------------------------------------------------------------
+
+def test_distance_predicate_returns_false_when_persistent_unit_disappears():
+    """The G-repro this task exists for: a live smoke run aborted report
+    generation because unit_distance_decreased raised PredicateError when
+    the tracked unit was consumed. The unit existed at the start (satisfies
+    the initial-state contract) but is gone by the final capture -- that
+    must score False, not raise."""
+    predicate = {"kind": "unit_distance_decreased", "unit_index": 8, "target": [9, 10]}
+    initial_state = {"units": [{"id": 8, "x": 4, "y": 10}]}
+    final_state = {"units": []}
+    assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is False
+
+
+def test_predicate_unit_at_true_when_unit_is_at_the_target_tile():
+    predicate = {"kind": "unit_at", "unit_index": 8, "x": 9, "y": 10}
+    initial_state = {"units": [{"id": 8, "x": 4, "y": 10}]}
+    final_state = {"units": [{"id": 8, "x": 9, "y": 10}]}
+    assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is True
+
+
+def test_predicate_unit_at_false_when_unit_is_elsewhere():
+    predicate = {"kind": "unit_at", "unit_index": 8, "x": 9, "y": 10}
+    initial_state = {"units": [{"id": 8, "x": 4, "y": 10}]}
+    final_state = {"units": [{"id": 8, "x": 5, "y": 10}]}
+    assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is False
+
+
+def test_unit_at_returns_false_when_persistent_unit_disappears_at_runtime():
+    predicate = {"kind": "unit_at", "unit_index": 8, "x": 9, "y": 10}
+    initial_state = {"units": [{"id": 8, "x": 4, "y": 10}]}
+    final_state = {"units": []}
+    assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is False
+
+
+def test_unit_at_raises_when_unit_is_missing_from_initial_state():
+    predicate = {"kind": "unit_at", "unit_index": 99, "x": 9, "y": 10}
+    with pytest.raises(PredicateError):
+        evaluate_predicate(
+            predicate,
+            initial_state={"units": [{"id": 8, "x": 0, "y": 0}]},
+            final_state={"units": [{"id": 99, "x": 9, "y": 10}]},
+        )
+
+
+def test_predicate_unit_exists_final_true_when_still_present():
+    predicate = {"kind": "unit_exists_final", "unit_index": 8}
+    initial_state = {"units": [{"id": 8, "x": 4, "y": 10}]}
+    final_state = {"units": [{"id": 8, "x": 9, "y": 10}]}
+    assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is True
+
+
+def test_predicate_unit_exists_final_false_when_unit_is_gone():
+    predicate = {"kind": "unit_exists_final", "unit_index": 8}
+    initial_state = {"units": [{"id": 8, "x": 4, "y": 10}]}
+    final_state = {"units": []}
+    assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is False
+
+
+def test_predicate_unit_exists_final_raises_when_missing_from_initial_state():
+    predicate = {"kind": "unit_exists_final", "unit_index": 99}
+    with pytest.raises(PredicateError):
+        evaluate_predicate(
+            predicate,
+            initial_state={"units": [{"id": 8, "x": 0, "y": 0}]},
+            final_state={"units": []},
+        )
+
+
+def test_tile_state_equals_finds_tile_by_coordinates_not_list_offset():
+    """Counterfactual: a naive implementation might read `tiles[0]`. Put the
+    matching tile at a non-zero list index with a decoy at index 0 that
+    would satisfy an offset-based lookup but not a coordinate-based one."""
+    predicate = {
+        "kind": "tile_state_equals",
+        "x": 30,
+        "y": 40,
+        "field": "improvement",
+        "value": "IMPROVEMENT_FARM",
+    }
+    final_state = {
+        "tiles": [
+            {"x": 10, "y": 20, "improvement": "IMPROVEMENT_MINE"},
+            {"x": 30, "y": 40, "improvement": "IMPROVEMENT_FARM"},
+        ]
+    }
+    assert evaluate_predicate(predicate, final_state=final_state) is True
+
+
+def test_tile_state_equals_false_on_field_mismatch():
+    predicate = {
+        "kind": "tile_state_equals",
+        "x": 30,
+        "y": 40,
+        "field": "improvement",
+        "value": "IMPROVEMENT_FARM",
+    }
+    final_state = {"tiles": [{"x": 30, "y": 40, "improvement": "IMPROVEMENT_MINE"}]}
+    assert evaluate_predicate(predicate, final_state=final_state) is False
+
+
+def test_tile_state_equals_raises_when_tile_coordinates_not_found():
+    predicate = {
+        "kind": "tile_state_equals",
+        "x": 30,
+        "y": 40,
+        "field": "improvement",
+        "value": "IMPROVEMENT_FARM",
+    }
+    final_state = {"tiles": [{"x": 1, "y": 1, "improvement": None}]}
+    with pytest.raises(PredicateError):
+        evaluate_predicate(predicate, final_state=final_state)

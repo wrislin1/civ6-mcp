@@ -40,6 +40,21 @@ class PositionManifest:
     objectives: tuple[dict[str, object], ...]
     rubric: tuple[dict[str, object], ...]
     split: str
+    # Unit-lifecycle declarations (see `validate_position_contract`): every
+    # unit id an `objectives`/`rubric` predicate references must appear in
+    # exactly one of these two lists, and that id must be present in
+    # `expected_state["units"]` (the canonical initial state). A
+    # `persistent_unit_id` is expected to survive the whole trial (its
+    # runtime disappearance scores its predicates `False`, never raises); a
+    # `consumable_unit_id` is expected to be consumed by an in-episode
+    # action (e.g. `found_city`) and must be scored through a tile/state
+    # predicate, never `unit_distance_decreased`. Defaulted to `()` here
+    # (not by the strict YAML loader, which requires both keys present in
+    # every position manifest file -- see `load_position_manifest`) purely
+    # so positions constructed directly in Python (tests fixtures elsewhere
+    # in this repo predating this task) do not need updating.
+    persistent_unit_ids: tuple[int, ...] = ()
+    consumable_unit_ids: tuple[int, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -163,8 +178,20 @@ def load_position_manifest(path: str | Path) -> PositionManifest:
         dict(_require_mapping(r, f"position manifest.rubric[{i}]"))
         for i, r in enumerate(_require_list(raw["rubric"], "position manifest.rubric"))
     )
+    persistent_unit_ids = tuple(
+        _require_int(u, f"position manifest.persistent_unit_ids[{i}]")
+        for i, u in enumerate(
+            _require_list(raw["persistent_unit_ids"], "position manifest.persistent_unit_ids")
+        )
+    )
+    consumable_unit_ids = tuple(
+        _require_int(u, f"position manifest.consumable_unit_ids[{i}]")
+        for i, u in enumerate(
+            _require_list(raw["consumable_unit_ids"], "position manifest.consumable_unit_ids")
+        )
+    )
 
-    return PositionManifest(
+    manifest = PositionManifest(
         position_id=_require_str(raw["position_id"], "position manifest.position_id"),
         version=_require_int(raw["version"], "position manifest.version"),
         archive=_require_str(raw["archive"], "position manifest.archive"),
@@ -179,7 +206,136 @@ def load_position_manifest(path: str | Path) -> PositionManifest:
         objectives=objectives,
         rubric=rubric,
         split=_require_str(raw["split"], "position manifest.split"),
+        persistent_unit_ids=persistent_unit_ids,
+        consumable_unit_ids=consumable_unit_ids,
     )
+    # Authoring-time safety net: a position manifest is only ever admitted
+    # into the pipeline through this loader -- validating the unit-lifecycle
+    # contract here (rather than leaving it to whichever caller happens to
+    # remember) means every downstream consumer (the runner, the
+    # position-freeze CLI) always sees an already-validated manifest.
+    validate_position_contract(manifest)
+    return manifest
+
+
+# Predicate kinds (see `civ_mcp.arena.action_metrics.evaluate_predicate`)
+# that reference a single unit by `unit_index` and therefore fall under the
+# unit-lifecycle contract this module enforces.
+_UNIT_PREDICATE_KINDS = {"unit_distance_decreased", "unit_at", "unit_exists_final"}
+
+
+def _iter_predicates(predicate: object):
+    """Yield `predicate` and, recursively, every sub-predicate nested under
+    an `all`/`any` combinator -- so a lifecycle-contract scan finds a unit
+    predicate no matter how deeply it is nested."""
+    if not isinstance(predicate, Mapping):
+        return
+    yield predicate
+    if predicate.get("kind") in ("all", "any"):
+        sub_predicates = predicate.get("predicates")
+        if isinstance(sub_predicates, (list, tuple)):
+            for sub in sub_predicates:
+                yield from _iter_predicates(sub)
+
+
+def _iter_position_predicates(position: PositionManifest):
+    """Yield every predicate declared anywhere in `position` -- each
+    objective's `progress_predicate`, and each rubric level's `predicate`.
+    Missing/malformed shapes are skipped rather than raised on here: this
+    scan only cares about finding unit predicates, not re-validating the
+    generic manifest shape (already enforced by `_require_*` at load time
+    for manifests loaded through `load_position_manifest`; a manifest built
+    directly in Python -- e.g. a test fixture -- may use a different,
+    predicate-free objectives/rubric shape entirely)."""
+    for objective in position.objectives:
+        if not isinstance(objective, Mapping):
+            continue
+        predicate = objective.get("progress_predicate")
+        if predicate is not None:
+            yield from _iter_predicates(predicate)
+    for rubric_item in position.rubric:
+        if not isinstance(rubric_item, Mapping):
+            continue
+        levels = rubric_item.get("levels")
+        if not isinstance(levels, (list, tuple)):
+            continue
+        for level in levels:
+            if not isinstance(level, Mapping):
+                continue
+            predicate = level.get("predicate")
+            if predicate is not None:
+                yield from _iter_predicates(predicate)
+
+
+def validate_position_contract(position: PositionManifest) -> None:
+    """Authoring-time validation of `position`'s unit-lifecycle contract.
+
+    A live smoke run aborted report generation because
+    `unit_distance_decreased` raised `PredicateError` when its tracked unit
+    had been consumed (`found_city`) mid-episode. This validator catches
+    the authoring mistakes that lead there, before any trial ever runs:
+
+    - `persistent_unit_ids` and `consumable_unit_ids` must not overlap --
+      a unit's lifecycle expectation must be unambiguous.
+    - Every id in either list must be present in
+      `expected_state["units"]` (the canonical initial state) -- a
+      lifecycle declaration for a unit the position doesn't actually have
+      is a manifest authoring error, not a runtime concern.
+    - Every unit predicate (`unit_distance_decreased`, `unit_at`,
+      `unit_exists_final`) found anywhere in `objectives`/`rubric` must
+      reference a declared unit id (persistent or consumable) -- an
+      undeclared id is rejected.
+    - `unit_distance_decreased` must never reference a consumable unit id:
+      a consumable unit may vanish from the game entirely (e.g. a settler
+      consumed by `found_city`), at which point "distance to target" is
+      meaningless. A consumable unit's outcome must be scored through a
+      tile/state predicate (`tile_state_equals`, `final_state_equals`,
+      `state_changed_to`) instead.
+
+    Raises `ValueError` (matching every other authoring-validation failure
+    in this module) on the first violation found.
+    """
+    persistent = set(position.persistent_unit_ids)
+    consumable = set(position.consumable_unit_ids)
+
+    overlap = persistent & consumable
+    if overlap:
+        raise ValueError(
+            f"position manifest {position.position_id!r}: unit id(s) {sorted(overlap)} "
+            "declared in both persistent_unit_ids and consumable_unit_ids -- a unit's "
+            "lifecycle expectation must be unambiguous"
+        )
+
+    units = position.expected_state.get("units") or []
+    canonical_ids = {unit.get("id") for unit in units if isinstance(unit, Mapping)}
+
+    for unit_id in sorted(persistent | consumable):
+        if unit_id not in canonical_ids:
+            raise ValueError(
+                f"position manifest {position.position_id!r}: lifecycle declared for unit "
+                f"id {unit_id} which is not present in expected_state['units'] (the "
+                "canonical initial state)"
+            )
+
+    declared = persistent | consumable
+    for predicate in _iter_position_predicates(position):
+        kind = predicate.get("kind")
+        if kind not in _UNIT_PREDICATE_KINDS:
+            continue
+        unit_id = predicate.get("unit_index")
+        if unit_id not in declared:
+            raise ValueError(
+                f"position manifest {position.position_id!r}: predicate kind {kind!r} "
+                f"references undeclared unit id {unit_id!r} -- every unit id used in a "
+                "unit predicate must appear in persistent_unit_ids or consumable_unit_ids"
+            )
+        if kind == "unit_distance_decreased" and unit_id in consumable:
+            raise ValueError(
+                f"position manifest {position.position_id!r}: 'unit_distance_decreased' "
+                f"references consumable unit id {unit_id} -- consumable units must be "
+                "scored through a tile/state predicate (tile_state_equals, "
+                "final_state_equals, state_changed_to), never a distance predicate"
+            )
 
 
 def _load_treatment_arm(raw: object, context: str) -> TreatmentArm:

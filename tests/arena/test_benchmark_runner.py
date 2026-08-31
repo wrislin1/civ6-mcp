@@ -967,6 +967,8 @@ rubric:
         predicate:
           kind: always
 split: calibration
+persistent_unit_ids: []
+consumable_unit_ids: []
 """,
         encoding="utf-8",
     )
@@ -1106,6 +1108,8 @@ rubric:
         predicate:
           kind: always
 split: calibration
+persistent_unit_ids: []
+consumable_unit_ids: []
 """,
         encoding="utf-8",
     )

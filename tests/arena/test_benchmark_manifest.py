@@ -12,6 +12,7 @@ from civ_mcp.arena.benchmark_manifest import (
     fingerprint,
     load_position_manifest,
     load_suite_manifest,
+    validate_position_contract,
 )
 
 
@@ -37,6 +38,8 @@ rubric:
   - id: r1
     weight: 1.0
 split: calibration
+persistent_unit_ids: []
+consumable_unit_ids: []
 """
 
 
@@ -110,6 +113,8 @@ def test_load_position_manifest_round_trip(tmp_path: Path):
         objectives=({"id": "obj1", "description": "improve the farm tile"},),
         rubric=({"id": "r1", "weight": 1.0},),
         split="calibration",
+        persistent_unit_ids=(),
+        consumable_unit_ids=(),
     )
     assert isinstance(manifest.relevant_tiles, tuple)
     assert isinstance(manifest.relevant_tiles[0], tuple)
@@ -229,6 +234,8 @@ def _write(tmp_path: Path, name: str, data: dict) -> Path:
         ("suite", "positions", None, "suite manifest.positions must be a list"),
         ("suite", "models", None, "suite manifest.models must be a list"),
         ("suite", "audit_indices", None, "suite manifest.audit_indices must be a list"),
+        ("position", "persistent_unit_ids", None, "position manifest.persistent_unit_ids must be a list"),
+        ("position", "consumable_unit_ids", None, "position manifest.consumable_unit_ids must be a list"),
     ],
 )
 def test_manifest_nulls_raise_field_specific_value_errors(
@@ -403,3 +410,153 @@ def test_load_suite_manifest_rejects_bad_arm_fields(
 
     with pytest.raises(ValueError, match=re.escape(message)):
         load_suite_manifest(path)
+
+
+# ---------------------------------------------------------------------------
+# validate_position_contract -- Task 9's unit-lifecycle authoring contract.
+# ---------------------------------------------------------------------------
+
+def _lifecycle_position(**overrides) -> PositionManifest:
+    fields = dict(
+        position_id="entity-cal-v1",
+        version=1,
+        archive="positions/entity-cal-v1.Civ6Save",
+        archive_sha256="abc123",
+        game_save_name="entity-cal-v1",
+        player_id=0,
+        expected_state={
+            "turn": 42,
+            "units": [
+                {"id": 8, "type": "UNIT_WARRIOR", "x": 4, "y": 10},
+                {"id": 9, "type": "UNIT_SETTLER", "x": 5, "y": 11},
+            ],
+            "tiles": [{"x": 9, "y": 10, "improvement": None}],
+        },
+        expected_state_sha256="def456",
+        relevant_tiles=((9, 10),),
+        objectives=(),
+        rubric=(),
+        split="calibration",
+        persistent_unit_ids=(),
+        consumable_unit_ids=(),
+    )
+    fields.update(overrides)
+    return PositionManifest(**fields)
+
+
+def test_manifest_rejects_unit_declared_persistent_and_consumable():
+    position = _lifecycle_position(persistent_unit_ids=(8,), consumable_unit_ids=(8,))
+
+    with pytest.raises(ValueError, match="both persistent_unit_ids and consumable_unit_ids"):
+        validate_position_contract(position)
+
+
+def test_manifest_rejects_lifecycle_id_absent_from_canonical_state():
+    position = _lifecycle_position(persistent_unit_ids=(12345,))
+
+    with pytest.raises(ValueError, match="not present in expected_state"):
+        validate_position_contract(position)
+
+
+def test_manifest_rejects_undeclared_unit_id_in_predicate():
+    position = _lifecycle_position(
+        persistent_unit_ids=(8,),
+        objectives=(
+            {
+                "tools": ["move_unit"],
+                "progress_predicate": {
+                    "kind": "unit_distance_decreased",
+                    "unit_index": 999,
+                    "target": [9, 10],
+                },
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="undeclared unit id"):
+        validate_position_contract(position)
+
+
+def test_authoring_validation_rejects_distance_predicate_for_consumable_unit():
+    position = _lifecycle_position(
+        consumable_unit_ids=(9,),
+        objectives=(
+            {
+                "tools": ["found_city"],
+                "progress_predicate": {
+                    "kind": "unit_distance_decreased",
+                    "unit_index": 9,
+                    "target": [9, 10],
+                },
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="consumable unit id 9"):
+        validate_position_contract(position)
+
+
+def test_consumable_unit_is_scored_by_resulting_tile_state_not_distance():
+    """The positive counterpart of the previous test: a consumable unit's
+    objective scored through tile_state_equals (not a distance predicate)
+    must pass authoring validation cleanly."""
+    position = _lifecycle_position(
+        consumable_unit_ids=(9,),
+        objectives=(
+            {
+                "tools": ["found_city"],
+                "progress_predicate": {
+                    "kind": "tile_state_equals",
+                    "x": 9,
+                    "y": 10,
+                    "field": "improvement",
+                    "value": "IMPROVEMENT_CITY_CENTER",
+                },
+            },
+        ),
+    )
+
+    validate_position_contract(position)  # must not raise
+
+
+def test_validate_position_contract_accepts_declared_persistent_unit_distance_predicate():
+    position = _lifecycle_position(
+        persistent_unit_ids=(8,),
+        objectives=(
+            {
+                "tools": ["move_unit"],
+                "progress_predicate": {
+                    "kind": "unit_distance_decreased",
+                    "unit_index": 8,
+                    "target": [9, 10],
+                },
+            },
+        ),
+    )
+
+    validate_position_contract(position)  # must not raise
+
+
+def test_validate_position_contract_finds_unit_predicates_nested_under_all_any():
+    position = _lifecycle_position(
+        persistent_unit_ids=(8,),
+        objectives=(
+            {
+                "tools": ["move_unit"],
+                "progress_predicate": {
+                    "kind": "all",
+                    "predicates": [
+                        {"kind": "always"},
+                        {
+                            "kind": "unit_distance_decreased",
+                            "unit_index": 999,
+                            "target": [9, 10],
+                        },
+                    ],
+                },
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="undeclared unit id"):
+        validate_position_contract(position)
