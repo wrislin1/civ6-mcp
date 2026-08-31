@@ -1,0 +1,143 @@
+position_id: smoke-seondeok-pyramid-v1
+version: 1
+archive: benchmarks/saves/SMOKE_SEONDEOK_PYRAMID_V1.Civ6Save
+archive_sha256: 50fb1721d04b4d12c32c6dd182f13a2631d476c44499575cfdb88d0c0f51e00f
+game_save_name: SEONDEOK Pyramid Start
+player_id: 0
+expected_state:
+  active_player: 0
+  cities:
+  - id: 65536
+    name: Gyeongju
+    population: 3
+    x: 90
+    y: 49
+  - id: 131073
+    name: Jinju
+    population: 2
+    x: 85
+    y: 45
+  civ_type: CIVILIZATION_KOREA
+  faith: 26.1
+  gold: 174.8
+  player_id: 0
+  seed: 1078982866
+  tiles:
+  - feature: FEATURE_FLOODPLAINS
+    improvement: null
+    pillaged: false
+    resource: null
+    x: 85
+    y: 45
+  - feature: null
+    improvement: null
+    pillaged: false
+    resource: null
+    x: 90
+    y: 49
+  - feature: null
+    improvement: IMPROVEMENT_BARBARIAN_CAMP
+    pillaged: false
+    resource: null
+    x: 94
+    y: 43
+  - feature: null
+    improvement: null
+    pillaged: false
+    resource: null
+    x: 94
+    y: 50
+  - feature: null
+    improvement: null
+    pillaged: false
+    resource: null
+    x: 97
+    y: 45
+  - feature: FEATURE_FOREST
+    improvement: null
+    pillaged: false
+    resource: RESOURCE_SILK
+    x: 100
+    y: 42
+  turn: 48
+  units:
+  - charges: 0
+    id: 131073
+    type: UNIT_WARRIOR
+    x: 94
+    y: 43
+  - charges: 0
+    id: 196608
+    type: UNIT_SCOUT
+    x: 76
+    y: 45
+  - charges: 0
+    id: 262146
+    type: UNIT_SCOUT
+    x: 100
+    y: 42
+  - charges: 0
+    id: 327683
+    type: UNIT_SLINGER
+    x: 83
+    y: 45
+  - charges: 0
+    id: 589829
+    type: UNIT_SETTLER
+    x: 94
+    y: 50
+  - charges: 0
+    id: 655366
+    type: UNIT_SLINGER
+    x: 94
+    y: 50
+  - charges: 0
+    id: 720903
+    type: UNIT_SETTLER
+    x: 100
+    y: 42
+expected_state_sha256: d14211a5c8da2719e7359caab37e31b7a9215ba8d7dd983ab02c9267b827cb0d
+relevant_tiles:
+- - 90
+  - 49
+- - 85
+  - 45
+- - 94
+  - 50
+- - 100
+  - 42
+- - 94
+  - 43
+- - 97
+  - 45
+objectives:
+- tools:
+  - move_unit
+  - set_city_production
+  - set_research
+  - found_city
+  - improve_tile
+  - fortify_unit
+  progress_predicate:
+    kind: always
+rubric:
+- task_id: trial-completed
+  levels:
+  - score: 1
+    predicate:
+      kind: always
+- task_id: observed-units
+  levels:
+  - score: 1
+    predicate:
+      kind: successful_tool_call
+      tool: get_units
+      args: {}
+- task_id: issued-move
+  levels:
+  - score: 1
+    predicate:
+      kind: successful_tool_call
+      tool: move_unit
+      args: {}
+split: smoke

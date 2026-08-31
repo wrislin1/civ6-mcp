@@ -1,0 +1,24 @@
+suite_id: smoke-seondeok-v1
+driver: single_turn
+positions:
+- smoke-seondeok-pyramid-v1
+models:
+- gemma4-26b
+arms:
+- arm_id: minimal
+  tools: minimal
+  options: {}
+- arm_id: standard
+  tools: standard
+  options: {}
+seeds:
+- 11
+order: abba
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  seed: 11
+  max_tokens: 3072
+max_steps: 8
+result_char_cap: 4000
+audit_indices: []
