@@ -106,12 +106,16 @@ def _validate_rubric_shape(rubric: object) -> Sequence[Mapping[str, object]]:
     if not isinstance(rubric, Sequence) or isinstance(rubric, (str, bytes)):
         raise MalformedRubricError(f"rubric must be a list of tasks, got {type(rubric).__name__}")
     tasks: list[Mapping[str, object]] = []
+    seen_task_ids: set[str] = set()
     for task in rubric:
         if not isinstance(task, Mapping):
             raise MalformedRubricError(f"rubric task must be a mapping, got {type(task).__name__}")
         task_id = task.get("task_id")
         if not isinstance(task_id, str) or not task_id:
             raise MalformedRubricError(f"rubric task is missing a non-empty 'task_id': {task!r}")
+        if task_id in seen_task_ids:
+            raise MalformedRubricError(f"rubric has a duplicate task_id: {task_id!r}")
+        seen_task_ids.add(task_id)
         levels = task.get("levels")
         if not isinstance(levels, Sequence) or isinstance(levels, (str, bytes)) or not levels:
             raise MalformedRubricError(
@@ -405,6 +409,31 @@ def _calibration_section(scored_by_pair: Mapping[str, list[Mapping[str, object]]
     }
 
 
+def _completeness_section(
+    *,
+    positions_lock: Mapping[str, object],
+    expected_by_position: Mapping[str, int],
+    committed_by_position: Mapping[str, int],
+) -> dict[str, object]:
+    """Expected-vs-committed trial counts per position, covering every
+    position declared in `session.json["positions"]` and/or scheduled in
+    `schedule.json` -- including a position with zero committed trials,
+    which must never simply be absent from the report. Absence there would
+    be indistinguishable from "scored 0", which is exactly the aggregate-
+    hiding failure mode this section exists to prevent.
+    """
+    all_position_ids = set(positions_lock) | set(expected_by_position) | set(committed_by_position)
+    by_position = {
+        pid: {
+            "expected": expected_by_position.get(pid, 0),
+            "committed": committed_by_position.get(pid, 0),
+        }
+        for pid in sorted(str(p) for p in all_position_ids)
+    }
+    positions_missing = sorted(pid for pid, counts in by_position.items() if counts["committed"] == 0)
+    return {"by_position": by_position, "positions_missing": positions_missing}
+
+
 def build_report(run_dir: str | Path) -> dict[str, object]:
     """Derive a full report purely from `<run_dir>/session.json`,
     `<run_dir>/schedule.json`, and `<run_dir>/trials/*.json`. Never reads
@@ -434,6 +463,13 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
 
     scored_by_position: dict[str, list[dict[str, object]]] = {}
     scored_by_pair: dict[str, list[dict[str, object]]] = {}
+    # Completeness bookkeeping: expected-vs-committed per position, computed
+    # from the schedule itself so a position that was scheduled but never
+    # produced a single committed trial still shows up in the report as
+    # "never ran" -- distinct from a position that ran and scored 0. See
+    # `_completeness_section`.
+    expected_by_position: dict[str, int] = {}
+    committed_by_position: dict[str, int] = {}
 
     for entry in schedule_trials:
         if not isinstance(entry, Mapping):
@@ -442,12 +478,15 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
         position_id = entry.get("position_id")
         if index is None or position_id is None:
             raise ReportError(f"schedule.json trial entry missing 'index'/'position_id': {entry!r}")
+        position_id = str(position_id)
+        expected_by_position[position_id] = expected_by_position.get(position_id, 0) + 1
 
         trial_path = run_dir / "trials" / f"trial-{int(index):03d}.json"
         if not trial_path.exists():
             # Not yet committed -- a report over an in-progress run only
             # covers what has actually been committed so far.
             continue
+        committed_by_position[position_id] = committed_by_position.get(position_id, 0) + 1
         trial = _read_json(trial_path)
         if not isinstance(trial, Mapping):
             raise ReportError(f"{trial_path} must be a JSON object, got {type(trial).__name__}")
@@ -461,7 +500,7 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
         objectives = position_lock.get("objectives") or ()
 
         scored = score_trial(trial, rubric, objectives=objectives)
-        scored_by_position.setdefault(str(position_id), []).append(scored)
+        scored_by_position.setdefault(position_id, []).append(scored)
 
         pair_id = scored.get("pair_id")
         if pair_id is not None:
@@ -496,6 +535,11 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
             "evaluator": _EVALUATOR_QUALNAME,
         },
         "positions": positions_report,
+        "completeness": _completeness_section(
+            positions_lock=positions_lock,
+            expected_by_position=expected_by_position,
+            committed_by_position=committed_by_position,
+        ),
         "aggregate": {
             "equal_weight_mean": equal_weight_mean,
             "worst_position_id": worst_position_id,
@@ -607,6 +651,26 @@ def render_markdown(report: Mapping[str, object]) -> str:
     lines.append(f"- Scorer fingerprint: {_fmt(session.get('scorer_fingerprint'))}")
     lines.append(f"- Scorer evaluator: {report['scorer']['evaluator']}")
     lines.append("")
+
+    completeness = report.get("completeness")
+    if completeness is not None:
+        lines.append("## Run completeness")
+        lines.append("")
+        positions_missing = completeness["positions_missing"]
+        if positions_missing:
+            lines.append(
+                "> **WARNING: INCOMPLETE RUN** -- zero committed trials for: "
+                + ", ".join(positions_missing)
+                + ". These positions never ran; their absence from the position "
+                "sections and aggregate below means 'never ran', not 'scored 0'."
+            )
+            lines.append("")
+        lines.append("| position | expected trials | committed trials |")
+        lines.append("|---|---|---|")
+        for position_id in sorted(completeness["by_position"]):
+            counts = completeness["by_position"][position_id]
+            lines.append(f"| {position_id} | {counts['expected']} | {counts['committed']} |")
+        lines.append("")
 
     for position_id in sorted(report["positions"]):
         lines.extend(_render_position(position_id, report["positions"][position_id]))

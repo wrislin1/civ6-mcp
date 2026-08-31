@@ -223,10 +223,17 @@ def test_score_rubric_delegates_to_shared_evaluator(monkeypatch):
 
 
 def test_score_rubric_picks_highest_satisfied_level_regardless_of_order():
+    # Deliberately NOT ordered by score, and the first level whose predicate
+    # is satisfied ("always", score 0) is NOT the highest-scoring satisfied
+    # level (score 2, further down the list). A naive "return the first
+    # satisfied level" implementation would report 0 here; only "return the
+    # MAX satisfied level" reports 2, so this fixture actually discriminates
+    # between the two behaviors.
     rubric = [
         {
             "task_id": "primary",
             "levels": [
+                {"score": 0, "predicate": {"kind": "always"}},
                 {
                     "score": 2,
                     "predicate": {
@@ -235,7 +242,6 @@ def test_score_rubric_picks_highest_satisfied_level_regardless_of_order():
                         "value": 5,
                     },
                 },
-                {"score": 0, "predicate": {"kind": "always"}},
                 {
                     "score": 1,
                     "predicate": {
@@ -297,6 +303,12 @@ def test_score_rubric_aborts_on_missing_path_rather_than_scoring_zero():
 def test_score_rubric_aborts_on_malformed_rubric_shape(bad_rubric):
     with pytest.raises(MalformedRubricError):
         score_rubric(bad_rubric, initial_state={}, final_state={}, steps=())
+
+
+def test_score_rubric_aborts_on_duplicate_task_id():
+    rubric = [_mine_rubric("primary"), _mine_rubric("primary")]
+    with pytest.raises(MalformedRubricError):
+        score_rubric(rubric, initial_state={}, final_state={}, steps=())
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +486,94 @@ def test_build_report_includes_terminal_conditions_latency_tokens_cost(tmp_path)
     assert hard["tokens"]["prompt_total"] == 500
     assert hard["tokens"]["completion_total"] == 50
     assert "cost" in hard and "usd_total" in hard["cost"]
+
+
+# ---------------------------------------------------------------------------
+# Completeness: a scheduled position with zero committed trials must never
+# silently disappear from the report -- its absence would be
+# indistinguishable from "scored 0", hiding a position-level regression.
+# ---------------------------------------------------------------------------
+
+
+def _run_with_a_never_run_position(tmp_path: Path) -> Path:
+    """`easy` and `hard` both have committed trials; `never_ran` is declared
+    in session.json and scheduled in schedule.json but has zero committed
+    trial files (as if the run stopped before it started)."""
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+
+    session_path = run_dir / "session.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    payload["positions"]["never_ran"] = {"rubric": [_mine_rubric()]}
+    _write_json(session_path, payload)
+
+    schedule_path = run_dir / "schedule.json"
+    schedule_payload = json.loads(schedule_path.read_text(encoding="utf-8"))
+    schedule_payload["trials"].append({"index": 4, "position_id": "never_ran"})
+    _write_json(schedule_path, schedule_payload)
+    # Deliberately no trials/trial-004.json -- this position never committed
+    # a single trial.
+    return run_dir
+
+
+def test_build_report_lists_a_zero_committed_position_in_completeness(tmp_path):
+    run_dir = _run_with_a_never_run_position(tmp_path)
+    report = build_report(run_dir)
+
+    completeness = report["completeness"]
+    assert completeness["by_position"]["never_ran"] == {"expected": 1, "committed": 0}
+    assert completeness["by_position"]["easy"] == {"expected": 2, "committed": 2}
+    assert completeness["by_position"]["hard"] == {"expected": 1, "committed": 1}
+    assert completeness["positions_missing"] == ["never_ran"]
+    # A position with zero committed trials must not appear as a position
+    # section at all (that would fabricate stats for data that doesn't
+    # exist) -- but it must never be silently absent from the report either.
+    assert "never_ran" not in report["positions"]
+    # The aggregate is still computed only from positions with real data --
+    # the completeness block is what makes that fact visible, not a change
+    # to what the aggregate itself covers.
+    assert report["aggregate"]["equal_weight_mean"] == 0.5
+
+
+def test_render_markdown_visibly_flags_a_missing_position(tmp_path):
+    run_dir = _run_with_a_never_run_position(tmp_path)
+    report = build_report(run_dir)
+    markdown = render_markdown(report)
+
+    assert "never_ran" in markdown
+    assert "INCOMPLETE RUN" in markdown.upper()
+    # The completeness warning must appear before the aggregate section, at
+    # the same "surface it prominently" standard as the ungated-smoke banner.
+    assert markdown.index("INCOMPLETE RUN") < markdown.index("## Aggregate")
+
+
+def test_render_markdown_completeness_table_present_even_when_nothing_missing(tmp_path):
+    """A fully-committed run still renders the completeness table (all
+    committed == expected, no warning banner) -- completeness is always
+    surfaced, not only when something is wrong."""
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    report = build_report(run_dir)
+    markdown = render_markdown(report)
+
+    assert "## Run completeness" in markdown
+    assert "INCOMPLETE RUN" not in markdown.upper()
+    assert report["completeness"]["positions_missing"] == []
+
+
+def test_regeneration_with_a_missing_position_is_still_byte_identical(tmp_path):
+    run_dir = _run_with_a_never_run_position(tmp_path)
+
+    write_reports(run_dir)
+    first_json = (run_dir / "report.json").read_bytes()
+    first_md = (run_dir / "report.md").read_bytes()
+
+    write_reports(run_dir)
+    second_json = (run_dir / "report.json").read_bytes()
+    second_md = (run_dir / "report.md").read_bytes()
+
+    assert hashlib.sha256(second_json).hexdigest() == hashlib.sha256(first_json).hexdigest()
+    assert hashlib.sha256(second_md).hexdigest() == hashlib.sha256(first_md).hexdigest()
 
 
 # ---------------------------------------------------------------------------
