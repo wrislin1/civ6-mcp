@@ -112,17 +112,48 @@ def _install_save(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def _boot_health_error(result: dict) -> str:
+    """Derive an actionable error string for a failed boot-health result."""
+    reason = result.get("reason")
+    if reason == "profile_missing":
+        return (
+            f"Profile.csv not found or unreadable at "
+            f"{result.get('profile_path')!r} -- verify Civ VI has been "
+            f"launched at least once (or that LOCALAPPDATA resolves "
+            f"correctly) before polling boot health."
+        )
+    if reason == "log_rotated":
+        return "Profile.csv identity changed mid-poll (log rotated) -- boot health could not be verified."
+    if reason == "log_truncated":
+        return "Profile.csv was truncated mid-poll -- boot health could not be verified."
+    if reason == "timeout":
+        return (
+            f"No frame beyond min_frame observed within the timeout window "
+            f"(last_frame={result.get('last_frame')})."
+        )
+    return result.get("detail") or reason or "boot health check failed"
+
+
 def _boot_health(args: argparse.Namespace) -> int:
     """Poll boot health from a freshly recorded offset and report the result.
 
     Never kills or relaunches the game -- this only observes and reports;
-    the caller decides what to do with a failure.
+    the caller decides what to do with a failure. ``start_offset`` is
+    ``None`` (never a fabricated ``0``) when ``Profile.csv`` is absent, so a
+    missing profile fails closed as an explicit error rather than silently
+    treating "no baseline" like a legitimate zero-byte-file baseline.
     """
     profile_path = game_launcher._profile_csv_path()
-    start_offset = os.path.getsize(profile_path) if os.path.exists(profile_path) else 0
-    result = game_launcher.wait_for_boot_health(
-        profile_path, start_offset, min_frame=args.min_frame, timeout_s=args.timeout
+    start_offset = (
+        os.path.getsize(profile_path) if os.path.exists(profile_path) else None
     )
+    result = dict(
+        game_launcher.wait_for_boot_health(
+            profile_path, start_offset, min_frame=args.min_frame, timeout_s=args.timeout
+        )
+    )
+    if not result.get("ok"):
+        result.setdefault("error", _boot_health_error(result))
 
     if args.json:
         print(json.dumps(result))

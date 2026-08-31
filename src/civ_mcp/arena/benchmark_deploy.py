@@ -63,7 +63,7 @@ class BootHealthEvidence:
     """
 
     ok: bool
-    baseline_offset: int
+    baseline_offset: int | None
     last_frame: int | None
     elapsed_s: float
     file_identity: dict[str, Any] | None
@@ -201,7 +201,10 @@ def check_boot_health_via_windows(
 
     return BootHealthEvidence(
         ok=bool(payload.get("ok")),
-        baseline_offset=payload.get("baseline_offset", 0),
+        # Never default to 0 here -- an absent or null baseline_offset means
+        # no baseline was ever established (e.g. Profile.csv missing), which
+        # must stay distinguishable from a genuine zero-byte-file baseline.
+        baseline_offset=payload.get("baseline_offset"),
         last_frame=payload.get("last_frame"),
         elapsed_s=payload.get("elapsed_s", 0.0),
         file_identity=payload.get("file_identity"),

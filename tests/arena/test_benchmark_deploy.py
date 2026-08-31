@@ -181,6 +181,32 @@ def test_check_boot_health_via_windows_returns_failure_evidence_without_raising(
     assert evidence.last_frame == 5
 
 
+def test_boot_health_preserves_absent_baseline_as_none(monkeypatch):
+    """A null (or absent-key) baseline_offset in the native JSON payload
+    must parse to None, never the bogus 0 that a plain ``.get(..., 0)``
+    default would produce -- 0 is a legitimate empty-file baseline and
+    must never be confused with "no baseline at all"."""
+    _fake_bridge_available(monkeypatch)
+    payload = {
+        "ok": False,
+        "reason": "profile_missing",
+        "baseline_offset": None,
+        "last_frame": None,
+        "elapsed_s": 0.0,
+        "file_identity": None,
+        "profile_path": r"C:\Users\wrisl\AppData\Local\Firaxis Games\Sid Meier's Civilization VI\Logs\Profile.csv",
+        "error": "Profile.csv not found",
+    }
+    _fake_subprocess_returning(monkeypatch, payload)
+
+    evidence = benchmark_deploy.check_boot_health_via_windows()
+
+    assert evidence.ok is False
+    assert evidence.baseline_offset is None
+    assert evidence.reason == "profile_missing"
+    assert evidence.raw == payload
+
+
 def test_check_boot_health_via_windows_raises_bridge_error_when_bootstrap_missing(monkeypatch):
     monkeypatch.setattr(benchmark_deploy.os.path, "exists", lambda _p: False)
 

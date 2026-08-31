@@ -32,6 +32,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+from enum import Enum
 from typing import NamedTuple
 
 log = logging.getLogger(__name__)
@@ -2031,6 +2032,23 @@ def _press_escape_windows_bridge() -> bool:
     return proc.returncode == 0
 
 
+class FrontendLoadState(str, Enum):
+    """Conservative classification of what the frontend currently shows.
+
+    Positive evidence only: the classifier never guesses. Anything it
+    cannot confirm is UNKNOWN, not one of the more specific states. See
+    ``_classify_frontend_load_state`` and ``continue_after_lua_load``.
+    History note (2026-08-29 live smoke): a fallback that treated ambiguous
+    evidence as success once caused an in-world Escape press that toggled
+    the pause menu -- this enum exists so that mistake can't recur.
+    """
+
+    CONTINUE_SCREEN = "continue_screen"
+    LEADER_SCREEN = "leader_screen"
+    IN_WORLD = "in_world"
+    UNKNOWN = "unknown"
+
+
 async def continue_after_lua_load(
     save_name: str,
     *,
@@ -2045,6 +2063,16 @@ async def continue_after_lua_load(
     VK_ESCAPE. Wait for the drop (proof the load engaged), then press
     Escape periodically until the port returns. Never presses while the
     port is open, so a live game is never poked.
+
+    Also observed live 2026-08-29: a previous version of this waiter
+    pressed Escape purely on a poll-count cadence with no idea what was
+    actually on screen, and pressed it once *after* the world was already
+    ready -- toggling the pause menu. Escape is now sent only on positive
+    evidence from ``_classify_frontend_load_state`` that the screen is
+    CONTINUE_SCREEN or LEADER_SCREEN. An open FireTuner port or an
+    IN_WORLD classification permanently disarms the waiter for the rest of
+    this call; UNKNOWN carries no evidence either way and only causes the
+    loop to keep polling until timeout.
 
     F16(b): `GameConnection`'s own auto-reconnect can re-open the port
     faster than this function's 2s poll interval, so the drop is never
@@ -2084,6 +2112,8 @@ async def continue_after_lua_load(
             f"was sent."
         )
     polls = 0
+    disarmed = False
+    final_state = FrontendLoadState.UNKNOWN
     while polls < world_polls:
         if _is_tuner_port_open():
             return (
@@ -2091,13 +2121,62 @@ async def continue_after_lua_load(
                 f"Reconnect and verify with get_game_overview."
             )
         if polls % press_every == 0:
-            _press_escape()
+            final_state = _classify_frontend_load_state()
+            if final_state is FrontendLoadState.IN_WORLD:
+                # Independent positive evidence the world is ready even
+                # though the tuner port hasn't reopened yet -- disarm for
+                # the rest of this call. Never treated as success on its
+                # own; only the port check above returns success.
+                disarmed = True
+            elif not disarmed and final_state in (
+                FrontendLoadState.CONTINUE_SCREEN,
+                FrontendLoadState.LEADER_SCREEN,
+            ):
+                _press_escape()
         polls += 1
         await asyncio.sleep(2.0)
     return (
         f"WARNING: FireTuner port did not reopen within the wait window "
-        f"for '{save_name}'. Check the game manually."
+        f"for '{save_name}'. Last frontend classification: "
+        f"{final_state.value}. Check the game manually."
     )
+
+
+def _classify_frontend_load_state() -> FrontendLoadState:
+    """Classify what the frontend currently shows, using positive evidence
+    only -- this function never guesses.
+
+    An open FireTuner port is the strongest evidence: only a live game
+    connection opens it, so it is always IN_WORLD. Otherwise, on native
+    Windows with a WinRT OCR engine available, look for the CONTINUE
+    button's own on-screen text (the "leader screen" dismissed by
+    ``_click_continue_positional`` -- see its docstring) or a recognized
+    leader-screen anchor. Anything else -- OCR unavailable (every WSL
+    invocation included, since the game window is not visible to this
+    process there), no game window, or no recognized anchor -- is
+    UNKNOWN. UNKNOWN must never be treated as evidence for an Escape
+    press; callers only poll on it.
+    """
+    if _is_tuner_port_open():
+        return FrontendLoadState.IN_WORLD
+
+    if sys.platform != "win32" or not _winrt_ocr_available():
+        return FrontendLoadState.UNKNOWN
+
+    try:
+        win = _find_game_window_win32()
+        if win is None:
+            return FrontendLoadState.UNKNOWN
+        results = _ocr_game_window(win)
+    except Exception:
+        log.debug("Frontend load-state classification OCR failed", exc_info=True)
+        return FrontendLoadState.UNKNOWN
+
+    if _find_text(results, "CONTINUE"):
+        return FrontendLoadState.CONTINUE_SCREEN
+    if _find_text(results, "LEADER"):
+        return FrontendLoadState.LEADER_SCREEN
+    return FrontendLoadState.UNKNOWN
 
 
 def _winrt_ocr_available() -> bool:
@@ -2907,7 +2986,7 @@ def _iter_complete_frames(text: str):
 
 def wait_for_boot_health(
     profile_path: str,
-    start_offset: int,
+    start_offset: int | None,
     min_frame: int = _BOOT_HEALTH_MIN_FRAME,
     timeout_s: float = _BOOT_HEALTH_TIMEOUT_S,
 ) -> dict:
@@ -2919,9 +2998,27 @@ def wait_for_boot_health(
     row's frame counter exceeds ``min_frame``. Never kills or relaunches the
     game; every outcome (pass, timeout, truncation, rotation) is returned as
     a structured dict, never raised.
+
+    ``start_offset`` is ``None`` when the caller could not establish a
+    baseline at all (``Profile.csv`` absent, or no readable size) -- that is
+    an explicit ``profile_missing`` failure with ``baseline_offset: None``,
+    never a fabricated ``0`` offset that would look like a legitimate
+    zero-byte-file baseline.
     """
     started = time.monotonic()
     deadline = started + timeout_s
+
+    if start_offset is None:
+        return {
+            "ok": False,
+            "reason": "profile_missing",
+            "detail": f"No readable baseline for {profile_path!r}: file is absent or unreadable",
+            "baseline_offset": None,
+            "last_frame": None,
+            "elapsed_s": 0.0,
+            "file_identity": None,
+            "profile_path": str(profile_path),
+        }
 
     try:
         baseline_identity = _file_identity(profile_path)

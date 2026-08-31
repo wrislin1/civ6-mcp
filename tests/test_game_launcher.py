@@ -624,6 +624,14 @@ async def test_continue_after_lua_load_presses_escape_until_world_ready(monkeypa
         game_launcher, "_press_escape", lambda: presses.append(True) or True,
         raising=False,
     )
+    # Positive evidence of the leader/continue screen is what now gates a
+    # press -- without it (e.g. UNKNOWN under WSL with no OCR access) the
+    # waiter must never press blind on a poll-count cadence alone.
+    monkeypatch.setattr(
+        game_launcher,
+        "_classify_frontend_load_state",
+        lambda: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+    )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
     monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
@@ -691,6 +699,134 @@ async def test_continue_after_lua_load_warns_when_load_never_engages(monkeypatch
 
     assert presses == []
     assert "WARNING" in result
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_presses_escape_only_on_recognized_continue_screen(
+    monkeypatch,
+):
+    """Live-observed regression: the old waiter pressed Escape purely on a
+    poll-count cadence, with no idea what was actually on screen. It must
+    now press only when an injected classifier gives positive evidence of
+    the continue/leader screen."""
+    port_states = iter([True, False, False, False, True])
+    presses: list[bool] = []
+    monkeypatch.setattr(
+        game_launcher, "_is_tuner_port_open", lambda: next(port_states, True)
+    )
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_classify_frontend_load_state",
+        lambda: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", press_every=1
+    )
+
+    assert presses  # pressed while the classifier reported CONTINUE_SCREEN
+    assert "world ready" in result
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_never_presses_escape_in_world(monkeypatch):
+    """An IN_WORLD classification must permanently disarm the waiter, even
+    if the FireTuner port itself has not yet reopened (the classifier's
+    own evidence is independent proof)."""
+    presses: list[bool] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_classify_frontend_load_state",
+        lambda: game_launcher.FrontendLoadState.IN_WORLD,
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=3, press_every=1
+    )
+
+    assert presses == []
+    assert "WARNING" in result
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_never_presses_escape_when_tuner_is_open(
+    monkeypatch,
+):
+    """An open FireTuner port must win over a stale/wrong classifier
+    answer -- it is checked, and can return success, before the
+    classifier is ever consulted."""
+    import itertools
+
+    port_states = itertools.chain([True, False], itertools.repeat(True))
+    presses: list[bool] = []
+    classify_calls: list[None] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: next(port_states))
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+
+    def fake_classify():
+        classify_calls.append(None)
+        return game_launcher.FrontendLoadState.CONTINUE_SCREEN
+
+    monkeypatch.setattr(game_launcher, "_classify_frontend_load_state", fake_classify)
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", press_every=1
+    )
+
+    assert presses == []
+    assert classify_calls == []
+    assert "world ready" in result
+    assert "WARNING" not in result
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_waits_on_unknown_screen(monkeypatch):
+    """UNKNOWN carries no positive evidence either way -- it must only
+    poll until timeout, never pressing Escape at a live game it cannot
+    confirm the state of."""
+    presses: list[bool] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_classify_frontend_load_state",
+        lambda: game_launcher.FrontendLoadState.UNKNOWN,
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=3, press_every=1
+    )
+
+    assert presses == []
+    assert "WARNING" in result
+    assert "unknown" in result
 
 
 def test_press_escape_uses_windows_bridge_from_wsl(monkeypatch):

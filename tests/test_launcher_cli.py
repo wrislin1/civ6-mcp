@@ -280,6 +280,27 @@ def test_boot_health_command_returns_failure_exit_code_and_json(
     assert payload["reason"] == "timeout"
 
 
+def test_boot_health_gate_rejects_missing_profile_csv(monkeypatch, capsys, tmp_path):
+    """A missing Profile.csv must fail closed with an explicit, actionable
+    error and a null baseline_offset -- never a bogus zero offset that
+    could be mistaken for a legitimate zero-byte-file baseline. Exercises
+    the real (unmocked) wait_for_boot_health end to end."""
+    missing_profile = tmp_path / "does-not-exist" / "Profile.csv"
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        launcher_cli.game_launcher, "_profile_csv_path", lambda: str(missing_profile)
+    )
+
+    code = launcher_cli.main(["boot-health", "--json", "--timeout", "1"])
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["baseline_offset"] is None
+    assert payload["reason"] == "profile_missing"
+    assert payload["error"]  # actionable, non-empty
+
+
 def test_boot_health_command_without_json_prints_plain_text(monkeypatch, capsys, tmp_path):
     profile = tmp_path / "Profile.csv"
     profile.write_text("")
