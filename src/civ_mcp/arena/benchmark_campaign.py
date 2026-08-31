@@ -451,7 +451,27 @@ class CampaignStore:
         `schedule.json` sibling file is this method's own responsibility
         (mirroring how the campaign root manages its own `schedule.json`
         next to `campaign.json`), verified/written the same way.
+
+        This is the one join point where both this store's own campaign
+        identity (`self.fingerprint`) and a caller-supplied `session_lock`
+        are in hand at the same time -- `session_lock["campaign_fingerprint"]`
+        must be present and must equal `self.fingerprint`, or this method
+        refuses before touching disk. Without this check a session lock
+        built against some OTHER campaign (a different `campaign_fingerprint`)
+        would be silently accepted here, writing a block under THIS
+        campaign whose `session.json` actually references a different one --
+        exactly the kind of stale/mismatched provenance every other check in
+        this module (and `BenchmarkStore.is_trial_complete`) fails closed on.
         """
+        session_campaign_fingerprint = session_lock.get("campaign_fingerprint")
+        if not session_campaign_fingerprint or session_campaign_fingerprint != self.fingerprint:
+            raise CampaignLockMismatchError(
+                f"session lock for block {block_id!r} declares campaign_fingerprint "
+                f"{session_campaign_fingerprint!r}, but this campaign's fingerprint is "
+                f"{self.fingerprint!r}; refusing to open a block under a campaign it "
+                "does not belong to"
+            )
+
         block_dir = self.root / self.BLOCKS_DIR / block_id
         schedule_path = block_dir / "schedule.json"
         provided_schedule = _canonical_bytes(schedule)

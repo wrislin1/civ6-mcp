@@ -462,6 +462,48 @@ def test_open_block_reopen_requires_byte_identical_block_schedule(tmp_path):
         campaign_store.open_block(block.block_id, session_lock, mutated_block_schedule)
 
 
+def test_open_block_rejects_a_session_lock_declaring_a_different_campaigns_fingerprint(tmp_path):
+    """The reviewer's reproduction: `open_block` is the one join point where
+    both the campaign store's own identity and a caller-supplied
+    `session_lock` are in hand at the same time. It must fail closed on a
+    session lock that declares some OTHER campaign's fingerprint, the same
+    way every other artifact identity check in this module does -- never
+    silently write a block under campaign A whose session.json references
+    campaign B."""
+    campaign_a_dir = tmp_path / "campaign_a"
+    campaign_a_dir.mkdir()
+    campaign_b_dir = tmp_path / "campaign_b"
+    campaign_b_dir.mkdir()
+
+    campaign_a, position, campaign_lock_a, schedule_a = _build_campaign(campaign_a_dir)
+    campaign_b, _, campaign_lock_b, schedule_b = _build_campaign(
+        campaign_b_dir, mutate=lambda d: d.__setitem__("campaign_id", "builder-economy-cal-v2")
+    )
+    assert campaign_lock_a["campaign_fingerprint"] != campaign_lock_b["campaign_fingerprint"]
+
+    root_a = tmp_path / "runs" / campaign_a.campaign_id
+    store_a = CampaignStore.create(root_a, campaign_lock_a, schedule_a)
+
+    block = campaign_a.models[0]
+    # Built entirely against campaign B: its campaign_fingerprint,
+    # tool_surface_fingerprint, and schedule all belong to campaign B, not
+    # the campaign A store we are about to call open_block on.
+    session_lock_for_other_campaign = _session_lock_for_block(
+        campaign_b, position, campaign_lock_b, schedule_b, campaign_b.models[0]
+    )
+
+    with pytest.raises(CampaignLockMismatchError):
+        store_a.open_block(
+            block.block_id,
+            session_lock_for_other_campaign,
+            schedule_a["blocks"][block.block_id],
+        )
+
+    # No block directory (and certainly no session.json) must be left
+    # behind by the rejected attempt.
+    assert not (root_a / "blocks" / block.block_id / "session.json").exists()
+
+
 # ---------------------------------------------------------------------------
 # Both campaign_fingerprint and session_fingerprint stamps are required for
 # a counted block trial to be treated as complete.
