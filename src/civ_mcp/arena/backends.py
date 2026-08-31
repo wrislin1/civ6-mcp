@@ -75,6 +75,16 @@ class OpenAICompatBackend:
         self.sampling = sampling or SamplingConfig()
         self.retry_policy = retry_policy or RetryPolicy()
 
+    async def aclose(self) -> None:
+        """Close the underlying AsyncOpenAI client's connection pool.
+
+        G5: per-(model, seed) backends are cached for the life of a
+        benchmark session with nothing closing them on any exit path --
+        expose a close hook so a caller (the benchmark runner's cleanup)
+        has something real to call.
+        """
+        await self._client.close()
+
     async def chat(self, messages: list[dict], tools: list[dict]) -> Reply:
         kw = dict(
             model=self.model,

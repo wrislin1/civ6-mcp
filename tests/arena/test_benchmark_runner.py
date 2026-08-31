@@ -1035,6 +1035,9 @@ async def test_ungated_smoke_flag_proceeds_and_stamps_the_session_lock(tmp_path,
         async def connect(self):
             return None
 
+        async def disconnect(self):
+            return None
+
     monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
 
     class _FakeRunner:
@@ -1075,6 +1078,9 @@ async def test_ungated_smoke_run_dir_is_report_ready(tmp_path, monkeypatch):
 
     class _FakeConnection:
         async def connect(self):
+            return None
+
+        async def disconnect(self):
             return None
 
     monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
@@ -1125,6 +1131,139 @@ async def test_ungated_smoke_run_dir_is_report_ready(tmp_path, monkeypatch):
     assert report["completeness"]["by_position"]["builder-cal-v1"]["committed"] == 1
 
 
+# ---------------------------------------------------------------------------
+# G5 -- _run_async must close the live game connection and every cached
+# backend client on every exit path, not just the happy path.
+# ---------------------------------------------------------------------------
+
+
+def _fake_build_live_dependencies_with_aclose(aclose_calls: list):
+    def _build(**_kwargs) -> RunnerDependencies:
+        async def aclose() -> None:
+            aclose_calls.append(True)
+
+        return RunnerDependencies(
+            reload_position=AsyncMock(return_value=True),
+            dismiss_popups=AsyncMock(return_value="POPUPS|none"),
+            capture_state=AsyncMock(return_value={"turn": 42}),
+            make_agent=lambda spec: _FinishingAgent(),
+            probe_health=AsyncMock(return_value=_healthy_probe()),
+            aclose=aclose,
+        )
+
+    return _build
+
+
+@pytest.mark.asyncio
+async def test_run_async_closes_connection_and_backends_on_normal_exit(tmp_path, monkeypatch):
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir_base = tmp_path / "runs"
+
+    disconnect_calls: list = []
+
+    class _FakeConnection:
+        async def connect(self):
+            return None
+
+        async def disconnect(self):
+            disconnect_calls.append(True)
+
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+
+    aclose_calls: list = []
+    monkeypatch.setattr(
+        benchmark_runner,
+        "_build_live_dependencies",
+        _fake_build_live_dependencies_with_aclose(aclose_calls),
+    )
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--suite", str(suite_path),
+            "--run-id", "smoke-run",
+            "--run-dir", str(run_dir_base),
+            "--gateway-url", "http://example.invalid/v1",
+            "--ungated-smoke",
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    assert disconnect_calls == [True]
+    assert aclose_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_run_async_closes_connection_and_backends_on_exception_exit(tmp_path, monkeypatch):
+    """Cleanup must run even when the session doesn't exit cleanly -- an
+    unrecognized exception out of runner.run() still propagates (only
+    SessionAborted is caught), but the connection and cached backend
+    clients must not leak."""
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    run_dir_base = tmp_path / "runs"
+
+    disconnect_calls: list = []
+
+    class _FakeConnection:
+        async def connect(self):
+            return None
+
+        async def disconnect(self):
+            disconnect_calls.append(True)
+
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+
+    aclose_calls: list = []
+    monkeypatch.setattr(
+        benchmark_runner,
+        "_build_live_dependencies",
+        _fake_build_live_dependencies_with_aclose(aclose_calls),
+    )
+
+    class _BoomRunner:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def run(self, schedule):
+            raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _BoomRunner)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--suite", str(suite_path),
+            "--run-id", "smoke-run",
+            "--run-dir", str(run_dir_base),
+            "--gateway-url", "http://example.invalid/v1",
+            "--ungated-smoke",
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="kaboom"):
+        await benchmark_runner._run_async(args)
+
+    assert disconnect_calls == [True]
+    assert aclose_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_backend_aclose_closes_the_underlying_client():
+    """Unit-level: OpenAICompatBackend must expose a close hook so
+    _build_live_dependencies's aclose() has something real to call."""
+    backend = benchmark_runner.OpenAICompatBackend(
+        "http://example.invalid/v1", "x", "some-model"
+    )
+    close_calls: list = []
+
+    async def fake_close():
+        close_calls.append(True)
+
+    backend._client.close = fake_close
+    await backend.aclose()
+    assert close_calls == [True]
+
+
 @pytest.mark.asyncio
 async def test_run_async_fails_closed_on_a_tampered_schedule_json_on_resume(tmp_path, monkeypatch):
     """Cheap fold-in: on resume, `_run_async` only checks whether
@@ -1138,6 +1277,9 @@ async def test_run_async_fails_closed_on_a_tampered_schedule_json_on_resume(tmp_
 
     class _FakeConnection:
         async def connect(self):
+            return None
+
+        async def disconnect(self):
             return None
 
     monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)

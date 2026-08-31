@@ -183,6 +183,13 @@ class RunnerDependencies:
     - `connection`: the live game connection threaded into `agent.run()` as
       `gs.conn` (only `SingleTurnAgent`'s own optional per-step capture
       uses it) -- `None` is fine for fakes that never touch it.
+    - `aclose`: optional async cleanup callable closing every resource this
+      `RunnerDependencies` opened that isn't `connection` itself (G5: the
+      per-(model, seed) cached backend clients in the live wiring) --
+      `None` is fine for fakes with nothing to close. The live game
+      `connection`'s own close/disconnect is the caller's (`_run_async`'s)
+      responsibility, not this callable's, since the caller owns
+      `connection`'s lifetime independently of `RunnerDependencies`.
     """
 
     reload_position: ReloadPositionFn
@@ -191,6 +198,7 @@ class RunnerDependencies:
     make_agent: MakeAgentFn
     probe_health: ProbeHealthFn
     connection: Any = None
+    aclose: Callable[[], Awaitable[None]] | None = None
 
 
 class BenchmarkRunner:
@@ -782,6 +790,12 @@ def _build_live_dependencies(
             backend_for(model, last_seed[0]), model, timeout_s=15.0
         )
 
+    async def aclose() -> None:
+        # G5: close every cached per-(model, seed) backend client -- none
+        # of them are otherwise closed on any exit path.
+        for backend in backend_cache.values():
+            await backend.aclose()
+
     return RunnerDependencies(
         reload_position=reload_position,
         dismiss_popups=dismiss_popups,
@@ -789,6 +803,7 @@ def _build_live_dependencies(
         make_agent=make_agent,
         probe_health=probe_health_dep,
         connection=connection,
+        aclose=aclose,
     )
 
 
@@ -915,29 +930,40 @@ async def _run_async(args: argparse.Namespace) -> int:
     connection = GameConnection()
     await connection.connect()
 
-    api_key = os.environ.get(args.api_key_env, "x")
-    deps = _build_live_dependencies(
-        connection=connection,
-        position=position,
-        suite=suite,
-        gateway_url=args.gateway_url,
-        api_key=api_key,
-    )
-
-    runner = BenchmarkRunner(
-        store=store,
-        dependencies=deps,
-        expected_state=position.expected_state,
-        player_id=position.player_id,
-    )
-
+    # G5: GameConnection and every cached per-(model, seed) backend client
+    # must be closed on every exit path -- normal completion, a caught
+    # SessionAborted, or any exception that propagates -- not just the
+    # happy path. `deps` is declared before the try so the finally block
+    # can check it even if `_build_live_dependencies` itself raises.
+    deps: RunnerDependencies | None = None
     try:
-        await runner.run(schedule)
-    except SessionAborted as exc:
-        print(f"civ-arena-benchmark: session aborted ({exc.code}): {exc}", file=sys.stderr)
-        return 1
+        api_key = os.environ.get(args.api_key_env, "x")
+        deps = _build_live_dependencies(
+            connection=connection,
+            position=position,
+            suite=suite,
+            gateway_url=args.gateway_url,
+            api_key=api_key,
+        )
 
-    return 0
+        runner = BenchmarkRunner(
+            store=store,
+            dependencies=deps,
+            expected_state=position.expected_state,
+            player_id=position.player_id,
+        )
+
+        try:
+            await runner.run(schedule)
+        except SessionAborted as exc:
+            print(f"civ-arena-benchmark: session aborted ({exc.code}): {exc}", file=sys.stderr)
+            return 1
+
+        return 0
+    finally:
+        if deps is not None and deps.aclose is not None:
+            await deps.aclose()
+        await connection.disconnect()
 
 
 def main(argv: list[str] | None = None) -> int:
