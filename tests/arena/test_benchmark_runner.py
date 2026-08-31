@@ -15,6 +15,7 @@ import json
 import httpx
 import openai
 import pytest
+import yaml
 from unittest.mock import AsyncMock
 
 import civ_mcp.arena.benchmark_runner as benchmark_runner
@@ -999,9 +1000,17 @@ audit_indices: []
     return Path(suite_path)
 
 
-def test_main_without_ungated_smoke_flag_refuses_before_touching_the_live_game(
+def test_suite_without_ungated_smoke_flag_refuses_before_touching_the_live_game(
     tmp_path, monkeypatch, capsys
 ):
+    """--suite with neither --campaign nor --ungated-smoke has no admission
+    gate pipeline wired at all -- it must refuse outright, before ever
+    touching the suite/position manifests or the live game. This is
+    distinct from a --campaign run refusing on a specific failed live gate
+    (see test_campaign_run_refuses_on_first_failed_live_gate below) -- that
+    scenario replaces what used to be this same test's job before the
+    admission gates were wired for --campaign."""
+
     def _boom_create(*_args, **_kwargs):
         raise AssertionError("BenchmarkStore.create must not be called without --ungated-smoke")
 
@@ -1022,6 +1031,297 @@ def test_main_without_ungated_smoke_flag_refuses_before_touching_the_live_game(
     err = capsys.readouterr().err.lower()
     assert "admission gate" in err
     assert "ungated-smoke" in err
+
+
+def test_campaign_and_suite_are_mutually_exclusive(tmp_path, capsys):
+    exit_code = benchmark_runner.main(
+        [
+            "--campaign", str(tmp_path / "campaign.yaml"),
+            "--suite", str(tmp_path / "suite.yaml"),
+            "--run-id", "run1",
+            "--ungated-smoke",
+        ]
+    )
+
+    assert exit_code == 1
+    err = capsys.readouterr().err.lower()
+    assert "mutually exclusive" in err
+
+
+def test_neither_campaign_nor_suite_refuses(tmp_path, capsys):
+    exit_code = benchmark_runner.main(["--run-id", "run1"])
+
+    assert exit_code == 1
+    err = capsys.readouterr().err.lower()
+    assert "--campaign" in err and "--suite" in err
+
+
+def _write_fixture_campaign_and_position(tmp_path) -> "Path":
+    from pathlib import Path
+
+    from civ_mcp.arena.benchmark_state import state_digest
+
+    benchmarks_dir = tmp_path / "benchmarks"
+    campaigns_dir = benchmarks_dir / "campaigns"
+    positions_dir = benchmarks_dir / "positions"
+    campaigns_dir.mkdir(parents=True)
+    positions_dir.mkdir(parents=True)
+
+    provenance = {"base_save": "organic-base", "archive_sha256": "deadbeef" * 8}
+    (campaigns_dir / "provenance.json").write_text(json.dumps(provenance))
+    contract = {
+        "evidence_schema_version": "1.0.0",
+        "predicate_schema_version": "1.0.0",
+        "report_schema_version": "1.0.0",
+        "scorer_fingerprint": "scorerfp",
+    }
+    (campaigns_dir / "contract.yaml").write_text(yaml.safe_dump(contract))
+
+    digest = state_digest({"turn": 157})
+    (positions_dir / "builder-economy-cal-v1.yaml").write_text(
+        f"""
+position_id: builder-economy-cal-v1
+version: 1
+archive: benchmarks/saves/BUILDER_ECONOMY_CAL_V1.Civ6Save
+archive_sha256: "{provenance['archive_sha256']}"
+game_save_name: BUILDER_ECONOMY_CAL_V1
+player_id: 0
+expected_state:
+  turn: 157
+expected_state_sha256: "{digest}"
+relevant_tiles:
+  - [9, 8]
+objectives:
+  - task_id: repair
+    unit_index: 4
+    target: [9, 8]
+    requires: [repair_improvement]
+rubric:
+  - task_id: repair
+    levels:
+      - score: 0
+        predicate:
+          kind: always
+      - score: 1
+        predicate:
+          kind: always
+split: calibration
+""",
+        encoding="utf-8",
+    )
+
+    campaign_data = {
+        "campaign_id": "builder-economy-cal-v1",
+        "campaign_schema_version": "1.0.0",
+        "position": "builder-economy-cal-v1",
+        "position_provenance": "provenance.json",
+        "contracts": "contract.yaml",
+        "prompt": "Assess the current turn and call finish_trial when done.",
+        "models": [
+            {
+                "block_id": "gemma4-26b",
+                "model": "gemma4-26b",
+                "endpoint_id": "home-gpu0-cpp",
+                "sampling": {"temperature": 0.2, "top_p": 0.95, "seed": 101, "max_tokens": 3072},
+                "chat_template_kwargs": {"enable_thinking": False},
+                "briefing_required": False,
+            },
+            {
+                "block_id": "qwen3.6-27b",
+                "model": "qwen3.6-27b",
+                "endpoint_id": "home-gpu0-cpp",
+                "sampling": {"temperature": 0.2, "top_p": 0.95, "seed": 101, "max_tokens": 6144},
+                "chat_template_kwargs": {"enable_thinking": False},
+                "briefing_required": False,
+            },
+        ],
+        "arms": [
+            {"arm_id": "minimal", "tools": "minimal", "options": {}},
+            {"arm_id": "standard", "tools": "standard", "options": {}},
+        ],
+        "seeds": [101, 211, 307, 401, 503, 601, 701, 809, 907, 1009, 1103, 1201],
+        "order": "abba",
+        "driver": "single_turn",
+        "fresh_conversation_per_trial": True,
+        "retry_policy": {"max_attempts": 1, "backoff_s": 0.0},
+        "max_steps": 8,
+        "result_char_cap": 4000,
+        "audit_indices": [1, 2, 11, 12, 23, 24],
+        "rules": {
+            "pairs_per_model": 12,
+            "minimum_decided_pairs": 10,
+            "minimum_standard_wins": 10,
+            "minimum_median_normalized_delta": 0.3333333333333333,
+            "required_audits_per_arm": 3,
+        },
+    }
+    campaign_path = campaigns_dir / "campaign.yaml"
+    campaign_path.write_text(yaml.safe_dump(campaign_data))
+    return campaign_path
+
+
+@pytest.mark.asyncio
+async def test_campaign_run_refuses_on_first_failed_live_gate(tmp_path, monkeypatch, capsys):
+    """Replaces the old blanket "gates not wired" refusal: with --campaign,
+    the admission gates ARE wired, so a real (fake, injected) failure on
+    the very first live gate must refuse the run -- and must never create
+    a block session or run a trial."""
+    from civ_mcp.arena.benchmark_admission import AdmissionError
+
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    class _FailFirstGatePipeline:
+        def __init__(self, _deps):
+            pass
+
+        async def admit(self, *_args, **_kwargs):
+            raise AdmissionError("dirty_checkout", {"message": "WSL checkout is dirty"})
+
+    def _boom_run_resolved_block(*_args, **_kwargs):
+        raise AssertionError("run_resolved_block must never be called on an admission failure")
+
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _FailFirstGatePipeline(None))
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err.lower()
+    assert "dirty_checkout" in err
+    assert not (run_dir / "campaign-run" / "blocks").exists() or not list(
+        (run_dir / "campaign-run" / "blocks").iterdir()
+    )
+
+
+@pytest.mark.asyncio
+async def test_campaign_admit_only_exits_without_running_trials(tmp_path, monkeypatch):
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    class _AdmitOnlyPipeline:
+        def __init__(self, _deps):
+            self.calls = []
+
+        async def admit(self, bundle, block, store, *, mode, **_kwargs):
+            self.calls.append((block.block_id, mode))
+            return {"ok": True, "mode": mode}
+
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _AdmitOnlyPipeline(None))
+
+    def _boom_run_resolved_block(*_args, **_kwargs):
+        raise AssertionError("run_resolved_block must never run for --admit-only")
+
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+            "--admit-only", "gemma4-26b",
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    assert not (run_dir / "campaign-run" / "blocks" / "gemma4-26b").exists()
+
+
+@pytest.mark.asyncio
+async def test_campaign_non_counting_validation_exits_without_running_trials(tmp_path, monkeypatch):
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    class _ValidationPipeline:
+        def __init__(self, _deps):
+            pass
+
+        async def admit(self, bundle, block, store, *, mode, **_kwargs):
+            assert mode == "validation"
+            return {"ok": True, "validation": True, "campaign_fingerprint": None, "admission_fingerprint": None}
+
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _ValidationPipeline(None))
+
+    def _boom_run_resolved_block(*_args, **_kwargs):
+        raise AssertionError("run_resolved_block must never run for --non-counting-validation")
+
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+            "--non-counting-validation", "gemma4-26b",
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    assert not (run_dir / "campaign-run" / "blocks" / "gemma4-26b").exists()
+
+
+@pytest.mark.asyncio
+async def test_campaign_one_block_mode_stops_after_one_block(tmp_path, monkeypatch):
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    admitted_blocks: list[str] = []
+
+    class _OneBlockPipeline:
+        def __init__(self, _deps):
+            pass
+
+        async def admit(self, bundle, block, store, *, mode, **_kwargs):
+            admitted_blocks.append(block.block_id)
+            from civ_mcp.arena.benchmark_runner import ResolvedBlock
+
+            return ResolvedBlock(
+                position=bundle.position,
+                suite=None,
+                schedule=(),
+                store=None,
+                gateway_url="http://example.invalid/v1",
+                api_key="x",
+                episode_wall_s=300,
+                chat_template_kwargs={},
+                user_prompt="",
+            )
+
+    run_resolved_block_calls: list = []
+
+    async def _fake_run_resolved_block(resolved):
+        run_resolved_block_calls.append(resolved)
+        return 0
+
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _OneBlockPipeline(None))
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _fake_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+            "--one-block",
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    assert admitted_blocks == ["gemma4-26b"]
+    assert len(run_resolved_block_calls) == 1
 
 
 @pytest.mark.asyncio

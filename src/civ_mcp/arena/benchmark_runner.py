@@ -56,9 +56,10 @@ from typing import Any, Awaitable, Callable, Mapping, Sequence
 import openai
 
 from civ_mcp.arena.backends import OpenAICompatBackend, RetryPolicy
-from civ_mcp.arena.benchmark_agent import EpisodeTimedOut, SingleTurnAgent
+from civ_mcp.arena.benchmark_agent import EpisodeTimedOut, SingleTurnAgent, resolved_benchmark_tools
 from civ_mcp.arena.benchmark_backend import HealthProbe
 from civ_mcp.arena.benchmark_backend import probe_health as _probe_backend_health
+from civ_mcp.arena.benchmark_gates import GateFailure
 from civ_mcp.arena.benchmark_manifest import (
     PositionManifest,
     SuiteManifest,
@@ -657,16 +658,24 @@ _SMOKE_SCORER_EVALUATOR = "civ_mcp.arena.action_metrics.evaluate_predicate"
 # `admit_model_block`, `build_session_lock`) -- assembling their live
 # evidence (git status on both sides, a GPU process snapshot, native boot
 # health) is out of this task's file scope and is intentionally left for
-# Task 13's integration pass, which inspects the live game before writing
-# the position-authoring plan. Treat this section as a working scaffold,
-# not yet a fully gated admission path -- `_run_async` fails closed on this
-# (refusing to run at all) unless `--ungated-smoke` explicitly opts into a
-# marked, non-counted smoke session instead.
+# Task 8's integration pass wires the admission gates for the --campaign
+# path (see benchmark_admission.AdmissionPipeline, imported locally inside
+# the CLI functions below to avoid a circular top-level import --
+# benchmark_admission imports ResolvedBlock from this module). The
+# `--suite`/`--ungated-smoke` scaffold below remains exactly what it always
+# was: a deliberate, explicitly non-counted escape hatch, never gated.
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="civ-arena-benchmark")
-    parser.add_argument("--suite", required=True, help="path to a suite manifest YAML file")
+    parser.add_argument(
+        "--suite", default=None, help="path to a suite manifest YAML file (used with --ungated-smoke)"
+    )
+    parser.add_argument(
+        "--campaign",
+        default=None,
+        help="path to a campaign manifest YAML file for a counted, admission-gated run",
+    )
     parser.add_argument(
         "--run-id", required=True, help="run id; the run directory is <run-dir>/<run-id>"
     )
@@ -680,15 +689,65 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--api-key-env", default="LITELLM_OPENAI_API_KEY")
     parser.add_argument(
+        "--wsl-repo",
+        default=None,
+        help="WSL-side repo checkout path for the clean-checkout gate (--campaign only)",
+    )
+    parser.add_argument(
+        "--windows-repo",
+        default=None,
+        help="Windows-companion repo checkout path for the clean-checkout gate (--campaign only)",
+    )
+    parser.add_argument(
+        "--admit-only",
+        default=None,
+        metavar="BLOCK_ID",
+        help="run admission diagnostics for one campaign block and exit without minting a "
+        "reusable session or running trials",
+    )
+    parser.add_argument(
+        "--non-counting-validation",
+        default=None,
+        metavar="BLOCK_ID",
+        help="run the admission gates as a non-counted validation pass for one campaign "
+        "block; writes under benchmark_runs/<id>/validation/ and mints no counted "
+        "fingerprint pair",
+    )
+    parser.add_argument(
+        "--terminate-tuner-pid",
+        type=int,
+        default=None,
+        metavar="PID",
+        help="terminate exactly this PID if (and only if) it currently holds the FireTuner "
+        "port -- see benchmark_live_evidence.terminate_tuner_pid",
+    )
+    parser.add_argument(
+        "--drain-gpu-service",
+        action="append",
+        default=[],
+        metavar="UNIT",
+        help="stop exactly this registry-managed systemd unit if it is the sole GPU "
+        "conflict for --endpoint-id (repeatable) -- see benchmark_live_evidence.drain_gpu_service",
+    )
+    parser.add_argument(
+        "--endpoint-id",
+        default=None,
+        help="registry endpoint id for --drain-gpu-service (not needed for --campaign, "
+        "which reads endpoint_id per block from the campaign manifest)",
+    )
+    parser.add_argument(
+        "--one-block",
+        action="store_true",
+        help="with --campaign, run only the next incomplete block in manifest order, then exit",
+    )
+    parser.add_argument(
         "--ungated-smoke",
         action="store_true",
         help=(
-            "Run without the live admission gate pipeline (check_clean_checkout / "
-            "check_gpu_conflicts / admit_model_block / build_session_lock -- not yet "
-            "wired into this CLI; see benchmark_gates.py). For NON-COUNTED SMOKE "
-            "TESTING ONLY: evidence from this run is stamped ungated_smoke=true in "
-            "the session lock so a scorer/report can refuse or flag it -- it must "
-            "never be treated as a counted session."
+            "Run without the live admission gate pipeline, over --suite. For NON-COUNTED "
+            "SMOKE TESTING ONLY: evidence from this run is stamped ungated_smoke=true in "
+            "the session lock so a scorer/report can refuse or flag it -- it must never be "
+            "treated as a counted session."
         ),
     )
     return parser
@@ -737,14 +796,12 @@ def _build_live_dependencies(
     chat_template_kwargs: Mapping[str, object] | None = None,
     user_prompt: str = "",
 ) -> RunnerDependencies:
-    # `chat_template_kwargs` is threaded onto every cached backend as a
-    # plain instance attribute rather than a constructor kwarg:
-    # `OpenAICompatBackend.__init__` doesn't accept one yet (see backends.py
-    # -- Task 5 wires the read side, `chat()` sending it as `extra_body`).
-    # `None` here preserves `chat()`'s own current hardcoded literal
+    # `chat_template_kwargs` is threaded straight into `OpenAICompatBackend`'s
+    # constructor (see backends.py -- `chat()` sends it as `extra_body`).
+    # `None` here preserves `OpenAICompatBackend`'s own default
     # (`{"enable_thinking": False}`) exactly.
-    resolved_chat_template_kwargs: dict[str, object] = (
-        dict(chat_template_kwargs) if chat_template_kwargs is not None else {"enable_thinking": False}
+    resolved_chat_template_kwargs: dict[str, object] | None = (
+        dict(chat_template_kwargs) if chat_template_kwargs is not None else None
     )
     # `user_prompt=""` (the empty string, NOT None) is ResolvedBlock's
     # smoke-path default -- its field is a plain `str`, not `str | None`.
@@ -773,8 +830,8 @@ def _build_live_dependencies(
                 model,
                 sampling=dataclasses.replace(suite.sampling, seed=seed),
                 retry_policy=RetryPolicy(max_attempts=1),
+                chat_template_kwargs=resolved_chat_template_kwargs,
             )
-            backend.chat_template_kwargs = dict(resolved_chat_template_kwargs)
             backend_cache[key] = backend
         return backend_cache[key]
 
@@ -957,26 +1014,417 @@ async def run_resolved_block(block: ResolvedBlock) -> int:
         await connection.disconnect()
 
 
+def _git_rev_parse_head(repo: str) -> str:
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True, text=True
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _run_local_command(argv: Sequence[str]):
+    import subprocess
+
+    from civ_mcp.arena.benchmark_live_evidence import CommandResult
+
+    result = subprocess.run(list(argv), capture_output=True, text=True)
+    return CommandResult(argv=tuple(argv), returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
+
+
+def _run_windows_command(argv: Sequence[str]):
+    # WSL/Windows interop (WSL2 default): invoking a Windows executable
+    # (git.exe on the Windows companion checkout's PATH) directly from WSL.
+    # Mirrors the git argv shape benchmark_live_evidence.collect_checkout_evidence
+    # always passes ("git", "-C", <windows path>, ...) -- only the
+    # executable itself needs the .exe suffix.
+    import subprocess
+
+    from civ_mcp.arena.benchmark_live_evidence import CommandResult
+
+    win_argv = ["git.exe", *argv[1:]] if argv and argv[0] == "git" else list(argv)
+    result = subprocess.run(win_argv, capture_output=True, text=True)
+    return CommandResult(argv=tuple(argv), returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
+
+
+def _run_ssh_command(host: str, argv: Sequence[str]):
+    import shlex
+    import subprocess
+
+    from civ_mcp.arena.benchmark_live_evidence import CommandResult
+
+    remote_cmd = " ".join(shlex.quote(a) for a in argv)
+    result = subprocess.run(["ssh", host, remote_cmd], capture_output=True, text=True)
+    return CommandResult(argv=tuple(argv), returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
+
+
+def _build_live_admission_dependencies(
+    *, args: argparse.Namespace, api_key: str
+):
+    """Assemble a real, live `AdmissionDependencies` for the `--campaign`
+    path -- the production counterpart to `_build_live_dependencies` above,
+    wiring Task 6/7's collectors (`benchmark_deploy`,
+    `benchmark_live_evidence`, `endpoint_registry`) plus `benchmark_backend`'s
+    probes through the injected `AdmissionDependencies` contract.
+
+    Deliberately NOT exercised by this task's test suite (no live game, no
+    subprocess, no network, no SSH -- per the plan's constraints, mirroring
+    `_build_live_dependencies`'s own precedent): CLI-level tests monkeypatch
+    this factory (or `_build_admission_pipeline`) with a fake instead.
+    """
+    from civ_mcp.arena import benchmark_admission
+    from civ_mcp.arena.backends import OpenAICompatBackend
+    from civ_mcp.arena.benchmark_backend import probe_backend as _probe_backend_impl
+    from civ_mcp.arena.benchmark_backend import probe_tool_capability as _probe_tool_capability_impl
+    from civ_mcp.arena.benchmark_deploy import check_boot_health_via_windows, deploy_via_windows
+    from civ_mcp.arena.benchmark_live_evidence import (
+        collect_checkout_evidence,
+        collect_gpu_evidence,
+        collect_tuner_evidence,
+        gpu_processes_to_conflict_rows,
+    )
+    from civ_mcp.arena.benchmark_gates import check_gpu_conflicts
+    from civ_mcp.arena.endpoint_registry import _registry, resolve_gateway
+
+    wsl_repo = args.wsl_repo or str(Path(__file__).resolve().parents[3])
+    windows_repo = args.windows_repo or ""
+
+    def checkout_evidence() -> dict:
+        return collect_checkout_evidence(
+            run_local=_run_local_command,
+            run_windows=_run_windows_command,
+            wsl_repo=wsl_repo,
+            windows_repo=windows_repo,
+        )
+
+    def boot_health() -> dict:
+        return dataclasses.asdict(check_boot_health_via_windows())
+
+    def tuner_evidence() -> dict:
+        return collect_tuner_evidence(run_local=_run_local_command, wsl_repo=wsl_repo, windows_repo=windows_repo)
+
+    def deploy_save(position: PositionManifest) -> dict:
+        return dataclasses.asdict(
+            deploy_via_windows(position.archive, position.game_save_name, position.archive_sha256)
+        )
+
+    async def reload_and_capture(position: PositionManifest) -> dict:
+        connection = GameConnection()
+        await connection.connect()
+        try:
+            result = await load_game_save(connection, position.game_save_name)
+            verified = _reload_result_is_success(result) and "UNVERIFIED" not in str(result)
+            popup_status = await dismiss_blocking_popups(connection)
+            popup_ok = isinstance(popup_status, str) and popup_status.startswith("POPUPS|")
+            canonical_state = await capture_canonical_state(
+                connection, position.player_id, position.relevant_tiles
+            )
+            return {
+                "reload": {"verified": verified, "raw": str(result)},
+                "popup_hygiene": {"status": popup_status, "ok": popup_ok},
+                "canonical_state": canonical_state,
+            }
+        finally:
+            await connection.disconnect()
+
+    def gpu_evidence(endpoint_id: str) -> dict:
+        registry = _registry()
+        processes = collect_gpu_evidence(run_ssh=_run_ssh_command, registry=registry, endpoint_id=endpoint_id)
+        return check_gpu_conflicts(processes=gpu_processes_to_conflict_rows(processes), approved_services=set())
+
+    def resolve_endpoint(endpoint_id: str) -> dict:
+        registry = _registry()
+        endpoint = registry.endpoint(endpoint_id)
+        url = resolve_gateway(endpoint_id)
+        registry_fingerprint = fingerprint(
+            {
+                "endpoint_id": endpoint_id,
+                "host_id": endpoint.host_id,
+                "gpu_indexes": list(endpoint.gpu_indexes),
+                "port": endpoint.port,
+            }
+        )
+        return {
+            "requested_endpoint": url,
+            "resolved_endpoint": url,
+            "registry_fingerprint": registry_fingerprint,
+            "gpu_topology": {"host_id": endpoint.host_id, "gpu_indexes": list(endpoint.gpu_indexes)},
+        }
+
+    async def probe_backend_dep(*, model: str, endpoint: str, sampling, tools: list[dict]):
+        backend = OpenAICompatBackend(endpoint, api_key, model, sampling=sampling, retry_policy=RetryPolicy(max_attempts=1))
+        try:
+            return await _probe_backend_impl(
+                backend, [{"role": "user", "content": "Reply with only your model name."}], tools
+            )
+        finally:
+            await backend.aclose()
+
+    async def probe_tool_capability_dep(*, model: str, endpoint: str, arm_id: str, tools: list[dict]):
+        backend = OpenAICompatBackend(endpoint, api_key, model, retry_policy=RetryPolicy(max_attempts=1))
+        try:
+            return await _probe_tool_capability_impl(backend, arm_id=arm_id, tools=tools)
+        finally:
+            await backend.aclose()
+
+    return benchmark_admission.AdmissionDependencies(
+        checkout_evidence=checkout_evidence,
+        boot_health=boot_health,
+        tuner_evidence=tuner_evidence,
+        deploy_save=deploy_save,
+        reload_and_capture=reload_and_capture,
+        gpu_evidence=gpu_evidence,
+        resolve_endpoint=resolve_endpoint,
+        probe_backend=probe_backend_dep,
+        probe_tool_capability=probe_tool_capability_dep,
+    )
+
+
+def _build_admission_pipeline(args: argparse.Namespace, api_key: str):
+    """Factory seam for `_run_campaign_async` -- monkeypatched by tests to
+    inject a fake `AdmissionPipeline` instead of the real live-dependency
+    one `_build_live_admission_dependencies` assembles."""
+    from civ_mcp.arena import benchmark_admission
+
+    return benchmark_admission.AdmissionPipeline(_build_live_admission_dependencies(args=args, api_key=api_key))
+
+
+def _resolve_campaign_position_path(campaign_path: Path, position_id: str) -> Path:
+    # Convention mirrors _resolve_position_path: a campaign at
+    # <benchmarks>/campaigns/<name>.yaml pairs with position manifests at
+    # <benchmarks>/positions/<position_id>.yaml.
+    return campaign_path.resolve().parent.parent / "positions" / f"{position_id}.yaml"
+
+
+async def _run_campaign_async(args: argparse.Namespace) -> int:
+    from civ_mcp.arena import benchmark_admission
+    from civ_mcp.arena.benchmark_agent import BENCHMARK_SYSTEM
+    from civ_mcp.arena.benchmark_campaign import (
+        CampaignLockMismatchError,
+        CampaignStore,
+        build_campaign_lock,
+        compile_campaign_schedule,
+    )
+    from civ_mcp.arena.benchmark_contract import (
+        fingerprint_identity,
+        load_campaign_manifest,
+        tool_surface_identity,
+    )
+
+    campaign_path = Path(args.campaign)
+    try:
+        campaign = load_campaign_manifest(campaign_path)
+    except (OSError, ValueError) as exc:
+        print(f"civ-arena-benchmark: failed to load campaign {campaign_path}: {exc}", file=sys.stderr)
+        return 1
+
+    position_path = _resolve_campaign_position_path(campaign_path, campaign.position)
+    try:
+        position = load_position_manifest(position_path)
+    except (OSError, ValueError) as exc:
+        print(f"civ-arena-benchmark: failed to load position manifest {position_path}: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        verify_expected_state_digest(position.expected_state, position.expected_state_sha256)
+    except BenchmarkStateError as exc:
+        print(f"civ-arena-benchmark: {exc}", file=sys.stderr)
+        return 1
+
+    provenance = json.loads(Path(campaign.position_provenance).read_text())
+    tools_by_arm = {arm.arm_id: resolved_benchmark_tools(arm.tools) for arm in campaign.arms}
+    schedule = compile_campaign_schedule(campaign)
+    wsl_repo = args.wsl_repo or str(Path(__file__).resolve().parents[3])
+    try:
+        campaign_lock = build_campaign_lock(
+            campaign=campaign,
+            position=position,
+            position_provenance=provenance,
+            schedule=schedule,
+            expected_commit=_git_rev_parse_head(wsl_repo),
+            prompt_fingerprint=fingerprint({"system": BENCHMARK_SYSTEM, "user": campaign.prompt}),
+            rubric_fingerprint=fingerprint(list(position.rubric)),
+            tool_surface_fingerprint=fingerprint_identity(tool_surface_identity(tools_by_arm)),
+        )
+    except GateFailure as exc:
+        print(f"civ-arena-benchmark: campaign lock rejected: {exc}", file=sys.stderr)
+        return 1
+
+    run_dir = Path(args.run_dir) / args.run_id
+    try:
+        store = CampaignStore.create(run_dir, campaign_lock, schedule)
+    except CampaignLockMismatchError as exc:
+        print(f"civ-arena-benchmark: {exc}", file=sys.stderr)
+        return 1
+
+    bundle = benchmark_admission.build_campaign_bundle(campaign, position)
+
+    api_key = os.environ.get(args.api_key_env) or "x"
+    pipeline = _build_admission_pipeline(args, api_key)
+
+    blocks_by_id = {block.block_id: block for block in campaign.models}
+
+    if args.admit_only is not None:
+        return await _run_single_diagnostic(pipeline, bundle, blocks_by_id, args.admit_only, store, mode="admit_only")
+
+    if args.non_counting_validation is not None:
+        return await _run_single_diagnostic(
+            pipeline, bundle, blocks_by_id, args.non_counting_validation, store, mode="validation"
+        )
+
+    first_block_id = campaign.models[0].block_id
+
+    while True:
+        next_block = benchmark_admission.select_next_incomplete_block(campaign, store)
+        if next_block is None:
+            print("civ-arena-benchmark: campaign already complete", file=sys.stderr)
+            return 0
+
+        block_index = campaign.models.index(next_block)
+        try:
+            resolved = await pipeline.admit(bundle, next_block, store, mode="counted", api_key=api_key)
+        except benchmark_admission.AdmissionError as exc:
+            first_complete = benchmark_admission.block_is_complete(store, first_block_id)
+            disposition = benchmark_admission.classify_admission_disposition(
+                block_index=block_index, first_block_counted_complete=first_complete
+            )
+            if disposition is not None:
+                print(
+                    f"civ-arena-benchmark: block {next_block.block_id} admission failed "
+                    f"({exc.code}); recording disposition={disposition} and stopping "
+                    "(final campaign disposition is decided elsewhere)",
+                    file=sys.stderr,
+                )
+                return 2
+            print(
+                f"civ-arena-benchmark: block {next_block.block_id} admission failed: {exc.code}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+
+        exit_code = await run_resolved_block(resolved)
+        if exit_code != 0:
+            return exit_code
+
+        if args.one_block:
+            return 0
+
+
+async def _run_single_diagnostic(pipeline, bundle, blocks_by_id, block_id, store, *, mode: str) -> int:
+    from civ_mcp.arena import benchmark_admission
+
+    block = blocks_by_id.get(block_id)
+    if block is None:
+        print(
+            f"civ-arena-benchmark: unknown block id {block_id!r}; known blocks: "
+            f"{sorted(blocks_by_id)}",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        await pipeline.admit(bundle, block, store, mode=mode)
+    except benchmark_admission.AdmissionError as exc:
+        print(f"civ-arena-benchmark: {mode} for block {block_id} failed: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    print(f"civ-arena-benchmark: {mode} for block {block_id} succeeded")
+    return 0
+
+
+async def _run_remediation_async(args: argparse.Namespace) -> int:
+    """Standalone, one-shot remediation: `--terminate-tuner-pid` and/or
+    `--drain-gpu-service`. Maps to Task 7's scoped functions only -- never
+    constructs a wildcard/pattern kill or stop command itself (see
+    benchmark_live_evidence.terminate_tuner_pid / drain_gpu_service for the
+    exact-identity revalidation / re-check-after contract)."""
+    from civ_mcp.arena.benchmark_live_evidence import (
+        classify_tuner_holder,
+        collect_gpu_evidence,
+        drain_gpu_service,
+        terminate_tuner_pid,
+    )
+    from civ_mcp.arena.endpoint_registry import _registry
+
+    wsl_repo = args.wsl_repo or str(Path(__file__).resolve().parents[3])
+    windows_repo = args.windows_repo or ""
+    exit_code = 0
+
+    if args.terminate_tuner_pid is not None:
+        holder = classify_tuner_holder(run_local=_run_local_command, wsl_repo=wsl_repo, windows_repo=windows_repo)
+        if holder is None:
+            print("civ-arena-benchmark: FireTuner port has no holder; nothing to terminate", file=sys.stderr)
+            exit_code = 1
+        else:
+            try:
+                result = terminate_tuner_pid(
+                    run_local=_run_local_command,
+                    requested_pid=args.terminate_tuner_pid,
+                    preceding_evidence=holder,
+                    wsl_repo=wsl_repo,
+                    windows_repo=windows_repo,
+                )
+                print(f"civ-arena-benchmark: {result}")
+            except GateFailure as exc:
+                print(f"civ-arena-benchmark: terminate-tuner-pid refused: {exc}", file=sys.stderr)
+                exit_code = 1
+
+    for unit in args.drain_gpu_service:
+        if not args.endpoint_id:
+            print("civ-arena-benchmark: --drain-gpu-service requires --endpoint-id", file=sys.stderr)
+            exit_code = 1
+            continue
+        registry = _registry()
+        processes = collect_gpu_evidence(run_ssh=_run_ssh_command, registry=registry, endpoint_id=args.endpoint_id)
+        try:
+            result = drain_gpu_service(
+                run_ssh=_run_ssh_command, registry=registry, endpoint_id=args.endpoint_id, processes=processes, unit=unit
+            )
+            print(f"civ-arena-benchmark: {result}")
+        except GateFailure as exc:
+            print(f"civ-arena-benchmark: drain-gpu-service {unit!r} refused: {exc}", file=sys.stderr)
+            exit_code = 1
+
+    return exit_code
+
+
 async def _run_async(args: argparse.Namespace) -> int:
-    # Fail-closed FIRST, before touching the suite/position manifests, the
-    # live game connection, or the store: this CLI does not yet call the
-    # admission gates in benchmark_gates.py (check_clean_checkout /
-    # check_gpu_conflicts / admit_model_block / build_session_lock). Without
-    # this guard, once suite/position fixtures exist, `civ-arena-benchmark`
-    # would silently run a fully counted session with no admission evidence
-    # at all -- a hard architecture violation. `--ungated-smoke` is the one
-    # deliberate override, for non-counted smoke testing only; it stamps
-    # `ungated_smoke: True` into the session lock so the artifact itself
-    # carries the mark for a future scorer/report to refuse or flag.
+    # Remediation flags are standalone, one-shot actions -- checked first
+    # and exclusively: they never combine with a --campaign/--suite run in
+    # the same invocation (run remediation, then a separate invocation to
+    # admit/run once the port/GPU is clear).
+    if args.terminate_tuner_pid is not None or args.drain_gpu_service:
+        return await _run_remediation_async(args)
+
+    if args.campaign and args.suite:
+        print("civ-arena-benchmark: --campaign and --suite are mutually exclusive", file=sys.stderr)
+        return 1
+
+    if args.campaign:
+        return await _run_campaign_async(args)
+
+    if not args.suite:
+        print(
+            "civ-arena-benchmark: one of --campaign or --suite is required (--suite is "
+            "only for --ungated-smoke)",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Fail-closed: this --suite path never runs the live admission gate
+    # pipeline (check_clean_checkout / check_gpu_conflicts / admit_model_block /
+    # build_session_lock) -- a counted run goes through --campaign, which
+    # wires those gates via benchmark_admission.AdmissionPipeline.
+    # `--ungated-smoke` is the one deliberate override for --suite, for
+    # non-counted smoke testing only; it stamps `ungated_smoke: True` into
+    # the session lock so the artifact itself carries the mark for a future
+    # scorer/report to refuse or flag.
     if not args.ungated_smoke:
         print(
-            "civ-arena-benchmark: refusing to run -- the live admission gate "
-            "pipeline (check_clean_checkout / check_gpu_conflicts / "
-            "admit_model_block / build_session_lock in benchmark_gates.py) is not "
-            "yet wired into this CLI, so a counted session cannot be admitted. "
-            "This is tracked as a Task 13 follow-up. Pass --ungated-smoke to run "
-            "an explicitly non-counted smoke session instead (its evidence is "
-            "stamped ungated_smoke=true and must never be scored as a counted run).",
+            "civ-arena-benchmark: refusing to run -- --suite has no admission gate "
+            "pipeline (check_clean_checkout / check_gpu_conflicts / admit_model_block / "
+            "build_session_lock); use --campaign for a counted, admission-gated run. "
+            "Pass --ungated-smoke to run an explicitly non-counted smoke session over "
+            "--suite instead (its evidence is stamped ungated_smoke=true and must never "
+            "be scored as a counted run).",
             file=sys.stderr,
         )
         return 1
