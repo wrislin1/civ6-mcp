@@ -189,6 +189,52 @@ async def test_episode_wall_timeout_raises_typed_error():
         await agent.run(FakeGS(), player_id=0, turn=1)
 
 
+class TimeoutAfterOneStepBackend:
+    """Round 1: a real game call. Round 2: hangs forever."""
+
+    def __init__(self):
+        self.n = 0
+
+    async def chat(self, messages, tools):
+        import asyncio
+
+        self.n += 1
+        if self.n == 1:
+            return Reply(
+                text=None,
+                tool_calls=[
+                    {"id": "1", "name": "fortify_unit", "arguments": '{"unit_index": 0}'},
+                ],
+                prompt_tokens=4,
+                completion_tokens=2,
+            )
+        await asyncio.sleep(10)
+        return Reply(text="never", tool_calls=[], prompt_tokens=0, completion_tokens=0)
+
+
+@pytest.mark.asyncio
+async def test_timeout_mid_episode_attaches_partial_evidence_matching_prior_calls():
+    """A timeout that lands after one committed step must not lose that
+    step: the raised EpisodeTimedOut carries the evidence accumulated
+    before the wall, so the runner can commit it as a scoreable
+    runaway_timeout trial instead of an empty transcript."""
+    agent = SingleTurnAgent(TimeoutAfterOneStepBackend(), "minimal", episode_wall_s=0.1, max_steps=4)
+    gs = FakeGS()
+
+    with pytest.raises(EpisodeTimedOut) as exc_info:
+        await agent.run(gs, player_id=0, turn=1)
+
+    partial = exc_info.value.partial_evidence
+    assert partial is not None
+    assert gs.calls == [("fortify", 0)]
+    assert len(partial.steps) == 1
+    assert partial.steps[0]["tool_name"] == "fortify_unit"
+    assert partial.steps[0]["tool_result_full"] == "FORTIFIED"
+    assert partial.invalid_tool_calls == []
+    assert partial.prompt_tokens == 4
+    assert partial.completion_tokens == 2
+
+
 class RecordingGS:
     def __init__(self):
         self.conn = "FAKE_CONN"

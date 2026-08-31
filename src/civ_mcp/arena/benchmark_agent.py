@@ -135,7 +135,19 @@ class EpisodeTimedOut(Exception):
     identity-correct backend admits the timeout as a scoreable
     "runaway_timeout" terminal, while an unhealthy/unreachable one is
     recorded as an infrastructure attempt and retried.
+
+    `partial_evidence` carries whatever `EpisodeEvidence` fields
+    (steps/invalid_tool_calls/tokens/final_summary) `SingleTurnAgent`
+    accumulated before the wall-clock cutoff cancelled `_run_episode` --
+    `None` only if the timeout landed before a single step was recorded.
+    A healthy-canary "runaway_timeout" terminal must commit this partial
+    transcript rather than an empty one: the episode *did* take real,
+    scoreable actions before running out of budget.
     """
+
+    def __init__(self, message: str, *, partial_evidence: "EpisodeEvidence | None" = None) -> None:
+        super().__init__(message)
+        self.partial_evidence = partial_evidence
 
 
 @dataclass(frozen=True)
@@ -215,12 +227,36 @@ class SingleTurnAgent:
         harness failure, not a model outcome, and the runner must classify
         it as an infrastructure attempt rather than score it.
         """
+        # Reset before every run(): these are mutated in place by
+        # _run_episode as it goes (never reassigned via a local variable),
+        # so they still hold everything recorded so far even if
+        # asyncio.timeout cancels _run_episode mid-flight and tears down its
+        # local frame. See EpisodeTimedOut.partial_evidence.
+        self._progress_steps: list[dict[str, Any]] = []
+        self._progress_invalid_tool_calls: list[dict[str, Any]] = []
+        self._progress_final_summary: str = ""
+        self._progress_prompt_tokens: int = 0
+        self._progress_completion_tokens: int = 0
+        self._progress_wall_clock_start: float = time.time()
         try:
             async with asyncio.timeout(self.episode_wall_s):
                 return await self._run_episode(gs, player_id, turn)
         except TimeoutError as exc:
+            partial_evidence = EpisodeEvidence(
+                # Placeholder: the runner never reads this field off a
+                # timeout's partial evidence -- it always stamps the
+                # preregistered RUNAWAY_TIMEOUT_TERMINAL terminal itself.
+                terminal=EpisodeTerminal.STEP_LIMIT,
+                steps=list(self._progress_steps),
+                invalid_tool_calls=list(self._progress_invalid_tool_calls),
+                final_summary=self._progress_final_summary,
+                wall_clock_s=time.time() - self._progress_wall_clock_start,
+                prompt_tokens=self._progress_prompt_tokens,
+                completion_tokens=self._progress_completion_tokens,
+            )
             raise EpisodeTimedOut(
-                f"benchmark episode exceeded episode_wall_s={self.episode_wall_s}"
+                f"benchmark episode exceeded episode_wall_s={self.episode_wall_s}",
+                partial_evidence=partial_evidence,
             ) from exc
 
     async def _run_episode(self, gs: Any, player_id: int, turn: int) -> EpisodeEvidence:
@@ -228,26 +264,24 @@ class SingleTurnAgent:
             {"role": "system", "content": BENCHMARK_SYSTEM},
             {"role": "user", "content": benchmark_prompt(turn, player_id)},
         ]
-        steps: list[dict[str, Any]] = []
-        invalid_tool_calls: list[dict[str, Any]] = []
-        final_summary = ""
-        total_prompt_tokens = 0
-        total_completion_tokens = 0
-        wall_clock_start = time.time()
+        # Mutated in place (never reassigned) so partial progress survives a
+        # mid-flight cancellation -- see run()'s except TimeoutError branch.
+        steps = self._progress_steps
+        invalid_tool_calls = self._progress_invalid_tool_calls
         terminal = EpisodeTerminal.STEP_LIMIT
 
         for _ in range(self.max_steps):
             reply = await self.backend.chat(messages, self._tools_schema)
-            total_prompt_tokens += reply.prompt_tokens
-            total_completion_tokens += reply.completion_tokens
+            self._progress_prompt_tokens += reply.prompt_tokens
+            self._progress_completion_tokens += reply.completion_tokens
 
             if not reply.tool_calls:
-                final_summary = reply.text or ""
+                self._progress_final_summary = reply.text or ""
                 terminal = EpisodeTerminal.IMPLICIT_FINISH
                 break
 
             if reply.text:
-                final_summary = reply.text
+                self._progress_final_summary = reply.text
             messages.append({
                 "role": "assistant",
                 "content": reply.text or "",
@@ -349,8 +383,8 @@ class SingleTurnAgent:
             terminal=terminal,
             steps=steps,
             invalid_tool_calls=invalid_tool_calls,
-            final_summary=final_summary,
-            wall_clock_s=time.time() - wall_clock_start,
-            prompt_tokens=total_prompt_tokens,
-            completion_tokens=total_completion_tokens,
+            final_summary=self._progress_final_summary,
+            wall_clock_s=time.time() - self._progress_wall_clock_start,
+            prompt_tokens=self._progress_prompt_tokens,
+            completion_tokens=self._progress_completion_tokens,
         )

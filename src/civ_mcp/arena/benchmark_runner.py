@@ -391,16 +391,28 @@ class BenchmarkRunner:
 
         if healthy:
             if admits_runaway:
+                # A timed-out SingleTurnAgent attaches whatever evidence it
+                # accumulated before the wall-clock cutoff to
+                # EpisodeTimedOut.partial_evidence (see benchmark_agent.py) --
+                # a healthy-canary runaway_timeout terminal must commit that
+                # partial transcript, not an empty one, since the episode
+                # did take real, scoreable actions before running out of
+                # budget. `None` only when the exception never carried
+                # partial evidence at all (e.g. a bare openai.APITimeoutError
+                # raised before SingleTurnAgent ever got a chance to run).
+                partial = getattr(exc, "partial_evidence", None)
                 await self._finalize_trial(
                     spec,
                     terminal=RUNAWAY_TIMEOUT_TERMINAL,
-                    steps=[],
-                    invalid_tool_calls=[],
-                    final_summary="",
+                    steps=list(partial.steps) if partial is not None else [],
+                    invalid_tool_calls=(
+                        list(partial.invalid_tool_calls) if partial is not None else []
+                    ),
+                    final_summary=partial.final_summary if partial is not None else "",
                     initial_state=observed_state,
-                    wall_clock_s=None,
-                    prompt_tokens=0,
-                    completion_tokens=0,
+                    wall_clock_s=partial.wall_clock_s if partial is not None else None,
+                    prompt_tokens=partial.prompt_tokens if partial is not None else 0,
+                    completion_tokens=partial.completion_tokens if partial is not None else 0,
                 )
                 return
             raise SessionAborted(

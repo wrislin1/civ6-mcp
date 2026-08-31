@@ -407,6 +407,47 @@ async def test_episode_timeout_with_healthy_canary_admits_runaway_timeout(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_episode_timeout_commits_the_partial_transcript_not_an_empty_one(tmp_path):
+    # A timed-out SingleTurnAgent attaches whatever it accumulated before
+    # the wall to EpisodeTimedOut.partial_evidence. The runner must commit
+    # that partial transcript for the runaway_timeout trial rather than
+    # empty steps/invalid_tool_calls/tokens -- a scored final_state with
+    # zero step evidence would misreport the episode.
+    partial = EpisodeEvidence(
+        terminal=EpisodeTerminal.STEP_LIMIT,
+        steps=[
+            {"idx": 0, "tool_name": "get_units", "tool_result_full": "UNITS"},
+        ],
+        invalid_tool_calls=[
+            {"tool_name": "bogus_tool", "arguments": "{}", "reason": "unknown_tool"},
+        ],
+        final_summary="",
+        wall_clock_s=0.3,
+        prompt_tokens=7,
+        completion_tokens=3,
+    )
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        make_agent=lambda spec: _RaisingAgent(
+            EpisodeTimedOut("wall reached", partial_evidence=partial)
+        ),
+        probe_health=AsyncMock(return_value=_healthy_probe()),
+    )
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert runner.store.completed_indices() == {1}
+    trial = runner.store.trial(1)
+    assert trial["terminal"] == "runaway_timeout"
+    assert trial["steps"] == partial.steps
+    assert trial["invalid_tool_calls"] == partial.invalid_tool_calls
+    assert trial["prompt_tokens"] == 7
+    assert trial["completion_tokens"] == 3
+    assert trial["wall_clock_s"] == 0.3
+
+
+@pytest.mark.asyncio
 async def test_episode_timeout_with_unhealthy_canary_is_an_infrastructure_attempt(tmp_path):
     run_dir = tmp_path / "run"
     store = BenchmarkStore.create(run_dir, _lock())
