@@ -304,18 +304,23 @@ admission.
 
 ### 7. Structured tool-call capability
 
-Admission runs one canary against each full resolved arm schema using the
-block's exact system prompt shape, sampling, token limit, context, and chat
-template. The canary explicitly requests the shared no-argument
-`finish_trial` control call.
+Admission runs two canary requests against each full resolved arm schema using
+the block's exact system prompt shape, sampling, token limit, context, and chat
+template:
 
-Admission requires a structured OpenAI `tool_calls` response containing the
-correct function and arguments. Prose, fenced pseudo-calls, missing calls,
+1. Request the shared no-argument `finish_trial` control call.
+2. Request the shared `move_unit` tool with three exact sentinel integer
+   arguments: `{"unit_index": 7, "x": 11, "y": 13}`.
+
+Canary responses are validated but never dispatched, so the required-argument
+probe cannot mutate the game. Admission requires structured OpenAI
+`tool_calls` responses containing the exact requested function, argument keys,
+types, and values. Prose, fenced pseudo-calls, missing or malformed arguments,
 wrong functions, exhausted thinking output, or identity drift fail the block.
-The canary is non-counting and does not mutate the game.
 
-This gate prevents identity-correct models that silently ignore tool schemas
-from becoming scientific nulls.
+The first request catches identity-correct models that ignore tool schemas;
+the second catches models that emit the envelope but cannot populate required
+arguments. Neither failure can become a scientific null.
 
 ### 8. Seed and latency probes
 
@@ -553,8 +558,12 @@ The validation performs:
 If this validation exposes a defect, fix it before counting. A semantic
 instrument change bumps the affected version and creates a fresh campaign
 lock. Validation transcripts may be viewed because the rubric and prompt are
-already frozen; they can test implementation but cannot be used to tune the
-rubric.
+initially frozen. Non-counting validation may inform a rubric or prompt
+revision as legitimate pilot work, but every such revision must bump the
+affected version, recompute its digest, refreeze the audit indices and numeric
+effect threshold, create a fresh campaign lock, and repeat validation. Once
+the first counted trial is committed, no counted transcript may inform a
+rubric or prompt change that is combined with existing evidence.
 
 ## Counted trial semantics
 
@@ -596,7 +605,8 @@ A pair is decided when standard and minimal have different normalized rubric
 scores.
 
 1. **Sensitivity precondition:** at least ten of twelve pairs must be decided.
-   Fewer produces `RUBRIC_NONDISCRIMINATIVE`, not a pass or a model null.
+   Fewer produces `TIE_ATTRIBUTION_REQUIRED`, not an automatic rubric defect
+   and not yet a model null.
 2. **Direction gate:** standard must win at least ten of the original twelve
    pairs. Ties count as non-wins for this gate.
 3. **Effect gate:** the median signed paired normalized delta must be at least
@@ -604,16 +614,55 @@ scores.
 
 With a three-task 0/1/2/4 rubric, the effect threshold is `4 / 12`; the value
 is written numerically into the frozen campaign only after the rubric freezes.
+This deliberately means one complete task's maximum value, not one adjacent
+rubric transition such as 2→4. Minimal's structural ceiling is 6/12 when it
+positions all three builders, while standard's ceiling is 12/12, so the
+largest treatment headroom is 0.5 normalized. The 4/12 threshold therefore
+requires the median observed effect to capture two-thirds of the theoretical
+headroom. That steep threshold is intentional for a large-effect instrument
+calibration; a 2/12 median separation is not sufficient.
 
 A sufficiently decided block that misses either separation gate is a
 legitimate model-specific null. A block that never passed identity,
 tool-calling, inference-configuration, or other admission cannot produce a
 null.
 
+### Tie attribution
+
+When fewer than ten pairs are decided, the campaign performs a documented
+review of every tied pair before assigning a block verdict. The mechanical
+screen labels 0–0 pairs as model-floor candidates and nonzero ties as
+rubric-insensitivity candidates, but those labels are not conclusive:
+
+- A 0–0 tie can still expose a rubric that missed meaningful behavior.
+- A nonzero tie can reflect a model making the same correctly scored partial
+  progress in both arms.
+
+The review compares transcripts, action-quality metrics, final-state deltas,
+and the rubric's frozen counterfactual fixtures.
+
+- If both arms truly make no rubric-relevant progress and the counterfactuals
+  prove that qualifying behavior would score, the block is
+  `MODEL_FLOOR_NULL`.
+- If both arms make the same correctly scored partial progress, the block is a
+  `MODEL_TIE_NULL` under the same campaign-level null treatment.
+- If materially different rubric-relevant behavior maps to the same score, or
+  the counterfactuals do not support the observed case, the block is
+  `RUBRIC_NONDISCRIMINATIVE`.
+- Mixed attribution, where even one consequential tie is caused by rubric
+  insensitivity, is `RUBRIC_NONDISCRIMINATIVE` rather than selectively
+  discarding that pair.
+
+A model-floor or same-progress tie null preserves other blocks' evidence. A
+rubric-nondiscriminative verdict requires rubric review; any rubric edit
+creates a new campaign version and all counted blocks rerun.
+
 ### Campaign outcomes
 
 - `CALIBRATED`: at least one admitted model passes, all completed blocks pass
-  metric fidelity, and no block is non-discriminative.
+  metric fidelity, and every tie-heavy block is attributed to a model floor
+  or correctly scored same-progress behavior rather than rubric
+  insensitivity.
 - `CALIBRATED_REPLICATION_DEFERRED`: Gemma passes and Qwen admission cannot be
   completed after documented remediation. Deferral requires at least one
   journaled retry after a concrete remediation, or two confirming attempts
@@ -623,9 +672,16 @@ null.
 - `BLOCKED`: neither admitted model passes; or Gemma does not pass and Qwen
   cannot be admitted; or Gemma cannot be admitted/completed; or metric
   fidelity fails without a completed corrected rerun.
-- `RUBRIC_NONDISCRIMINATIVE`: any completed model block has fewer than ten
-  decided pairs. Rubric review is required. A rubric edit creates a new
-  campaign version and all counted blocks rerun.
+- `MODEL_FLOOR_NULL`: a tie-heavy block's required review confirms that both
+  arms made no rubric-relevant progress despite a rubric proven capable of
+  scoring qualifying behavior. It is a legitimate model-specific null.
+- `MODEL_TIE_NULL`: a tie-heavy block's required review confirms that both
+  arms made the same correctly scored partial progress. It is also a
+  legitimate model-specific null.
+- `RUBRIC_NONDISCRIMINATIVE`: the required tie review finds materially
+  different rubric-relevant behavior receiving the same score or a failed
+  rubric counterfactual. A rubric edit creates a new campaign version and all
+  counted blocks rerun.
 
 Qwen replication is mandatory to attempt but not mandatory to admit after a
 passing Gemma block. If Gemma does not pass, Qwen admission and execution are
@@ -641,6 +697,8 @@ The campaign report is a disposable projection over locked evidence.
   trials into one median.
 - Report all twelve paired deltas, decisions, ties, wins, sensitivity, median
   delta, and threshold result per model.
+- For tie-heavy blocks, report the mechanical zero/nonzero screen, cited
+  transcript/metric attribution, counterfactual result, and final tie status.
 - Report useful actions, domain rejections, invalid calls, repetitions,
   successful mutations, steps, latency, tokens, cost, and prior
   infrastructure pressure.
@@ -650,6 +708,9 @@ The campaign report is a disposable projection over locked evidence.
 - Include every contract and evidence fingerprint.
 - Refuse incomplete official schedules except the explicitly defined Qwen
   admission-deferral outcome.
+- Contain no generation-time timestamp. Any displayed time must come from
+  immutable lock or trial evidence so regenerating the same report remains
+  byte-identical.
 
 Report generation reads no infrastructure attempt as treatment evidence. A
 scorer crash or implementation-only fix regenerates reports without replaying
@@ -755,9 +816,11 @@ Implementation uses TDD and counterfactual proof for guard tests.
 - Attempts and admission evidence never contribute scores.
 - Sensitivity, direction, and normalized complete-task gates match frozen
   fixtures.
-- Non-discriminative, null, calibrated, deferred, and blocked outcomes are
-  independently tested.
+- Tie-attribution-required, model-floor-null, model-tie-null,
+  rubric-non-discriminative, ordinary null, calibrated, deferred, and blocked
+  outcomes are independently tested, including mixed-cause ties.
 - Reports regenerate byte-identically from the same locks and trials.
+- A changed wall clock cannot change regenerated report bytes.
 - Scorer-only fingerprint changes can regenerate without replay.
 
 ### Live verification
