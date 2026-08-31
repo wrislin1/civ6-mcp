@@ -39,6 +39,7 @@ __all__ = [
     "BenchmarkStoreError",
     "SessionLockMismatchError",
     "TrialExistsError",
+    "trial_filename",
 ]
 
 
@@ -63,6 +64,18 @@ class TrialExistsError(BenchmarkStoreError):
 # it (re-execution, then a TrialExistsError crash; the attempt cap disabled).
 _TRIAL_NAME_RE = re.compile(r"^trial-(\d{3,})\.json$")
 _ATTEMPT_NAME_RE = re.compile(r"^trial-(\d{3,})-attempt-(\d{3,})\.json$")
+
+
+def trial_filename(index: int) -> str:
+    """Canonical committed-trial evidence filename for `index`.
+
+    G12: the `{index:03d}` (MINIMUM width, not fixed -- see `_TRIAL_NAME_RE`'s
+    own comment) convention used to live twice: once here and once
+    duplicated in `benchmark_report.py`. A single shared function means the
+    convention can only drift out of sync with itself if this one function
+    changes, not if a second copy is edited and the first is forgotten.
+    """
+    return f"trial-{int(index):03d}.json"
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -263,7 +276,7 @@ class BenchmarkStore:
     # -- trials (immutable raw scoreable evidence) --------------------------
 
     def _trial_path(self, index: int) -> Path:
-        return self.run_dir / self.TRIALS_DIR / f"trial-{index:03d}.json"
+        return self.run_dir / self.TRIALS_DIR / trial_filename(index)
 
     def _trial_tmp_path(self, index: int) -> Path:
         return self.run_dir / self.TRIALS_DIR / f".trial-{index:03d}.json.tmp"

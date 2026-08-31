@@ -50,6 +50,8 @@ from civ_mcp.arena.action_metrics import (
     classify_action_quality,
     evaluate_predicate,
 )
+from civ_mcp.arena.benchmark_manifest import fingerprint
+from civ_mcp.arena.benchmark_store import trial_filename
 
 __all__ = [
     "MalformedRubricError",
@@ -252,8 +254,20 @@ def score_trial(
 # ---------------------------------------------------------------------------
 
 
-def _usd_cost(model: object, prompt_tokens: object, completion_tokens: object) -> float:
-    pin, pout = _PRICE_PER_1K_USD.get(str(model), (0.0, 0.0))
+def _usd_cost(model: object, prompt_tokens: object, completion_tokens: object) -> float | None:
+    """USD cost for one trial, or `None` if `model` has no price-table entry.
+
+    G13: `.get(str(model), (0.0, 0.0))` conflated "this model is free" (a
+    real priced entry of (0.0, 0.0), e.g. "local") with "no price data
+    exists for this model" -- both produced an identical $0.00
+    contribution, so a $0 total could mean either and there was no way to
+    tell which. `None` here (and `unpriced_models` in `_group_summary`)
+    makes that distinction visible instead of silently wrong.
+    """
+    key = str(model)
+    if key not in _PRICE_PER_1K_USD:
+        return None
+    pin, pout = _PRICE_PER_1K_USD[key]
     pt = prompt_tokens if isinstance(prompt_tokens, (int, float)) else 0
     ct = completion_tokens if isinstance(completion_tokens, (int, float)) else 0
     return round(pt / 1000 * pin + ct / 1000 * pout, 6)
@@ -298,7 +312,17 @@ def _group_summary(scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
     completion_tokens = [
         s["completion_tokens"] for s in scored if isinstance(s.get("completion_tokens"), (int, float))
     ]
-    costs = [_usd_cost(s.get("model"), s.get("prompt_tokens"), s.get("completion_tokens")) for s in scored]
+    # G13: aggregate USD totals over priced trials only; a model with no
+    # price-table entry contributes nothing to usd_total/usd_mean and is
+    # named in unpriced_models instead of silently reading as free.
+    priced_costs: list[float] = []
+    unpriced_models: set[str] = set()
+    for s in scored:
+        cost = _usd_cost(s.get("model"), s.get("prompt_tokens"), s.get("completion_tokens"))
+        if cost is None:
+            unpriced_models.add(str(s.get("model")) if s.get("model") is not None else "unknown")
+        else:
+            priced_costs.append(cost)
 
     action_quality_totals: dict[str, object] = {
         "invalid_calls": 0,
@@ -364,8 +388,9 @@ def _group_summary(scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
             "completion_mean": (sum(completion_tokens) / len(completion_tokens)) if completion_tokens else 0.0,
         },
         "cost": {
-            "usd_total": round(sum(costs), 6),
-            "usd_mean": round(sum(costs) / len(costs), 6) if costs else 0.0,
+            "usd_total": round(sum(priced_costs), 6),
+            "usd_mean": round(sum(priced_costs) / len(priced_costs), 6) if priced_costs else 0.0,
+            "unpriced_models": sorted(unpriced_models),
         },
         "action_quality": action_quality_totals,
     }
@@ -589,6 +614,25 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
     if not isinstance(schedule_trials, Sequence):
         raise ReportError("schedule.json is missing a 'trials' list")
 
+    # G11: the runner re-verifies schedule.json against session.json's
+    # schedule_fingerprint on resume (see benchmark_runner._run_async) --
+    # build_report read schedule.json completely unverified, so a swapped
+    # arm order (or any other post-hoc edit) would silently flip
+    # calibration deltas. Recompute the fingerprint exactly as the runner
+    # does (same `fingerprint` helper, over the whole parsed schedule.json
+    # mapping) and hard-fail on a mismatch. Only activates when the lock
+    # actually declares a schedule_fingerprint.
+    lock_schedule_fingerprint = lock.get("schedule_fingerprint")
+    if lock_schedule_fingerprint:
+        actual_schedule_fingerprint = fingerprint(schedule)
+        if actual_schedule_fingerprint != lock_schedule_fingerprint:
+            raise ReportError(
+                "schedule.json does not match session.json's schedule_fingerprint "
+                f"(expected {lock_schedule_fingerprint!r}, found "
+                f"{actual_schedule_fingerprint!r}) -- refusing to score a run whose "
+                "schedule may have been tampered with"
+            )
+
     scored_by_position: dict[str, list[dict[str, object]]] = {}
     scored_by_pair: dict[str, list[dict[str, object]]] = {}
     # Completeness bookkeeping: expected-vs-committed per position, computed
@@ -609,7 +653,7 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
         position_id = str(position_id)
         expected_by_position[position_id] = expected_by_position.get(position_id, 0) + 1
 
-        trial_path = run_dir / "trials" / f"trial-{int(index):03d}.json"
+        trial_path = run_dir / "trials" / trial_filename(index)
         if not trial_path.exists():
             # Not yet committed -- a report over an in-progress run only
             # covers what has actually been committed so far.
@@ -759,7 +803,14 @@ def _render_group(summary: Mapping[str, object]) -> list[str]:
             **summary["tokens"]
         )
     )
-    lines.append(f"- Cost (USD): total={_fmt(summary['cost']['usd_total'])}")
+    cost = summary["cost"]
+    if cost["unpriced_models"]:
+        lines.append(
+            f"- Cost (USD): total={_fmt(cost['usd_total'])} (UNPRICED, excluded from "
+            f"total: {', '.join(cost['unpriced_models'])})"
+        )
+    else:
+        lines.append(f"- Cost (USD): total={_fmt(cost['usd_total'])}")
     aq = summary["action_quality"]
     lines.append(
         "- Action quality: invalid_calls={invalid_calls}, domain_rejections={domain_rejections}, "

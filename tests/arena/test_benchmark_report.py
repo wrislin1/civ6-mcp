@@ -570,6 +570,72 @@ def test_build_report_includes_terminal_conditions_latency_tokens_cost(tmp_path)
 
 
 # ---------------------------------------------------------------------------
+# G13 -- an unknown model must not be silently priced $0. "Free" (a real
+# priced entry of (0.0, 0.0)) and "no price data at all" are different
+# facts; conflating them makes a $0 total ambiguous.
+# ---------------------------------------------------------------------------
+
+
+def test_unpriced_model_is_excluded_from_usd_total_and_listed(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-003.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    payload["model"] = "some-unpriced-model"
+    payload["prompt_tokens"] = 500
+    payload["completion_tokens"] = 50
+    _write_json(trial_path, payload)
+
+    report = build_report(run_dir)
+    hard = report["positions"]["hard"]["by_group"]["some-unpriced-model::unknown"]
+    assert hard["cost"]["unpriced_models"] == ["some-unpriced-model"]
+    # A $0.00 total here means "no priced trials contributed", not "this
+    # model is free" -- unpriced_models is what actually says why.
+    assert hard["cost"]["usd_total"] == 0.0
+
+
+def test_priced_model_reports_empty_unpriced_models_list(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    payload["model"] = "local"  # in _PRICE_PER_1K_USD
+    _write_json(trial_path, payload)
+
+    report = build_report(run_dir)
+    easy_local = report["positions"]["easy"]["by_group"]["local::unknown"]
+    assert easy_local["cost"]["unpriced_models"] == []
+
+
+def test_unpriced_and_priced_models_in_the_same_group_summary_do_not_mix_costs(tmp_path):
+    """A group summary is keyed by (model, arm), so within one group every
+    trial shares the same model -- this pins that an unpriced trial's
+    absence from usd_total doesn't corrupt a DIFFERENT group's priced
+    total."""
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    for index, model in ((1, "local"), (2, "local")):
+        trial_path = run_dir / "trials" / f"trial-{index:03d}.json"
+        payload = json.loads(trial_path.read_text(encoding="utf-8"))
+        payload["model"] = model
+        payload["prompt_tokens"] = 1000
+        payload["completion_tokens"] = 1000
+        _write_json(trial_path, payload)
+    trial_path = run_dir / "trials" / "trial-003.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    payload["model"] = "unpriced-x"
+    payload["prompt_tokens"] = 1000
+    payload["completion_tokens"] = 1000
+    _write_json(trial_path, payload)
+
+    report = build_report(run_dir)
+    local_group = report["positions"]["easy"]["by_group"]["local::unknown"]
+    unpriced_group = report["positions"]["hard"]["by_group"]["unpriced-x::unknown"]
+    assert local_group["cost"]["unpriced_models"] == []
+    assert unpriced_group["cost"]["unpriced_models"] == ["unpriced-x"]
+
+
+# ---------------------------------------------------------------------------
 # Completeness: a scheduled position with zero committed trials must never
 # silently disappear from the report -- its absence would be
 # indistinguishable from "scored 0", hiding a position-level regression.
@@ -860,6 +926,67 @@ def test_build_report_accepts_a_trial_stamped_with_the_matching_session_fingerpr
     payload = json.loads(trial_path.read_text(encoding="utf-8"))
     payload["session_fingerprint"] = "abc123"  # matches _build_basic_run's session.json
     _write_json(trial_path, payload)
+
+    build_report(run_dir)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# G11 -- build_report must verify schedule.json against session.json's own
+# schedule_fingerprint exactly as the runner does on resume; a swapped arm
+# order in schedule.json otherwise silently flips calibration deltas.
+# ---------------------------------------------------------------------------
+
+
+def test_build_report_accepts_a_schedule_matching_its_declared_fingerprint(tmp_path):
+    from civ_mcp.arena.benchmark_manifest import fingerprint
+
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+
+    schedule_path = run_dir / "schedule.json"
+    schedule_payload = json.loads(schedule_path.read_text(encoding="utf-8"))
+
+    session_path = run_dir / "session.json"
+    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
+    session_payload["schedule_fingerprint"] = fingerprint(schedule_payload)
+    _write_json(session_path, session_payload)
+
+    build_report(run_dir)  # must not raise
+
+
+def test_build_report_fails_closed_on_a_tampered_schedule(tmp_path):
+    """A schedule.json edited after session.json's schedule_fingerprint was
+    computed (e.g. a swapped arm order) must abort report generation, not
+    silently produce a report whose calibration deltas are now wrong."""
+    from civ_mcp.arena.benchmark_manifest import fingerprint
+
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+
+    schedule_path = run_dir / "schedule.json"
+    schedule_payload = json.loads(schedule_path.read_text(encoding="utf-8"))
+
+    session_path = run_dir / "session.json"
+    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
+    session_payload["schedule_fingerprint"] = fingerprint(schedule_payload)
+    _write_json(session_path, session_payload)
+
+    # Tamper with schedule.json AFTER the fingerprint was recorded.
+    schedule_payload["trials"][0]["position_id"] = "hard"
+    _write_json(schedule_path, schedule_payload)
+
+    with pytest.raises(Exception):
+        build_report(run_dir)
+
+
+def test_build_report_skips_schedule_verification_when_lock_has_no_schedule_fingerprint(tmp_path):
+    """Fixtures/older runs with no declared schedule_fingerprint at all
+    (not this task's concern -- see benchmark_gates) must not suddenly be
+    refused; verification only activates when the lock actually carries
+    one."""
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    # _build_basic_run's session.json carries no schedule_fingerprint.
 
     build_report(run_dir)  # must not raise
 

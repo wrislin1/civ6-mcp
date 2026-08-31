@@ -8,6 +8,7 @@ from civ_mcp.arena.benchmark_store import (
     BenchmarkStoreError,
     SessionLockMismatchError,
     TrialExistsError,
+    trial_filename,
 )
 
 
@@ -261,3 +262,24 @@ def test_append_event_with_no_details_omits_the_key(tmp_path):
     record = store.append_event("some_event", trial_index=1)
 
     assert "details" not in record
+
+
+# ---------------------------------------------------------------------------
+# G12 -- a single, shared trial filename convention. benchmark_report.py
+# must reuse this exact function rather than a private re-implementation
+# of the `{index:03d}` (minimum-width) rule -- see _TRIAL_NAME_RE's own
+# comment on why an exact `\d{3}` would silently break at index 1000.
+# ---------------------------------------------------------------------------
+
+
+def test_trial_filename_matches_the_minimum_width_convention():
+    assert trial_filename(1) == "trial-001.json"
+    assert trial_filename(1000) == "trial-1000.json"
+
+
+def test_committed_trial_lands_at_the_path_trial_filename_predicts(tmp_path):
+    lock = _lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    store.commit_trial(1000, {"session_fingerprint": store.fingerprint})
+
+    assert (tmp_path / "run" / "trials" / trial_filename(1000)).exists()
