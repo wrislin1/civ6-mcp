@@ -117,6 +117,14 @@ def _require_optional_number(value: object, field: str) -> float | None:
     return value
 
 
+def _require_optional_int(value: object, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be an integer or null")
+    return value
+
+
 def _require_tile(value: object, field: str) -> tuple[int, int]:
     if not isinstance(value, list) or len(value) != 2:
         raise ValueError(f"{field} must be a two-element [x, y] list")
@@ -190,7 +198,7 @@ def _load_sampling(raw: object, context: str) -> SamplingConfig:
     return SamplingConfig(
         temperature=_require_optional_number(mapping["temperature"], f"{context}.temperature"),
         top_p=_require_optional_number(mapping["top_p"], f"{context}.top_p"),
-        seed=_require_optional_number(mapping["seed"], f"{context}.seed"),
+        seed=_require_optional_int(mapping["seed"], f"{context}.seed"),
         max_tokens=_require_int(mapping["max_tokens"], f"{context}.max_tokens"),
     )
 
