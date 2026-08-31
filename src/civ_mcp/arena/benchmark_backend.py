@@ -49,6 +49,12 @@ class BackendProbe:
     seed_honored: bool
     latencies_s: list[float] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # One of: "honored", "not_honored", "not_applicable_greedy" (locked seed
+    # but sampling.temperature == 0 -- seed honoring is unobservable and
+    # irrelevant under greedy decoding), "no_seed_configured", or
+    # "probe_error". `None` only for a BackendProbe constructed without this
+    # field (pre-F15 callers/tests).
+    seed_verdict: str | None = None
 
 
 @dataclass(frozen=True)
@@ -112,19 +118,35 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
 
     sampling = getattr(backend, "sampling", None)
     locked_seed = getattr(sampling, "seed", None)
+    temperature = getattr(sampling, "temperature", None)
 
     seed_honored = False
-    if repeated_consistent and sampling is not None and locked_seed is not None:
+    seed_verdict: str | None = None
+    if sampling is None or locked_seed is None:
+        seed_verdict = "no_seed_configured"
+    elif temperature == 0:
+        # F15 ruling: at temperature == 0 (greedy/argmax decoding), seed
+        # honoring is unobservable and irrelevant -- varying the seed
+        # cannot change a genuinely greedy backend's output, so the
+        # differing-seed call below would always (mis)report "not
+        # honored" for a perfectly healthy backend. Skip it entirely;
+        # repeated-consistency (already checked above) is still required.
+        seed_verdict = "not_applicable_greedy"
+    elif repeated_consistent:
         varied = replace(sampling, seed=locked_seed + 1)
         backend.sampling = varied
         try:
             varied_reply = await backend.chat(messages, tools)
             seed_honored = _reply_signature(varied_reply) != outputs[0]
+            seed_verdict = "honored" if seed_honored else "not_honored"
         except Exception as exc:
             errors.append(str(exc))
             seed_honored = False
+            seed_verdict = "probe_error"
         finally:
             backend.sampling = sampling
+    else:
+        seed_verdict = "not_honored"
 
     return BackendProbe(
         samples=samples,
@@ -133,6 +155,7 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
         seed_honored=seed_honored,
         latencies_s=latencies,
         errors=errors,
+        seed_verdict=seed_verdict,
     )
 
 

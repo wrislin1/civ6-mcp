@@ -64,12 +64,15 @@ class _FakeWrongModelBackend(_FakeExactBackend):
 
 @pytest.mark.asyncio
 async def test_probe_backend_confirms_model_and_honored_seed():
-    backend = _FakeExactBackend()
+    backend = _FakeExactBackend(
+        sampling=SamplingConfig(temperature=0.2, top_p=1.0, seed=41, max_tokens=64)
+    )
     probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=10)
     assert isinstance(probe, BackendProbe)
     assert probe.samples == 10
     assert probe.model_confirmed is True
     assert probe.seed_honored is True
+    assert probe.seed_verdict == "honored"
     assert len(probe.latencies_s) == 10
     assert all(isinstance(x, float) for x in probe.latencies_s)
     assert probe.errors == []
@@ -78,10 +81,30 @@ async def test_probe_backend_confirms_model_and_honored_seed():
 
 
 @pytest.mark.asyncio
+async def test_probe_backend_records_seed_verdict_not_applicable_at_temperature_zero():
+    """F15 ruling: at temperature == 0 (greedy decoding), seed honoring is
+    unobservable and irrelevant -- varying the seed cannot change a greedy
+    backend's real output, so the differing-seed probe would always
+    (mis)report "not honored" for a perfectly healthy backend.
+    probe_backend must record seed_verdict "not_applicable_greedy" instead
+    of running that check at all. Repeated-consistency (still required) is
+    unaffected -- this fake IS internally consistent across the `samples`
+    identical calls."""
+    backend = _FakeExactBackend()  # default sampling: temperature=0.0
+    probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=10)
+    assert probe.seed_verdict == "not_applicable_greedy"
+    # the verification call's config swap (if any) must never leak
+    assert backend.sampling.seed == 41
+
+
+@pytest.mark.asyncio
 async def test_probe_backend_detects_unhonored_seed():
-    backend = _FakeIgnoresSeedBackend()
+    backend = _FakeIgnoresSeedBackend(
+        sampling=SamplingConfig(temperature=0.2, top_p=1.0, seed=41, max_tokens=64)
+    )
     probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=5)
     assert probe.seed_honored is False
+    assert probe.seed_verdict == "not_honored"
 
 
 @pytest.mark.asyncio

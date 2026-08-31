@@ -346,6 +346,29 @@ def test_admit_model_block_rejects_seed_not_honored():
         admit_model_block(**_admit_kwargs(probe=_good_probe(seed_honored=False)))
 
 
+def test_admit_model_block_accepts_not_applicable_greedy_seed_verdict():
+    """F15 ruling: at temperature == 0, seed honoring is unobservable and
+    irrelevant (greedy decoding) -- a probe that recorded seed_verdict
+    "not_applicable_greedy" (seed_honored necessarily False, since the
+    differing-seed check was never run) must not fail-closed here. Any
+    OTHER config (seed_verdict != "not_applicable_greedy") keeps the
+    existing fail-closed behavior -- see the sibling rejection test above."""
+    probe = _good_probe(seed_honored=False)
+    probe = BackendProbe(
+        samples=probe.samples,
+        model=probe.model,
+        model_confirmed=probe.model_confirmed,
+        seed_honored=probe.seed_honored,
+        latencies_s=probe.latencies_s,
+        errors=probe.errors,
+        seed_verdict="not_applicable_greedy",
+    )
+    evidence = admit_model_block(
+        **_admit_kwargs(sampling=SamplingConfig(temperature=0.0, seed=101), probe=probe)
+    )
+    assert evidence["ok"] is True
+
+
 def test_admit_model_block_passes_and_derives_wall():
     evidence = admit_model_block(**_admit_kwargs())
     assert evidence["ok"] is True

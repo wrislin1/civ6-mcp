@@ -442,11 +442,22 @@ def admit_model_block(
             },
         )
 
-    if sampling.seed is not None and not probe.seed_honored:
+    # F15 ruling: at temperature == 0, seed honoring is unobservable and
+    # irrelevant (greedy decoding) -- probe_backend records seed_verdict
+    # "not_applicable_greedy" for that config instead of running the
+    # differing-seed check, so seed_honored is necessarily False there.
+    # Accept that verdict rather than fail-closed; any other config keeps
+    # the existing fail-closed behavior.
+    if (
+        sampling.seed is not None
+        and not probe.seed_honored
+        and probe.seed_verdict != "not_applicable_greedy"
+    ):
         raise GateFailure(
             "seed_not_honored",
             {
                 "seed": sampling.seed,
+                "seed_verdict": probe.seed_verdict,
                 "message": (
                     f"sampling locks seed={sampling.seed} but the pre-flight probe could "
                     "not confirm the backend actually honors it"
