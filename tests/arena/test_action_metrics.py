@@ -239,6 +239,26 @@ def test_predicate_unit_distance_decreased_false_when_farther():
     assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is False
 
 
+def test_predicate_unit_distance_decreased_uses_hex_distance_not_manhattan():
+    """F11 repro: the brief's counterexample. (5,5)->(6,6) approaching
+    target (5,8) is real progress on a hex grid (hex distance 3 -> 2), but
+    Manhattan distance (|dx|+|dy|) misses it entirely (3 -> 3, i.e. no
+    apparent decrease), so the old implementation reports False here."""
+    predicate = {"kind": "unit_distance_decreased", "unit_index": 8, "target": [5, 8]}
+    initial_state = {"units": [{"id": 8, "x": 5, "y": 5}]}
+    final_state = {"units": [{"id": 8, "x": 6, "y": 6}]}
+    assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is True
+
+
+def test_predicate_unit_distance_decreased_true_on_straight_line_approach():
+    # A simple straight-line approach (same column, moving south toward
+    # the target) must still register as a decrease under the hex metric.
+    predicate = {"kind": "unit_distance_decreased", "unit_index": 8, "target": [5, 20]}
+    initial_state = {"units": [{"id": 8, "x": 5, "y": 5}]}
+    final_state = {"units": [{"id": 8, "x": 5, "y": 15}]}
+    assert evaluate_predicate(predicate, initial_state=initial_state, final_state=final_state) is True
+
+
 # ---------------------------------------------------------------------------
 # Fail-closed behavior: never a silent False/0
 # ---------------------------------------------------------------------------

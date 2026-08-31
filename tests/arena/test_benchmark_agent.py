@@ -389,7 +389,7 @@ async def test_malformed_tool_arguments_are_not_dispatched_and_episode_continues
     assert len(evidence.steps) == 1
     step = evidence.steps[0]
     assert step["tool_name"] == "fortify_unit"
-    assert step["tool_result_full"] == "ERROR: malformed arguments"
+    assert step["tool_result_full"] == "MALFORMED_ARGUMENTS: not dispatched"
     assert step["state_before"] is None
     assert step["state_after"] is None
     assert step["state_digest_before"] is None
@@ -402,7 +402,53 @@ async def test_malformed_tool_arguments_are_not_dispatched_and_episode_continues
         if m.get("role") == "tool" and m.get("tool_call_id") == "1"
     ]
     assert len(tool_messages) == 1
-    assert tool_messages[0]["content"] == "ERROR: malformed arguments"
+    assert tool_messages[0]["content"] == "MALFORMED_ARGUMENTS: not dispatched"
+
+
+@pytest.mark.asyncio
+async def test_malformed_tool_arguments_are_not_double_counted_as_domain_rejections():
+    """F9 repro: action_metrics.classify_result treats any leading
+    "Error: ..." string as a domain_rejection (a legal call the game
+    engine rejected). A malformed-arguments call never reached the game
+    engine at all -- it is already counted in invalid_tool_calls -- so
+    inflating domain_rejections too double-counts the same failure under
+    two different metrics."""
+    from civ_mcp.arena.action_metrics import classify_action_quality
+
+    class MalformedArgsBackend:
+        def __init__(self):
+            self.n = 0
+
+        async def chat(self, messages, tools):
+            self.n += 1
+            if self.n == 1:
+                return Reply(
+                    text=None,
+                    tool_calls=[
+                        {"id": "1", "name": "fortify_unit", "arguments": "{not valid json"},
+                    ],
+                    prompt_tokens=1,
+                    completion_tokens=1,
+                )
+            return Reply(
+                text=None,
+                tool_calls=[{"id": "2", "name": "finish_trial", "arguments": "{}"}],
+                prompt_tokens=1,
+                completion_tokens=1,
+            )
+
+    backend = MalformedArgsBackend()
+    gs = FakeGS()
+    agent = SingleTurnAgent(backend, "minimal", episode_wall_s=5.0, max_steps=4)
+
+    evidence = await agent.run(gs, player_id=0, turn=1)
+    assert len(evidence.invalid_tool_calls) == 1
+
+    action_quality = classify_action_quality(
+        steps=evidence.steps, invalid_tool_calls=evidence.invalid_tool_calls
+    )
+    assert action_quality["invalid_calls"] == 1
+    assert action_quality["domain_rejections"] == 0
 
 
 @pytest.mark.asyncio

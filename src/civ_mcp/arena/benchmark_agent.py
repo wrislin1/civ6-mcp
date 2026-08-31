@@ -328,7 +328,14 @@ class SingleTurnAgent:
                         "tool_name": tc["name"], "arguments": tc["arguments"],
                         "reason": "bad_arguments",
                     })
-                    result: Any = "ERROR: malformed arguments"
+                    # Deliberately NOT prefixed "ERROR: " -- action_metrics
+                    # .classify_result treats any leading "Error: ..." string
+                    # as a domain_rejection (a legal call the game engine
+                    # rejected). This call never reached the game engine at
+                    # all; it is already counted in invalid_tool_calls, and
+                    # counting it as a domain_rejection too would
+                    # double-count the same failure under two metrics.
+                    result: Any = "MALFORMED_ARGUMENTS: not dispatched"
                     state_before = state_after = None
                     digest_before = digest_after = None
                 elif tc["name"] not in self._game_tool_names:

@@ -91,13 +91,33 @@ def _find_unit(state: object, unit_index: object) -> Mapping[str, object]:
     raise PredicateError(f"unit {unit_index!r} not found in state['units']")
 
 
+def _offset_to_cube(x: int, y: int) -> tuple[int, int, int]:
+    """Convert Civ6 offset hex coordinates (x=column, y=row, +y = south --
+    see repo CLAUDE.md) to cube coordinates, using an odd-r offset layout
+    (odd rows shifted right). No existing Python-side hex distance helper
+    exists in this repo to reuse (in-game distance is computed by the Lua
+    engine's ``Map.GetPlotDistance``, which is not callable here) -- this
+    is a from-scratch implementation, verified against the brief's
+    counterexample: (5,5)->(6,6) approaching (5,8) is hex distance 3->2."""
+    cube_x = x - (y - (y & 1)) // 2
+    cube_z = y
+    cube_y = -cube_x - cube_z
+    return cube_x, cube_y, cube_z
+
+
+def _hex_distance(a: Sequence[object], b: Sequence[object]) -> int:
+    ax, ay, az = _offset_to_cube(int(a[0]), int(a[1]))
+    bx, by, bz = _offset_to_cube(int(b[0]), int(b[1]))
+    return max(abs(ax - bx), abs(ay - by), abs(az - bz))
+
+
 def _unit_distance(unit: Mapping[str, object], target: Sequence[object]) -> float:
     x, y = unit.get("x"), unit.get("y")
     if x is None or y is None:
         raise PredicateError(f"unit {unit!r} is missing x/y")
     if not isinstance(target, Sequence) or len(target) != 2:
         raise PredicateError(f"target {target!r} must be an [x, y] pair")
-    return abs(x - target[0]) + abs(y - target[1])
+    return _hex_distance((x, y), target)
 
 
 def evaluate_predicate(
