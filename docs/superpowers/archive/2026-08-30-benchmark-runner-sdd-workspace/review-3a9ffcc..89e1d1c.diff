@@ -1,0 +1,3252 @@
+# Review package: 3a9ffcc..HEAD
+
+## Commits
+89e1d1c fix(arena): a corrupt IDENTITY row must not be misreported as a truncated response (G15)
+003ac95 fix(arena): verify schedule.json, share the trial filename convention, stop pricing unknown models $0 (G11, G12, G13)
+23bbdf7 fix(arena): report hard-fails on an unstamped trial under a stamped lock (G8 continued)
+35be6a3 fix(arena): verify expected_state_sha256 at startup instead of never reading it again (G10)
+4eaee3f fix(arena): refuse a fingerprint-less session lock, flatten append_event details (G8, G9)
+28519bb fix(arena): admit a temp-0 backend only when it's actually deterministic (G7)
+4808a5f fix(arena): warn on an unset --api-key-env instead of running silently (G6)
+3d2e39c fix(arena): close game connection and cached backend clients on every exit path (G5)
+784fc1c fix(arena): classify agent/GameState construction failures as harness crashes (G4)
+a646ce2 fix(arena): recognize real Tier-2 reload successes, mark unverifiable reloads distinctly (G2, G3)
+93099bb fix(arena): stop scoring never-dispatched calls as successes, fabricating 0 mutations (G1, G14)
+
+## Files changed
+ src/civ_mcp/arena/action_metrics.py    |  38 ++-
+ src/civ_mcp/arena/analyze.py           |  20 +-
+ src/civ_mcp/arena/backends.py          |  10 +
+ src/civ_mcp/arena/benchmark_backend.py |  17 +-
+ src/civ_mcp/arena/benchmark_report.py  | 113 ++++++--
+ src/civ_mcp/arena/benchmark_runner.py  | 222 +++++++++++----
+ src/civ_mcp/arena/benchmark_state.py   |  35 ++-
+ src/civ_mcp/arena/benchmark_store.py   |  45 +++-
+ src/civ_mcp/game_launcher.py           |  15 +-
+ src/civ_mcp/lua/__init__.py            |   1 +
+ src/civ_mcp/lua/benchmark.py           |  33 ++-
+ tests/arena/test_action_metrics.py     |  84 ++++++
+ tests/arena/test_analyze.py            |  19 +-
+ tests/arena/test_benchmark_backend.py  |  41 +++
+ tests/arena/test_benchmark_report.py   | 154 +++++++++++
+ tests/arena/test_benchmark_runner.py   | 475 ++++++++++++++++++++++++++++++++-
+ tests/arena/test_benchmark_state.py    |  43 +++
+ tests/arena/test_benchmark_store.py    |  78 ++++++
+ tests/test_game_launcher.py            |   7 +
+ tests/test_server_auto_boot.py         |  21 ++
+ 20 files changed, 1351 insertions(+), 120 deletions(-)
+
+## Diff
+diff --git a/src/civ_mcp/arena/action_metrics.py b/src/civ_mcp/arena/action_metrics.py
+index 8d69b39..a0fa9e7 100644
+--- a/src/civ_mcp/arena/action_metrics.py
++++ b/src/civ_mcp/arena/action_metrics.py
+@@ -27,36 +27,41 @@ class PredicateError(Exception):
+ 
+     Raised for an unknown predicate ``kind`` or a typed ``path`` that does
+     not resolve against the given state. An evaluator that cannot resolve a
+     predicate must never fall back to False/0 — that reports "did not
+     happen" when the true answer is "couldn't tell", which would silently
+     under-score every scenario where a state shape assumption is wrong.
+     """
+ 
+ 
+ def classify_result(result: str) -> str:
+-    """Classify a raw tool-result string as "success" or "domain_rejection".
++    """Classify a raw tool-result string as "success", "domain_rejection",
++    or "not_dispatched".
+ 
+     Mirrors ``analyze._is_error_result``'s real ``game_state.py``
+     conventions exactly: title-case ``Error: ...`` and pipe-delimited
+     ``...|BLOCKED`` both mean the call reached the game engine and the game
+     rejected it.
+ 
+-    Deliberately does NOT treat an ``UNAVAILABLE: ...`` prefix as a domain
+-    rejection. ``agent.py``'s ``_unavailable_result`` emits that string for
+-    gated / out-of-tier / unknown-tool calls that never reach the game
+-    engine at all — the call is intercepted before dispatch, and the same
+-    event is already recorded in ``invalid_tool_calls``. Counting it here
+-    too would both double-count it and mislabel an agent-level gating
+-    outcome as a legal-but-rejected game action.
++    An ``UNAVAILABLE: ...`` / ``MALFORMED_ARGUMENTS: ...`` prefix means the
++    call was intercepted before it ever reached the game engine (gated /
++    out-of-tier / unknown-tool / bad-argument calls from ``agent.py``'s
++    ``_unavailable_result`` and malformed-arguments path). Such a call is
++    neither a domain rejection (the game never saw it) nor a success (it
++    was never dispatched) — treating it as "success" would let a
++    never-dispatched call satisfy a ``successful_tool_call`` predicate,
++    scoring an out-of-tier tool call as a treatment success. The same event
++    is already recorded separately in ``invalid_tool_calls``.
+     """
+     normalized = (result or "").strip().lower()
++    if normalized.startswith("unavailable") or normalized.startswith("malformed_arguments"):
++        return "not_dispatched"
+     if normalized.startswith("error") or "|blocked" in normalized:
+         return "domain_rejection"
+     return "success"
+ 
+ 
+ def _resolve_path(state: object, path: Sequence[object]) -> object:
+     """Navigate a typed path (dict keys / list indices) through ``state``.
+ 
+     Raises ``PredicateError`` the moment the path fails to resolve — missing
+     state, a missing key, or an out-of-range index — rather than returning a
+@@ -222,20 +227,31 @@ def classify_action_quality(
+     controlled-position benchmark concept). Historical records with no
+     ``objectives`` report ``useful_actions: None`` and
+     ``useful_action_coverage: "unavailable"`` rather than silently treating
+     every successful mutation as useful.
+     """
+     domain_rejections = 0
+     successful_mutations = 0
+     useful_actions = 0
+     repetitions = 0
+     last_digest_by_call: dict[str, object] = {}
++    # G14: historical arena records never carried state_digest_before/after
++    # at all (key absent, not merely None) -- comparing absent-vs-absent
++    # digests silently reports "no mutation" for data that was never
++    # measured. Digest-dependent counts (successful_mutations, and
++    # repetitions/loop_excess since their loop-detection also compares
++    # digests) must report None rather than a fabricated 0 in that case. An
++    # empty step list has nothing to be uncertain about, so it stays a real
++    # 0 rather than None.
++    digest_fields_present = not steps or any(
++        "state_digest_before" in step or "state_digest_after" in step for step in steps
++    )
+ 
+     for step in steps:
+         result_kind = classify_result(str(step.get("tool_result_full", "")))
+         if result_kind == "domain_rejection":
+             domain_rejections += 1
+ 
+         changed = step.get("state_digest_before") != step.get("state_digest_after")
+         is_successful_mutation = result_kind == "success" and changed
+         successful_mutations += is_successful_mutation
+ 
+@@ -256,16 +272,16 @@ def classify_action_quality(
+         call_key = _call_key(step)
+         if call_key in last_digest_by_call and last_digest_by_call[call_key] == step.get(
+             "state_digest_before"
+         ):
+             repetitions += 1
+         last_digest_by_call[call_key] = step.get("state_digest_after")
+ 
+     return {
+         "invalid_calls": len(invalid_tool_calls),
+         "domain_rejections": domain_rejections,
+-        "successful_mutations": successful_mutations,
++        "successful_mutations": successful_mutations if digest_fields_present else None,
+         "useful_actions": useful_actions if objectives else None,
+         "useful_action_coverage": "objective_verified" if objectives else "unavailable",
+-        "repetitions": repetitions,
+-        "loop_excess": repetitions,
++        "repetitions": repetitions if digest_fields_present else None,
++        "loop_excess": repetitions if digest_fields_present else None,
+     }
+diff --git a/src/civ_mcp/arena/analyze.py b/src/civ_mcp/arena/analyze.py
+index da3a3b3..877d53e 100644
+--- a/src/civ_mcp/arena/analyze.py
++++ b/src/civ_mcp/arena/analyze.py
+@@ -1156,24 +1156,26 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:
+         task_lost_count = 0
+         task_failed_count = 0
+         gp_calls = 0
+         trade_calls = 0
+         religion_wc_calls = 0
+ 
+         # Task 1 — shared action-quality classifier accumulators
+         aq_invalid_calls = 0
+         aq_domain_rejections = 0
+         aq_successful_mutations = 0
++        aq_successful_mutations_available = False
+         aq_useful_actions = 0
+         aq_useful_actions_available = False
+         aq_repetitions = 0
+         aq_loop_excess = 0
++        aq_repetitions_available = False
+ 
+         for rec in records:
+             turn: int = rec.get("turn", 0)
+             kind = _turn_kind(rec)
+             state_after: dict = rec.get("state_after") or {}
+             state_delta: dict = rec.get("state_delta") or {}
+             steps = _steps_of(rec)
+             invalid_calls: list = _counted_invalid_calls(rec)
+             step_count: int = rec.get("step_count") or len(steps)
+             action_quality: "dict | None" = None
+@@ -1221,23 +1223,27 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:
+                     # records carry no "objectives" mapping (the controlled-
+                     # position benchmark scorer is a later task), so this
+                     # naturally reports useful_actions: None for them.
+                     action_quality = classify_action_quality(
+                         steps=steps,
+                         invalid_tool_calls=invalid_calls,
+                         objectives=rec.get("objectives") or (),
+                     )
+                     aq_invalid_calls += action_quality["invalid_calls"]
+                     aq_domain_rejections += action_quality["domain_rejections"]
+-                    aq_successful_mutations += action_quality["successful_mutations"]
+-                    aq_repetitions += action_quality["repetitions"]
+-                    aq_loop_excess += action_quality["loop_excess"]
++                    if action_quality["successful_mutations"] is not None:
++                        aq_successful_mutations_available = True
++                        aq_successful_mutations += action_quality["successful_mutations"]
++                    if action_quality["repetitions"] is not None:
++                        aq_repetitions_available = True
++                        aq_repetitions += action_quality["repetitions"]
++                        aq_loop_excess += action_quality["loop_excess"]
+                     if action_quality["useful_actions"] is not None:
+                         aq_useful_actions_available = True
+                         aq_useful_actions += action_quality["useful_actions"]
+ 
+                 # Task classification counts stay over played + slept
+                 # records: pre-model task follow-through runs on slept
+                 # turns too, so their follow-through is real behavior --
+                 # only a failed turn (handled in the branch above) is
+                 # excluded.
+                 task_counts = _classify_task_results(rec)
+@@ -1292,27 +1298,29 @@ def analyze(transcript_records: list[dict], cost_records: list[dict]) -> dict:
+                 "task_blocked": task_blocked,
+                 "task_lost": task_lost_count,
+                 "task_failed": task_failed_count,
+                 "great_people_tool_calls": gp_calls,
+                 "trade_route_tool_calls": trade_calls,
+                 "religion_wc_tool_calls": religion_wc_calls,
+             },
+             "action_quality": {
+                 "invalid_calls": aq_invalid_calls,
+                 "domain_rejections": aq_domain_rejections,
+-                "successful_mutations": aq_successful_mutations,
++                "successful_mutations": (
++                    aq_successful_mutations if aq_successful_mutations_available else None
++                ),
+                 "useful_actions": aq_useful_actions if aq_useful_actions_available else None,
+                 "useful_action_coverage": (
+                     "objective_verified" if aq_useful_actions_available else "unavailable"
+                 ),
+-                "repetitions": aq_repetitions,
+-                "loop_excess": aq_loop_excess,
++                "repetitions": aq_repetitions if aq_repetitions_available else None,
++                "loop_excess": aq_loop_excess if aq_repetitions_available else None,
+             },
+         }
+ 
+     return {
+         "by_player": result,
+         "config_summary": config_summary(transcript_records),
+         "behavior": behavior_metrics(transcript_records),
+         "attention": (
+             attention_metrics(transcript_records)
+             if _has_attention_data(transcript_records)
+diff --git a/src/civ_mcp/arena/backends.py b/src/civ_mcp/arena/backends.py
+index 3cfe991..afb26ff 100644
+--- a/src/civ_mcp/arena/backends.py
++++ b/src/civ_mcp/arena/backends.py
+@@ -68,20 +68,30 @@ class OpenAICompatBackend:
+     ):
+         self.model = model
+         self.base_url = base_url
+         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+         # Defaulting to the frozen configs' own defaults (rather than leaving
+         # None) reproduces the pre-Task-4 wire behavior exactly: no sampling
+         # keys sent, three-attempt retry.
+         self.sampling = sampling or SamplingConfig()
+         self.retry_policy = retry_policy or RetryPolicy()
+ 
++    async def aclose(self) -> None:
++        """Close the underlying AsyncOpenAI client's connection pool.
++
++        G5: per-(model, seed) backends are cached for the life of a
++        benchmark session with nothing closing them on any exit path --
++        expose a close hook so a caller (the benchmark runner's cleanup)
++        has something real to call.
++        """
++        await self._client.close()
++
+     async def chat(self, messages: list[dict], tools: list[dict]) -> Reply:
+         kw = dict(
+             model=self.model,
+             messages=messages,
+             max_tokens=self.sampling.max_tokens,
+             timeout=REQUEST_TIMEOUT_S,
+             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+         )
+         if self.sampling.temperature is not None:
+             kw["temperature"] = self.sampling.temperature
+diff --git a/src/civ_mcp/arena/benchmark_backend.py b/src/civ_mcp/arena/benchmark_backend.py
+index 40f8c9e..8cdb9b5 100644
+--- a/src/civ_mcp/arena/benchmark_backend.py
++++ b/src/civ_mcp/arena/benchmark_backend.py
+@@ -48,20 +48,26 @@ class BackendProbe:
+     model_confirmed: bool
+     seed_honored: bool
+     latencies_s: list[float] = field(default_factory=list)
+     errors: list[str] = field(default_factory=list)
+     # One of: "honored", "not_honored", "not_applicable_greedy" (locked seed
+     # but sampling.temperature == 0 -- seed honoring is unobservable and
+     # irrelevant under greedy decoding), "no_seed_configured", or
+     # "probe_error". `None` only for a BackendProbe constructed without this
+     # field (pre-F15 callers/tests).
+     seed_verdict: str | None = None
++    # G7: whether the `samples` identical, exact-sampling calls all agreed
++    # with each other. Always computed by probe_backend regardless of the
++    # seed-verdict path taken; `False` by default for a BackendProbe
++    # constructed without this field (pre-G7 callers/tests) so the field's
++    # mere absence never silently reads as "consistent".
++    repeated_consistent: bool = False
+ 
+ 
+ @dataclass(frozen=True)
+ class HealthProbe:
+     """Structured verdict from a single, independently-bounded identity
+     canary -- used to fail fast on a wedged or misrouted backend without
+     waiting out the backend's own (much larger) per-step request timeout."""
+     healthy: bool
+     model: str | None
+     latency_s: float | None
+@@ -122,23 +128,27 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
+ 
+     seed_honored = False
+     seed_verdict: str | None = None
+     if sampling is None or locked_seed is None:
+         seed_verdict = "no_seed_configured"
+     elif temperature == 0:
+         # F15 ruling: at temperature == 0 (greedy/argmax decoding), seed
+         # honoring is unobservable and irrelevant -- varying the seed
+         # cannot change a genuinely greedy backend's output, so the
+         # differing-seed call below would always (mis)report "not
+-        # honored" for a perfectly healthy backend. Skip it entirely;
+-        # repeated-consistency (already checked above) is still required.
+-        seed_verdict = "not_applicable_greedy"
++        # honored" for a perfectly healthy backend. Skip it entirely --
++        # but only when repeated-consistency actually held (G7): a
++        # backend that disagrees with itself across the `samples` calls
++        # at the SAME locked config is not honoring anything, greedy or
++        # not, and must still fail admission via "not_honored" rather
++        # than slip through as "not applicable".
++        seed_verdict = "not_applicable_greedy" if repeated_consistent else "not_honored"
+     elif repeated_consistent:
+         varied = replace(sampling, seed=locked_seed + 1)
+         backend.sampling = varied
+         try:
+             varied_reply = await backend.chat(messages, tools)
+             seed_honored = _reply_signature(varied_reply) != outputs[0]
+             seed_verdict = "honored" if seed_honored else "not_honored"
+         except Exception as exc:
+             errors.append(str(exc))
+             seed_honored = False
+@@ -149,20 +159,21 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
+         seed_verdict = "not_honored"
+ 
+     return BackendProbe(
+         samples=samples,
+         model=backend.model if models else None,
+         model_confirmed=model_confirmed,
+         seed_honored=seed_honored,
+         latencies_s=latencies,
+         errors=errors,
+         seed_verdict=seed_verdict,
++        repeated_consistent=repeated_consistent,
+     )
+ 
+ 
+ async def probe_health(backend, expected_model: str, timeout_s: float) -> HealthProbe:
+     """Send one identity canary, bounded by `timeout_s` independently of
+     whatever request timeout the backend applies internally -- so a wedged
+     benchmark backend is flagged unhealthy in seconds, not minutes."""
+     start = time.monotonic()
+     try:
+         reply = await asyncio.wait_for(
+diff --git a/src/civ_mcp/arena/benchmark_report.py b/src/civ_mcp/arena/benchmark_report.py
+index 148fe47..979d497 100644
+--- a/src/civ_mcp/arena/benchmark_report.py
++++ b/src/civ_mcp/arena/benchmark_report.py
+@@ -43,20 +43,22 @@ import json
+ import statistics
+ import sys
+ from pathlib import Path
+ from typing import Any, Mapping, Sequence
+ 
+ from civ_mcp.arena.action_metrics import (
+     PredicateError,
+     classify_action_quality,
+     evaluate_predicate,
+ )
++from civ_mcp.arena.benchmark_manifest import fingerprint
++from civ_mcp.arena.benchmark_store import trial_filename
+ 
+ __all__ = [
+     "MalformedRubricError",
+     "ReportError",
+     "score_rubric",
+     "score_trial",
+     "build_report",
+     "render_markdown",
+     "write_reports",
+     "main",
+@@ -245,22 +247,34 @@ def score_trial(
+         "rubric": rubric_score,
+         "action_quality": action_quality,
+     }
+ 
+ 
+ # ---------------------------------------------------------------------------
+ # build_report
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def _usd_cost(model: object, prompt_tokens: object, completion_tokens: object) -> float:
+-    pin, pout = _PRICE_PER_1K_USD.get(str(model), (0.0, 0.0))
++def _usd_cost(model: object, prompt_tokens: object, completion_tokens: object) -> float | None:
++    """USD cost for one trial, or `None` if `model` has no price-table entry.
++
++    G13: `.get(str(model), (0.0, 0.0))` conflated "this model is free" (a
++    real priced entry of (0.0, 0.0), e.g. "local") with "no price data
++    exists for this model" -- both produced an identical $0.00
++    contribution, so a $0 total could mean either and there was no way to
++    tell which. `None` here (and `unpriced_models` in `_group_summary`)
++    makes that distinction visible instead of silently wrong.
++    """
++    key = str(model)
++    if key not in _PRICE_PER_1K_USD:
++        return None
++    pin, pout = _PRICE_PER_1K_USD[key]
+     pt = prompt_tokens if isinstance(prompt_tokens, (int, float)) else 0
+     ct = completion_tokens if isinstance(completion_tokens, (int, float)) else 0
+     return round(pt / 1000 * pin + ct / 1000 * pout, 6)
+ 
+ 
+ def _group_label(model: object, arm_id: object) -> str:
+     """Key identifying one (model, arm) group within a position. Trials
+     with no model/arm recorded (single-endpoint fixtures/runs) all fall
+     into one "unknown::unknown" group, which is exactly one group -- so a
+     single-model/single-arm run's per-group summary is numerically
+@@ -291,21 +305,31 @@ def _group_summary(scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
+         key=lambda v: (str(type(v)), v),
+     )
+     models = sorted({str(s["model"]) for s in scored if s.get("model") is not None})
+     arms = sorted({str(s["arm_id"]) for s in scored if s.get("arm_id") is not None})
+ 
+     latencies = [s["wall_clock_s"] for s in scored if isinstance(s.get("wall_clock_s"), (int, float))]
+     prompt_tokens = [s["prompt_tokens"] for s in scored if isinstance(s.get("prompt_tokens"), (int, float))]
+     completion_tokens = [
+         s["completion_tokens"] for s in scored if isinstance(s.get("completion_tokens"), (int, float))
+     ]
+-    costs = [_usd_cost(s.get("model"), s.get("prompt_tokens"), s.get("completion_tokens")) for s in scored]
++    # G13: aggregate USD totals over priced trials only; a model with no
++    # price-table entry contributes nothing to usd_total/usd_mean and is
++    # named in unpriced_models instead of silently reading as free.
++    priced_costs: list[float] = []
++    unpriced_models: set[str] = set()
++    for s in scored:
++        cost = _usd_cost(s.get("model"), s.get("prompt_tokens"), s.get("completion_tokens"))
++        if cost is None:
++            unpriced_models.add(str(s.get("model")) if s.get("model") is not None else "unknown")
++        else:
++            priced_costs.append(cost)
+ 
+     action_quality_totals: dict[str, object] = {
+         "invalid_calls": 0,
+         "domain_rejections": 0,
+         "successful_mutations": 0,
+         "repetitions": 0,
+         "useful_actions": 0,
+     }
+     any_useful_available = False
+     for s in scored:
+@@ -357,22 +381,23 @@ def _group_summary(scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
+             "median_s": statistics.median(latencies) if latencies else None,
+             "max_s": max(latencies) if latencies else None,
+         },
+         "tokens": {
+             "prompt_total": sum(prompt_tokens),
+             "completion_total": sum(completion_tokens),
+             "prompt_mean": (sum(prompt_tokens) / len(prompt_tokens)) if prompt_tokens else 0.0,
+             "completion_mean": (sum(completion_tokens) / len(completion_tokens)) if completion_tokens else 0.0,
+         },
+         "cost": {
+-            "usd_total": round(sum(costs), 6),
+-            "usd_mean": round(sum(costs) / len(costs), 6) if costs else 0.0,
++            "usd_total": round(sum(priced_costs), 6),
++            "usd_mean": round(sum(priced_costs) / len(priced_costs), 6) if priced_costs else 0.0,
++            "unpriced_models": sorted(unpriced_models),
+         },
+         "action_quality": action_quality_totals,
+     }
+ 
+ 
+ def _position_summary(position_id: str, scored: Sequence[Mapping[str, object]]) -> dict[str, object]:
+     """One position's report section: `trial_count` is the raw total across
+     every model/arm scheduled at this position (informational only -- it is
+     never used to compute a score), and `by_group` holds one `_group_summary`
+     per distinct (model, arm) pair actually observed at this position. F1:
+@@ -534,29 +559,36 @@ def _completeness_section(
+ #
+ #     {
+ #       "scorer_fingerprint": "<non-empty str>",
+ #       "positions": {
+ #         "<position_id>": {
+ #           "rubric": [...],       # a benchmark_report.score_rubric-shaped rubric
+ #           "objectives": [...],   # optional; defaults to () if absent
+ #         },
+ #         ...
+ #       },
+-#       "session_fingerprint": "<any>",   # optional; echoed into the report, not required
++#       "session_fingerprint": "<non-empty str>",  # required (G8: BenchmarkStore
++#                                                    # refuses to create/open a run
++#                                                    # without one); echoed into the
++#                                                    # report and cross-checked
++#                                                    # against every trial's own stamp
+ #       "ungated_smoke": <bool>,          # optional; defaults to False
+ #       ...                                # any other writer-specific evidence is ignored here
+ #     }
+ #
+ # A session.json missing `scorer_fingerprint`, missing `positions` entirely,
+ # or missing a `positions[<position_id>]["rubric"]` for any position a
+ # committed trial references, aborts report generation (`ReportError`) --
+ # this module never silently treats absent rubric evidence as "score 0".
++# G8: whenever session.json carries a session_fingerprint, a committed trial
++# with no session_fingerprint stamp of its own is ALSO a hard ReportError --
++# not merely a mismatch check that no-ops when either side is missing.
+ 
+ 
+ def build_report(run_dir: str | Path) -> dict[str, object]:
+     """Derive a full report purely from `<run_dir>/session.json`,
+     `<run_dir>/schedule.json`, and `<run_dir>/trials/*.json`. Never reads
+     `<run_dir>/attempts/` -- see module docstring.
+ 
+     `session.json` must satisfy the canonical schema documented in the
+     comment block immediately above this function.
+ 
+@@ -575,69 +607,93 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
+ 
+     positions_lock = lock.get("positions")
+     if not isinstance(positions_lock, Mapping):
+         raise ReportError("session.json is missing a 'positions' mapping")
+ 
+     schedule = _read_json(run_dir / "schedule.json")
+     schedule_trials = schedule.get("trials") if isinstance(schedule, Mapping) else None
+     if not isinstance(schedule_trials, Sequence):
+         raise ReportError("schedule.json is missing a 'trials' list")
+ 
++    # G11: the runner re-verifies schedule.json against session.json's
++    # schedule_fingerprint on resume (see benchmark_runner._run_async) --
++    # build_report read schedule.json completely unverified, so a swapped
++    # arm order (or any other post-hoc edit) would silently flip
++    # calibration deltas. Recompute the fingerprint exactly as the runner
++    # does (same `fingerprint` helper, over the whole parsed schedule.json
++    # mapping) and hard-fail on a mismatch. Only activates when the lock
++    # actually declares a schedule_fingerprint.
++    lock_schedule_fingerprint = lock.get("schedule_fingerprint")
++    if lock_schedule_fingerprint:
++        actual_schedule_fingerprint = fingerprint(schedule)
++        if actual_schedule_fingerprint != lock_schedule_fingerprint:
++            raise ReportError(
++                "schedule.json does not match session.json's schedule_fingerprint "
++                f"(expected {lock_schedule_fingerprint!r}, found "
++                f"{actual_schedule_fingerprint!r}) -- refusing to score a run whose "
++                "schedule may have been tampered with"
++            )
++
+     scored_by_position: dict[str, list[dict[str, object]]] = {}
+     scored_by_pair: dict[str, list[dict[str, object]]] = {}
+     # Completeness bookkeeping: expected-vs-committed per position, computed
+     # from the schedule itself so a position that was scheduled but never
+     # produced a single committed trial still shows up in the report as
+     # "never ran" -- distinct from a position that ran and scored 0. See
+     # `_completeness_section`.
+     expected_by_position: dict[str, int] = {}
+     committed_by_position: dict[str, int] = {}
+ 
+     for entry in schedule_trials:
+         if not isinstance(entry, Mapping):
+             raise ReportError(f"schedule.json trial entry must be a mapping, got {entry!r}")
+         index = entry.get("index")
+         position_id = entry.get("position_id")
+         if index is None or position_id is None:
+             raise ReportError(f"schedule.json trial entry missing 'index'/'position_id': {entry!r}")
+         position_id = str(position_id)
+         expected_by_position[position_id] = expected_by_position.get(position_id, 0) + 1
+ 
+-        trial_path = run_dir / "trials" / f"trial-{int(index):03d}.json"
++        trial_path = run_dir / "trials" / trial_filename(index)
+         if not trial_path.exists():
+             # Not yet committed -- a report over an in-progress run only
+             # covers what has actually been committed so far.
+             continue
+         committed_by_position[position_id] = committed_by_position.get(position_id, 0) + 1
+         trial = _read_json(trial_path)
+         if not isinstance(trial, Mapping):
+             raise ReportError(f"{trial_path} must be a JSON object, got {type(trial).__name__}")
+ 
+-        # F8: a stale/copied trial-NNN.json is indistinguishable from
+-        # current-lock evidence by filename alone. When both session.json
+-        # and the trial carry a session_fingerprint, they must agree --
+-        # fail closed rather than silently scoring evidence that doesn't
+-        # belong to this session's current lock. (A trial with no stamp at
+-        # all predates this provenance check and is not itself proof of a
+-        # mismatch, so it is not rejected on that basis alone.)
++        # F8/G8: a stale/copied trial-NNN.json is indistinguishable from
++        # current-lock evidence by filename alone. session_fingerprint is
++        # a required session.json field (BenchmarkStore refuses to create
++        # or open a run without one, see benchmark_store.G8) -- so whenever
++        # the lock carries one, every trial must be stamped and must
++        # agree. The old `lock_fp and trial_fp and ...` check was a no-op
++        # whenever either side was missing/falsy, which let an unstamped
++        # trial under a stamped lock pass silently; a missing stamp is now
++        # itself a hard failure, not just a mismatch.
+         lock_session_fingerprint = lock.get("session_fingerprint")
+         trial_session_fingerprint = trial.get("session_fingerprint")
+-        if (
+-            lock_session_fingerprint
+-            and trial_session_fingerprint
+-            and trial_session_fingerprint != lock_session_fingerprint
+-        ):
+-            raise ReportError(
+-                f"{trial_path}: session_fingerprint {trial_session_fingerprint!r} does not "
+-                f"match session.json's session_fingerprint {lock_session_fingerprint!r} -- "
+-                "refusing to score evidence that does not belong to this session's current lock"
+-            )
++        if lock_session_fingerprint:
++            if not trial_session_fingerprint:
++                raise ReportError(
++                    f"{trial_path}: has no session_fingerprint stamp, but session.json "
++                    f"carries one ({lock_session_fingerprint!r}) -- refusing to score "
++                    "unstamped evidence under a stamped lock"
++                )
++            if trial_session_fingerprint != lock_session_fingerprint:
++                raise ReportError(
++                    f"{trial_path}: session_fingerprint {trial_session_fingerprint!r} does not "
++                    f"match session.json's session_fingerprint {lock_session_fingerprint!r} -- "
++                    "refusing to score evidence that does not belong to this session's current lock"
++                )
+ 
+         position_lock = positions_lock.get(position_id)
+         if not isinstance(position_lock, Mapping) or "rubric" not in position_lock:
+             raise ReportError(
+                 f"session.json has no rubric recorded for position {position_id!r}"
+             )
+         rubric = position_lock["rubric"]
+         objectives = position_lock.get("objectives") or ()
+ 
+         scored = score_trial(trial, rubric, objectives=objectives)
+@@ -740,21 +796,28 @@ def _render_group(summary: Mapping[str, object]) -> list[str]:
+             mean_s=_fmt(summary["latency"]["mean_s"]),
+             median_s=_fmt(summary["latency"]["median_s"]),
+             max_s=_fmt(summary["latency"]["max_s"]),
+         )
+     )
+     lines.append(
+         "- Tokens: prompt_total={prompt_total}, completion_total={completion_total}".format(
+             **summary["tokens"]
+         )
+     )
+-    lines.append(f"- Cost (USD): total={_fmt(summary['cost']['usd_total'])}")
++    cost = summary["cost"]
++    if cost["unpriced_models"]:
++        lines.append(
++            f"- Cost (USD): total={_fmt(cost['usd_total'])} (UNPRICED, excluded from "
++            f"total: {', '.join(cost['unpriced_models'])})"
++        )
++    else:
++        lines.append(f"- Cost (USD): total={_fmt(cost['usd_total'])}")
+     aq = summary["action_quality"]
+     lines.append(
+         "- Action quality: invalid_calls={invalid_calls}, domain_rejections={domain_rejections}, "
+         "successful_mutations={successful_mutations}, repetitions={repetitions}, "
+         "useful_actions={useful_actions} ({useful_action_coverage})".format(
+             invalid_calls=aq["invalid_calls"],
+             domain_rejections=aq["domain_rejections"],
+             successful_mutations=aq["successful_mutations"],
+             repetitions=aq["repetitions"],
+             useful_actions=_fmt(aq["useful_actions"]),
+diff --git a/src/civ_mcp/arena/benchmark_runner.py b/src/civ_mcp/arena/benchmark_runner.py
+index 8a92bda..7d8aa8f 100644
+--- a/src/civ_mcp/arena/benchmark_runner.py
++++ b/src/civ_mcp/arena/benchmark_runner.py
+@@ -65,20 +65,21 @@ from civ_mcp.arena.benchmark_manifest import (
+     fingerprint,
+     load_position_manifest,
+     load_suite_manifest,
+ )
+ from civ_mcp.arena.benchmark_schedule import TrialSpec, compile_schedule
+ from civ_mcp.arena.benchmark_state import (
+     BenchmarkStateError,
+     capture_canonical_state,
+     diff_state,
+     state_digest,
++    verify_expected_state_digest,
+ )
+ from civ_mcp.arena.benchmark_store import BenchmarkStore, SessionLockMismatchError
+ from civ_mcp.arena.popups import dismiss_blocking_popups
+ from civ_mcp.connection import GameConnection
+ from civ_mcp.game_lifecycle import load_game_save
+ from civ_mcp.game_state import GameState
+ from civ_mcp.run_id import is_safe_run_id
+ 
+ log = logging.getLogger(__name__)
+ 
+@@ -133,61 +134,79 @@ class FailureClass(str, Enum):
+     unknown exception) are deliberately not members here.
+     """
+ 
+     RELOAD_OR_RECONNECT = "reload_or_reconnect_failure"
+     POPUP_HYGIENE = "popup_hygiene_failure"
+     HARNESS_CRASH = "harness_crash"
+     EPISODE_TIMEOUT_UNHEALTHY = "episode_timeout_unhealthy_endpoint"
+     TRANSPORT_FAILURE_UNHEALTHY = "transport_failure_unhealthy_endpoint"
+ 
+ 
+-ReloadPositionFn = Callable[[str], Awaitable[None]]
++ReloadPositionFn = Callable[[str], Awaitable[bool]]
+ DismissPopupsFn = Callable[[], Awaitable[str]]
+ CaptureStateFn = Callable[[], Awaitable[Mapping[str, object]]]
+ MakeAgentFn = Callable[[TrialSpec], Any]
+ ProbeHealthFn = Callable[[], Awaitable[HealthProbe]]
+ 
+ 
+ @dataclasses.dataclass
+ class RunnerDependencies:
+     """Everything `BenchmarkRunner` needs injected, so its state machine is
+     testable with plain async fakes and never touches a live game or
+     network itself.
+ 
+     - `reload_position(position_id)`: reload the named position's save,
+       confirm the game continues, and reconnect -- one failure class
+       (`FailureClass.RELOAD_OR_RECONNECT`) covers this whole sub-pipeline.
++      Returns `verified: bool` -- True when the reload observed positive
++      evidence the world came back up (an observed port drop, or a Tier-2
++      OCR/menu navigation success); False when it only has a
++      success-shaped-but-unconfirmable result (G3: the F16(b) stable-
++      open-port fallback is structurally indistinguishable from an inert
++      Network.LoadGame from the launcher's side -- only the runner's own
++      checksum step can tell them apart). A caller MUST return an actual
++      bool; a legacy `None`/other non-bool return is a contract violation
++      and is NOT treated as verified=True (fail closed) -- see
++      `run_trial`.
+     - `dismiss_popups()`: best-effort popup hygiene before the episode.
+     - `capture_state()`: query and return the canonical queried-state
+       projection -- called once for the pre-episode checksum and once more
+       for the post-episode final-state capture. Takes no arguments: the
+       caller (production wiring or a test) already closes over whatever
+       connection/player/tile_coords it needs.
+     - `make_agent(spec)`: construct a fresh backend + agent conversation for
+       one `TrialSpec` (arm-scoped tool tier, model, sampling). Production
+       wiring MUST construct this agent with `capture_state` and the
+       position manifest's `tile_coords` so counted trials record per-step
+       state digests (see `SingleTurnAgent`).
+     - `probe_health()`: an immediate, independently-bounded identity canary
+       against the exact endpoint just used, run right after an
+       `EpisodeTimedOut` / request-timeout / transport-failure exception.
+     - `connection`: the live game connection threaded into `agent.run()` as
+       `gs.conn` (only `SingleTurnAgent`'s own optional per-step capture
+       uses it) -- `None` is fine for fakes that never touch it.
++    - `aclose`: optional async cleanup callable closing every resource this
++      `RunnerDependencies` opened that isn't `connection` itself (G5: the
++      per-(model, seed) cached backend clients in the live wiring) --
++      `None` is fine for fakes with nothing to close. The live game
++      `connection`'s own close/disconnect is the caller's (`_run_async`'s)
++      responsibility, not this callable's, since the caller owns
++      `connection`'s lifetime independently of `RunnerDependencies`.
+     """
+ 
+     reload_position: ReloadPositionFn
+     dismiss_popups: DismissPopupsFn
+     capture_state: CaptureStateFn
+     make_agent: MakeAgentFn
+     probe_health: ProbeHealthFn
+     connection: Any = None
++    aclose: Callable[[], Awaitable[None]] | None = None
+ 
+ 
+ class BenchmarkRunner:
+     """Runs one benchmark session's schedule strictly serially against
+     `store`, resuming cleanly from whatever `store` already has committed.
+     """
+ 
+     MAX_ATTEMPTS = MAX_INFRASTRUCTURE_ATTEMPTS
+ 
+     def __init__(
+@@ -270,21 +289,30 @@ class BenchmarkRunner:
+                         "attempts (including attempts from a prior process); stopping "
+                         "the session rather than shrinking the arm"
+                     ),
+                 },
+             )
+ 
+         self.store.append_event("trial_attempt_started", trial_index=spec.index)
+ 
+         # -- reload / continue / reconnect ----------------------------------
+         try:
+-            await self._deps.reload_position(spec.position_id)
++            reload_verified = await self._deps.reload_position(spec.position_id)
++            if not isinstance(reload_verified, bool):
++                # G3: fail closed on a contract violation rather than
++                # silently treating a legacy `None` (or any other non-bool)
++                # return as verified=True.
++                raise TypeError(
++                    "RunnerDependencies.reload_position must return a bool "
++                    f"(verified); got {type(reload_verified).__name__}: "
++                    f"{reload_verified!r}"
++                )
+         except Exception as exc:  # noqa: BLE001 - one scoped step, one failure class
+             self._record_infra_attempt(spec.index, FailureClass.RELOAD_OR_RECONNECT, exc)
+             return
+ 
+         # -- popup hygiene ---------------------------------------------------
+         try:
+             popup_status = await self._deps.dismiss_popups()
+         except Exception as exc:  # noqa: BLE001
+             self._record_infra_attempt(spec.index, FailureClass.POPUP_HYGIENE, exc)
+             return
+@@ -308,51 +336,86 @@ class BenchmarkRunner:
+             self._record_infra_attempt(spec.index, FailureClass.HARNESS_CRASH, exc)
+             return
+ 
+         observed_digest = state_digest(observed_state)
+         if observed_digest != self._expected_digest:
+             # F12: journaling two opaque hashes is useless for actually
+             # seeing what differed -- include the field-level diff so a
+             # human (or a later automated triage pass) can tell "trivial
+             # numeric-type drift" from "the reload landed on the wrong
+             # save" without re-deriving it by hand.
++            diff = diff_state(self._expected_state, observed_state)
++            if not reload_verified:
++                # G3: the immediately preceding reload could not itself
++                # confirm the world came back up (F16(b) stable-open-port
++                # fallback) -- a mismatch here is exactly what an inert
++                # Network.LoadGame would also look like, so retry the
++                # reload instead of aborting a session over what may be a
++                # harness artifact rather than a real state defect.
++                self.store.append_event(
++                    "checksum_mismatch_unverified_reload",
++                    trial_index=spec.index,
++                    failure_class=FailureClass.RELOAD_OR_RECONNECT.value,
++                    details={
++                        "expected_digest": self._expected_digest,
++                        "observed_digest": observed_digest,
++                        "diff": diff,
++                    },
++                )
++                self._record_infra_attempt(
++                    spec.index,
++                    FailureClass.RELOAD_OR_RECONNECT,
++                    RuntimeError(
++                        "checksum mismatch after unverified reload -- retrying reload"
++                    ),
++                )
++                return
+             self.store.append_event(
+                 "checksum_mismatch",
+                 trial_index=spec.index,
+                 failure_class="checksum_mismatch",
+                 details={
+                     "expected_digest": self._expected_digest,
+                     "observed_digest": observed_digest,
+-                    "diff": diff_state(self._expected_state, observed_state),
++                    "diff": diff,
+                 },
+             )
+             raise SessionAborted(
+                 "checksum_mismatch",
+                 {
+                     "trial_index": spec.index,
+                     "expected_digest": self._expected_digest,
+                     "observed_digest": observed_digest,
+                     "message": (
+                         f"trial {spec.index}: canonical-state checksum mismatch after "
+                         "reload; aborting the session without a model observation"
+                     ),
+                 },
+             )
+ 
+         # -- fresh backend/agent, episode --------------------------------------
+-        agent = self._deps.make_agent(spec)
+-        # Registry tools call real GameState methods (gs.get_units() etc.);
+-        # a bare SimpleNamespace(conn=...) makes every dispatched game tool
+-        # raise AttributeError in a live session -- swallowed into ERROR
+-        # steps, so a trial would commit as evidence of a model that
+-        # "couldn't act" rather than surfacing this wiring bug.
+-        gs = GameState(self._deps.connection)
++        # G4: construction failures here (a bad model/backend config, a
++        # GameState construction failure) must be classified like every
++        # other harness step, not escape run_trial as a raw, unjournalled
++        # traceback.
++        try:
++            agent = self._deps.make_agent(spec)
++            # Registry tools call real GameState methods (gs.get_units()
++            # etc.); a bare SimpleNamespace(conn=...) makes every dispatched
++            # game tool raise AttributeError in a live session -- swallowed
++            # into ERROR steps, so a trial would commit as evidence of a
++            # model that "couldn't act" rather than surfacing this wiring
++            # bug.
++            gs = GameState(self._deps.connection)
++        except Exception as exc:  # noqa: BLE001
++            self._record_infra_attempt(spec.index, FailureClass.HARNESS_CRASH, exc)
++            return
+         turn = observed_state.get("turn")
+ 
+         try:
+             evidence = await agent.run(gs, self.player_id, turn)
+         except EpisodeTimedOut as exc:
+             await self._handle_timeout_like(spec, exc, observed_state, admits_runaway=True, agent=agent)
+             return
+         except openai.APITimeoutError as exc:
+             # A single request's own timeout -- the agent's episode wall was
+             # never reached, but this is the same "request/episode timeout"
+@@ -602,26 +665,42 @@ def _build_arg_parser() -> argparse.ArgumentParser:
+ 
+ 
+ def _resolve_position_path(suite_path: Path, position_id: str) -> Path:
+     # Convention: a suite at <benchmarks>/suites/<name>.yaml pairs with
+     # position manifests at <benchmarks>/positions/<position_id>.yaml.
+     return suite_path.resolve().parent.parent / "positions" / f"{position_id}.yaml"
+ 
+ 
+ def _reload_result_is_success(result: object) -> bool:
+     """Classify a raw `load_game_save` / `game_launcher.continue_after_lua_load`
+-    result string. Success strings start with "Loaded " or mention "world
+-    ready" (see `game_launcher.continue_after_lua_load`'s return values);
+-    everything else (an "Error: ..." string, a "WARNING: ..." string, or any
+-    other unrecognized text) is a failure."""
++    / `game_launcher.restart_and_load` result string.
++
++    G2: the original check only recognized the Tier-0/1 frontend-Lua
++    strings ("Loaded " prefix / "world ready"). Real Tier-2 successes look
++    different: `_navigate_to_save_sync` returns "Save loading (Ns).
++    Steps: ..." and `restart_and_load` returns a compound
++    "Kill: ... | Launch: ... | Load: Save loading (...)" string -- both
++    were misclassified as failures, burning all infrastructure attempts on
++    a working reload.
++
++    Success requires a recognized success marker AND the absence of any
++    failure marker (a failure marker anywhere in the string -- e.g. inside
++    a compound Kill/Launch/Load string -- always wins). Unrecognized text
++    stays a failure (fail closed)."""
+     text = str(result)
+-    return text.startswith("Loaded ") or "world ready" in text
++    has_success_marker = (
++        text.startswith("Loaded ") or "world ready" in text or "Save loading (" in text
++    )
++    has_failure_marker = any(
++        marker in text for marker in ("FAILED", "ABORTED", "WARNING:", "Error:", "not found")
++    )
++    return has_success_marker and not has_failure_marker
+ 
+ 
+ def _build_live_dependencies(
+     *,
+     connection: GameConnection,
+     position: PositionManifest,
+     suite: SuiteManifest,
+     gateway_url: str,
+     api_key: str,
+ ) -> RunnerDependencies:
+@@ -639,36 +718,45 @@ def _build_live_dependencies(
+         if key not in backend_cache:
+             backend_cache[key] = OpenAICompatBackend(
+                 gateway_url,
+                 api_key,
+                 model,
+                 sampling=dataclasses.replace(suite.sampling, seed=seed),
+                 retry_policy=RetryPolicy(max_attempts=1),
+             )
+         return backend_cache[key]
+ 
+-    async def reload_position(_position_id: str) -> None:
++    async def reload_position(_position_id: str) -> bool:
+         # load_game_save reports most failures as strings ("Error: ...",
+         # "WARNING: FireTuner port never dropped...", menu-fallback text)
+-        # rather than raising -- RunnerDependencies.reload_position's
+-        # contract is Awaitable[None], so this is the only place that ever
+-        # sees the raw result. A failure/warning string must raise here so
+-        # run_trial classifies it as a retryable RELOAD_OR_RECONNECT infra
+-        # attempt instead of silently proceeding into the checksum check
+-        # (which would then abort the whole session as checksum_mismatch --
+-        # a harness failure misreported as a state defect).
++        # rather than raising -- this is the only place that ever sees the
++        # raw result. A failure/warning string must raise here so run_trial
++        # classifies it as a retryable RELOAD_OR_RECONNECT infra attempt
++        # instead of silently proceeding into the checksum check (which
++        # would then abort the whole session as checksum_mismatch -- a
++        # harness failure misreported as a state defect).
+         result = await load_game_save(connection, position.game_save_name)
++        text = str(result)
+         if _reload_result_is_success(result):
+-            log.info("reload_position(%s): %s", _position_id, result)
+-        else:
+-            log.warning("reload_position(%s) failed: %s", _position_id, result)
+-            raise RuntimeError(f"reload_position({_position_id!r}) failed: {result}")
++            # G3: the F16(b) stable-open-port fallback returns a
++            # success-shaped string carrying an UNVERIFIED marker -- the
++            # launcher structurally cannot confirm that reload (no game
++            # connection of its own), so surface verified=False for it;
++            # every other success path (observed port drop, Tier-2
++            # OCR/menu navigation) reports verified=True.
++            verified = "UNVERIFIED" not in text
++            log.info(
++                "reload_position(%s): %s (verified=%s)", _position_id, result, verified
++            )
++            return verified
++        log.warning("reload_position(%s) failed: %s", _position_id, result)
++        raise RuntimeError(f"reload_position({_position_id!r}) failed: {result}")
+ 
+     async def dismiss_popups() -> str:
+         return await dismiss_blocking_popups(connection)
+ 
+     async def capture_state() -> Mapping[str, object]:
+         return await capture_canonical_state(connection, position.player_id, position.relevant_tiles)
+ 
+     def make_agent(spec: TrialSpec) -> SingleTurnAgent:
+         arm = next(a for a in suite.arms if a.arm_id == spec.arm_id)
+         if arm.options:
+@@ -696,27 +784,34 @@ def _build_live_dependencies(
+             tile_coords=position.relevant_tiles,
+             capture_state=capture_canonical_state,
+         )
+ 
+     async def probe_health_dep() -> HealthProbe:
+         model = last_model[0]
+         return await _probe_backend_health(
+             backend_for(model, last_seed[0]), model, timeout_s=15.0
+         )
+ 
++    async def aclose() -> None:
++        # G5: close every cached per-(model, seed) backend client -- none
++        # of them are otherwise closed on any exit path.
++        for backend in backend_cache.values():
++            await backend.aclose()
++
+     return RunnerDependencies(
+         reload_position=reload_position,
+         dismiss_popups=dismiss_popups,
+         capture_state=capture_state,
+         make_agent=make_agent,
+         probe_health=probe_health_dep,
+         connection=connection,
++        aclose=aclose,
+     )
+ 
+ 
+ async def _run_async(args: argparse.Namespace) -> int:
+     # Fail-closed FIRST, before touching the suite/position manifests, the
+     # live game connection, or the store: this CLI does not yet call the
+     # admission gates in benchmark_gates.py (check_clean_checkout /
+     # check_gpu_conflicts / admit_model_block / build_session_lock). Without
+     # this guard, once suite/position fixtures exist, `civ-arena-benchmark`
+     # would silently run a fully counted session with no admission evidence
+@@ -756,20 +851,29 @@ async def _run_async(args: argparse.Namespace) -> int:
+     position_path = _resolve_position_path(suite_path, position_id)
+     try:
+         position = load_position_manifest(position_path)
+     except (OSError, ValueError) as exc:
+         print(
+             f"civ-arena-benchmark: failed to load position manifest {position_path}: {exc}",
+             file=sys.stderr,
+         )
+         return 1
+ 
++    # G10: verify the manifest's declared expected_state_sha256 integrity
++    # anchor actually matches its expected_state, before any trial runs --
++    # not just loaded and never read again.
++    try:
++        verify_expected_state_digest(position.expected_state, position.expected_state_sha256)
++    except BenchmarkStateError as exc:
++        print(f"civ-arena-benchmark: {exc}", file=sys.stderr)
++        return 1
++
+     if not args.gateway_url:
+         print("civ-arena-benchmark: --gateway-url is required to run a session", file=sys.stderr)
+         return 1
+ 
+     try:
+         schedule = compile_schedule(suite)
+     except ValueError as exc:
+         print(f"civ-arena-benchmark: invalid schedule: {exc}", file=sys.stderr)
+         return 1
+ 
+@@ -829,43 +933,67 @@ async def _run_async(args: argparse.Namespace) -> int:
+                 f"lock's schedule_fingerprint (expected {lock['schedule_fingerprint']!r}, "
+                 f"found {existing_fingerprint!r}); refusing to resume against "
+                 "mismatched schedule evidence",
+                 file=sys.stderr,
+             )
+             return 1
+ 
+     connection = GameConnection()
+     await connection.connect()
+ 
+-    api_key = os.environ.get(args.api_key_env, "x")
+-    deps = _build_live_dependencies(
+-        connection=connection,
+-        position=position,
+-        suite=suite,
+-        gateway_url=args.gateway_url,
+-        api_key=api_key,
+-    )
++    # G5: GameConnection and every cached per-(model, seed) backend client
++    # must be closed on every exit path -- normal completion, a caught
++    # SessionAborted, or any exception that propagates -- not just the
++    # happy path. `deps` is declared before the try so the finally block
++    # can check it even if `_build_live_dependencies` itself raises.
++    deps: RunnerDependencies | None = None
++    try:
++        api_key = os.environ.get(args.api_key_env)
++        if not api_key:
++            # G6: do NOT refuse to start -- local gateways need no key, and
++            # probe_backend already fails closed on a bad key against a
++            # real endpoint. Just make the placeholder visible so it's
++            # never a silent surprise when a remote endpoint later fails
++            # the admission probe.
++            print(
++                f"civ-arena-benchmark: warning: {args.api_key_env} is unset; using "
++                'placeholder api key "x" (fine for a local gateway with no auth; '
++                "a remote endpoint will fail the admission probe)",
++                file=sys.stderr,
++            )
++            api_key = "x"
++        deps = _build_live_dependencies(
++            connection=connection,
++            position=position,
++            suite=suite,
++            gateway_url=args.gateway_url,
++            api_key=api_key,
++        )
+ 
+-    runner = BenchmarkRunner(
+-        store=store,
+-        dependencies=deps,
+-        expected_state=position.expected_state,
+-        player_id=position.player_id,
+-    )
++        runner = BenchmarkRunner(
++            store=store,
++            dependencies=deps,
++            expected_state=position.expected_state,
++            player_id=position.player_id,
++        )
+ 
+-    try:
+-        await runner.run(schedule)
+-    except SessionAborted as exc:
+-        print(f"civ-arena-benchmark: session aborted ({exc.code}): {exc}", file=sys.stderr)
+-        return 1
++        try:
++            await runner.run(schedule)
++        except SessionAborted as exc:
++            print(f"civ-arena-benchmark: session aborted ({exc.code}): {exc}", file=sys.stderr)
++            return 1
+ 
+-    return 0
++        return 0
++    finally:
++        if deps is not None and deps.aclose is not None:
++            await deps.aclose()
++        await connection.disconnect()
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
+     parser = _build_arg_parser()
+     args = parser.parse_args(argv)
+     if not is_safe_run_id(args.run_id):
+         print(f"civ-arena-benchmark: invalid --run-id {args.run_id!r}", file=sys.stderr)
+         return 1
+     try:
+         return asyncio.run(_run_async(args))
+diff --git a/src/civ_mcp/arena/benchmark_state.py b/src/civ_mcp/arena/benchmark_state.py
+index ca91723..83346d9 100644
+--- a/src/civ_mcp/arena/benchmark_state.py
++++ b/src/civ_mcp/arena/benchmark_state.py
+@@ -85,20 +85,44 @@ def normalize_state(state: Mapping[str, object]) -> dict[str, object]:
+     part of the state itself.
+     """
+     normalized = dict(state)
+     for key, key_fn in _LIST_KEYS.items():
+         rows = normalized.get(key)
+         if rows is not None:
+             normalized[key] = _sorted_rows(rows, key=key_fn)
+     return _canonicalize_numerics(normalized)
+ 
+ 
++def verify_expected_state_digest(
++    expected_state: Mapping[str, object], expected_state_sha256: str
++) -> None:
++    """Verify a position manifest's declared integrity anchor.
++
++    G10: `expected_state_sha256` is a required manifest field that was
++    loaded and never read again anywhere in the pipeline -- the runner
++    digests `position.expected_state` directly for the pre-episode
++    checksum, so a stale or tampered `expected_state_sha256` had nothing
++    ever catching it. Call this once at manifest-load/runner-init time,
++    before any trial runs, and fail closed naming both digests so a human
++    can actually tell which one is wrong.
++    """
++    actual = state_digest(expected_state)
++    if actual != expected_state_sha256:
++        raise BenchmarkStateError(
++            "position manifest integrity check failed: expected_state_sha256 "
++            f"{expected_state_sha256!r} does not match state_digest(expected_state) "
++            f"{actual!r} -- the manifest's expected_state and its declared integrity "
++            "anchor have diverged; refusing to run any trial against unverified "
++            "expected state"
++        )
++
++
+ def state_digest(state: Mapping[str, object]) -> str:
+     """Canonical-JSON digest of `normalize_state(state)`.
+ 
+     Uses the same canonical JSON rule as every other digest/fingerprint in
+     this package (`benchmark_manifest.fingerprint`, `benchmark_report.
+     _canonical_bytes`, `benchmark_store._canonical_bytes`): sorted keys, no
+     incidental whitespace, `ensure_ascii=False`. Omitting `ensure_ascii=False`
+     here used to mean a state containing a non-ASCII character digested
+     differently than an equivalent canonical encoding elsewhere in the
+     pipeline -- unified so "canonical JSON" means exactly one thing
+@@ -168,21 +192,30 @@ async def capture_canonical_state(
+     Raises `BenchmarkStateError` if the query reports an `ERR:`-prefixed
+     line (e.g. the manifest's `player_id` doesn't resolve in-game) — this
+     must surface as a clear failure, never as a near-empty state that later
+     just looks like "everything differs" in a digest mismatch.
+     """
+     query = lq.build_benchmark_state_query(player_id, tile_coords)
+     lines = await connection.execute_read(query)
+     for line in lines:
+         if line.startswith("ERR:"):
+             raise BenchmarkStateError(line)
+-    state = lq.parse_benchmark_state(lines)
++    # G15: a corrupt-but-present IDENTITY row (e.g. a non-numeric turn)
++    # must be named as exactly that -- not fall through to the generic
++    # "missing identity row" truncation message below, which implies a
++    # dropped/incomplete response rather than a corrupt Lua data row.
++    try:
++        state = lq.parse_benchmark_state(lines)
++    except lq.CorruptIdentityRow as exc:
++        raise BenchmarkStateError(
++            f"corrupt IDENTITY row in benchmark-state response: {exc}"
++        ) from exc
+ 
+     # F13: execute_read swallows read timeouts and returns whatever lines it
+     # collected so far. A truncated/empty response with no ERR: line and no
+     # IDENTITY row parses to parse_benchmark_state's all-None/empty default
+     # state -- hashing that as real game state would turn a retryable
+     # harness failure into a session-killing checksum abort. Parsing here is
+     # all-or-nothing: the identity row's core fields (turn, player_id) must
+     # both be present, or this is treated as an incomplete/truncated
+     # response, never a "the state really looks like this" answer.
+     if state.get("turn") is None or state.get("player_id") is None:
+diff --git a/src/civ_mcp/arena/benchmark_store.py b/src/civ_mcp/arena/benchmark_store.py
+index 1a0ce64..eb078f5 100644
+--- a/src/civ_mcp/arena/benchmark_store.py
++++ b/src/civ_mcp/arena/benchmark_store.py
+@@ -25,27 +25,28 @@ position-benchmark-design.md):
+ - Trial indices are 1-based (`trial-001.json`).
+ """
+ from __future__ import annotations
+ 
+ import json
+ import os
+ import re
+ import threading
+ from datetime import datetime, timezone
+ from pathlib import Path
+-from typing import Iterable
++from typing import Iterable, Mapping
+ 
+ __all__ = [
+     "BenchmarkStore",
+     "BenchmarkStoreError",
+     "SessionLockMismatchError",
+     "TrialExistsError",
++    "trial_filename",
+ ]
+ 
+ 
+ class BenchmarkStoreError(Exception):
+     """Base class for BenchmarkStore errors."""
+ 
+ 
+ class SessionLockMismatchError(BenchmarkStoreError):
+     """Raised when a provided lock does not match the run's session.json
+     byte-for-byte (canonical JSON) on reopen."""
+@@ -58,20 +59,32 @@ class TrialExistsError(BenchmarkStoreError):
+ 
+ # `{index:03d}` (used by _trial_path/_attempt_path below) is a MINIMUM
+ # width, not a fixed one -- index 1000 writes "trial-1000.json" (4 digits).
+ # `\d{3,}` (three-or-more) matches that; an exact `\d{3}` would silently
+ # ignore any index >= 1000, making completed_indices()/attempt_count() miss
+ # it (re-execution, then a TrialExistsError crash; the attempt cap disabled).
+ _TRIAL_NAME_RE = re.compile(r"^trial-(\d{3,})\.json$")
+ _ATTEMPT_NAME_RE = re.compile(r"^trial-(\d{3,})-attempt-(\d{3,})\.json$")
+ 
+ 
++def trial_filename(index: int) -> str:
++    """Canonical committed-trial evidence filename for `index`.
++
++    G12: the `{index:03d}` (MINIMUM width, not fixed -- see `_TRIAL_NAME_RE`'s
++    own comment) convention used to live twice: once here and once
++    duplicated in `benchmark_report.py`. A single shared function means the
++    convention can only drift out of sync with itself if this one function
++    changes, not if a second copy is edited and the first is forgotten.
++    """
++    return f"trial-{int(index):03d}.json"
++
++
+ def _canonical_bytes(value: object) -> bytes:
+     """Canonical-JSON encoding: sorted keys, no incidental whitespace. Two
+     dicts that are equal encode to identical bytes regardless of the order
+     their keys were supplied in."""
+     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+     return encoded.encode("utf-8")
+ 
+ 
+ def _utc_now_iso() -> str:
+     return datetime.now(timezone.utc).isoformat()
+@@ -110,20 +123,35 @@ class BenchmarkStore:
+ 
+     @classmethod
+     def open(cls, run_dir: str | Path, lock: dict) -> "BenchmarkStore":
+         """Reopen an existing run directory. Raises SessionLockMismatchError
+         if `lock` does not match the stored session.json byte-for-byte, or
+         FileNotFoundError if no session was ever created there."""
+         return cls._open_or_create(run_dir, lock, creating=False)
+ 
+     @classmethod
+     def _open_or_create(cls, run_dir: str | Path, lock: dict, *, creating: bool) -> "BenchmarkStore":
++        # G8: a lock with no (or an empty) session_fingerprint must be
++        # refused outright rather than silently accepted with
++        # fingerprint=None -- a None fingerprint lets an unstamped stale
++        # trial pass the runner's resume check (`_verify_resume_provenance`
++        # compares `stamped != self.store.fingerprint`; None == None
++        # passes) and makes the report's lock/trial fingerprint cross-check
++        # a no-op (`lock_fp and trial_fp and ...` short-circuits when
++        # either is falsy).
++        if not lock.get("session_fingerprint"):
++            raise BenchmarkStoreError(
++                "session lock is missing a non-empty 'session_fingerprint' -- "
++                "refusing to create or open a run without one (a fingerprint-less "
++                "lock would let a stale/copied trial's missing stamp silently pass "
++                "resume verification)"
++            )
+         run_dir = Path(run_dir)
+         session_path = run_dir / cls.SESSION_FILE
+         provided = _canonical_bytes(lock)
+ 
+         if session_path.exists():
+             stored = session_path.read_bytes()
+             if stored != provided:
+                 raise SessionLockMismatchError(
+                     f"session lock mismatch at {session_path}: provided lock does not "
+                     "match the recorded session byte-for-byte"
+@@ -142,39 +170,46 @@ class BenchmarkStore:
+ 
+     # -- journal ------------------------------------------------------------
+ 
+     def append_event(
+         self,
+         event: str,
+         *,
+         trial_index: int | None = None,
+         attempt_ordinal: int | None = None,
+         failure_class: str | None = None,
+-        **details: object,
++        details: Mapping[str, object] | None = None,
+     ) -> dict:
+         """Append one event to journal.jsonl. Sequence numbers are monotonic
+         and continue across process resume (derived from the journal already
+-        on disk, never reset to zero on reopen)."""
++        on disk, never reset to zero on reopen).
++
++        G9: `details` is an explicit parameter, not a `**kwargs` catch-all --
++        a `**details` catch-all would capture the literal keyword name
++        "details" as just another entry in itself, so a caller passing
++        `details={...}` (every real caller in this codebase) landed
++        double-nested as `record["details"]["details"]` instead of flat.
++        """
+         with self._seq_lock:
+             seq = self._seq
+             self._seq += 1
+ 
+         record: dict[str, object] = {
+             "seq": seq,
+             "ts": _utc_now_iso(),
+             "trial_index": trial_index,
+             "attempt_ordinal": attempt_ordinal,
+             "event": event,
+             "failure_class": failure_class,
+         }
+         if details:
+-            record["details"] = details
++            record["details"] = dict(details)
+ 
+         line = _canonical_bytes(record).decode("utf-8")
+         journal_path = self.run_dir / self.JOURNAL_FILE
+         with open(journal_path, "a", encoding="utf-8") as fh:
+             fh.write(line + "\n")
+             fh.flush()
+             os.fsync(fh.fileno())
+         return record
+ 
+     def _load_next_sequence(self) -> int:
+@@ -234,21 +269,21 @@ class BenchmarkStore:
+             "attempt",
+             trial_index=index,
+             attempt_ordinal=ordinal,
+             failure_class=failure_class,
+         )
+         return ordinal
+ 
+     # -- trials (immutable raw scoreable evidence) --------------------------
+ 
+     def _trial_path(self, index: int) -> Path:
+-        return self.run_dir / self.TRIALS_DIR / f"trial-{index:03d}.json"
++        return self.run_dir / self.TRIALS_DIR / trial_filename(index)
+ 
+     def _trial_tmp_path(self, index: int) -> Path:
+         return self.run_dir / self.TRIALS_DIR / f".trial-{index:03d}.json.tmp"
+ 
+     def commit_trial(self, index: int, payload: dict) -> None:
+         """Atomically commit raw scoreable evidence for trial `index`.
+ 
+         Writes to a hidden temp file, flushes and fsyncs it, refuses an
+         already-committed destination, then `os.replace`s it into place. If
+         `os.replace` raises (simulating a crash at the atomicity boundary),
+diff --git a/src/civ_mcp/game_launcher.py b/src/civ_mcp/game_launcher.py
+index 7067eb1..567d156 100644
+--- a/src/civ_mcp/game_launcher.py
++++ b/src/civ_mcp/game_launcher.py
+@@ -2057,24 +2057,33 @@ async def continue_after_lua_load(
+     engaged = False
+     for _ in range(engage_polls):
+         if not _is_tuner_port_open():
+             engaged = True
+             break
+         await asyncio.sleep(2.0)
+     if not engaged:
+         if _is_tuner_port_open():
+             await asyncio.sleep(2.0)
+             if _is_tuner_port_open():
++                # G3 (benchmark runner fix brief): this stable-open-port
++                # fallback is exactly what an inert Network.LoadGame also
++                # looks like from here -- this function has no game
++                # connection of its own and structurally cannot tell the
++                # two apart. Carry an UNVERIFIED marker so a caller with
++                # more evidence (e.g. the benchmark runner's checksum
++                # step) can tell this apart from the observed-drop success
++                # path instead of treating both as equally confirmed.
+                 return (
+-                    f"Loaded {save_name}: world ready, FireTuner port is open "
+-                    f"(drop was not observed -- likely faster than the poll "
+-                    f"interval). Reconnect and verify with get_game_overview."
++                    f"Loaded {save_name} (UNVERIFIED: port drop not observed -- "
++                    f"likely faster than the poll interval): world ready, "
++                    f"FireTuner port is open. Reconnect and verify with "
++                    f"get_game_overview."
+                 )
+         return (
+             f"WARNING: FireTuner port never dropped after the Lua load of "
+             f"'{save_name}' -- the load may not have engaged; no Escape "
+             f"was sent."
+         )
+     polls = 0
+     while polls < world_polls:
+         if _is_tuner_port_open():
+             return (
+diff --git a/src/civ_mcp/lua/__init__.py b/src/civ_mcp/lua/__init__.py
+index f8bce02..1133a85 100644
+--- a/src/civ_mcp/lua/__init__.py
++++ b/src/civ_mcp/lua/__init__.py
+@@ -12,20 +12,21 @@ This package re-exports all public symbols so that::
+     from civ_mcp import lua as lq
+     lq.build_units_query()
+     lq.UnitInfo(...)
+ 
+ works identically to the old monolithic ``lua_queries`` module.
+ """
+ 
+ # Re-export helpers & sentinel
+ from civ_mcp.lua._helpers import SENTINEL  # noqa: F401
+ from civ_mcp.lua.benchmark import (  # noqa: F401
++    CorruptIdentityRow,
+     build_benchmark_state_query,
+     parse_benchmark_state,
+ )
+ from civ_mcp.lua.channel_observation import (  # noqa: F401
+     build_channel_observation_query,
+     parse_channel_observation_response,
+ )
+ from civ_mcp.lua.channel_payments import (  # noqa: F401
+     ChannelPaymentOfferState,
+     ExactPaymentOffer,
+diff --git a/src/civ_mcp/lua/benchmark.py b/src/civ_mcp/lua/benchmark.py
+index fad4401..bdea092 100644
+--- a/src/civ_mcp/lua/benchmark.py
++++ b/src/civ_mcp/lua/benchmark.py
+@@ -11,20 +11,36 @@ The parser returns JSON-safe primitives only (str/int/float/bool/None/list/
+ dict). See civ_mcp.arena.benchmark_state for the pure-Python canonicalizer
+ (sort + hash + diff) that consumes this parser's output.
+ """
+ from __future__ import annotations
+ 
+ from typing import Sequence
+ 
+ from civ_mcp.lua._helpers import SENTINEL, _bail, _int
+ 
+ 
++class CorruptIdentityRow(Exception):
++    """Raised when an IDENTITY row is present but one of its fields fails
++    to coerce (e.g. a non-numeric turn).
++
++    G15: every other row type (UNIT/CITY/TILE) is fine to silently skip on
++    a coercion failure -- one bad row just means one fewer unit/city/tile
++    in the captured state. The IDENTITY row is different: it carries the
++    core fields (`turn`, `player_id`) `capture_canonical_state` uses to
++    decide whether the response was truncated at all. Swallowing an
++    IDENTITY coercion failure the same way as other rows silently
++    discards it, and the resulting near-empty state is then misdiagnosed
++    as "missing identity row" (implying a truncated/dropped response)
++    when the row was actually present and simply corrupt.
++    """
++
++
+ def build_benchmark_state_query(
+     player_id: int, tile_coords: Sequence[tuple[int, int]]
+ ) -> str:
+     """InGame context: canonical benchmark state for ``player_id``.
+ 
+     ``tile_coords`` is the position manifest's declared tile list (Python
+     ints, not LLM-supplied free text) — cast to int here defensively so a
+     malformed manifest fails fast instead of splicing garbage into Lua.
+     """
+     pid = int(player_id)
+@@ -107,30 +123,41 @@ def parse_benchmark_state(lines: list[str]) -> dict[str, object]:
+         "player_id": None,
+         "gold": 0.0,
+         "faith": 0.0,
+         "units": [],
+         "cities": [],
+         "tiles": [],
+     }
+ 
+     for line in lines:
+         parts = line.split("|")
+-        try:
+-            if parts[0] == "IDENTITY" and len(parts) >= 8:
++
++        if parts[0] == "IDENTITY" and len(parts) >= 8:
++            # G15: deliberately NOT covered by the try/except below -- a
++            # coercion failure here must propagate as CorruptIdentityRow,
++            # not be silently discarded like other row types.
++            try:
+                 state["civ_type"] = parts[1]
+                 state["seed"] = int(parts[2])
+                 state["turn"] = _int(parts[3])
+                 state["active_player"] = _int(parts[4])
+                 state["player_id"] = _int(parts[5])
+                 state["gold"] = float(parts[6])
+                 state["faith"] = float(parts[7])
+-            elif parts[0] == "UNIT" and len(parts) >= 6:
++            except (ValueError, IndexError) as exc:
++                raise CorruptIdentityRow(
++                    f"corrupt IDENTITY row -- fields could not be coerced: {line!r} ({exc})"
++                ) from exc
++            continue
++
++        try:
++            if parts[0] == "UNIT" and len(parts) >= 6:
+                 state["units"].append(  # type: ignore[union-attr]
+                     {
+                         "id": _int(parts[1]),
+                         "type": parts[2],
+                         "x": _int(parts[3]),
+                         "y": _int(parts[4]),
+                         "charges": _int(parts[5]),
+                     }
+                 )
+             elif parts[0] == "CITY" and len(parts) >= 6:
+diff --git a/tests/arena/test_action_metrics.py b/tests/arena/test_action_metrics.py
+index 6133b13..456f146 100644
+--- a/tests/arena/test_action_metrics.py
++++ b/tests/arena/test_action_metrics.py
+@@ -107,20 +107,104 @@ def test_classify_result_success():
+     assert classify_result("IMPROVING|IMPROVEMENT_MINE|9,10") == "success"
+ 
+ 
+ def test_classify_result_unavailable_is_not_a_domain_rejection():
+     """agent.py's _unavailable_result() prefix means the call was intercepted
+     before it ever reached the game engine (gated/out_of_tier/unknown_tool) —
+     it must not read as the game having rejected a legal call."""
+     assert classify_result("UNAVAILABLE: fake_tool is not a real tool.") != "domain_rejection"
+ 
+ 
++def test_classify_result_unavailable_is_not_dispatched():
++    """G1: a never-dispatched call must not classify as 'success' either --
++    that would let a minimal-arm model's out-of-tier tool call satisfy a
++    treatment-only rubric level, flipping the A/B comparison."""
++    assert classify_result("UNAVAILABLE: fake_tool is not a real tool.") == "not_dispatched"
++
++
++def test_classify_result_malformed_arguments_is_not_dispatched():
++    assert classify_result("MALFORMED_ARGUMENTS: not dispatched") == "not_dispatched"
++
++
++def test_classify_result_not_dispatched_is_case_insensitive():
++    assert classify_result("unavailable: fake_tool") == "not_dispatched"
++    assert classify_result("malformed_arguments: bad args") == "not_dispatched"
++
++
++def test_classifier_unavailable_and_malformed_steps_never_count_as_success():
++    """G1 repro: a never-dispatched call must not count as a domain rejection
++    OR a successful mutation, even if its (spoofed) digest fields show a
++    change -- a real agent never produces this combination, but the
++    classifier must not trust the digest over the dispatch outcome."""
++    steps = [
++        {"tool_name": "fake_tool", "tool_args": {},
++         "tool_result_full": "UNAVAILABLE: fake_tool is not a real tool.",
++         "state_digest_before": "a", "state_digest_after": "b"},
++        {"tool_name": "bad_args_tool", "tool_args": {},
++         "tool_result_full": "MALFORMED_ARGUMENTS: not dispatched",
++         "state_digest_before": "c", "state_digest_after": "d"},
++    ]
++    got = classify_action_quality(steps=steps, invalid_tool_calls=[])
++    assert got["domain_rejections"] == 0
++    assert got["successful_mutations"] == 0
++
++
++def test_predicate_successful_tool_call_false_when_result_is_unavailable():
++    """G1: evaluate_predicate's successful_tool_call must not treat a
++    never-dispatched call (matching tool/args) as a success."""
++    steps = [
++        {"tool_name": "improve_tile", "tool_args": {"unit_index": 8},
++         "tool_result_full": "UNAVAILABLE: improve_tile is not in this tier."},
++    ]
++    predicate = {"kind": "successful_tool_call", "tool": "improve_tile", "args": {"unit_index": 8}}
++    assert evaluate_predicate(predicate, steps=steps) is False
++
++
++# ---------------------------------------------------------------------------
++# G14 — successful_mutations / repetitions must not fabricate 0 when no step
++# carries digest fields at all (historical arena records never carried
++# state_digest_before/after; None != None silently reported "no mutation").
++# ---------------------------------------------------------------------------
++
++def test_successful_mutations_none_when_no_step_carries_digest_fields():
++    steps = [
++        {"tool_name": "set_research", "tool_args": {"tech": "TECH_POTTERY"},
++         "tool_result_full": "Research set."},
++        {"tool_name": "set_research", "tool_args": {"tech": "TECH_POTTERY"},
++         "tool_result_full": "Research set."},
++    ]
++    got = classify_action_quality(steps=steps, invalid_tool_calls=[])
++    assert got["successful_mutations"] is None
++    assert got["repetitions"] is None
++    assert got["loop_excess"] is None
++    # Digest-independent counts stay real.
++    assert got["domain_rejections"] == 0
++
++
++def test_successful_mutations_real_count_when_digest_fields_present():
++    steps = [
++        {"tool_name": "set_research", "tool_args": {"tech": "TECH_POTTERY"},
++         "tool_result_full": "Research set.", "state_digest_before": "x",
++         "state_digest_after": "y"},
++    ]
++    got = classify_action_quality(steps=steps, invalid_tool_calls=[])
++    assert got["successful_mutations"] == 1
++    assert got["repetitions"] == 0
++    assert got["loop_excess"] == 0
++
++
++def test_successful_mutations_real_zero_for_empty_steps():
++    got = classify_action_quality(steps=[], invalid_tool_calls=[])
++    assert got["successful_mutations"] == 0
++    assert got["repetitions"] == 0
++
++
+ # ---------------------------------------------------------------------------
+ # evaluate_predicate — one positive + one counterfactual per kind
+ # ---------------------------------------------------------------------------
+ 
+ def test_predicate_always_is_true():
+     assert evaluate_predicate({"kind": "always"}) is True
+ 
+ 
+ def test_predicate_always_ignores_missing_state():
+     # Counterfactual: a naive implementation might dereference state and
+diff --git a/tests/arena/test_analyze.py b/tests/arena/test_analyze.py
+index 4fce9be..ce7e163 100644
+--- a/tests/arena/test_analyze.py
++++ b/tests/arena/test_analyze.py
+@@ -2532,28 +2532,29 @@ def test_action_quality_attached_to_played_series_rows(run_dir: Path) -> None:
+     from civ_mcp.arena.analyze import load_records, analyze
+ 
+     tr = load_records(run_dir / "transcript.jsonl")
+     co = load_records(run_dir / "arena_cost.jsonl")
+     report = analyze(tr, co)
+ 
+     row = report["by_player"][1]["series"][0]
+     aq = row["action_quality"]
+     assert aq is not None
+     # tr_a1: 1 invalid_tool_calls entry, 3 steps all with non-error results,
+-    # but no state_digest fields on this legacy fixture -> no counted mutation.
++    # but no state_digest fields on this legacy fixture -> digest-dependent
++    # counts (G14) are unmeasured, not a fabricated 0.
+     assert aq["invalid_calls"] == 1
+     assert aq["domain_rejections"] == 0
+-    assert aq["successful_mutations"] == 0
++    assert aq["successful_mutations"] is None
+     assert aq["useful_actions"] is None
+     assert aq["useful_action_coverage"] == "unavailable"
+-    assert aq["repetitions"] == 0
+-    assert aq["loop_excess"] == 0
++    assert aq["repetitions"] is None
++    assert aq["loop_excess"] is None
+ 
+ 
+ def test_action_quality_domain_rejection_detected_from_blocked_result(run_dir: Path) -> None:
+     """tr_a2 step 0 result is 'MOVING_TO|3,3|BLOCKED' -> a domain rejection."""
+     from civ_mcp.arena.analyze import load_records, analyze
+ 
+     tr = load_records(run_dir / "transcript.jsonl")
+     co = load_records(run_dir / "arena_cost.jsonl")
+     report = analyze(tr, co)
+ 
+@@ -2566,26 +2567,32 @@ def test_action_quality_aggregated_by_player_without_objectives(run_dir: Path) -
+ 
+     tr = load_records(run_dir / "transcript.jsonl")
+     co = load_records(run_dir / "arena_cost.jsonl")
+     report = analyze(tr, co)
+ 
+     aq_a = report["by_player"][1]["action_quality"]
+     assert aq_a["invalid_calls"] == 1
+     assert aq_a["domain_rejections"] == 1
+     assert aq_a["useful_actions"] is None
+     assert aq_a["useful_action_coverage"] == "unavailable"
++    # G14: legacy fixtures carry no state_digest fields anywhere -> the
++    # aggregate must also report "unmeasured", not a fabricated 0.
++    assert aq_a["successful_mutations"] is None
++    assert aq_a["repetitions"] is None
++    assert aq_a["loop_excess"] is None
+ 
+     aq_b = report["by_player"][2]["action_quality"]
+     assert aq_b["invalid_calls"] == 0
+     assert aq_b["domain_rejections"] == 0
+     assert aq_b["useful_actions"] is None
+     assert aq_b["useful_action_coverage"] == "unavailable"
++    assert aq_b["successful_mutations"] is None
+ 
+ 
+ def test_action_quality_existing_report_keys_unchanged(run_dir: Path) -> None:
+     """Adding action_quality must not remove or rename any existing key."""
+     from civ_mcp.arena.analyze import load_records, analyze
+ 
+     tr = load_records(run_dir / "transcript.jsonl")
+     co = load_records(run_dir / "arena_cost.jsonl")
+     report = analyze(tr, co)
+ 
+@@ -2640,14 +2647,18 @@ def test_action_quality_useful_actions_available_when_objectives_present() -> No
+                 "path": ["tiles", 0, "improvement"],
+                 "value": "IMPROVEMENT_MINE",
+             },
+         }],
+     }
+     report = analyze([rec], [])
+ 
+     row_aq = report["by_player"][1]["series"][0]["action_quality"]
+     assert row_aq["useful_actions"] == 1
+     assert row_aq["useful_action_coverage"] == "objective_verified"
++    # G14: this record's step carries real state_digest fields, so
++    # successful_mutations stays a real measured count, not None.
++    assert row_aq["successful_mutations"] == 1
+ 
+     player_aq = report["by_player"][1]["action_quality"]
+     assert player_aq["useful_actions"] == 1
++    assert player_aq["successful_mutations"] == 1
+     assert player_aq["useful_action_coverage"] == "objective_verified"
+diff --git a/tests/arena/test_benchmark_backend.py b/tests/arena/test_benchmark_backend.py
+index a017163..7cb304f 100644
+--- a/tests/arena/test_benchmark_backend.py
++++ b/tests/arena/test_benchmark_backend.py
+@@ -55,20 +55,32 @@ class _FakeIgnoresSeedBackend(_FakeExactBackend):
+                      model=self.model)
+ 
+ 
+ class _FakeWrongModelBackend(_FakeExactBackend):
+     async def chat(self, messages, tools):
+         self.calls += 1
+         return Reply(text=f"seed={self.sampling.seed}", tool_calls=[], prompt_tokens=1,
+                      completion_tokens=1, model="some-other-model")
+ 
+ 
++class _FakeNonDeterministicGreedyBackend(_FakeExactBackend):
++    """G7 repro: claims temperature=0 (greedy) but its repeated calls at
++    the SAME locked config disagree with each other -- a genuinely
++    non-deterministic backend, not honoring anything, masquerading as
++    "not applicable" under the old unconditional temp==0 verdict."""
++
++    async def chat(self, messages, tools):
++        self.calls += 1
++        return Reply(text=f"call={self.calls}", tool_calls=[], prompt_tokens=1,
++                     completion_tokens=1, model=self.model)
++
++
+ @pytest.mark.asyncio
+ async def test_probe_backend_confirms_model_and_honored_seed():
+     backend = _FakeExactBackend(
+         sampling=SamplingConfig(temperature=0.2, top_p=1.0, seed=41, max_tokens=64)
+     )
+     probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=10)
+     assert isinstance(probe, BackendProbe)
+     assert probe.samples == 10
+     assert probe.model_confirmed is True
+     assert probe.seed_honored is True
+@@ -86,24 +98,53 @@ async def test_probe_backend_records_seed_verdict_not_applicable_at_temperature_
+     unobservable and irrelevant -- varying the seed cannot change a greedy
+     backend's real output, so the differing-seed probe would always
+     (mis)report "not honored" for a perfectly healthy backend.
+     probe_backend must record seed_verdict "not_applicable_greedy" instead
+     of running that check at all. Repeated-consistency (still required) is
+     unaffected -- this fake IS internally consistent across the `samples`
+     identical calls."""
+     backend = _FakeExactBackend()  # default sampling: temperature=0.0
+     probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=10)
+     assert probe.seed_verdict == "not_applicable_greedy"
++    # G7: repeated_consistent must be recorded on the probe, not silently
++    # computed-and-discarded -- admission never sees it otherwise.
++    assert probe.repeated_consistent is True
+     # the verification call's config swap (if any) must never leak
+     assert backend.sampling.seed == 41
+ 
+ 
++@pytest.mark.asyncio
++async def test_probe_backend_temp_zero_inconsistent_output_is_not_honored():
++    """G7 repro: at temperature==0 the verdict was unconditionally
++    "not_applicable_greedy", even when the backend's own repeated calls at
++    the same config disagree with each other -- a non-deterministic
++    "greedy" backend must fail admission (seed_verdict "not_honored"),
++    not slip through as "not applicable"."""
++    backend = _FakeNonDeterministicGreedyBackend(
++        sampling=SamplingConfig(temperature=0.0, top_p=1.0, seed=41, max_tokens=64)
++    )
++    probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=10)
++    assert probe.repeated_consistent is False
++    assert probe.seed_verdict == "not_honored"
++    assert probe.seed_honored is False
++
++
++def test_backend_probe_repeated_consistent_defaults_false_for_old_constructors():
++    """Pre-G7 callers/tests construct BackendProbe without repeated_consistent
++    -- it must default to False rather than raising a TypeError."""
++    probe = BackendProbe(
++        samples=10, model="qwen3.6-27b", model_confirmed=True,
++        seed_honored=True, latencies_s=[1.0] * 10, errors=[],
++    )
++    assert probe.repeated_consistent is False
++
++
+ @pytest.mark.asyncio
+ async def test_probe_backend_detects_unhonored_seed():
+     backend = _FakeIgnoresSeedBackend(
+         sampling=SamplingConfig(temperature=0.2, top_p=1.0, seed=41, max_tokens=64)
+     )
+     probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=5)
+     assert probe.seed_honored is False
+     assert probe.seed_verdict == "not_honored"
+ 
+ 
+diff --git a/tests/arena/test_benchmark_report.py b/tests/arena/test_benchmark_report.py
+index 03788d5..4af6467 100644
+--- a/tests/arena/test_benchmark_report.py
++++ b/tests/arena/test_benchmark_report.py
+@@ -76,20 +76,24 @@ def _build_basic_run(run_dir: Path) -> None:
+         (2, "easy", True),
+         (3, "hard", False),
+     ):
+         _write_json(
+             run_dir / "trials" / f"trial-{index:03d}.json",
+             {
+                 "index": index,
+                 "position_id": position_id,
+                 "attempt_count": 1,
+                 "terminal": "finish_trial",
++                # G8: session.json above carries a session_fingerprint, so
++                # every trial must be stamped to match -- an unstamped
++                # trial under a stamped lock is now a hard ReportError.
++                "session_fingerprint": "abc123",
+                 "steps": [],
+                 "initial_state": {"tiles": [{"improvement": None}]},
+                 "final_state": {
+                     "tiles": [{"improvement": "IMPROVEMENT_MINE" if satisfied else None}]
+                 },
+             },
+         )
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -165,20 +169,21 @@ def test_report_ignores_attempts_and_weights_positions_equally(tmp_path):
+         (2, "easy", True),
+         (3, "hard", False),
+     ):
+         write_json(
+             run_dir / "trials" / f"trial-{index:03d}.json",
+             {
+                 "index": index,
+                 "position_id": position_id,
+                 "attempt_count": 1,
+                 "terminal": "finish_trial",
++                "session_fingerprint": "abc123",
+                 "steps": [],
+                 "initial_state": {"tiles": [{"improvement": None}]},
+                 "final_state": {
+                     "tiles": [
+                         {"improvement": "IMPROVEMENT_MINE" if satisfied else None}
+                     ]
+                 },
+             },
+         )
+     write_json(
+@@ -429,20 +434,21 @@ def test_build_report_aggregate_is_scoped_per_model_arm_group_not_pooled(tmp_pat
+     for index, position_id, model, arm_id, satisfied in fixtures:
+         _write_json(
+             run_dir / "trials" / f"trial-{index:03d}.json",
+             {
+                 "index": index,
+                 "position_id": position_id,
+                 "attempt_count": 1,
+                 "terminal": "finish_trial",
+                 "model": model,
+                 "arm_id": arm_id,
++                "session_fingerprint": "abc123",
+                 "steps": [],
+                 "initial_state": {"tiles": [{"improvement": None}]},
+                 "final_state": {
+                     "tiles": [{"improvement": "IMPROVEMENT_MINE" if satisfied else None}]
+                 },
+             },
+         )
+ 
+     report = build_report(run_dir)
+     aggregate = report["aggregate"]
+@@ -493,35 +499,37 @@ def test_build_report_surfaces_seeds_and_endpoint_topology(tmp_path):
+     _write_json(
+         run_dir / "trials" / "trial-001.json",
+         {
+             "index": 1,
+             "position_id": "easy",
+             "attempt_count": 1,
+             "terminal": "finish_trial",
+             "seed": 11,
+             "model": "qwen3.6-27b",
+             "arm_id": "standard",
++            "session_fingerprint": "abc123",
+             "steps": [],
+             "initial_state": {"tiles": [{"improvement": None}]},
+             "final_state": {"tiles": [{"improvement": None}]},
+         },
+     )
+     _write_json(
+         run_dir / "trials" / "trial-002.json",
+         {
+             "index": 2,
+             "position_id": "easy",
+             "attempt_count": 1,
+             "terminal": "finish_trial",
+             "seed": 12,
+             "model": "gemma4-27b",
+             "arm_id": "minimal",
++            "session_fingerprint": "abc123",
+             "steps": [],
+             "initial_state": {"tiles": [{"improvement": None}]},
+             "final_state": {"tiles": [{"improvement": None}]},
+         },
+     )
+ 
+     report = build_report(run_dir)
+     easy = report["positions"]["easy"]
+     # F1: two distinct (model, arm) trials at the same position must never
+     # be pooled into one mixed seeds/endpoint_topology view -- each group
+@@ -554,20 +562,86 @@ def test_build_report_includes_terminal_conditions_latency_tokens_cost(tmp_path)
+ 
+     report = build_report(run_dir)
+     hard = report["positions"]["hard"]["by_group"]["unknown::unknown"]
+     assert hard["terminal_conditions"] == {"runaway_timeout": 1}
+     assert hard["latency"]["mean_s"] == 300.0
+     assert hard["tokens"]["prompt_total"] == 500
+     assert hard["tokens"]["completion_total"] == 50
+     assert "cost" in hard and "usd_total" in hard["cost"]
+ 
+ 
++# ---------------------------------------------------------------------------
++# G13 -- an unknown model must not be silently priced $0. "Free" (a real
++# priced entry of (0.0, 0.0)) and "no price data at all" are different
++# facts; conflating them makes a $0 total ambiguous.
++# ---------------------------------------------------------------------------
++
++
++def test_unpriced_model_is_excluded_from_usd_total_and_listed(tmp_path):
++    run_dir = tmp_path / "run"
++    _build_basic_run(run_dir)
++    trial_path = run_dir / "trials" / "trial-003.json"
++    payload = json.loads(trial_path.read_text(encoding="utf-8"))
++    payload["model"] = "some-unpriced-model"
++    payload["prompt_tokens"] = 500
++    payload["completion_tokens"] = 50
++    _write_json(trial_path, payload)
++
++    report = build_report(run_dir)
++    hard = report["positions"]["hard"]["by_group"]["some-unpriced-model::unknown"]
++    assert hard["cost"]["unpriced_models"] == ["some-unpriced-model"]
++    # A $0.00 total here means "no priced trials contributed", not "this
++    # model is free" -- unpriced_models is what actually says why.
++    assert hard["cost"]["usd_total"] == 0.0
++
++
++def test_priced_model_reports_empty_unpriced_models_list(tmp_path):
++    run_dir = tmp_path / "run"
++    _build_basic_run(run_dir)
++    trial_path = run_dir / "trials" / "trial-001.json"
++    payload = json.loads(trial_path.read_text(encoding="utf-8"))
++    payload["model"] = "local"  # in _PRICE_PER_1K_USD
++    _write_json(trial_path, payload)
++
++    report = build_report(run_dir)
++    easy_local = report["positions"]["easy"]["by_group"]["local::unknown"]
++    assert easy_local["cost"]["unpriced_models"] == []
++
++
++def test_unpriced_and_priced_models_in_the_same_group_summary_do_not_mix_costs(tmp_path):
++    """A group summary is keyed by (model, arm), so within one group every
++    trial shares the same model -- this pins that an unpriced trial's
++    absence from usd_total doesn't corrupt a DIFFERENT group's priced
++    total."""
++    run_dir = tmp_path / "run"
++    _build_basic_run(run_dir)
++    for index, model in ((1, "local"), (2, "local")):
++        trial_path = run_dir / "trials" / f"trial-{index:03d}.json"
++        payload = json.loads(trial_path.read_text(encoding="utf-8"))
++        payload["model"] = model
++        payload["prompt_tokens"] = 1000
++        payload["completion_tokens"] = 1000
++        _write_json(trial_path, payload)
++    trial_path = run_dir / "trials" / "trial-003.json"
++    payload = json.loads(trial_path.read_text(encoding="utf-8"))
++    payload["model"] = "unpriced-x"
++    payload["prompt_tokens"] = 1000
++    payload["completion_tokens"] = 1000
++    _write_json(trial_path, payload)
++
++    report = build_report(run_dir)
++    local_group = report["positions"]["easy"]["by_group"]["local::unknown"]
++    unpriced_group = report["positions"]["hard"]["by_group"]["unpriced-x::unknown"]
++    assert local_group["cost"]["unpriced_models"] == []
++    assert unpriced_group["cost"]["unpriced_models"] == ["unpriced-x"]
++
++
+ # ---------------------------------------------------------------------------
+ # Completeness: a scheduled position with zero committed trials must never
+ # silently disappear from the report -- its absence would be
+ # indistinguishable from "scored 0", hiding a position-level regression.
+ # ---------------------------------------------------------------------------
+ 
+ 
+ def _run_with_a_never_run_position(tmp_path: Path) -> Path:
+     """`easy` and `hard` both have committed trials; `never_ran` is declared
+     in session.json and scheduled in schedule.json but has zero committed
+@@ -707,20 +781,21 @@ def _calibration_run(tmp_path: Path, standard_scores, minimal_scores) -> Path:
+     for (idx, score), sched in zip(trials_meta, schedule_trials):
+         _write_json(
+             run_dir / "trials" / f"trial-{idx:03d}.json",
+             {
+                 "index": idx,
+                 "position_id": "cal",
+                 "pair_id": sched["pair_id"],
+                 "arm_id": sched["arm_id"],
+                 "attempt_count": 1,
+                 "terminal": "finish_trial",
++                "session_fingerprint": "cal-1",
+                 "steps": [],
+                 "initial_state": {"achieved": 0},
+                 "final_state": {"achieved": score},
+             },
+         )
+     return run_dir
+ 
+ 
+ def test_calibration_reports_ten_of_twelve_wins_and_median_delta_four(tmp_path):
+     standard_scores = [10, 9, 8, 7, 12, 11, 6, 10, 9, 8, 7, 3]
+@@ -819,31 +894,110 @@ def test_build_report_fails_closed_on_a_trial_session_fingerprint_mismatch(tmp_p
+     _build_basic_run(run_dir)
+     trial_path = run_dir / "trials" / "trial-001.json"
+     payload = json.loads(trial_path.read_text(encoding="utf-8"))
+     payload["session_fingerprint"] = "STALE_FINGERPRINT"
+     _write_json(trial_path, payload)
+ 
+     with pytest.raises(Exception):
+         build_report(run_dir)
+ 
+ 
++def test_build_report_fails_closed_on_an_unstamped_trial_under_a_stamped_lock(tmp_path):
++    """G8(b): the old cross-check (`lock_fp and trial_fp and ...`) was a
++    no-op whenever either side was missing -- an unstamped trial under a
++    stamped session.json silently passed. When the lock carries a
++    fingerprint, a trial with NO stamp at all must be a hard ReportError,
++    not silently scored as if it belonged to this session's current
++    lock."""
++    run_dir = tmp_path / "run"
++    _build_basic_run(run_dir)
++    trial_path = run_dir / "trials" / "trial-001.json"
++    payload = json.loads(trial_path.read_text(encoding="utf-8"))
++    del payload["session_fingerprint"]
++    _write_json(trial_path, payload)
++
++    with pytest.raises(Exception):
++        build_report(run_dir)
++
++
+ def test_build_report_accepts_a_trial_stamped_with_the_matching_session_fingerprint(tmp_path):
+     run_dir = tmp_path / "run"
+     _build_basic_run(run_dir)
+     trial_path = run_dir / "trials" / "trial-001.json"
+     payload = json.loads(trial_path.read_text(encoding="utf-8"))
+     payload["session_fingerprint"] = "abc123"  # matches _build_basic_run's session.json
+     _write_json(trial_path, payload)
+ 
+     build_report(run_dir)  # must not raise
+ 
+ 
++# ---------------------------------------------------------------------------
++# G11 -- build_report must verify schedule.json against session.json's own
++# schedule_fingerprint exactly as the runner does on resume; a swapped arm
++# order in schedule.json otherwise silently flips calibration deltas.
++# ---------------------------------------------------------------------------
++
++
++def test_build_report_accepts_a_schedule_matching_its_declared_fingerprint(tmp_path):
++    from civ_mcp.arena.benchmark_manifest import fingerprint
++
++    run_dir = tmp_path / "run"
++    _build_basic_run(run_dir)
++
++    schedule_path = run_dir / "schedule.json"
++    schedule_payload = json.loads(schedule_path.read_text(encoding="utf-8"))
++
++    session_path = run_dir / "session.json"
++    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
++    session_payload["schedule_fingerprint"] = fingerprint(schedule_payload)
++    _write_json(session_path, session_payload)
++
++    build_report(run_dir)  # must not raise
++
++
++def test_build_report_fails_closed_on_a_tampered_schedule(tmp_path):
++    """A schedule.json edited after session.json's schedule_fingerprint was
++    computed (e.g. a swapped arm order) must abort report generation, not
++    silently produce a report whose calibration deltas are now wrong."""
++    from civ_mcp.arena.benchmark_manifest import fingerprint
++
++    run_dir = tmp_path / "run"
++    _build_basic_run(run_dir)
++
++    schedule_path = run_dir / "schedule.json"
++    schedule_payload = json.loads(schedule_path.read_text(encoding="utf-8"))
++
++    session_path = run_dir / "session.json"
++    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
++    session_payload["schedule_fingerprint"] = fingerprint(schedule_payload)
++    _write_json(session_path, session_payload)
++
++    # Tamper with schedule.json AFTER the fingerprint was recorded.
++    schedule_payload["trials"][0]["position_id"] = "hard"
++    _write_json(schedule_path, schedule_payload)
++
++    with pytest.raises(Exception):
++        build_report(run_dir)
++
++
++def test_build_report_skips_schedule_verification_when_lock_has_no_schedule_fingerprint(tmp_path):
++    """Fixtures/older runs with no declared schedule_fingerprint at all
++    (not this task's concern -- see benchmark_gates) must not suddenly be
++    refused; verification only activates when the lock actually carries
++    one."""
++    run_dir = tmp_path / "run"
++    _build_basic_run(run_dir)
++    # _build_basic_run's session.json carries no schedule_fingerprint.
++
++    build_report(run_dir)  # must not raise
++
++
+ def test_build_report_surfaces_ungated_smoke_flag(tmp_path):
+     run_dir = tmp_path / "run"
+     _build_basic_run(run_dir)
+     session_path = run_dir / "session.json"
+     payload = json.loads(session_path.read_text(encoding="utf-8"))
+     payload["ungated_smoke"] = True
+     _write_json(session_path, payload)
+ 
+     report = build_report(run_dir)
+     assert report["session"]["ungated_smoke"] is True
+diff --git a/tests/arena/test_benchmark_runner.py b/tests/arena/test_benchmark_runner.py
+index ee091cd..4a77324 100644
+--- a/tests/arena/test_benchmark_runner.py
++++ b/tests/arena/test_benchmark_runner.py
+@@ -79,22 +79,26 @@ class _RaisingAgent:
+ 
+ def _healthy_probe(model: str = "qwen3.6-27b") -> HealthProbe:
+     return HealthProbe(healthy=True, model=model, latency_s=0.2, error=None)
+ 
+ 
+ def _unhealthy_probe() -> HealthProbe:
+     return HealthProbe(healthy=False, model=None, latency_s=None, error="down")
+ 
+ 
+ def _deps(**overrides) -> RunnerDependencies:
++    # G3: RunnerDependencies.reload_position's contract is Awaitable[bool]
++    # (verified) -- the default fake reports a verified reload so existing
++    # tests exercise the same "verified reload, mismatch aborts" behavior
++    # as before this contract change.
+     base = dict(
+-        reload_position=AsyncMock(return_value=None),
++        reload_position=AsyncMock(return_value=True),
+         dismiss_popups=AsyncMock(return_value="POPUPS|none"),
+         capture_state=AsyncMock(return_value=dict(CANONICAL)),
+         make_agent=lambda spec: _FinishingAgent(),
+         probe_health=AsyncMock(return_value=_healthy_probe()),
+     )
+     base.update(overrides)
+     return RunnerDependencies(**base)
+ 
+ 
+ def _runner(store: BenchmarkStore, deps: RunnerDependencies, *, expected_state=None, player_id: int = 0):
+@@ -134,21 +138,21 @@ async def test_healthy_timeout_is_raw_trial_but_dead_endpoint_is_retry(tmp_path)
+ 
+     async def probe_after_timeout():
+         return next(health_results)
+ 
+     canonical = {"turn": 157, "player_id": 0, "units": [], "cities": [], "tiles": []}
+     store = BenchmarkStore.create(
+         tmp_path / "run",
+         {"session_fingerprint": "abc123", "schedule_fingerprint": "def456"},
+     )
+     deps = RunnerDependencies(
+-        reload_position=AsyncMock(return_value=None),
++        reload_position=AsyncMock(return_value=True),
+         dismiss_popups=AsyncMock(return_value="POPUPS|none"),
+         capture_state=AsyncMock(return_value=canonical),
+         make_agent=lambda _trial: TimeoutAgent(),
+         probe_health=probe_after_timeout,
+     )
+     runner = BenchmarkRunner(store=store, dependencies=deps, expected_state=canonical, player_id=0)
+ 
+     await runner.run_trial(_spec(1, "minimal"))
+     await runner.run_trial(_spec(2, "standard"))
+ 
+@@ -190,20 +194,21 @@ async def test_run_processes_trials_strictly_serially(tmp_path):
+ # reload -> popup -> checksum order
+ # ---------------------------------------------------------------------------
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_run_trial_calls_reload_popup_checksum_in_order(tmp_path):
+     calls: list[str] = []
+ 
+     async def reload_position(position_id):
+         calls.append("reload")
++        return True
+ 
+     async def dismiss_popups():
+         calls.append("popups")
+         return "POPUPS|none"
+ 
+     async def capture_state():
+         calls.append("capture")
+         return dict(CANONICAL)
+ 
+     store = BenchmarkStore.create(tmp_path / "run", _lock())
+@@ -259,43 +264,42 @@ async def test_checksum_mismatch_journal_includes_a_field_level_diff(tmp_path):
+     store = BenchmarkStore.create(run_dir, _lock())
+     wrong_state = {**CANONICAL, "turn": 999}
+     deps = _deps(capture_state=AsyncMock(return_value=wrong_state))
+     runner = _runner(store, deps)
+ 
+     with pytest.raises(SessionAborted):
+         await runner.run_trial(_spec(1, "minimal"))
+ 
+     events = _journal_events(run_dir, "checksum_mismatch")
+     assert len(events) == 1
+-    # append_event(..., details={...}) nests under record["details"]["details"]
+-    # (append_event's **details catch-all collects the "details" kwarg by
+-    # that literal name) -- matches every other event in this module.
+-    diff = events[0]["details"]["details"]["diff"]
++    # G9: append_event's details kwarg lands flat -- no more
++    # record["details"]["details"] double-nesting.
++    diff = events[0]["details"]["diff"]
+     assert diff == {"turn": [157, 999]}
+ 
+ 
+ # ---------------------------------------------------------------------------
+ # Three-attempt cap, including across process resume
+ # ---------------------------------------------------------------------------
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_run_trial_stops_session_after_three_attempts_across_resume(tmp_path):
+     run_dir = tmp_path / "run"
+     store = BenchmarkStore.create(run_dir, _lock())
+     for _ in range(3):
+         store.record_attempt(1, {"failure_class": FailureClass.RELOAD_OR_RECONNECT.value})
+ 
+     # Simulate a resumed process: a brand-new BenchmarkStore instance reopens
+     # the same run directory and sees the three attempts purely from disk.
+     resumed_store = BenchmarkStore.open(run_dir, _lock())
+-    reload_position = AsyncMock(return_value=None)
++    reload_position = AsyncMock(return_value=True)
+     deps = _deps(reload_position=reload_position)
+     runner = _runner(resumed_store, deps)
+ 
+     with pytest.raises(SessionAborted, match="attempt"):
+         await runner.run_trial(_spec(1, "minimal"))
+ 
+     reload_position.assert_not_awaited()
+     assert resumed_store.completed_indices() == set()
+ 
+ 
+@@ -347,20 +351,143 @@ async def test_reload_failure_is_an_infrastructure_attempt(tmp_path):
+     deps = _deps(reload_position=AsyncMock(side_effect=RuntimeError("reload boom")))
+     runner = _runner(store, deps)
+ 
+     await runner.run_trial(_spec(1, "minimal"))
+ 
+     assert runner.store.completed_indices() == set()
+     assert runner.store.attempt_count(1) == 1
+     assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.RELOAD_OR_RECONNECT.value
+ 
+ 
++# ---------------------------------------------------------------------------
++# G2 -- _reload_result_is_success must recognize every real Tier-0/1/2
++# success shape, not just the original "Loaded "/"world ready" strings.
++# ---------------------------------------------------------------------------
++
++
++@pytest.mark.parametrize(
++    "result",
++    [
++        # Tier-0/1 frontend-Lua engaged path.
++        "Loaded builder-cal-v1: world ready, FireTuner port is open. "
++        "Reconnect and verify with get_game_overview.",
++        # F16(b) stable-open-port fallback (G3): still success-shaped, just
++        # carrying the UNVERIFIED marker.
++        "Loaded builder-cal-v1 (UNVERIFIED: port drop not observed -- "
++        "likely faster than the poll interval): world ready, FireTuner "
++        "port is open. Reconnect and verify with get_game_overview.",
++        # Tier-2 _navigate_to_save_sync.
++        "Save loading (12s). Steps: click Continue, wait. Wait ~10s then "
++        "use get_game_overview to verify.",
++        # restart_and_load's compound Kill/Launch/Load string.
++        "Kill: ok | Launch: ok | Load: Save loading (10s). Steps: click. "
++        "Wait ~10s then use get_game_overview to verify.",
++    ],
++)
++def test_reload_result_is_success_recognizes_every_real_success_shape(result):
++    assert benchmark_runner._reload_result_is_success(result) is True
++
++
++@pytest.mark.parametrize(
++    "result",
++    [
++        "Error: Save 'foo' not found in Lua query or on filesystem. Check the name.",
++        "WARNING: FireTuner port never dropped after the Lua load of 'foo' -- "
++        "the load may not have engaged; no Escape was sent.",
++        "WARNING: FireTuner port did not reopen within the wait window for 'foo'.",
++        # A "Save loading (" prefix must not override an explicit failure
++        # marker later in the same compound string.
++        "Kill: ok | Launch: FAILED | Load: Save loading (10s).",
++        "Kill: ok | Launch: ok | Load: ABORTED before Save loading (10s).",
++    ],
++)
++def test_reload_result_is_success_stays_fail_closed_on_failure_strings(result):
++    assert benchmark_runner._reload_result_is_success(result) is False
++
++
++# ---------------------------------------------------------------------------
++# G3 -- reload_position's contract is Awaitable[bool] (verified). A
++# checksum mismatch immediately after an unverified reload is a retryable
++# infrastructure attempt (the launcher structurally could not tell an inert
++# Network.LoadGame apart from a genuine stable-open-port success); a
++# checksum mismatch after a verified reload still aborts the session.
++# ---------------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_checksum_mismatch_after_unverified_reload_is_infra_attempt_not_abort(tmp_path):
++    run_dir = tmp_path / "run"
++    store = BenchmarkStore.create(run_dir, _lock())
++    wrong_state = {**CANONICAL, "turn": 999}
++    deps = _deps(
++        reload_position=AsyncMock(return_value=False),
++        capture_state=AsyncMock(return_value=wrong_state),
++    )
++    runner = _runner(store, deps)
++
++    await runner.run_trial(_spec(1, "minimal"))  # must NOT raise SessionAborted
++
++    assert runner.store.completed_indices() == set()
++    assert runner.store.attempt_count(1) == 1
++    attempt = _attempt_payload(run_dir, 1)
++    assert attempt["failure_class"] == FailureClass.RELOAD_OR_RECONNECT.value
++    assert "unverified reload" in attempt["error"]
++
++
++@pytest.mark.asyncio
++async def test_checksum_mismatch_after_verified_reload_still_aborts(tmp_path):
++    run_dir = tmp_path / "run"
++    store = BenchmarkStore.create(run_dir, _lock())
++    wrong_state = {**CANONICAL, "turn": 999}
++    deps = _deps(
++        reload_position=AsyncMock(return_value=True),
++        capture_state=AsyncMock(return_value=wrong_state),
++    )
++    runner = _runner(store, deps)
++
++    with pytest.raises(SessionAborted, match="checksum"):
++        await runner.run_trial(_spec(1, "minimal"))
++
++    assert runner.store.completed_indices() == set()
++    assert runner.store.attempt_count(1) == 0
++
++
++@pytest.mark.asyncio
++async def test_unverified_reload_with_matching_checksum_proceeds_normally(tmp_path):
++    """An unverified reload is only a problem paired with a checksum
++    mismatch -- if the observed state matches, the trial runs normally."""
++    store = BenchmarkStore.create(tmp_path / "run", _lock())
++    deps = _deps(reload_position=AsyncMock(return_value=False))
++    runner = _runner(store, deps)
++
++    await runner.run_trial(_spec(1, "minimal"))
++
++    assert runner.store.completed_indices() == {1}
++
++
++@pytest.mark.asyncio
++async def test_reload_position_non_bool_return_fails_closed_as_infra_attempt(tmp_path):
++    """A legacy `None` return (or anything else non-bool) must never be
++    silently treated as verified=True -- fail closed as a retryable infra
++    attempt instead."""
++    run_dir = tmp_path / "run"
++    store = BenchmarkStore.create(run_dir, _lock())
++    deps = _deps(reload_position=AsyncMock(return_value=None))
++    runner = _runner(store, deps)
++
++    await runner.run_trial(_spec(1, "minimal"))
++
++    assert runner.store.completed_indices() == set()
++    assert runner.store.attempt_count(1) == 1
++    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.RELOAD_OR_RECONNECT.value
++
++
+ @pytest.mark.asyncio
+ async def test_popup_failure_is_an_infrastructure_attempt(tmp_path):
+     run_dir = tmp_path / "run"
+     store = BenchmarkStore.create(run_dir, _lock())
+     deps = _deps(dismiss_popups=AsyncMock(side_effect=RuntimeError("popup boom")))
+     runner = _runner(store, deps)
+ 
+     await runner.run_trial(_spec(1, "minimal"))
+ 
+     assert runner.store.completed_indices() == set()
+@@ -440,20 +567,44 @@ async def test_final_state_capture_failure_after_episode_is_a_harness_crash_atte
+     deps = _deps(capture_state=capture_state)
+     runner = _runner(store, deps)
+ 
+     await runner.run_trial(_spec(1, "minimal"))
+ 
+     assert runner.store.completed_indices() == set()
+     assert runner.store.attempt_count(1) == 1
+     assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.HARNESS_CRASH.value
+ 
+ 
++# ---------------------------------------------------------------------------
++# G4 -- agent/GameState construction must be classified like any other
++# harness step, never escape run_trial as a raw, unjournalled traceback.
++# ---------------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_make_agent_construction_failure_is_a_harness_crash_attempt(tmp_path):
++    run_dir = tmp_path / "run"
++    store = BenchmarkStore.create(run_dir, _lock())
++
++    def boom(spec):
++        raise RuntimeError("backend construction boom")
++
++    deps = _deps(make_agent=boom)
++    runner = _runner(store, deps)
++
++    await runner.run_trial(_spec(1, "minimal"))  # must NOT raise
++
++    assert runner.store.completed_indices() == set()
++    assert runner.store.attempt_count(1) == 1
++    assert _attempt_payload(run_dir, 1)["failure_class"] == FailureClass.HARNESS_CRASH.value
++
++
+ # ---------------------------------------------------------------------------
+ # Immediate health classification of timeouts and transport failures
+ # ---------------------------------------------------------------------------
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_episode_timeout_with_healthy_canary_admits_runaway_timeout(tmp_path):
+     store = BenchmarkStore.create(tmp_path / "run", _lock())
+     deps = _deps(
+         make_agent=lambda spec: _RaisingAgent(EpisodeTimedOut("wall reached")),
+@@ -768,40 +919,48 @@ async def test_run_fails_closed_on_a_session_fingerprint_mismatch_during_resume_
+         await runner.run([_spec(1, "minimal"), _spec(2, "standard")])
+ 
+ 
+ # ---------------------------------------------------------------------------
+ # CLI fail-closed guard: no admission gates are wired into `main`/`_run_async`
+ # yet, so a counted-looking session must be refused outright unless the
+ # operator deliberately opts into a marked, non-counted smoke run.
+ # ---------------------------------------------------------------------------
+ 
+ 
+-def _write_fixture_suite_and_position(tmp_path) -> "object":
++def _write_fixture_suite_and_position(tmp_path, *, expected_state_sha256: str | None = None) -> "object":
+     from pathlib import Path
+ 
++    from civ_mcp.arena.benchmark_state import state_digest
++
+     benchmarks_dir = tmp_path / "benchmarks"
+     suites_dir = benchmarks_dir / "suites"
+     positions_dir = benchmarks_dir / "positions"
+     suites_dir.mkdir(parents=True)
+     positions_dir.mkdir(parents=True)
+ 
++    # G10: expected_state_sha256 must actually match
++    # state_digest({"turn": 42}) now that _run_async verifies it at
++    # startup -- a test wanting a tampered/stale digest passes one
++    # explicitly via the `expected_state_sha256` override.
++    digest = expected_state_sha256 if expected_state_sha256 is not None else state_digest({"turn": 42})
++
+     (positions_dir / "builder-cal-v1.yaml").write_text(
+-        """
++        f"""
+ position_id: builder-cal-v1
+ version: 1
+ archive: positions/builder-cal-v1.Civ6Save
+ archive_sha256: "abc123"
+ game_save_name: builder-cal-v1
+ player_id: 0
+ expected_state:
+   turn: 42
+-expected_state_sha256: "def456"
++expected_state_sha256: "{digest}"
+ relevant_tiles:
+   - [9, 24]
+ objectives:
+   - id: obj1
+     description: improve the farm tile
+ rubric:
+   - task_id: r1
+     levels:
+       - score: 0
+         predicate:
+@@ -876,20 +1035,23 @@ async def test_ungated_smoke_flag_proceeds_and_stamps_the_session_lock(tmp_path,
+     def _capturing_create(cls, run_dir_arg, lock):
+         captured_locks.append(dict(lock))
+         return real_create(cls, run_dir_arg, lock)
+ 
+     monkeypatch.setattr(benchmark_runner.BenchmarkStore, "create", classmethod(_capturing_create))
+ 
+     class _FakeConnection:
+         async def connect(self):
+             return None
+ 
++        async def disconnect(self):
++            return None
++
+     monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+ 
+     class _FakeRunner:
+         def __init__(self, **_kwargs):
+             pass
+ 
+         async def run(self, schedule):
+             return None
+ 
+     monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _FakeRunner)
+@@ -918,37 +1080,40 @@ async def test_ungated_smoke_run_dir_is_report_ready(tmp_path, monkeypatch):
+     missing scorer_fingerprint. Runs the smoke CLI path end to end (with
+     faked game/backend deps, one committed trial) and then calls
+     `build_report` on the resulting run dir directly."""
+     suite_path = _write_fixture_suite_and_position(tmp_path)
+     run_dir_base = tmp_path / "runs"
+ 
+     class _FakeConnection:
+         async def connect(self):
+             return None
+ 
++        async def disconnect(self):
++            return None
++
+     monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+ 
+     class _FinishingAgentForSmoke:
+         async def run(self, gs, player_id, turn):
+             return EpisodeEvidence(
+                 terminal=EpisodeTerminal.FINISH_TRIAL,
+                 steps=[],
+                 invalid_tool_calls=[],
+                 final_summary="done",
+                 wall_clock_s=0.1,
+                 prompt_tokens=1,
+                 completion_tokens=1,
+             )
+ 
+     def _fake_build_live_dependencies(**_kwargs) -> RunnerDependencies:
+         return RunnerDependencies(
+-            reload_position=AsyncMock(return_value=None),
++            reload_position=AsyncMock(return_value=True),
+             dismiss_popups=AsyncMock(return_value="POPUPS|none"),
+             # Matches the fixture position's expected_state ({"turn": 42})
+             # so the pre-episode canonical checksum passes.
+             capture_state=AsyncMock(return_value={"turn": 42}),
+             make_agent=lambda spec: _FinishingAgentForSmoke(),
+             probe_health=AsyncMock(
+                 return_value=HealthProbe(healthy=True, model="qwen3.6-27b", latency_s=0.1, error=None)
+             ),
+         )
+ 
+@@ -966,35 +1131,291 @@ async def test_ungated_smoke_run_dir_is_report_ready(tmp_path, monkeypatch):
+ 
+     exit_code = await benchmark_runner._run_async(args)
+     assert exit_code == 0
+ 
+     run_dir = run_dir_base / "smoke-run"
+     report = build_report(run_dir)
+     assert report["session"]["ungated_smoke"] is True
+     assert report["completeness"]["by_position"]["builder-cal-v1"]["committed"] == 1
+ 
+ 
++# ---------------------------------------------------------------------------
++# G5 -- _run_async must close the live game connection and every cached
++# backend client on every exit path, not just the happy path.
++# ---------------------------------------------------------------------------
++
++
++def _fake_build_live_dependencies_with_aclose(aclose_calls: list):
++    def _build(**_kwargs) -> RunnerDependencies:
++        async def aclose() -> None:
++            aclose_calls.append(True)
++
++        return RunnerDependencies(
++            reload_position=AsyncMock(return_value=True),
++            dismiss_popups=AsyncMock(return_value="POPUPS|none"),
++            capture_state=AsyncMock(return_value={"turn": 42}),
++            make_agent=lambda spec: _FinishingAgent(),
++            probe_health=AsyncMock(return_value=_healthy_probe()),
++            aclose=aclose,
++        )
++
++    return _build
++
++
++@pytest.mark.asyncio
++async def test_run_async_closes_connection_and_backends_on_normal_exit(tmp_path, monkeypatch):
++    suite_path = _write_fixture_suite_and_position(tmp_path)
++    run_dir_base = tmp_path / "runs"
++
++    disconnect_calls: list = []
++
++    class _FakeConnection:
++        async def connect(self):
++            return None
++
++        async def disconnect(self):
++            disconnect_calls.append(True)
++
++    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
++
++    aclose_calls: list = []
++    monkeypatch.setattr(
++        benchmark_runner,
++        "_build_live_dependencies",
++        _fake_build_live_dependencies_with_aclose(aclose_calls),
++    )
++
++    args = benchmark_runner._build_arg_parser().parse_args(
++        [
++            "--suite", str(suite_path),
++            "--run-id", "smoke-run",
++            "--run-dir", str(run_dir_base),
++            "--gateway-url", "http://example.invalid/v1",
++            "--ungated-smoke",
++        ]
++    )
++
++    exit_code = await benchmark_runner._run_async(args)
++
++    assert exit_code == 0
++    assert disconnect_calls == [True]
++    assert aclose_calls == [True]
++
++
++@pytest.mark.asyncio
++async def test_run_async_closes_connection_and_backends_on_exception_exit(tmp_path, monkeypatch):
++    """Cleanup must run even when the session doesn't exit cleanly -- an
++    unrecognized exception out of runner.run() still propagates (only
++    SessionAborted is caught), but the connection and cached backend
++    clients must not leak."""
++    suite_path = _write_fixture_suite_and_position(tmp_path)
++    run_dir_base = tmp_path / "runs"
++
++    disconnect_calls: list = []
++
++    class _FakeConnection:
++        async def connect(self):
++            return None
++
++        async def disconnect(self):
++            disconnect_calls.append(True)
++
++    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
++
++    aclose_calls: list = []
++    monkeypatch.setattr(
++        benchmark_runner,
++        "_build_live_dependencies",
++        _fake_build_live_dependencies_with_aclose(aclose_calls),
++    )
++
++    class _BoomRunner:
++        def __init__(self, **_kwargs):
++            pass
++
++        async def run(self, schedule):
++            raise RuntimeError("kaboom")
++
++    monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _BoomRunner)
++
++    args = benchmark_runner._build_arg_parser().parse_args(
++        [
++            "--suite", str(suite_path),
++            "--run-id", "smoke-run",
++            "--run-dir", str(run_dir_base),
++            "--gateway-url", "http://example.invalid/v1",
++            "--ungated-smoke",
++        ]
++    )
++
++    with pytest.raises(RuntimeError, match="kaboom"):
++        await benchmark_runner._run_async(args)
++
++    assert disconnect_calls == [True]
++    assert aclose_calls == [True]
++
++
++@pytest.mark.asyncio
++async def test_openai_compat_backend_aclose_closes_the_underlying_client():
++    """Unit-level: OpenAICompatBackend must expose a close hook so
++    _build_live_dependencies's aclose() has something real to call."""
++    backend = benchmark_runner.OpenAICompatBackend(
++        "http://example.invalid/v1", "x", "some-model"
++    )
++    close_calls: list = []
++
++    async def fake_close():
++        close_calls.append(True)
++
++    backend._client.close = fake_close
++    await backend.aclose()
++    assert close_calls == [True]
++
++
++# ---------------------------------------------------------------------------
++# G6 -- an unset --api-key-env must not refuse to start (local gateways
++# need no key), but it must print a clear one-line warning naming the env
++# var, since a real remote endpoint will fail the admission probe with the
++# "x" placeholder.
++# ---------------------------------------------------------------------------
++
++
++def _minimal_smoke_args(suite_path, run_dir) -> list:
++    return [
++        "--suite", str(suite_path),
++        "--run-id", "smoke-run",
++        "--run-dir", str(run_dir),
++        "--gateway-url", "http://example.invalid/v1",
++        "--ungated-smoke",
++    ]
++
++
++def _patch_fake_connection_and_noop_runner(monkeypatch) -> None:
++    class _FakeConnection:
++        async def connect(self):
++            return None
++
++        async def disconnect(self):
++            return None
++
++    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
++
++    class _FakeRunner:
++        def __init__(self, **_kwargs):
++            pass
++
++        async def run(self, schedule):
++            return None
++
++    monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _FakeRunner)
++
++
++@pytest.mark.asyncio
++async def test_run_async_warns_when_api_key_env_var_is_unset(tmp_path, monkeypatch, capsys):
++    suite_path = _write_fixture_suite_and_position(tmp_path)
++    run_dir = tmp_path / "runs"
++    monkeypatch.delenv("LITELLM_OPENAI_API_KEY", raising=False)
++    _patch_fake_connection_and_noop_runner(monkeypatch)
++
++    args = benchmark_runner._build_arg_parser().parse_args(
++        _minimal_smoke_args(suite_path, run_dir)
++    )
++
++    exit_code = await benchmark_runner._run_async(args)
++
++    assert exit_code == 0
++    err = capsys.readouterr().err
++    assert "LITELLM_OPENAI_API_KEY" in err
++    assert "placeholder" in err.lower()
++
++
++@pytest.mark.asyncio
++async def test_run_async_no_warning_when_api_key_env_var_is_set(tmp_path, monkeypatch, capsys):
++    suite_path = _write_fixture_suite_and_position(tmp_path)
++    run_dir = tmp_path / "runs"
++    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "sk-real-key")
++    _patch_fake_connection_and_noop_runner(monkeypatch)
++
++    args = benchmark_runner._build_arg_parser().parse_args(
++        _minimal_smoke_args(suite_path, run_dir)
++    )
++
++    exit_code = await benchmark_runner._run_async(args)
++
++    assert exit_code == 0
++    err = capsys.readouterr().err
++    assert "LITELLM_OPENAI_API_KEY" not in err
++
++
++# ---------------------------------------------------------------------------
++# G10 -- expected_state_sha256 is a declared manifest field that must
++# actually be verified against state_digest(expected_state) before any
++# trial runs, not just loaded and never read again.
++# ---------------------------------------------------------------------------
++
++
++@pytest.mark.asyncio
++async def test_run_async_refuses_a_tampered_expected_state_sha256(tmp_path, monkeypatch, capsys):
++    suite_path = _write_fixture_suite_and_position(tmp_path, expected_state_sha256="0" * 64)
++    run_dir = tmp_path / "runs"
++    _patch_fake_connection_and_noop_runner(monkeypatch)
++
++    args = benchmark_runner._build_arg_parser().parse_args(
++        _minimal_smoke_args(suite_path, run_dir)
++    )
++
++    exit_code = await benchmark_runner._run_async(args)
++
++    assert exit_code == 1
++    err = capsys.readouterr().err
++    # Both digests must be named so a human can actually diagnose which one
++    # is stale/wrong.
++    assert "0" * 64 in err
++    from civ_mcp.arena.benchmark_state import state_digest
++    assert state_digest({"turn": 42}) in err
++
++
++@pytest.mark.asyncio
++async def test_run_async_proceeds_when_expected_state_sha256_matches(tmp_path, monkeypatch):
++    """The default fixture's expected_state_sha256 is now the real digest
++    of {"turn": 42} -- a correct manifest must not be refused."""
++    suite_path = _write_fixture_suite_and_position(tmp_path)
++    run_dir = tmp_path / "runs"
++    _patch_fake_connection_and_noop_runner(monkeypatch)
++
++    args = benchmark_runner._build_arg_parser().parse_args(
++        _minimal_smoke_args(suite_path, run_dir)
++    )
++
++    exit_code = await benchmark_runner._run_async(args)
++
++    assert exit_code == 0
++
++
+ @pytest.mark.asyncio
+ async def test_run_async_fails_closed_on_a_tampered_schedule_json_on_resume(tmp_path, monkeypatch):
+     """Cheap fold-in: on resume, `_run_async` only checks whether
+     schedule.json already exists -- it never re-verifies the FILE'S
+     CONTENT against the session lock's schedule_fingerprint. A schedule.json
+     corrupted or partially written by a prior crash (distinct from
+     session.json, which BenchmarkStore.create already verifies byte-for-
+     byte) would otherwise be silently trusted on resume."""
+     suite_path = _write_fixture_suite_and_position(tmp_path)
+     run_dir_base = tmp_path / "runs"
+ 
+     class _FakeConnection:
+         async def connect(self):
+             return None
+ 
++        async def disconnect(self):
++            return None
++
+     monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeConnection)
+ 
+     class _FakeRunner:
+         def __init__(self, **_kwargs):
+             pass
+ 
+         async def run(self, schedule):
+             return None
+ 
+     monkeypatch.setattr(benchmark_runner, "BenchmarkRunner", _FakeRunner)
+@@ -1217,11 +1638,41 @@ async def test_live_reload_position_passes_on_success_string(monkeypatch):
+         benchmark_runner, "load_game_save", AsyncMock(return_value=success_result)
+     )
+     deps = benchmark_runner._build_live_dependencies(
+         connection=object(),
+         position=position,
+         suite=suite,
+         gateway_url="http://example.invalid/v1",
+         api_key="x",
+     )
+ 
+-    await deps.reload_position(position.position_id)  # must not raise
++    verified = await deps.reload_position(position.position_id)  # must not raise
++    assert verified is True
++
++
++@pytest.mark.asyncio
++async def test_live_reload_position_reports_unverified_for_stable_open_port_fallback(monkeypatch):
++    """G3: the F16(b) stable-open-port fallback is success-shaped text the
++    launcher cannot itself verify (no game connection) -- reload_position
++    must surface that as verified=False, not silently claim verified=True
++    like the observed-drop path."""
++    position = _position_manifest()
++    arm = TreatmentArm("standard", "standard", {})
++    suite = _suite_manifest((arm,))
++    unverified_result = (
++        "Loaded builder-cal-v1 (UNVERIFIED: port drop not observed -- "
++        "likely faster than the poll interval): world ready, FireTuner "
++        "port is open. Reconnect and verify with get_game_overview."
++    )
++    monkeypatch.setattr(
++        benchmark_runner, "load_game_save", AsyncMock(return_value=unverified_result)
++    )
++    deps = benchmark_runner._build_live_dependencies(
++        connection=object(),
++        position=position,
++        suite=suite,
++        gateway_url="http://example.invalid/v1",
++        api_key="x",
++    )
++
++    verified = await deps.reload_position(position.position_id)
++    assert verified is False
+diff --git a/tests/arena/test_benchmark_state.py b/tests/arena/test_benchmark_state.py
+index 6395f6c..d3123d0 100644
+--- a/tests/arena/test_benchmark_state.py
++++ b/tests/arena/test_benchmark_state.py
+@@ -141,20 +141,47 @@ def test_parse_benchmark_state_extracts_identity_units_cities_and_tiles():
+          "resource": "RESOURCE_IRON", "pillaged": False},
+     ]
+ 
+ 
+ def test_parse_benchmark_state_ignores_malformed_lines():
+     state = parse_benchmark_state(["GARBAGE", "UNIT|not-an-int|X|1|1|0", "TILE|1|1"])
+     assert state["units"] == []
+     assert state["tiles"] == []
+ 
+ 
++def test_parse_benchmark_state_raises_on_a_corrupt_identity_row():
++    """G15 repro: the per-line `except (ValueError, IndexError): continue`
++    used to cover the IDENTITY branch too -- a corrupt field there (e.g. a
++    non-numeric turn) silently discarded the whole identity row, and the
++    resulting state was later misreported by capture_canonical_state as a
++    TRUNCATED response (missing identity row entirely) when the row was
++    actually present but corrupt. Other row types (UNIT/CITY/TILE) still
++    skip-on-corrupt -- see test_parse_benchmark_state_ignores_malformed_lines."""
++    from civ_mcp.lua.benchmark import CorruptIdentityRow
++
++    lines = ["IDENTITY|CIVILIZATION_ROME|12345|NOT_A_NUMBER|0|0|42.5|3.0"]
++    with pytest.raises(CorruptIdentityRow):
++        parse_benchmark_state(lines)
++
++
++def test_parse_benchmark_state_still_skips_corrupt_unit_rows_after_a_good_identity_row():
++    """The IDENTITY-specific fail-loud change must not regress the
++    existing skip-on-corrupt behavior for other row types."""
++    lines = [
++        "IDENTITY|CIVILIZATION_ROME|12345|157|0|0|42.5|3.0",
++        "UNIT|not-an-int|X|1|1|0",
++    ]
++    state = parse_benchmark_state(lines)
++    assert state["turn"] == 157
++    assert state["units"] == []
++
++
+ @pytest.mark.asyncio
+ async def test_capture_canonical_state_queries_parses_and_normalizes():
+     class FakeConnection:
+         def __init__(self):
+             self.sent: list[str] = []
+ 
+         async def execute_read(self, lua_code, timeout=5.0):
+             self.sent.append(lua_code)
+             return [
+                 "IDENTITY|CIVILIZATION_ROME|1|157|0|0|10.0|1.0",
+@@ -208,18 +235,34 @@ async def test_capture_canonical_state_raises_on_truncated_response_missing_iden
+     a session-killing checksum abort."""
+ 
+     class TruncatedConnection:
+         async def execute_read(self, lua_code, timeout=5.0):
+             return ["UNIT|1|UNIT_BUILDER|8|8|2"]  # no IDENTITY line at all
+ 
+     with pytest.raises(BenchmarkStateError):
+         await capture_canonical_state(TruncatedConnection(), player_id=0, tile_coords=[])
+ 
+ 
++@pytest.mark.asyncio
++async def test_capture_canonical_state_names_a_corrupt_identity_row_not_truncation():
++    """G15: a corrupt (present-but-unparseable) IDENTITY row must surface
++    as a distinct, correctly-diagnosed BenchmarkStateError -- not the
++    generic "missing identity row" truncation message, which would
++    mislead triage toward a network/timeout explanation instead of a
++    corrupt Lua data row."""
++
++    class CorruptIdentityConnection:
++        async def execute_read(self, lua_code, timeout=5.0):
++            return ["IDENTITY|CIVILIZATION_ROME|12345|NOT_A_NUMBER|0|0|42.5|3.0"]
++
++    with pytest.raises(BenchmarkStateError, match="(?i)corrupt.*identity"):
++        await capture_canonical_state(CorruptIdentityConnection(), player_id=0, tile_coords=[])
++
++
+ @pytest.mark.asyncio
+ async def test_capture_canonical_state_raises_on_completely_empty_response():
+     class EmptyConnection:
+         async def execute_read(self, lua_code, timeout=5.0):
+             return []
+ 
+     with pytest.raises(BenchmarkStateError):
+         await capture_canonical_state(EmptyConnection(), player_id=0, tile_coords=[])
+diff --git a/tests/arena/test_benchmark_store.py b/tests/arena/test_benchmark_store.py
+index d21ddf3..8e771e6 100644
+--- a/tests/arena/test_benchmark_store.py
++++ b/tests/arena/test_benchmark_store.py
+@@ -1,19 +1,21 @@
+ import json
+ import os
+ 
+ import pytest
+ 
+ from civ_mcp.arena.benchmark_store import (
+     BenchmarkStore,
++    BenchmarkStoreError,
+     SessionLockMismatchError,
+     TrialExistsError,
++    trial_filename,
+ )
+ 
+ 
+ def _lock() -> dict:
+     return {"session_fingerprint": "abc123", "schedule_fingerprint": "def456"}
+ 
+ 
+ def test_scoreable_raw_trial_prevents_reexecution_even_without_report(tmp_path):
+     lock = _lock()
+     store = BenchmarkStore.create(tmp_path / "run", lock)
+@@ -198,10 +200,86 @@ def test_commit_trial_at_index_1000_is_not_re_executed_or_overwritten(tmp_path):
+     """The attempt cap depends on attempt_count() actually counting attempts
+     for high indices -- if the regex silently ignores them, TrialExistsError
+     never fires either way (re-execution just always "succeeds" against a
+     destination the code thinks doesn't exist -- until it collides)."""
+     lock = _lock()
+     store = BenchmarkStore.create(tmp_path / "run", lock)
+     store.commit_trial(1000, {"session_fingerprint": store.fingerprint, "terminal": "a"})
+ 
+     with pytest.raises(TrialExistsError):
+         store.commit_trial(1000, {"session_fingerprint": store.fingerprint, "terminal": "b"})
++
++
++# ---------------------------------------------------------------------------
++# G8 -- a lock with no (or an empty) session_fingerprint must be refused
++# outright, not silently accepted with fingerprint=None. A None fingerprint
++# lets an unstamped stale trial pass the runner's resume check (None ==
++# None) and makes the report's lock/trial fingerprint cross-check a no-op.
++# ---------------------------------------------------------------------------
++
++
++def test_create_refuses_a_lock_with_no_session_fingerprint(tmp_path):
++    lock = {"schedule_fingerprint": "def456"}  # no session_fingerprint key at all
++    with pytest.raises(BenchmarkStoreError):
++        BenchmarkStore.create(tmp_path / "run", lock)
++
++
++def test_create_refuses_a_lock_with_an_empty_session_fingerprint(tmp_path):
++    lock = {"session_fingerprint": "", "schedule_fingerprint": "def456"}
++    with pytest.raises(BenchmarkStoreError):
++        BenchmarkStore.create(tmp_path / "run", lock)
++
++
++def test_open_refuses_a_lock_with_no_session_fingerprint(tmp_path):
++    # BenchmarkStore.open on a run directory that was never created (no
++    # session.json yet) must still refuse the fingerprint-less lock, not
++    # get as far as FileNotFoundError.
++    lock = {"schedule_fingerprint": "def456"}
++    with pytest.raises(BenchmarkStoreError):
++        BenchmarkStore.open(tmp_path / "run", lock)
++
++
++# ---------------------------------------------------------------------------
++# G9 -- append_event's details kwarg must land flat in the journal record,
++# not double-nested under record["details"]["details"] (the old **details
++# catch-all captured the literal keyword name "details" as just another
++# entry in itself).
++# ---------------------------------------------------------------------------
++
++
++def test_append_event_details_kwarg_lands_flat_not_nested(tmp_path):
++    lock = _lock()
++    store = BenchmarkStore.create(tmp_path / "run", lock)
++
++    record = store.append_event("some_event", trial_index=1, details={"a": 1})
++
++    assert record["details"] == {"a": 1}
++
++
++def test_append_event_with_no_details_omits_the_key(tmp_path):
++    lock = _lock()
++    store = BenchmarkStore.create(tmp_path / "run", lock)
++
++    record = store.append_event("some_event", trial_index=1)
++
++    assert "details" not in record
++
++
++# ---------------------------------------------------------------------------
++# G12 -- a single, shared trial filename convention. benchmark_report.py
++# must reuse this exact function rather than a private re-implementation
++# of the `{index:03d}` (minimum-width) rule -- see _TRIAL_NAME_RE's own
++# comment on why an exact `\d{3}` would silently break at index 1000.
++# ---------------------------------------------------------------------------
++
++
++def test_trial_filename_matches_the_minimum_width_convention():
++    assert trial_filename(1) == "trial-001.json"
++    assert trial_filename(1000) == "trial-1000.json"
++
++
++def test_committed_trial_lands_at_the_path_trial_filename_predicts(tmp_path):
++    lock = _lock()
++    store = BenchmarkStore.create(tmp_path / "run", lock)
++    store.commit_trial(1000, {"session_fingerprint": store.fingerprint})
++
++    assert (tmp_path / "run" / "trials" / trial_filename(1000)).exists()
+diff --git a/tests/test_game_launcher.py b/tests/test_game_launcher.py
+index 7ff7b3a..6cb192f 100644
+--- a/tests/test_game_launcher.py
++++ b/tests/test_game_launcher.py
+@@ -628,20 +628,22 @@ async def test_continue_after_lua_load_presses_escape_until_world_ready(monkeypa
+     real_sleep = _asyncio.sleep
+     monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+ 
+     result = await game_launcher.continue_after_lua_load(
+         "CHANNELS_GATE_V1_T157", press_every=1
+     )
+ 
+     assert presses          # pressed while the port was closed
+     assert "FireTuner port is open" in result
+     assert seen[-1] is True
++    # The observed-drop path is a confirmed success -- no UNVERIFIED marker.
++    assert "UNVERIFIED" not in result
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_continue_after_lua_load_treats_a_stable_open_port_as_world_ready(monkeypatch):
+     """F16(b) repro: GameConnection's own auto-reconnect can re-open the
+     FireTuner port faster than continue_after_lua_load's poll interval, so
+     the drop is never actually observed even though the load genuinely
+     succeeded. A verified-open, STABLE port (confirmed by one more spaced
+     check) must be treated as world-ready success rather than a false
+     "port never dropped" warning."""
+@@ -649,20 +651,25 @@ async def test_continue_after_lua_load_treats_a_stable_open_port_as_world_ready(
+     import asyncio as _asyncio
+     real_sleep = _asyncio.sleep
+     monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+ 
+     result = await game_launcher.continue_after_lua_load(
+         "CHANNELS_GATE_V1_T157", engage_polls=3
+     )
+ 
+     assert "world ready" in result
+     assert "WARNING" not in result
++    # G3 ruling: this fallback is success-shaped text the launcher cannot
++    # itself verify (no game connection) -- it must carry an UNVERIFIED
++    # marker so the runner's reload_position can surface verified=False,
++    # distinguishing it from the observed-drop success path.
++    assert "UNVERIFIED" in result
+ 
+ 
+ @pytest.mark.asyncio
+ async def test_continue_after_lua_load_warns_when_load_never_engages(monkeypatch):
+     """If the port never drops AND does not settle open either (it
+     flickers closed again on the stability recheck), the world is
+     genuinely not ready -- report a warning instead of pressing Escape at
+     a live game."""
+     presses: list[bool] = []
+     # engage_polls=3 samples (all open, never observed dropping), then the
+diff --git a/tests/test_server_auto_boot.py b/tests/test_server_auto_boot.py
+index 75634c4..8e88f7a 100644
+--- a/tests/test_server_auto_boot.py
++++ b/tests/test_server_auto_boot.py
+@@ -73,20 +73,41 @@ async def test_wrong_save_recovery_skips_stray_click_when_reload_reports_world_r
+     )
+     # First VERIFY (step 5) reports a wrong turn (>5) to enter the
+     # recovery branch; the post-recovery VERIFY reports a correct turn.
+     conn = _FakeConn(verify_turns=[157, 1])
+ 
+     await server._auto_boot(conn, "scenario")
+ 
+     click_positional.assert_not_called()
+ 
+ 
++@pytest.mark.asyncio
++async def test_wrong_save_recovery_skips_stray_click_for_unverified_world_ready(monkeypatch):
++    """G3: the F16(b) stable-open-port fallback reports success text
++    carrying an UNVERIFIED marker but still says "world ready" -- the
++    wrong-save recovery's substring check must still treat it as
++    reconnect-only (no positional click into an already-loaded world)."""
++    click_positional, _load = _patch_common(
++        monkeypatch,
++        load_result=(
++            "Loaded scenario (UNVERIFIED: port drop not observed -- likely "
++            "faster than the poll interval): world ready, FireTuner port "
++            "is open."
++        ),
++    )
++    conn = _FakeConn(verify_turns=[157, 1])
++
++    await server._auto_boot(conn, "scenario")
++
++    click_positional.assert_not_called()
++
++
+ @pytest.mark.asyncio
+ async def test_wrong_save_recovery_still_clicks_when_reload_does_not_report_world_ready(monkeypatch):
+     """The legacy quick-return path (a reload result that does NOT already
+     say the world is ready) still needs the positional click through the
+     leader screen -- this branch must be unaffected."""
+     click_positional, _load = _patch_common(
+         monkeypatch,
+         load_result="Loaded scenario via OCR menu navigation.",
+     )
+     conn = _FakeConn(verify_turns=[157, 1])
