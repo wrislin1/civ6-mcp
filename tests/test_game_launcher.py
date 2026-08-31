@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import ctypes
 import hashlib
+import json
 import os
 import sys
 import uuid
@@ -851,6 +852,154 @@ def test_press_escape_uses_windows_bridge_from_wsl(monkeypatch):
     monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: False)
     assert game_launcher._press_escape() is False
     assert runs == []
+
+
+@pytest.mark.parametrize(
+    "bridge_state,expected",
+    [
+        ("continue_screen", game_launcher.FrontendLoadState.CONTINUE_SCREEN),
+        ("leader_screen", game_launcher.FrontendLoadState.LEADER_SCREEN),
+        ("in_world", game_launcher.FrontendLoadState.IN_WORLD),
+        ("unknown", game_launcher.FrontendLoadState.UNKNOWN),
+    ],
+)
+def test_classify_frontend_load_state_bridges_through_windows_companion_on_linux(
+    monkeypatch, bridge_state, expected
+):
+    """Under WSL the game window is not visible to this process -- the
+    classifier must delegate to the same Windows companion checkout used
+    by `_press_escape_windows_bridge`, running WinRT OCR natively and
+    reporting the result back as JSON."""
+    runs: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        runs.append(list(cmd))
+        return SimpleNamespace(
+            returncode=0, stdout=(json.dumps({"state": bridge_state}) + "\n").encode("utf-8"), stderr=b""
+        )
+
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    monkeypatch.setattr(game_launcher.subprocess, "run", fake_run)
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: True)
+
+    assert game_launcher._classify_frontend_load_state() is expected
+    [cmd] = runs
+    assert cmd[-2] == "classify-frontend"
+    assert cmd[-1] == "--json"
+
+
+@pytest.mark.parametrize(
+    "break_bridge",
+    [
+        "missing",       # bridge python/bootstrap not present
+        "raises",        # subprocess.run itself raises
+        "nonzero_exit",  # bridge ran but reported failure
+        "bad_json",      # stdout isn't parseable JSON
+        "bad_state",     # JSON has an unrecognized state string
+    ],
+)
+def test_classify_frontend_load_state_bridge_failure_maps_to_unknown(
+    monkeypatch, break_bridge
+):
+    """Every bridge failure mode must fail closed to UNKNOWN -- never to a
+    pressable state. A broken or unreachable bridge must never be
+    mistaken for evidence that it's safe to press Escape."""
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+
+    if break_bridge == "missing":
+        monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: False)
+        assert game_launcher._classify_frontend_load_state() is game_launcher.FrontendLoadState.UNKNOWN
+        return
+
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: True)
+
+    def fake_run(cmd, **kwargs):
+        if break_bridge == "raises":
+            raise TimeoutError("bridge timed out")
+        if break_bridge == "nonzero_exit":
+            return SimpleNamespace(returncode=1, stdout=b"", stderr=b"boom")
+        if break_bridge == "bad_json":
+            return SimpleNamespace(returncode=0, stdout=b"not json\n", stderr=b"")
+        if break_bridge == "bad_state":
+            return SimpleNamespace(
+                returncode=0,
+                stdout=(json.dumps({"state": "on_fire"}) + "\n").encode("utf-8"),
+                stderr=b"",
+            )
+        raise AssertionError(break_bridge)
+
+    monkeypatch.setattr(game_launcher.subprocess, "run", fake_run)
+
+    assert game_launcher._classify_frontend_load_state() is game_launcher.FrontendLoadState.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_bridged_continue_screen_presses_escape_exactly_once(
+    monkeypatch,
+):
+    """End-to-end proof through the real WSL bridge plumbing (fake
+    subprocess only): a bridged CONTINUE_SCREEN answer must lead to
+    exactly one Escape press before the port reopens."""
+    port_states = iter([True, False, False, True])
+    presses: list[bool] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: next(port_states, True))
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: True)
+
+    def fake_run(cmd, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=(json.dumps({"state": "continue_screen"}) + "\n").encode("utf-8"),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(game_launcher.subprocess, "run", fake_run)
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", press_every=1
+    )
+
+    assert presses == [True]
+    assert "world ready" in result
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_bridge_failure_never_presses_escape(monkeypatch):
+    """A broken bridge must never be treated as evidence -- the waiter
+    should time out with no Escape sent rather than press blind."""
+    presses: list[bool] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: True)
+
+    def fake_run(cmd, **kwargs):
+        return SimpleNamespace(returncode=1, stdout=b"", stderr=b"boom")
+
+    monkeypatch.setattr(game_launcher.subprocess, "run", fake_run)
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=3, press_every=1
+    )
+
+    assert presses == []
+    assert "WARNING" in result
+    assert "unknown" in result
 
 
 # ---------------------------------------------------------------------------

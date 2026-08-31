@@ -60,6 +60,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     boot_health.add_argument("--json", action="store_true", help="emit a single JSON result object")
 
+    classify_frontend = commands.add_parser(
+        "classify-frontend",
+        help="classify the frontend load screen (continue/leader/in-world/unknown) for the Escape waiter",
+    )
+    classify_frontend.add_argument(
+        "--json", action="store_true", help="emit a single JSON result object"
+    )
+
     return parser
 
 
@@ -167,6 +175,34 @@ def _boot_health(args: argparse.Namespace) -> int:
     return 0 if result.get("ok") else 1
 
 
+def _classify_frontend(args: argparse.Namespace) -> int:
+    """Classify the frontend load screen and report the result as JSON.
+
+    This is the native-Windows half of the WSL bridge used by
+    ``game_launcher._classify_frontend_load_state_windows_bridge``: it must
+    never crash or raise -- any failure to classify (OCR unavailable, no
+    game window, an unexpected exception) is reported as ``state:
+    "unknown"`` with an ``error`` field, exactly like ``_boot_health``
+    fails closed rather than propagating an exception the WSL side would
+    have to guess about.
+    """
+    try:
+        state = game_launcher._classify_frontend_load_state_native()
+        payload: dict = {"state": state.value}
+    except Exception as exc:
+        payload = {
+            "state": game_launcher.FrontendLoadState.UNKNOWN.value,
+            "error": str(exc),
+        }
+
+    if args.json:
+        print(json.dumps(payload))
+    else:
+        print(payload["state"])
+
+    return 0
+
+
 def _launcher_failed(result: str) -> bool:
     return (
         "FAILED:" in result
@@ -194,6 +230,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "boot-health":
             return _boot_health(args)
+
+        if args.command == "classify-frontend":
+            return _classify_frontend(args)
 
         launcher = (
             game_launcher.load_save_from_menu

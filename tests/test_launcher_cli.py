@@ -326,3 +326,45 @@ def test_boot_health_command_without_json_prints_plain_text(monkeypatch, capsys,
 
     assert code == 1
     assert capsys.readouterr().out == "FAILED: frame=5 elapsed=240.0s reason=timeout\n"
+
+
+def test_classify_frontend_command_reports_native_classification_as_json(
+    monkeypatch, capsys
+):
+    """The native half of the WSL bridge: reports whatever
+    `_classify_frontend_load_state_native` returns as JSON, exit 0."""
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        launcher_cli.game_launcher,
+        "_classify_frontend_load_state_native",
+        lambda: launcher_cli.game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+    )
+
+    code = launcher_cli.main(["classify-frontend", "--json"])
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == {"state": "continue_screen"}
+
+
+def test_classify_frontend_command_never_crashes_reports_unknown_with_error(
+    monkeypatch, capsys
+):
+    """Mirrors `_boot_health`'s fail-closed contract: any exception during
+    native classification (OCR crash, missing window, etc.) must be
+    reported as state "unknown" with an error field -- never propagated
+    as a bridge-side crash the WSL caller would have to interpret."""
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+
+    def boom():
+        raise RuntimeError("OCR engine unavailable")
+
+    monkeypatch.setattr(
+        launcher_cli.game_launcher, "_classify_frontend_load_state_native", boom
+    )
+
+    code = launcher_cli.main(["classify-frontend", "--json"])
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["state"] == "unknown"
+    assert payload["error"] == "OCR engine unavailable"

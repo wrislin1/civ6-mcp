@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import glob
 import hashlib
+import json
 import logging
 import ctypes
 import os
@@ -2143,19 +2144,37 @@ async def continue_after_lua_load(
 
 
 def _classify_frontend_load_state() -> FrontendLoadState:
+    """Classify what the frontend currently shows, wherever this process
+    runs.
+
+    Native win32 injects OCR directly; under WSL (sys.platform == 'linux'
+    while the game runs on Windows) classification is delegated to the
+    Windows companion checkout's signed Python via the launcher bootstrap
+    -- the same bridging pattern as ``_press_escape``/
+    ``_press_escape_windows_bridge``, since the game window is not visible
+    to this process under WSL. Any other platform (no bridge exists) is
+    UNKNOWN."""
+    if sys.platform == "win32":
+        return _classify_frontend_load_state_native()
+    if sys.platform == "linux":
+        return _classify_frontend_load_state_windows_bridge()
+    return FrontendLoadState.UNKNOWN
+
+
+def _classify_frontend_load_state_native() -> FrontendLoadState:
     """Classify what the frontend currently shows, using positive evidence
-    only -- this function never guesses.
+    only -- this function never guesses. Runs directly on native Windows
+    (either because this process *is* win32, or because it is the
+    ``classify-frontend`` CLI bridge command invoked from WSL).
 
     An open FireTuner port is the strongest evidence: only a live game
-    connection opens it, so it is always IN_WORLD. Otherwise, on native
-    Windows with a WinRT OCR engine available, look for the CONTINUE
-    button's own on-screen text (the "leader screen" dismissed by
+    connection opens it, so it is always IN_WORLD. Otherwise, with a
+    WinRT OCR engine available, look for the CONTINUE button's own
+    on-screen text (the "leader screen" dismissed by
     ``_click_continue_positional`` -- see its docstring) or a recognized
-    leader-screen anchor. Anything else -- OCR unavailable (every WSL
-    invocation included, since the game window is not visible to this
-    process there), no game window, or no recognized anchor -- is
-    UNKNOWN. UNKNOWN must never be treated as evidence for an Escape
-    press; callers only poll on it.
+    leader-screen anchor. Anything else -- OCR unavailable, no game
+    window, or no recognized anchor -- is UNKNOWN. UNKNOWN must never be
+    treated as evidence for an Escape press; callers only poll on it.
     """
     if _is_tuner_port_open():
         return FrontendLoadState.IN_WORLD
@@ -2177,6 +2196,71 @@ def _classify_frontend_load_state() -> FrontendLoadState:
     if _find_text(results, "LEADER"):
         return FrontendLoadState.LEADER_SCREEN
     return FrontendLoadState.UNKNOWN
+
+
+def _classify_frontend_load_state_windows_bridge() -> FrontendLoadState:
+    """Delegate frontend-state classification to the Windows companion
+    checkout, mirroring ``_press_escape_windows_bridge`` exactly (same
+    path overrides, same path translation, same "unavailable is a
+    non-fatal no-op" contract).
+
+    Conservative by construction: every failure mode -- missing bridge,
+    a subprocess error, a nonzero exit, unparseable JSON, or a state
+    string this process doesn't recognize -- maps to UNKNOWN, never to a
+    pressable state. A broken or unreachable bridge must never be
+    mistaken for positive evidence."""
+    python_exe = os.environ.get("CIV6_WINDOWS_PYTHON", _WSL_WINDOWS_PYTHON)
+    bootstrap = os.environ.get("CIV6_WINDOWS_BOOTSTRAP", _WSL_WINDOWS_BOOTSTRAP)
+    if not (os.path.exists(python_exe) and os.path.exists(bootstrap)):
+        log.debug("Windows bridge unavailable (%s, %s)", python_exe, bootstrap)
+        return FrontendLoadState.UNKNOWN
+    win_bootstrap = bootstrap
+    if bootstrap.startswith("/mnt/") and len(bootstrap) > 7:
+        win_bootstrap = (
+            bootstrap[5].upper() + ":" + bootstrap[6:].replace("/", "\\")
+        )
+    try:
+        proc = subprocess.run(
+            [python_exe, win_bootstrap, "classify-frontend", "--json"],
+            capture_output=True,
+            timeout=30,
+        )
+    except Exception as exc:
+        log.warning("Windows bridge frontend classification failed: %s", exc)
+        return FrontendLoadState.UNKNOWN
+
+    if proc.returncode != 0:
+        log.warning(
+            "Windows bridge frontend classification exited %d: %s",
+            proc.returncode,
+            proc.stderr.decode("utf-8", errors="replace").strip(),
+        )
+        return FrontendLoadState.UNKNOWN
+
+    stdout = proc.stdout.decode("utf-8", errors="replace").strip()
+    lines = [ln for ln in stdout.splitlines() if ln.strip()]
+    if not lines:
+        log.warning("Windows bridge frontend classification produced no output")
+        return FrontendLoadState.UNKNOWN
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        log.warning(
+            "Windows bridge frontend classification produced non-JSON output: %r",
+            stdout,
+        )
+        return FrontendLoadState.UNKNOWN
+
+    state_str = payload.get("state") if isinstance(payload, dict) else None
+    try:
+        return FrontendLoadState(state_str)
+    except ValueError:
+        log.warning(
+            "Windows bridge frontend classification returned an unrecognized "
+            "state: %r",
+            state_str,
+        )
+        return FrontendLoadState.UNKNOWN
 
 
 def _winrt_ocr_available() -> bool:
