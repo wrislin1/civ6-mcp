@@ -28,7 +28,24 @@ infrastructure-attempt records are not scoreable evidence, exactly as
 module's docstring). `admissions/` IS read, but only to detect a typed
 `REPLICATION_DEFERRED_ADMISSION` disposition -- that disposition is never
 passed to scoring, only used to decide whether an incomplete Qwen schedule is
-a legitimate deferral rather than a refused report.
+a legitimate deferral rather than a refused report. Every file this module
+actually reads is enumerated, campaign-relative, in `report["report_inputs"]`.
+
+## campaign.json integrity (verified before anything else)
+
+`campaign.json["campaign_fingerprint"]` is independently recomputed here --
+`fingerprint({k: v for k, v in lock.items() if k != "campaign_fingerprint"})`
+-- and compared byte-for-byte against the recorded value, exactly mirroring
+how `benchmark_campaign.build_campaign_lock` computed it in the first place
+(`lock["campaign_fingerprint"] = fingerprint(lock)`, called before that key
+existed on the dict). Editing any OTHER field in `campaign.json` (a
+threshold, an audit index, a model config) while leaving
+`campaign_fingerprint` untouched is exactly the tamper this check exists to
+catch -- report generation aborts before anything else is even read from the
+lock. `contracts`, `digests.schedule`, and `position_id` are then all
+REQUIRED, non-optional fields (a missing one aborts report generation; the
+corresponding block-vs-lock cross-checks below are unconditional, never
+presence-gated).
 
 ## Sensitivity, direction, and effect (per completed block)
 
@@ -44,13 +61,16 @@ one baseline and one treatment trial is a hard error, never silently skipped.
 
     decided = sum(delta != 0 for delta in deltas)
     standard_wins = sum(delta > 0 for delta in deltas)
-    median_delta = statistics.median(deltas)   # over ALL declared pairs
+    median_signed_normalized_delta = statistics.median(deltas)   # over ALL declared pairs
 
 A block passes when `decided >= rules["minimum_decided_pairs"]` AND
 `standard_wins >= rules["minimum_standard_wins"]` AND
-`median_delta >= rules["minimum_median_normalized_delta"]`. All three
-thresholds come from the frozen `campaign.json["rules"]` -- never hardcoded
-here.
+`median_signed_normalized_delta >= rules["minimum_median_normalized_delta"]`.
+All three thresholds come from the frozen `campaign.json["rules"]` -- never
+hardcoded here. `rules["minimum_decided_pairs"]` may never exceed
+`rules["pairs_per_model"]` (a rule that no block could ever satisfy, and
+whose failure mode would leave nothing for a human tie review to attribute)
+-- `_require_calibration_rules` rejects such a campaign lock outright.
 
 ## Block outcomes (binding taxonomy)
 
@@ -65,9 +85,12 @@ here.
                              attributed "rubric_nondiscriminative" (mixed
                              attribution is ALWAYS this outcome, never a
                              partial pass -- see design doc)
-    TIE_ATTRIBUTION_REQUIRED  tie-heavy and not (yet) fully reviewed --
-                             pending, not a final verdict; forces the
-                             campaign outcome to BLOCKED
+    TIE_ATTRIBUTION_REQUIRED  tie-heavy and not (yet) fully reviewed -- OR
+                             sensitivity failed with no tied pairs to review
+                             at all (only possible for a malformed rules
+                             config, which `_require_calibration_rules`
+                             already rejects) -- pending, not a final
+                             verdict; forces the campaign outcome to BLOCKED
     METRIC_FIDELITY_FAILED  the block's audit.json is missing, disagrees, or
                              is hash-stale against the actually committed
                              trials -- forces the campaign outcome to BLOCKED
@@ -76,7 +99,10 @@ Mechanical zero/nonzero tie labels (`mechanical_label` on each resolved
 attribution) are recorded purely for legibility; they never by themselves
 decide `MODEL_FLOOR_NULL` vs `MODEL_TIE_NULL` vs `NONDISCRIMINATIVE` -- only
 a reviewed `tie_attribution.json` entry does (see module docstring section
-above and `_tie_attribution_section`).
+above and `_tie_attribution_section`). A tie-derived outcome additionally
+requires a NON-EMPTY reviewed-attributions mapping -- an empty mapping
+(reachable only if `tied_pairs` were empty while sensitivity still failed)
+must never be read as "every (zero) tied pair was attributed model_floor."
 
 ## Campaign outcomes
 
@@ -98,6 +124,21 @@ an incomplete Gemma schedule always refuses report generation outright
 (`CampaignReportError`), regardless of Qwen. Qwen
 (`campaign.json["models"][1]`) may be incomplete ONLY when a valid
 `REPLICATION_DEFERRED_ADMISSION` record exists for it in `admissions/`.
+
+## Report content
+
+Beyond the verdict/calibration/audit sections above, each completed block's
+section also carries `model_config` and `model_admission` verbatim from that
+block's own `session.json` -- the locked model configuration (endpoint id,
+sampling, chat template kwargs) and the locked, already-trimmed admission
+evidence (resolved endpoint, GPU topology, registry fingerprint; see
+`benchmark_gates.locked_model_admission_evidence`), never recomputed here.
+`report["campaign"]["models"]` echoes `campaign.json["models"]` in full
+(every `ModelBlockConfig` field, not a curated subset). Every audited
+trial's hash is recorded in `metric_fidelity["entries"]` regardless of
+whether it agreed (`metric_fidelity["mismatches"]` is the filtered subset
+that didn't), and every pair's two trial hashes are recorded in
+`calibration["pairs"][i]["trial_sha256"]`.
 
 ## Determinism
 
@@ -200,8 +241,43 @@ def _fmt(value: object) -> str:
 
 
 # ---------------------------------------------------------------------------
+# campaign.json integrity
+# ---------------------------------------------------------------------------
+
+
+def _verify_campaign_fingerprint(lock: Mapping[str, object], campaign_fingerprint: str) -> None:
+    """Recompute `campaign_fingerprint` over every OTHER field of `lock` and
+    require it to match byte-for-byte -- mirrors exactly how
+    `benchmark_campaign.build_campaign_lock` computed it in the first place
+    (fingerprint the lock dict, THEN add the `campaign_fingerprint` key).
+    An edited threshold/audit-index/model-config with the stamp left
+    untouched is undetectable any other way, since every block merely
+    echoes this same opaque string rather than re-deriving it."""
+    body = {key: value for key, value in lock.items() if key != "campaign_fingerprint"}
+    expected = fingerprint(body)
+    if expected != campaign_fingerprint:
+        raise CampaignReportError(
+            "campaign.json's campaign_fingerprint does not match a fresh fingerprint of its "
+            "own remaining contents -- refusing to trust a campaign lock that may have been "
+            "edited after it was frozen"
+        )
+
+
+# ---------------------------------------------------------------------------
 # admissions/ -- read-only, disposition-only (never passed to scoring)
 # ---------------------------------------------------------------------------
+
+
+def _admission_record_paths(campaign_dir: Path, block_id: str) -> list[Path]:
+    admissions_dir = campaign_dir / "admissions"
+    if not admissions_dir.is_dir():
+        return []
+    prefix = f"{block_id}-attempt-"
+    return [
+        path
+        for path in sorted(admissions_dir.iterdir())
+        if path.is_file() and path.name.startswith(prefix) and path.name.endswith(".json")
+    ]
 
 
 def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
@@ -210,14 +286,8 @@ def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
     `admissions/` directory and skips any file that fails to parse as JSON --
     admission evidence is diagnostic, not scoreable, so a corrupt record here
     must never abort report generation the way corrupt trial evidence does."""
-    admissions_dir = campaign_dir / "admissions"
-    if not admissions_dir.is_dir():
-        return []
-    prefix = f"{block_id}-attempt-"
     records: list[dict] = []
-    for path in sorted(admissions_dir.iterdir()):
-        if not (path.is_file() and path.name.startswith(prefix) and path.name.endswith(".json")):
-            continue
+    for path in _admission_record_paths(campaign_dir, block_id):
         try:
             record = _read_json(path)
         except (OSError, ValueError):
@@ -265,12 +335,21 @@ def _require_calibration_rules(rules: object) -> dict[str, object]:
     missing = sorted(field for field in _REQUIRED_CALIBRATION_RULES_FIELDS if field not in rules)
     if missing:
         raise CampaignReportError(f"campaign.json 'rules' is missing required field(s): {missing}")
-    return dict(rules)
+    rules = dict(rules)
+    if rules["minimum_decided_pairs"] > rules["pairs_per_model"]:
+        raise CampaignReportError(
+            "campaign.json 'rules' declares minimum_decided_pairs "
+            f"({rules['minimum_decided_pairs']!r}) greater than pairs_per_model "
+            f"({rules['pairs_per_model']!r}) -- no block could ever satisfy sensitivity, and "
+            "a resulting tie review would have zero tied pairs to attribute"
+        )
+    return rules
 
 
 def _calibration_section(
     scored_by_index: Mapping[int, Mapping[str, object]],
     *,
+    raw_by_index: Mapping[int, Mapping[str, object]],
     expected_pair_count: int,
     baseline_arm_id: str,
     treatment_arm_id: str,
@@ -338,12 +417,19 @@ def _calibration_section(
                     baseline_arm_id: baseline_trial["index"],
                     treatment_arm_id: treatment_trial["index"],
                 },
+                # G-round-1 (finding 5): the computed hash of both raw
+                # committed trials backing this pair, always recorded here
+                # (not just when a tie-attribution file happens to cite it).
+                "trial_sha256": {
+                    baseline_arm_id: fingerprint(raw_by_index[baseline_trial["index"]]),
+                    treatment_arm_id: fingerprint(raw_by_index[treatment_trial["index"]]),
+                },
             }
         )
 
     decided_count = sum(1 for pair in pairs if pair["decided"])
     standard_wins = sum(1 for delta in deltas if delta > 0)
-    median_delta = statistics.median(deltas) if deltas else 0.0
+    median_signed_normalized_delta = statistics.median(deltas) if deltas else 0.0
 
     return {
         "pairs": pairs,
@@ -351,7 +437,7 @@ def _calibration_section(
         "decided_count": decided_count,
         "tie_count": len(pairs) - decided_count,
         "standard_wins": standard_wins,
-        "median_signed_delta": median_delta,
+        "median_signed_normalized_delta": median_signed_normalized_delta,
         "thresholds": {
             "minimum_decided_pairs": rules["minimum_decided_pairs"],
             "minimum_standard_wins": rules["minimum_standard_wins"],
@@ -359,7 +445,7 @@ def _calibration_section(
         },
         "sensitivity_ok": decided_count >= rules["minimum_decided_pairs"],
         "direction_ok": standard_wins >= rules["minimum_standard_wins"],
-        "effect_ok": median_delta >= rules["minimum_median_normalized_delta"],
+        "effect_ok": median_signed_normalized_delta >= rules["minimum_median_normalized_delta"],
     }
 
 
@@ -388,6 +474,11 @@ def _metric_fidelity_section(
     correction ... may regenerate reports over unchanged raw evidence").
     `manual` is the human's independent read and is the actual ground truth
     this gate is checking automatic scoring against.
+
+    `entries` records every audited index's computed hash and agree/disagree
+    verdict UNCONDITIONALLY (finding 5: "record the computed hashes, not
+    only the mismatches"); `mismatches` is the filtered subset that actually
+    disagreed, kept for convenient rendering/inspection.
     """
     audit_path = block_dir / "audit.json"
     if not audit_path.is_file():
@@ -395,6 +486,7 @@ def _metric_fidelity_section(
             "ok": False,
             "reason": f"{audit_path} is missing",
             "audit_indices": list(audit_indices),
+            "entries": [],
             "mismatches": [],
         }
     audit = _read_json(audit_path)
@@ -403,6 +495,7 @@ def _metric_fidelity_section(
             "ok": False,
             "reason": f"{audit_path} must be a JSON object",
             "audit_indices": list(audit_indices),
+            "entries": [],
             "mismatches": [],
         }
 
@@ -416,46 +509,51 @@ def _metric_fidelity_section(
                 f"match this block's session_fingerprint {lock_session_fingerprint!r}"
             ),
             "audit_indices": list(audit_indices),
+            "entries": [],
             "mismatches": [],
         }
 
     entries_raw = audit.get("trials")
-    entries: dict[int, Mapping[str, object]] = {}
+    file_entries: dict[int, Mapping[str, object]] = {}
     if isinstance(entries_raw, Sequence) and not isinstance(entries_raw, (str, bytes)):
         for entry in entries_raw:
             if isinstance(entry, Mapping) and isinstance(entry.get("index"), int):
-                entries[entry["index"]] = entry
+                file_entries[entry["index"]] = entry
 
-    missing = sorted(index for index in audit_indices if index not in entries)
+    missing = sorted(index for index in audit_indices if index not in file_entries)
     if missing:
         return {
             "ok": False,
             "reason": f"{audit_path} is missing audit entries for index(es) {missing}",
             "audit_indices": list(audit_indices),
+            "entries": [],
             "mismatches": [],
         }
 
+    entries: list[dict[str, object]] = []
     mismatches: list[dict[str, object]] = []
     for index in audit_indices:
-        entry = entries[index]
+        entry = file_entries[index]
         raw_trial = raw_by_index.get(index)
         scored_trial = scored_by_index.get(index)
         if raw_trial is None or scored_trial is None:
-            mismatches.append({"index": index, "reason": "audited index has no committed trial evidence"})
+            problem = {"index": index, "reason": "audited index has no committed trial evidence"}
+            entries.append({**problem, "trial_sha256": None, "agrees": False})
+            mismatches.append(problem)
             continue
 
         expected_sha256 = fingerprint(raw_trial)
         recorded_sha256 = entry.get("trial_sha256")
         if recorded_sha256 != expected_sha256:
-            mismatches.append(
-                {
-                    "index": index,
-                    "reason": "trial_sha256 mismatch -- audited evidence no longer matches "
-                    "the committed trial",
-                    "recorded": recorded_sha256,
-                    "expected": expected_sha256,
-                }
-            )
+            problem = {
+                "index": index,
+                "reason": "trial_sha256 mismatch -- audited evidence no longer matches "
+                "the committed trial",
+                "recorded": recorded_sha256,
+                "expected": expected_sha256,
+            }
+            entries.append({**problem, "trial_sha256": expected_sha256, "agrees": False})
+            mismatches.append(problem)
             continue
 
         live_automatic = {
@@ -465,7 +563,17 @@ def _metric_fidelity_section(
             "repetitions": scored_trial["action_quality"]["repetitions"],
         }
         manual = entry.get("manual")
-        if manual != live_automatic:
+        agrees = manual == live_automatic
+        entries.append(
+            {
+                "index": index,
+                "trial_sha256": expected_sha256,
+                "manual": manual,
+                "live_automatic": live_automatic,
+                "agrees": agrees,
+            }
+        )
+        if not agrees:
             mismatches.append(
                 {
                     "index": index,
@@ -480,6 +588,7 @@ def _metric_fidelity_section(
         "ok": not mismatches,
         "reason": None if not mismatches else "one or more audited trials disagree",
         "audit_indices": list(audit_indices),
+        "entries": entries,
         "mismatches": mismatches,
     }
 
@@ -623,7 +732,15 @@ def _block_outcome(
             return BLOCK_OUTCOME_PASS
         return BLOCK_OUTCOME_MODEL_NULL
 
-    if not tie_attribution["resolved"]:
+    # G-round-1 (finding 3): a tie-derived outcome requires a genuinely
+    # non-empty, fully reviewed attributions mapping -- `set() <= {"model_floor"}`
+    # is vacuously true, so an EMPTY mapping must never fall through to
+    # MODEL_FLOOR_NULL. This is unreachable through a well-formed rules
+    # config (`_require_calibration_rules` already rejects
+    # minimum_decided_pairs > pairs_per_model, the only way sensitivity can
+    # fail with zero tied pairs), but the check stands on its own regardless
+    # of that upstream guard.
+    if not tie_attribution["resolved"] or not tie_attribution["attributions"]:
         return BLOCK_OUTCOME_TIE_ATTRIBUTION_REQUIRED
 
     values = {entry["attribution"] for entry in tie_attribution["attributions"].values()}
@@ -720,6 +837,10 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
     campaign_fingerprint = lock.get("campaign_fingerprint")
     if not campaign_fingerprint:
         raise CampaignReportError("campaign.json is missing a non-empty 'campaign_fingerprint'")
+    # G-round-1 (finding 1): this is the LAST-resort gate a tampered lock
+    # cannot pass by leaving campaign_fingerprint untouched -- see module
+    # docstring "campaign.json integrity" and `_verify_campaign_fingerprint`.
+    _verify_campaign_fingerprint(lock, str(campaign_fingerprint))
 
     models = lock.get("models")
     if not isinstance(models, Sequence) or isinstance(models, (str, bytes)) or len(models) != 2:
@@ -744,25 +865,51 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
         raise CampaignReportError("campaign.json is missing a non-empty 'audit_indices' list")
     audit_indices = [int(i) for i in audit_indices_raw]
 
+    # G-round-1 (finding 2c): position_id is now a MANDATORY lock field --
+    # falling back to each block's own session.json's position_id (the old
+    # behavior) would let two blocks at genuinely different positions be
+    # compared against each other without ever being caught.
     position_id = lock.get("position_id")
+    if not position_id:
+        raise CampaignReportError("campaign.json is missing a non-empty 'position_id'")
 
     schedule = _read_json(campaign_dir / "schedule.json")
     if not isinstance(schedule, Mapping) or not isinstance(schedule.get("blocks"), Mapping):
         raise CampaignReportError("schedule.json is missing a 'blocks' mapping")
 
-    lock_schedule_fingerprint = (lock.get("digests") or {}).get("schedule")
-    if lock_schedule_fingerprint:
-        actual_schedule_fingerprint = fingerprint(schedule)
-        if actual_schedule_fingerprint != lock_schedule_fingerprint:
-            raise CampaignReportError(
-                "schedule.json does not match campaign.json's declared digests.schedule "
-                f"(expected {lock_schedule_fingerprint!r}, found "
-                f"{actual_schedule_fingerprint!r}) -- refusing to score a campaign whose "
-                "schedule may have been tampered with"
-            )
+    # G-round-1 (finding 2b): digests.schedule is now MANDATORY -- the old
+    # `if lock_schedule_fingerprint:` guard skipped verification entirely
+    # whenever campaign.json simply omitted the digest, which is exactly
+    # the tampered/incomplete-lock case this check exists to catch.
+    digests = lock.get("digests")
+    if not isinstance(digests, Mapping):
+        raise CampaignReportError("campaign.json is missing a 'digests' mapping")
+    lock_schedule_fingerprint = digests.get("schedule")
+    if not lock_schedule_fingerprint:
+        raise CampaignReportError("campaign.json 'digests' is missing a non-empty 'schedule' fingerprint")
+    actual_schedule_fingerprint = fingerprint(schedule)
+    if actual_schedule_fingerprint != lock_schedule_fingerprint:
+        raise CampaignReportError(
+            "schedule.json does not match campaign.json's declared digests.schedule "
+            f"(expected {lock_schedule_fingerprint!r}, found "
+            f"{actual_schedule_fingerprint!r}) -- refusing to score a campaign whose "
+            "schedule may have been tampered with"
+        )
 
+    # G-round-1 (finding 2a): contracts.scorer_fingerprint is now MANDATORY
+    # -- the old `if isinstance(contracts, Mapping) else None` plus
+    # `if campaign_scorer_fingerprint and ...` skipped the per-block scorer
+    # cross-check entirely whenever campaign.json simply omitted contracts.
     contracts = lock.get("contracts")
-    campaign_scorer_fingerprint = contracts.get("scorer_fingerprint") if isinstance(contracts, Mapping) else None
+    if not isinstance(contracts, Mapping):
+        raise CampaignReportError("campaign.json is missing a 'contracts' mapping")
+    campaign_scorer_fingerprint = contracts.get("scorer_fingerprint")
+    if not campaign_scorer_fingerprint:
+        raise CampaignReportError("campaign.json 'contracts' is missing a non-empty 'scorer_fingerprint'")
+
+    # Enumerates every file this function actually reads, campaign-relative
+    # -- finding 5's "an enumeration of report inputs."
+    report_inputs: list[str] = ["campaign.json", "schedule.json"]
 
     blocks_report: dict[str, object] = {}
     for block_index, block_id in enumerate(block_ids):
@@ -793,6 +940,9 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
                     "in admissions/ -- refusing to build an official campaign report over an "
                     "incomplete schedule"
                 )
+            report_inputs.extend(
+                f"admissions/{path.name}" for path in _admission_record_paths(campaign_dir, block_id)
+            )
             blocks_report[block_id] = {
                 "status": BLOCK_STATUS_ADMISSION_DEFERRED,
                 "committed_trial_count": len(committed_indices),
@@ -808,47 +958,65 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
         block_session = _read_json(block_dir / "session.json")
         if not isinstance(block_session, Mapping):
             raise CampaignReportError(f"{block_dir / 'session.json'} must be a JSON object")
+        report_inputs.append(f"blocks/{block_id}/session.json")
         if block_session.get("campaign_fingerprint") != campaign_fingerprint:
             raise CampaignReportError(
                 f"block {block_id!r} session.json campaign_fingerprint "
                 f"{block_session.get('campaign_fingerprint')!r} does not match this "
                 f"campaign's campaign_fingerprint {campaign_fingerprint!r}"
             )
-        effective_position_id = position_id or block_session.get("position_id")
-        if position_id is not None and block_session.get("position_id") != position_id:
+        # G-round-1 (finding 2c continued): unconditional now that
+        # position_id is a required lock field -- no more "only checked
+        # when the lock happens to declare one."
+        if block_session.get("position_id") != position_id:
             raise CampaignReportError(
                 f"block {block_id!r} session.json position_id "
                 f"{block_session.get('position_id')!r} does not match campaign.json's "
                 f"declared position_id {position_id!r}"
             )
         block_scorer_fingerprint = block_report["scorer"]["fingerprint"]
-        if campaign_scorer_fingerprint and block_scorer_fingerprint != campaign_scorer_fingerprint:
+        # G-round-1 (finding 2a continued): unconditional now that
+        # contracts.scorer_fingerprint is required.
+        if block_scorer_fingerprint != campaign_scorer_fingerprint:
             raise CampaignReportError(
                 f"block {block_id!r} scorer_fingerprint {block_scorer_fingerprint!r} does not "
                 f"match campaign.json's contracts.scorer_fingerprint "
                 f"{campaign_scorer_fingerprint!r}"
             )
 
-        scored_by_index = _scored_by_index_from_block_report(block_report, str(effective_position_id))
-        raw_by_index = {index: _read_json(trials_dir / trial_filename(index)) for index in expected_indices}
+        scored_by_index = _scored_by_index_from_block_report(block_report, str(position_id))
+        raw_by_index: dict[int, Mapping[str, object]] = {}
+        for index in expected_indices:
+            raw_by_index[index] = _read_json(trials_dir / trial_filename(index))
+            report_inputs.append(f"blocks/{block_id}/trials/{trial_filename(index)}")
 
         calibration = _calibration_section(
             scored_by_index,
+            raw_by_index=raw_by_index,
             expected_pair_count=int(rules["pairs_per_model"]),
             baseline_arm_id=baseline_arm_id,
             treatment_arm_id=treatment_arm_id,
             rules=rules,
         )
+        if (block_dir / "audit.json").is_file():
+            report_inputs.append(f"blocks/{block_id}/audit.json")
         metric_fidelity = _metric_fidelity_section(
             block_dir, block_session, audit_indices, raw_by_index, scored_by_index
         )
         tied_pairs = [pair for pair in calibration["pairs"] if not pair["decided"]]
+        if tied_pairs and (block_dir / "tie_attribution.json").is_file():
+            report_inputs.append(f"blocks/{block_id}/tie_attribution.json")
         tie_attribution = _tie_attribution_section(block_dir, block_session, tied_pairs, raw_by_index)
         outcome = _block_outcome(calibration, metric_fidelity, tie_attribution)
 
         blocks_report[block_id] = {
             "status": BLOCK_STATUS_COMPLETE,
             "report": block_report,
+            # Finding 5: model configuration (endpoint id, sampling, chat
+            # template kwargs) and endpoint/GPU topology, as locked on this
+            # block's own session.json -- verbatim, never recomputed.
+            "model_config": block_session.get("model_config"),
+            "model_admission": block_session.get("model_admission"),
             "calibration": calibration,
             "metric_fidelity": metric_fidelity,
             "tie_attribution": tie_attribution,
@@ -863,16 +1031,20 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
             "campaign_fingerprint": campaign_fingerprint,
             "campaign_schema_version": lock.get("campaign_schema_version"),
             "position_id": position_id,
-            "contracts": dict(contracts) if isinstance(contracts, Mapping) else contracts,
+            "contracts": dict(contracts),
             "rules": rules,
             "audit_indices": audit_indices,
             "arms": {"baseline": baseline_arm_id, "treatment": treatment_arm_id},
-            "models": [{"block_id": str(model["block_id"]), "model": model.get("model")} for model in models],
+            # Finding 5: the FULL model configuration per block (endpoint
+            # id, sampling, chat_template_kwargs, ...) -- not a curated
+            # block_id/model subset.
+            "models": [dict(model) for model in models],
             "tool_surface_fingerprint": lock.get("tool_surface_fingerprint"),
-            "digests": lock.get("digests"),
+            "digests": dict(digests),
         },
         "blocks": blocks_report,
         "verdict": verdict,
+        "report_inputs": sorted(set(report_inputs)),
     }
     return report
 
@@ -915,6 +1087,17 @@ def render_campaign_markdown(report: Mapping[str, object]) -> str:
     lines.append(f"- Position: {_fmt(campaign.get('position_id'))}")
     lines.append(f"- Baseline arm: {campaign['arms']['baseline']}")
     lines.append(f"- Treatment arm: {campaign['arms']['treatment']}")
+    lines.append(f"- Scorer fingerprint: {_fmt(campaign.get('contracts', {}).get('scorer_fingerprint'))}")
+    lines.append("")
+    lines.append("### Model configuration")
+    lines.append("")
+    for model in campaign.get("models", []):
+        lines.append(
+            f"- {model.get('block_id')}: model={_fmt(model.get('model'))}, "
+            f"endpoint_id={_fmt(model.get('endpoint_id'))}, "
+            f"sampling={_fmt(model.get('sampling'))}, "
+            f"chat_template_kwargs={_fmt(model.get('chat_template_kwargs'))}"
+        )
     lines.append("")
 
     verdict = report["verdict"]
@@ -939,6 +1122,14 @@ def render_campaign_markdown(report: Mapping[str, object]) -> str:
         lines.append(f"- Outcome: {block['outcome']}")
         lines.append("")
 
+        model_admission = block.get("model_admission") or {}
+        lines.append("### Endpoint / GPU topology")
+        lines.append("")
+        lines.append(f"- Resolved model: {_fmt(model_admission.get('resolved_model'))}")
+        lines.append(f"- Resolved endpoint: {_fmt(model_admission.get('resolved_endpoint'))}")
+        lines.append(f"- GPU topology: {_fmt(model_admission.get('gpu_topology'))}")
+        lines.append("")
+
         calibration = block["calibration"]
         lines.append("### Calibration")
         lines.append("")
@@ -951,7 +1142,7 @@ def render_campaign_markdown(report: Mapping[str, object]) -> str:
             f"(threshold {calibration['thresholds']['minimum_standard_wins']})"
         )
         lines.append(
-            f"- Median signed normalized delta: {_fmt(calibration['median_signed_delta'])} "
+            f"- Median signed normalized delta: {_fmt(calibration['median_signed_normalized_delta'])} "
             f"(threshold {_fmt(calibration['thresholds']['minimum_median_normalized_delta'])})"
         )
         lines.append(
@@ -965,11 +1156,12 @@ def render_campaign_markdown(report: Mapping[str, object]) -> str:
         metric_fidelity = block["metric_fidelity"]
         lines.append(f"### Metric fidelity: {'OK' if metric_fidelity['ok'] else 'FAILED'}")
         lines.append("")
+        lines.append(f"- Audited indices: {metric_fidelity['audit_indices']}")
         if not metric_fidelity["ok"]:
             lines.append(f"- Reason: {_fmt(metric_fidelity.get('reason'))}")
             for mismatch in metric_fidelity["mismatches"]:
                 lines.append(f"  - index {mismatch['index']}: {mismatch['reason']}")
-            lines.append("")
+        lines.append("")
 
         tie_attribution = block["tie_attribution"]
         if tie_attribution["required"]:
@@ -986,6 +1178,12 @@ def render_campaign_markdown(report: Mapping[str, object]) -> str:
                         f"(mechanical screen: {entry['mechanical_label']})"
                     )
                 lines.append("")
+
+    lines.append("## Report inputs")
+    lines.append("")
+    for path in report.get("report_inputs", []):
+        lines.append(f"- {path}")
+    lines.append("")
 
     return "\n".join(lines) + "\n"
 

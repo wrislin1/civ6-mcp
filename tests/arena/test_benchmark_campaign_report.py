@@ -14,6 +14,18 @@ Fixtures use a single-task rubric with integer levels 0..12 (mirroring
 `test_benchmark_report.py`'s own `_calibration_run` convention) so a trial's
 normalized score is `achieved / 12` -- the same "N / 12" convention the
 design doc uses for its worked calibration threshold example (4/12).
+
+Every fixture's `campaign.json` carries a REAL `campaign_fingerprint`
+(`fingerprint()` over its own remaining fields, exactly like
+`benchmark_campaign.build_campaign_lock` computes it) so that
+`build_campaign_report`'s own campaign-fingerprint self-check
+(round-1 review finding 1) passes for every well-formed fixture; negative
+tests for that check, and for the other now-mandatory lock fields
+(`contracts`, `digests.schedule`, `position_id`), build a deliberately
+incomplete-but-self-consistent lock via `_write_campaign_lock`'s
+`include_*` flags rather than tampering a valid lock after the fact (which
+would trip the fingerprint check instead of the more specific one under
+test).
 """
 from __future__ import annotations
 
@@ -25,13 +37,14 @@ import pytest
 
 from civ_mcp.arena.benchmark_campaign_report import (
     REPLICATION_DEFERRED_ADMISSION,
+    CampaignReportError,
+    _block_outcome,
     build_campaign_report,
     render_campaign_markdown,
     write_campaign_reports,
 )
 from civ_mcp.arena.benchmark_manifest import fingerprint
 
-CAMPAIGN_FINGERPRINT = "camp-fp-1"
 POSITION_ID = "pos-cal"
 BASELINE_ARM = "minimal"
 TREATMENT_ARM = "standard"
@@ -69,22 +82,33 @@ def _passing_pairs(count: int, *, max_score: int = MAX_SCORE) -> list[tuple[str,
     return [(f"filler{i}", 0, max_score) for i in range(count)]
 
 
-def _pair_schedule_and_trials(
+def _pairs_schedule(pairs: list[tuple[str, int, int]], *, start_index: int = 1) -> list[dict]:
+    """Schedule-only shape (no campaign_fingerprint, no trial payload) --
+    pure function of `pairs` alone, so it can be computed BEFORE the
+    campaign_fingerprint that trial payloads need is known."""
+    schedule_trials: list[dict] = []
+    index = start_index
+    for pair_id, _, _ in pairs:
+        for arm_id in (BASELINE_ARM, TREATMENT_ARM):
+            schedule_trials.append(
+                {"index": index, "position_id": POSITION_ID, "pair_id": pair_id, "arm_id": arm_id}
+            )
+            index += 1
+    return schedule_trials
+
+
+def _pairs_trial_payloads(
     pairs: list[tuple[str, int, int]],
     *,
     block_id: str,
     session_fingerprint: str,
-    campaign_fingerprint: str = CAMPAIGN_FINGERPRINT,
+    campaign_fingerprint: str,
     start_index: int = 1,
-) -> tuple[list[dict], dict[int, dict]]:
-    schedule_trials: list[dict] = []
+) -> dict[int, dict]:
     trial_payloads: dict[int, dict] = {}
     index = start_index
     for pair_id, baseline_score, treatment_score in pairs:
         for arm_id, score in ((BASELINE_ARM, baseline_score), (TREATMENT_ARM, treatment_score)):
-            schedule_trials.append(
-                {"index": index, "position_id": POSITION_ID, "pair_id": pair_id, "arm_id": arm_id}
-            )
             trial_payloads[index] = {
                 "index": index,
                 "position_id": POSITION_ID,
@@ -100,7 +124,7 @@ def _pair_schedule_and_trials(
                 "final_state": {"achieved": score},
             }
             index += 1
-    return schedule_trials, trial_payloads
+    return trial_payloads
 
 
 def _pair_indices(pairs: list[tuple[str, int, int]], *, start_index: int = 1) -> dict[str, tuple[int, int]]:
@@ -118,30 +142,59 @@ def _write_block(
     *,
     pairs: list[tuple[str, int, int]],
     session_fingerprint: str,
-    campaign_fingerprint: str = CAMPAIGN_FINGERPRINT,
+    campaign_fingerprint: str,
     scorer_fingerprint: str = "score-v1",
     commit_indices: set[int] | None = None,
     max_score: int = MAX_SCORE,
+    position_id: str = POSITION_ID,
+    endpoint_id: str = "ep-1",
+    gpu_ids: list[int] | None = None,
 ) -> tuple[list[dict], dict[int, dict]]:
     block_dir = campaign_dir / "blocks" / block_id
-    schedule_trials, trial_payloads = _pair_schedule_and_trials(
+    schedule_trials = _pairs_schedule(pairs)
+    trial_payloads = _pairs_trial_payloads(
         pairs,
         block_id=block_id,
         session_fingerprint=session_fingerprint,
         campaign_fingerprint=campaign_fingerprint,
     )
+    # position_id override applies only to the trial/session payloads (used
+    # by the position-mismatch negative tests) -- the schedule shape itself
+    # always uses the module-wide POSITION_ID for simplicity.
+    if position_id != POSITION_ID:
+        for entry in schedule_trials:
+            entry["position_id"] = position_id
+        for payload in trial_payloads.values():
+            payload["position_id"] = position_id
+
     _write_json(block_dir / "schedule.json", {"trials": schedule_trials})
-    _write_json(
-        block_dir / "session.json",
-        {
-            "position_id": POSITION_ID,
+    sampling = {"temperature": 0.0, "top_p": 1.0}
+    session_payload = {
+        "position_id": position_id,
+        "block_id": block_id,
+        "campaign_fingerprint": campaign_fingerprint,
+        "scorer_fingerprint": scorer_fingerprint,
+        "session_fingerprint": session_fingerprint,
+        "positions": {position_id: {"rubric": _rubric(max_score)}},
+        "model_config": {
             "block_id": block_id,
-            "campaign_fingerprint": campaign_fingerprint,
-            "scorer_fingerprint": scorer_fingerprint,
-            "session_fingerprint": session_fingerprint,
-            "positions": {POSITION_ID: {"rubric": _rubric(max_score)}},
+            "model": f"{block_id}-model",
+            "endpoint_id": endpoint_id,
+            "sampling": sampling,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "briefing_required": False,
         },
-    )
+        "model_admission": {
+            "requested_model": f"{block_id}-model",
+            "resolved_model": f"{block_id}-model",
+            "requested_endpoint": endpoint_id,
+            "resolved_endpoint": f"http://{endpoint_id}.local:8000",
+            "registry_fingerprint": "registry-fp-1",
+            "gpu_topology": {"gpu_ids": gpu_ids if gpu_ids is not None else [0]},
+            "sampling": sampling,
+        },
+    }
+    _write_json(block_dir / "session.json", session_payload)
     commit = commit_indices if commit_indices is not None else set(trial_payloads)
     for index in commit:
         _write_json(block_dir / "trials" / f"trial-{index:03d}.json", trial_payloads[index])
@@ -235,31 +288,72 @@ def _write_schedule(campaign_dir: Path, blocks_schedule: dict) -> None:
     _write_json(campaign_dir / "schedule.json", {"blocks": blocks_schedule})
 
 
+def _default_models() -> list[dict]:
+    return [
+        {
+            "block_id": "gemma",
+            "model": "gemma4-27b",
+            "endpoint_id": "ep-gemma",
+            "sampling": {"temperature": 0.0, "top_p": 1.0},
+            "chat_template_kwargs": {"enable_thinking": False},
+            "briefing_required": False,
+        },
+        {
+            "block_id": "qwen",
+            "model": "qwen3.6-27b",
+            "endpoint_id": "ep-qwen",
+            "sampling": {"temperature": 0.0, "top_p": 1.0},
+            "chat_template_kwargs": {"enable_thinking": False},
+            "briefing_required": False,
+        },
+    ]
+
+
 def _write_campaign_lock(
     campaign_dir: Path,
     *,
     rules: dict,
     audit_indices: list[int],
-    campaign_fingerprint: str = CAMPAIGN_FINGERPRINT,
+    schedule: dict,
     scorer_fingerprint: str = "score-v1",
-) -> None:
-    _write_json(
-        campaign_dir / "campaign.json",
-        {
-            "campaign_id": "camp-1",
-            "campaign_schema_version": "v1",
-            "campaign_fingerprint": campaign_fingerprint,
-            "position_id": POSITION_ID,
-            "models": [
-                {"block_id": "gemma", "model": "gemma4-27b"},
-                {"block_id": "qwen", "model": "qwen3.6-27b"},
-            ],
-            "arms": [{"arm_id": BASELINE_ARM}, {"arm_id": TREATMENT_ARM}],
-            "rules": rules,
-            "audit_indices": audit_indices,
-            "contracts": {"scorer_fingerprint": scorer_fingerprint},
-        },
-    )
+    campaign_id: str = "camp-1",
+    campaign_schema_version: str = "v1",
+    position_id: str | None = POSITION_ID,
+    models: list[dict] | None = None,
+    include_contracts: bool = True,
+    include_digests: bool = True,
+) -> str:
+    """Write a REAL, self-consistent `campaign.json` -- `campaign_fingerprint`
+    is computed over the lock body exactly the way
+    `benchmark_campaign.build_campaign_lock` computes it (fingerprint the
+    dict, then add the campaign_fingerprint key), so
+    `build_campaign_report`'s own fingerprint self-check passes. Returns the
+    computed `campaign_fingerprint` so callers can stamp blocks/trials with
+    the same value. `include_contracts`/`include_digests`/`position_id=None`
+    build a deliberately incomplete-but-self-consistent lock, for the
+    negative tests that must trip the specific missing-field check rather
+    than the fingerprint check.
+    """
+    body: dict[str, object] = {
+        "campaign_id": campaign_id,
+        "campaign_schema_version": campaign_schema_version,
+        "models": models if models is not None else _default_models(),
+        "arms": [{"arm_id": BASELINE_ARM}, {"arm_id": TREATMENT_ARM}],
+        "rules": rules,
+        "audit_indices": audit_indices,
+    }
+    if position_id is not None:
+        body["position_id"] = position_id
+    if include_contracts:
+        body["contracts"] = {"scorer_fingerprint": scorer_fingerprint}
+    if include_digests:
+        body["digests"] = {"schedule": fingerprint(schedule)}
+
+    campaign_fingerprint = fingerprint(body)
+    payload = dict(body)
+    payload["campaign_fingerprint"] = campaign_fingerprint
+    _write_json(campaign_dir / "campaign.json", payload)
+    return campaign_fingerprint
 
 
 def _rules12(*, minimum_decided=10, minimum_wins=10, minimum_delta=None, required_audits_per_arm=1) -> dict:
@@ -295,9 +389,15 @@ def _build_campaign_with_gemma(
     gemma_audit_hash_mismatch_indices: frozenset[int] = frozenset(),
     gemma_omit_audit: bool = False,
     gemma_tie_attribution: dict[str, str] | None = None,
+    gemma_tie_attribution_hash_break: frozenset[str] = frozenset(),
     qwen_deferral_record: bool = True,
     name: str = "campaign",
     scorer_fingerprint: str = "score-v1",
+    gemma_scorer_fingerprint_override: str | None = None,
+    include_contracts: bool = True,
+    include_digests: bool = True,
+    position_id: str | None = POSITION_ID,
+    gemma_position_id: str | None = None,
 ) -> tuple[Path, dict[int, dict]]:
     """A campaign whose mandatory primary (Gemma) block is exactly what the
     caller asks for, and whose Qwen (secondary) block always has an
@@ -308,12 +408,30 @@ def _build_campaign_with_gemma(
     campaign_dir = tmp_path / name
     pair_count = len(gemma_pairs)
 
-    gemma_schedule, gemma_trials = _write_block(
+    gemma_schedule = _pairs_schedule(gemma_pairs)
+    qwen_schedule = _pairs_schedule(_passing_pairs(pair_count))
+    schedule = {"blocks": {"gemma": {"trials": gemma_schedule}, "qwen": {"trials": qwen_schedule}}}
+
+    campaign_fingerprint = _write_campaign_lock(
+        campaign_dir,
+        rules=rules,
+        audit_indices=audit_indices,
+        schedule=schedule,
+        scorer_fingerprint=scorer_fingerprint,
+        position_id=position_id,
+        include_contracts=include_contracts,
+        include_digests=include_digests,
+    )
+    _write_schedule(campaign_dir, schedule["blocks"])
+
+    _, gemma_trials = _write_block(
         campaign_dir,
         "gemma",
         pairs=gemma_pairs,
         session_fingerprint="gemma-session",
-        scorer_fingerprint=scorer_fingerprint,
+        campaign_fingerprint=campaign_fingerprint,
+        scorer_fingerprint=gemma_scorer_fingerprint_override or scorer_fingerprint,
+        position_id=gemma_position_id or (position_id or POSITION_ID),
     )
     if not gemma_omit_audit:
         _write_audit(
@@ -331,18 +449,18 @@ def _build_campaign_with_gemma(
             pairs=gemma_pairs,
             trial_payloads=gemma_trials,
             attribution_by_pair=gemma_tie_attribution,
+            invalid_hash_pairs=gemma_tie_attribution_hash_break,
         )
 
-    qwen_schedule, _ = _write_block(
+    _write_block(
         campaign_dir,
         "qwen",
         pairs=_passing_pairs(pair_count),
         session_fingerprint="qwen-session",
+        campaign_fingerprint=campaign_fingerprint,
         scorer_fingerprint=scorer_fingerprint,
         commit_indices=set(),
     )
-    _write_schedule(campaign_dir, {"gemma": {"trials": gemma_schedule}, "qwen": {"trials": qwen_schedule}})
-    _write_campaign_lock(campaign_dir, rules=rules, audit_indices=audit_indices, scorer_fingerprint=scorer_fingerprint)
 
     if qwen_deferral_record:
         _write_qwen_deferral_record(campaign_dir)
@@ -360,17 +478,26 @@ def _build_full_two_block_campaign(
     gemma_tie_attribution: dict[str, str] | None = None,
     qwen_tie_attribution: dict[str, str] | None = None,
     scorer_fingerprint: str = "score-v1",
-) -> tuple[dict[int, dict], dict[int, dict]]:
+) -> tuple[str, dict[int, dict], dict[int, dict]]:
     """A campaign where BOTH blocks genuinely completed their schedule --
     for tests that need to observe how one block's outcome interacts with
-    the other's."""
-    gemma_schedule, gemma_trials = _write_block(
-        campaign_dir, "gemma", pairs=gemma_pairs, session_fingerprint="gemma-session",
-        scorer_fingerprint=scorer_fingerprint,
+    the other's. Returns (campaign_fingerprint, gemma_trials, qwen_trials)."""
+    gemma_schedule = _pairs_schedule(gemma_pairs)
+    qwen_schedule = _pairs_schedule(qwen_pairs)
+    schedule = {"blocks": {"gemma": {"trials": gemma_schedule}, "qwen": {"trials": qwen_schedule}}}
+
+    campaign_fingerprint = _write_campaign_lock(
+        campaign_dir, rules=rules, audit_indices=audit_indices, schedule=schedule, scorer_fingerprint=scorer_fingerprint
     )
-    qwen_schedule, qwen_trials = _write_block(
+    _write_schedule(campaign_dir, schedule["blocks"])
+
+    _, gemma_trials = _write_block(
+        campaign_dir, "gemma", pairs=gemma_pairs, session_fingerprint="gemma-session",
+        campaign_fingerprint=campaign_fingerprint, scorer_fingerprint=scorer_fingerprint,
+    )
+    _, qwen_trials = _write_block(
         campaign_dir, "qwen", pairs=qwen_pairs, session_fingerprint="qwen-session",
-        scorer_fingerprint=scorer_fingerprint,
+        campaign_fingerprint=campaign_fingerprint, scorer_fingerprint=scorer_fingerprint,
     )
     _write_audit(
         campaign_dir / "blocks" / "gemma", session_fingerprint="gemma-session",
@@ -390,9 +517,7 @@ def _build_full_two_block_campaign(
             campaign_dir / "blocks" / "qwen", session_fingerprint="qwen-session",
             pairs=qwen_pairs, trial_payloads=qwen_trials, attribution_by_pair=qwen_tie_attribution,
         )
-    _write_schedule(campaign_dir, {"gemma": {"trials": gemma_schedule}, "qwen": {"trials": qwen_schedule}})
-    _write_campaign_lock(campaign_dir, rules=rules, audit_indices=audit_indices, scorer_fingerprint=scorer_fingerprint)
-    return gemma_trials, qwen_trials
+    return campaign_fingerprint, gemma_trials, qwen_trials
 
 
 def _passing_gemma_pairs() -> list[tuple[str, int, int]]:
@@ -448,7 +573,7 @@ def test_report_refuses_trials_missing_either_fingerprint(tmp_path, missing_fiel
     del payload[missing_field]
     _write_json(trial_path, payload)
 
-    with pytest.raises(Exception):
+    with pytest.raises(CampaignReportError, match=missing_field):
         build_campaign_report(campaign_dir)
 
 
@@ -466,7 +591,7 @@ def test_report_refuses_incomplete_schedule_without_valid_qwen_deferral(tmp_path
         qwen_deferral_record=False,
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
         build_campaign_report(campaign_dir)
 
 
@@ -539,7 +664,7 @@ def test_effect_requires_frozen_normalized_threshold(tmp_path):
 
     assert calibration["sensitivity_ok"] is True
     assert calibration["direction_ok"] is True
-    assert calibration["median_signed_delta"] == pytest.approx(2 / 12)
+    assert calibration["median_signed_normalized_delta"] == pytest.approx(2 / 12)
     assert calibration["effect_ok"] is False
     assert report["blocks"]["gemma"]["outcome"] == "MODEL_NULL"
 
@@ -673,6 +798,172 @@ def test_model_floor_and_same_progress_null_preserve_other_block(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Round-1 review finding 3: MODEL_FLOOR_NULL must never be reachable with
+# zero reviewed attributions.
+# ---------------------------------------------------------------------------
+
+
+def test_calibration_rules_reject_minimum_decided_exceeding_pairs_per_model(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(minimum_decided=20),  # > pairs_per_model (12): impossible to satisfy
+        audit_indices=[1, 2],
+    )
+
+    with pytest.raises(CampaignReportError, match="minimum_decided_pairs"):
+        build_campaign_report(campaign_dir)
+
+
+def test_block_outcome_never_derives_floor_null_from_empty_attributions():
+    """Direct unit test of the defense-in-depth guard in `_block_outcome`:
+    even if `tie_attribution` reports `resolved: True` with an EMPTY
+    attributions mapping (only reachable via a malformed rules config that
+    `_require_calibration_rules` now rejects upstream), the outcome must
+    never be MODEL_FLOOR_NULL (the bug: `set() <= {"model_floor"}` is
+    vacuously true)."""
+    calibration = {"sensitivity_ok": False}
+    metric_fidelity = {"ok": True}
+    tie_attribution = {"resolved": True, "attributions": {}}
+
+    outcome = _block_outcome(calibration, metric_fidelity, tie_attribution)
+
+    assert outcome == "TIE_ATTRIBUTION_REQUIRED"
+    assert outcome != "MODEL_FLOOR_NULL"
+
+
+# ---------------------------------------------------------------------------
+# Round-1 review finding 1: campaign.json self-integrity
+# ---------------------------------------------------------------------------
+
+
+def test_campaign_fingerprint_tamper_is_detected(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    campaign_path = campaign_dir / "campaign.json"
+    lock = json.loads(campaign_path.read_text(encoding="utf-8"))
+    # Lower the effect threshold without touching campaign_fingerprint.
+    lock["rules"]["minimum_median_normalized_delta"] = 0.0
+    _write_json(campaign_path, lock)
+
+    with pytest.raises(CampaignReportError, match="campaign_fingerprint"):
+        build_campaign_report(campaign_dir)
+
+
+def test_campaign_fingerprint_tamper_via_trimmed_audit_indices_is_detected(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2, 3, 4]
+    )
+    campaign_path = campaign_dir / "campaign.json"
+    lock = json.loads(campaign_path.read_text(encoding="utf-8"))
+    lock["audit_indices"] = [1]  # trimmed without recomputing campaign_fingerprint
+    _write_json(campaign_path, lock)
+
+    with pytest.raises(CampaignReportError, match="campaign_fingerprint"):
+        build_campaign_report(campaign_dir)
+
+
+# ---------------------------------------------------------------------------
+# Round-1 review finding 2a: contracts.scorer_fingerprint fail-closed
+# ---------------------------------------------------------------------------
+
+
+def test_campaign_missing_contracts_fails_closed(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        include_contracts=False,
+    )
+
+    with pytest.raises(CampaignReportError, match="contracts"):
+        build_campaign_report(campaign_dir)
+
+
+def test_campaign_scorer_fingerprint_mismatch_fails_closed(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        scorer_fingerprint="score-v1",
+        gemma_scorer_fingerprint_override="score-DIFFERENT",
+    )
+
+    with pytest.raises(CampaignReportError, match="scorer_fingerprint"):
+        build_campaign_report(campaign_dir)
+
+
+# ---------------------------------------------------------------------------
+# Round-1 review finding 2b: digests.schedule fail-closed
+# ---------------------------------------------------------------------------
+
+
+def test_campaign_missing_digests_fails_closed(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        include_digests=False,
+    )
+
+    with pytest.raises(CampaignReportError, match="digests"):
+        build_campaign_report(campaign_dir)
+
+
+def test_campaign_schedule_digest_mismatch_fails_closed(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    # Tamper schedule.json AFTER campaign.json's digest was computed --
+    # campaign.json itself is untouched, so this exercises the schedule
+    # digest check specifically (not the campaign_fingerprint check).
+    schedule_path = campaign_dir / "schedule.json"
+    schedule_payload = json.loads(schedule_path.read_text(encoding="utf-8"))
+    schedule_payload["blocks"]["gemma"]["trials"][0]["arm_id"] = "standard"
+    _write_json(schedule_path, schedule_payload)
+
+    with pytest.raises(CampaignReportError, match="digests.schedule"):
+        build_campaign_report(campaign_dir)
+
+
+# ---------------------------------------------------------------------------
+# Round-1 review finding 2c: position_id fail-closed
+# ---------------------------------------------------------------------------
+
+
+def test_campaign_missing_position_id_fails_closed(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        position_id=None,
+        gemma_position_id=POSITION_ID,
+    )
+
+    with pytest.raises(CampaignReportError, match="position_id"):
+        build_campaign_report(campaign_dir)
+
+
+def test_campaign_position_id_mismatch_fails_closed(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        position_id=POSITION_ID,
+        gemma_position_id="pos-OTHER",
+    )
+
+    with pytest.raises(CampaignReportError, match="position_id"):
+        build_campaign_report(campaign_dir)
+
+
+# ---------------------------------------------------------------------------
 # Metric fidelity
 # ---------------------------------------------------------------------------
 
@@ -727,6 +1018,84 @@ def test_metric_fidelity_missing_audit_blocks_campaign_verdict(tmp_path):
     assert report["verdict"]["outcome"] == "BLOCKED"
 
 
+def test_metric_fidelity_records_every_audited_hash_not_only_mismatches(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2, 3]
+    )
+
+    report = build_campaign_report(campaign_dir)
+    entries = report["blocks"]["gemma"]["metric_fidelity"]["entries"]
+
+    assert {entry["index"] for entry in entries} == {1, 2, 3}
+    assert all(entry["agrees"] is True for entry in entries)
+    assert all(isinstance(entry["trial_sha256"], str) and entry["trial_sha256"] for entry in entries)
+
+
+# ---------------------------------------------------------------------------
+# Round-1 review finding 6: tie-attribution refusal paths
+# ---------------------------------------------------------------------------
+
+
+def test_tie_attribution_hash_mismatch_leaves_block_unresolved(tmp_path):
+    gemma_pairs = [(f"p{i}", 0, 6) for i in range(8)] + [(f"z{i}", 0, 0) for i in range(4)]
+    tie_attribution = {f"z{i}": "model_floor" for i in range(4)}
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=gemma_pairs,
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        gemma_tie_attribution=tie_attribution,
+        gemma_tie_attribution_hash_break=frozenset({"z0"}),
+    )
+
+    report = build_campaign_report(campaign_dir)
+    gemma = report["blocks"]["gemma"]
+
+    assert gemma["tie_attribution"]["resolved"] is False
+    assert "trial_sha256" in gemma["tie_attribution"]["reason"]
+    assert gemma["outcome"] == "TIE_ATTRIBUTION_REQUIRED"
+
+
+def test_tie_attribution_missing_per_pair_entry_leaves_block_unresolved(tmp_path):
+    gemma_pairs = [(f"p{i}", 0, 6) for i in range(8)] + [(f"z{i}", 0, 0) for i in range(4)]
+    # Only 3 of the 4 tied pairs get an attribution entry.
+    tie_attribution = {f"z{i}": "model_floor" for i in range(3)}
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=gemma_pairs,
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        gemma_tie_attribution=tie_attribution,
+    )
+
+    report = build_campaign_report(campaign_dir)
+    gemma = report["blocks"]["gemma"]
+
+    assert gemma["tie_attribution"]["resolved"] is False
+    assert "z3" in gemma["tie_attribution"]["reason"]
+    assert gemma["outcome"] == "TIE_ATTRIBUTION_REQUIRED"
+
+
+def test_tie_attribution_invalid_value_leaves_block_unresolved(tmp_path):
+    gemma_pairs = [(f"p{i}", 0, 6) for i in range(8)] + [(f"z{i}", 0, 0) for i in range(4)]
+    tie_attribution = {f"z{i}": "model_floor" for i in range(3)}
+    tie_attribution["z3"] = "not_a_real_attribution"
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=gemma_pairs,
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        gemma_tie_attribution=tie_attribution,
+    )
+
+    report = build_campaign_report(campaign_dir)
+    gemma = report["blocks"]["gemma"]
+
+    assert gemma["tie_attribution"]["resolved"] is False
+    assert "invalid attribution" in gemma["tie_attribution"]["reason"]
+    assert gemma["outcome"] == "TIE_ATTRIBUTION_REQUIRED"
+
+
 # ---------------------------------------------------------------------------
 # attempts/ is never read
 # ---------------------------------------------------------------------------
@@ -742,6 +1111,7 @@ def test_report_never_reads_attempts_directory(tmp_path):
 
     report = build_campaign_report(campaign_dir)  # must not raise
     assert report["blocks"]["gemma"]["outcome"] == "PASS"
+    assert not any("attempts" in p for p in report["report_inputs"])
 
 
 # ---------------------------------------------------------------------------
@@ -781,24 +1151,116 @@ def test_scorer_only_fingerprint_change_rescores_same_raw_trials(tmp_path):
     report1 = build_campaign_report(campaign_dir)
     assert report1["blocks"]["gemma"]["report"]["scorer"]["fingerprint"] == "score-v1"
 
-    # Bump the scorer_fingerprint label in BOTH campaign.json and the Gemma
-    # block's session.json -- a metadata-only relabel, touching no raw trial
-    # bytes and no session_fingerprint.
+    # Simulate a legitimate re-freeze after a pure scorer-implementation fix
+    # (design doc: "a pure implementation correction ... changes the scorer
+    # fingerprint and may regenerate reports over unchanged raw evidence"):
+    # campaign.json's contracts.scorer_fingerprint changes, so
+    # campaign_fingerprint (which covers the whole lock) changes too, and
+    # every affected block's session.json + committed trials are re-stamped
+    # with the new campaign_fingerprint -- but NO raw trial content
+    # (steps/initial_state/final_state) changes at all.
     campaign_path = campaign_dir / "campaign.json"
     campaign_lock = json.loads(campaign_path.read_text(encoding="utf-8"))
     campaign_lock["contracts"]["scorer_fingerprint"] = "score-v2"
+    body = {k: v for k, v in campaign_lock.items() if k != "campaign_fingerprint"}
+    new_campaign_fingerprint = fingerprint(body)
+    campaign_lock["campaign_fingerprint"] = new_campaign_fingerprint
     _write_json(campaign_path, campaign_lock)
 
     session_path = campaign_dir / "blocks" / "gemma" / "session.json"
     session_payload = json.loads(session_path.read_text(encoding="utf-8"))
     session_payload["scorer_fingerprint"] = "score-v2"
+    session_payload["campaign_fingerprint"] = new_campaign_fingerprint
     _write_json(session_path, session_payload)
+
+    trials_dir = campaign_dir / "blocks" / "gemma" / "trials"
+    restamped_trials: dict[int, dict] = {}
+    for trial_path in sorted(trials_dir.glob("trial-*.json")):
+        trial_payload = json.loads(trial_path.read_text(encoding="utf-8"))
+        trial_payload["campaign_fingerprint"] = new_campaign_fingerprint
+        _write_json(trial_path, trial_payload)
+        restamped_trials[trial_payload["index"]] = trial_payload
+
+    # audit.json's trial_sha256 hash-binds to the exact raw trial bytes --
+    # since the re-freeze legitimately changed those bytes (new
+    # campaign_fingerprint stamp), the human review record is re-issued
+    # against the SAME manual findings, re-hashed to the restamped trials.
+    _write_audit(
+        campaign_dir / "blocks" / "gemma",
+        session_fingerprint="gemma-session",
+        audit_indices=[1, 2],
+        trial_payloads=restamped_trials,
+    )
 
     report2 = build_campaign_report(campaign_dir)
 
+    calibration1 = report1["blocks"]["gemma"]["calibration"]
+    calibration2 = report2["blocks"]["gemma"]["calibration"]
     assert report2["blocks"]["gemma"]["report"]["scorer"]["fingerprint"] == "score-v2"
-    assert report2["blocks"]["gemma"]["calibration"] == report1["blocks"]["gemma"]["calibration"]
+    # Every scoring-relevant number is unchanged -- the raw trial evidence
+    # (steps/initial_state/final_state) never changed, so the arithmetic
+    # this module derives from it must be identical. `trial_sha256` on each
+    # pair IS expected to differ: it hashes the whole raw trial file, which
+    # legitimately now carries the new campaign_fingerprint stamp from this
+    # re-freeze -- that is not a scoring input.
+    for field in ("decided_count", "tie_count", "standard_wins", "median_signed_normalized_delta", "sensitivity_ok", "direction_ok", "effect_ok"):
+        assert calibration2[field] == calibration1[field], field
+    assert [
+        {k: v for k, v in pair.items() if k != "trial_sha256"} for pair in calibration2["pairs"]
+    ] == [{k: v for k, v in pair.items() if k != "trial_sha256"} for pair in calibration1["pairs"]]
     assert report2["blocks"]["gemma"]["outcome"] == report1["blocks"]["gemma"]["outcome"] == "PASS"
+
+
+# ---------------------------------------------------------------------------
+# Round-1 review finding 5: model configuration, topology, hashes, inputs
+# ---------------------------------------------------------------------------
+
+
+def test_report_surfaces_model_configuration_and_topology(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+
+    report = build_campaign_report(campaign_dir)
+
+    campaign_models = {m["block_id"]: m for m in report["campaign"]["models"]}
+    assert campaign_models["gemma"]["endpoint_id"] == "ep-gemma"
+    assert "temperature" in campaign_models["gemma"]["sampling"]
+    assert "chat_template_kwargs" in campaign_models["gemma"]
+
+    gemma_block = report["blocks"]["gemma"]
+    assert gemma_block["model_config"]["endpoint_id"] == "ep-1"
+    assert gemma_block["model_admission"]["gpu_topology"] == {"gpu_ids": [0]}
+    assert gemma_block["model_admission"]["resolved_endpoint"] == "http://ep-1.local:8000"
+
+
+def test_report_surfaces_pair_trial_hashes(tmp_path):
+    campaign_dir, gemma_trials = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+
+    report = build_campaign_report(campaign_dir)
+    pair0 = report["blocks"]["gemma"]["calibration"]["pairs"][0]
+
+    assert pair0["trial_sha256"][BASELINE_ARM] == fingerprint(gemma_trials[pair0["trial_indices"][BASELINE_ARM]])
+    assert pair0["trial_sha256"][TREATMENT_ARM] == fingerprint(gemma_trials[pair0["trial_indices"][TREATMENT_ARM]])
+
+
+def test_report_enumerates_report_inputs(tmp_path):
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+
+    report = build_campaign_report(campaign_dir)
+    inputs = report["report_inputs"]
+
+    assert "campaign.json" in inputs
+    assert "schedule.json" in inputs
+    assert "blocks/gemma/session.json" in inputs
+    assert "blocks/gemma/trials/trial-001.json" in inputs
+    assert "blocks/gemma/audit.json" in inputs
+    assert any(p.startswith("admissions/qwen-attempt-") for p in inputs)
+    assert inputs == sorted(inputs)
 
 
 # ---------------------------------------------------------------------------
@@ -817,3 +1279,5 @@ def test_render_campaign_markdown_surfaces_verdict_and_blocks(tmp_path):
     assert "## Block: gemma" in markdown
     assert "## Block: qwen" in markdown
     assert markdown.index("## Block: gemma") < markdown.index("## Block: qwen")
+    assert "## Report inputs" in markdown
+    assert "campaign.json" in markdown
