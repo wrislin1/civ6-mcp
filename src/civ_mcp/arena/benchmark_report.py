@@ -541,7 +541,11 @@ def _completeness_section(
 #         },
 #         ...
 #       },
-#       "session_fingerprint": "<any>",   # optional; echoed into the report, not required
+#       "session_fingerprint": "<non-empty str>",  # required (G8: BenchmarkStore
+#                                                    # refuses to create/open a run
+#                                                    # without one); echoed into the
+#                                                    # report and cross-checked
+#                                                    # against every trial's own stamp
 #       "ungated_smoke": <bool>,          # optional; defaults to False
 #       ...                                # any other writer-specific evidence is ignored here
 #     }
@@ -550,6 +554,9 @@ def _completeness_section(
 # or missing a `positions[<position_id>]["rubric"]` for any position a
 # committed trial references, aborts report generation (`ReportError`) --
 # this module never silently treats absent rubric evidence as "score 0".
+# G8: whenever session.json carries a session_fingerprint, a committed trial
+# with no session_fingerprint stamp of its own is ALSO a hard ReportError --
+# not merely a mismatch check that no-ops when either side is missing.
 
 
 def build_report(run_dir: str | Path) -> dict[str, object]:
@@ -612,25 +619,30 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
         if not isinstance(trial, Mapping):
             raise ReportError(f"{trial_path} must be a JSON object, got {type(trial).__name__}")
 
-        # F8: a stale/copied trial-NNN.json is indistinguishable from
-        # current-lock evidence by filename alone. When both session.json
-        # and the trial carry a session_fingerprint, they must agree --
-        # fail closed rather than silently scoring evidence that doesn't
-        # belong to this session's current lock. (A trial with no stamp at
-        # all predates this provenance check and is not itself proof of a
-        # mismatch, so it is not rejected on that basis alone.)
+        # F8/G8: a stale/copied trial-NNN.json is indistinguishable from
+        # current-lock evidence by filename alone. session_fingerprint is
+        # a required session.json field (BenchmarkStore refuses to create
+        # or open a run without one, see benchmark_store.G8) -- so whenever
+        # the lock carries one, every trial must be stamped and must
+        # agree. The old `lock_fp and trial_fp and ...` check was a no-op
+        # whenever either side was missing/falsy, which let an unstamped
+        # trial under a stamped lock pass silently; a missing stamp is now
+        # itself a hard failure, not just a mismatch.
         lock_session_fingerprint = lock.get("session_fingerprint")
         trial_session_fingerprint = trial.get("session_fingerprint")
-        if (
-            lock_session_fingerprint
-            and trial_session_fingerprint
-            and trial_session_fingerprint != lock_session_fingerprint
-        ):
-            raise ReportError(
-                f"{trial_path}: session_fingerprint {trial_session_fingerprint!r} does not "
-                f"match session.json's session_fingerprint {lock_session_fingerprint!r} -- "
-                "refusing to score evidence that does not belong to this session's current lock"
-            )
+        if lock_session_fingerprint:
+            if not trial_session_fingerprint:
+                raise ReportError(
+                    f"{trial_path}: has no session_fingerprint stamp, but session.json "
+                    f"carries one ({lock_session_fingerprint!r}) -- refusing to score "
+                    "unstamped evidence under a stamped lock"
+                )
+            if trial_session_fingerprint != lock_session_fingerprint:
+                raise ReportError(
+                    f"{trial_path}: session_fingerprint {trial_session_fingerprint!r} does not "
+                    f"match session.json's session_fingerprint {lock_session_fingerprint!r} -- "
+                    "refusing to score evidence that does not belong to this session's current lock"
+                )
 
         position_lock = positions_lock.get(position_id)
         if not isinstance(position_lock, Mapping) or "rubric" not in position_lock:

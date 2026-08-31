@@ -83,6 +83,10 @@ def _build_basic_run(run_dir: Path) -> None:
                 "position_id": position_id,
                 "attempt_count": 1,
                 "terminal": "finish_trial",
+                # G8: session.json above carries a session_fingerprint, so
+                # every trial must be stamped to match -- an unstamped
+                # trial under a stamped lock is now a hard ReportError.
+                "session_fingerprint": "abc123",
                 "steps": [],
                 "initial_state": {"tiles": [{"improvement": None}]},
                 "final_state": {
@@ -172,6 +176,7 @@ def test_report_ignores_attempts_and_weights_positions_equally(tmp_path):
                 "position_id": position_id,
                 "attempt_count": 1,
                 "terminal": "finish_trial",
+                "session_fingerprint": "abc123",
                 "steps": [],
                 "initial_state": {"tiles": [{"improvement": None}]},
                 "final_state": {
@@ -436,6 +441,7 @@ def test_build_report_aggregate_is_scoped_per_model_arm_group_not_pooled(tmp_pat
                 "terminal": "finish_trial",
                 "model": model,
                 "arm_id": arm_id,
+                "session_fingerprint": "abc123",
                 "steps": [],
                 "initial_state": {"tiles": [{"improvement": None}]},
                 "final_state": {
@@ -500,6 +506,7 @@ def test_build_report_surfaces_seeds_and_endpoint_topology(tmp_path):
             "seed": 11,
             "model": "qwen3.6-27b",
             "arm_id": "standard",
+            "session_fingerprint": "abc123",
             "steps": [],
             "initial_state": {"tiles": [{"improvement": None}]},
             "final_state": {"tiles": [{"improvement": None}]},
@@ -515,6 +522,7 @@ def test_build_report_surfaces_seeds_and_endpoint_topology(tmp_path):
             "seed": 12,
             "model": "gemma4-27b",
             "arm_id": "minimal",
+            "session_fingerprint": "abc123",
             "steps": [],
             "initial_state": {"tiles": [{"improvement": None}]},
             "final_state": {"tiles": [{"improvement": None}]},
@@ -714,6 +722,7 @@ def _calibration_run(tmp_path: Path, standard_scores, minimal_scores) -> Path:
                 "arm_id": sched["arm_id"],
                 "attempt_count": 1,
                 "terminal": "finish_trial",
+                "session_fingerprint": "cal-1",
                 "steps": [],
                 "initial_state": {"achieved": 0},
                 "final_state": {"achieved": score},
@@ -820,6 +829,24 @@ def test_build_report_fails_closed_on_a_trial_session_fingerprint_mismatch(tmp_p
     trial_path = run_dir / "trials" / "trial-001.json"
     payload = json.loads(trial_path.read_text(encoding="utf-8"))
     payload["session_fingerprint"] = "STALE_FINGERPRINT"
+    _write_json(trial_path, payload)
+
+    with pytest.raises(Exception):
+        build_report(run_dir)
+
+
+def test_build_report_fails_closed_on_an_unstamped_trial_under_a_stamped_lock(tmp_path):
+    """G8(b): the old cross-check (`lock_fp and trial_fp and ...`) was a
+    no-op whenever either side was missing -- an unstamped trial under a
+    stamped session.json silently passed. When the lock carries a
+    fingerprint, a trial with NO stamp at all must be a hard ReportError,
+    not silently scored as if it belonged to this session's current
+    lock."""
+    run_dir = tmp_path / "run"
+    _build_basic_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    del payload["session_fingerprint"]
     _write_json(trial_path, payload)
 
     with pytest.raises(Exception):
