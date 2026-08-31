@@ -56,8 +56,13 @@ class TrialExistsError(BenchmarkStoreError):
     committed raw evidence. A committed trial is never re-executed."""
 
 
-_TRIAL_NAME_RE = re.compile(r"^trial-(\d{3})\.json$")
-_ATTEMPT_NAME_RE = re.compile(r"^trial-(\d{3})-attempt-(\d{3})\.json$")
+# `{index:03d}` (used by _trial_path/_attempt_path below) is a MINIMUM
+# width, not a fixed one -- index 1000 writes "trial-1000.json" (4 digits).
+# `\d{3,}` (three-or-more) matches that; an exact `\d{3}` would silently
+# ignore any index >= 1000, making completed_indices()/attempt_count() miss
+# it (re-execution, then a TrialExistsError crash; the attempt cap disabled).
+_TRIAL_NAME_RE = re.compile(r"^trial-(\d{3,})\.json$")
+_ATTEMPT_NAME_RE = re.compile(r"^trial-(\d{3,})-attempt-(\d{3,})\.json$")
 
 
 def _canonical_bytes(value: object) -> bytes:

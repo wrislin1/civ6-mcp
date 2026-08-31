@@ -167,3 +167,41 @@ def test_record_attempt_returns_the_assigned_ordinal(tmp_path):
 
     assert first == 1
     assert second == 2
+
+
+def test_completed_indices_sees_a_four_digit_trial_index(tmp_path):
+    r"""F14 repro: the trial filename regex was `trial-(\d{3})\.json` while
+    `_trial_path` formats with `{index:03d}` (a MINIMUM width, not a fixed
+    one) -- index 1000 writes "trial-1000.json" (4 digits), which the old
+    regex's exact-3-digit match silently ignores. completed_indices() and
+    attempt_count() must see index 1000, not just indices 1-999."""
+    lock = _lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+
+    store.commit_trial(1000, {"session_fingerprint": store.fingerprint})
+
+    assert store.completed_indices() == {1000}
+    assert store.trial(1000) == {"session_fingerprint": store.fingerprint}
+
+
+def test_attempt_count_sees_a_four_digit_trial_index(tmp_path):
+    lock = _lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+
+    store.record_attempt(1000, {"trial_index": 1000, "failure_class": "reload_failed"})
+    store.record_attempt(1000, {"trial_index": 1000, "failure_class": "reload_failed"})
+
+    assert store.attempt_count(1000) == 2
+
+
+def test_commit_trial_at_index_1000_is_not_re_executed_or_overwritten(tmp_path):
+    """The attempt cap depends on attempt_count() actually counting attempts
+    for high indices -- if the regex silently ignores them, TrialExistsError
+    never fires either way (re-execution just always "succeeds" against a
+    destination the code thinks doesn't exist -- until it collides)."""
+    lock = _lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+    store.commit_trial(1000, {"session_fingerprint": store.fingerprint, "terminal": "a"})
+
+    with pytest.raises(TrialExistsError):
+        store.commit_trial(1000, {"session_fingerprint": store.fingerprint, "terminal": "b"})
