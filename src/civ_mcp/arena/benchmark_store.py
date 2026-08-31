@@ -32,7 +32,7 @@ import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 __all__ = [
     "BenchmarkStore",
@@ -117,6 +117,21 @@ class BenchmarkStore:
 
     @classmethod
     def _open_or_create(cls, run_dir: str | Path, lock: dict, *, creating: bool) -> "BenchmarkStore":
+        # G8: a lock with no (or an empty) session_fingerprint must be
+        # refused outright rather than silently accepted with
+        # fingerprint=None -- a None fingerprint lets an unstamped stale
+        # trial pass the runner's resume check (`_verify_resume_provenance`
+        # compares `stamped != self.store.fingerprint`; None == None
+        # passes) and makes the report's lock/trial fingerprint cross-check
+        # a no-op (`lock_fp and trial_fp and ...` short-circuits when
+        # either is falsy).
+        if not lock.get("session_fingerprint"):
+            raise BenchmarkStoreError(
+                "session lock is missing a non-empty 'session_fingerprint' -- "
+                "refusing to create or open a run without one (a fingerprint-less "
+                "lock would let a stale/copied trial's missing stamp silently pass "
+                "resume verification)"
+            )
         run_dir = Path(run_dir)
         session_path = run_dir / cls.SESSION_FILE
         provided = _canonical_bytes(lock)
@@ -149,11 +164,18 @@ class BenchmarkStore:
         trial_index: int | None = None,
         attempt_ordinal: int | None = None,
         failure_class: str | None = None,
-        **details: object,
+        details: Mapping[str, object] | None = None,
     ) -> dict:
         """Append one event to journal.jsonl. Sequence numbers are monotonic
         and continue across process resume (derived from the journal already
-        on disk, never reset to zero on reopen)."""
+        on disk, never reset to zero on reopen).
+
+        G9: `details` is an explicit parameter, not a `**kwargs` catch-all --
+        a `**details` catch-all would capture the literal keyword name
+        "details" as just another entry in itself, so a caller passing
+        `details={...}` (every real caller in this codebase) landed
+        double-nested as `record["details"]["details"]` instead of flat.
+        """
         with self._seq_lock:
             seq = self._seq
             self._seq += 1
@@ -167,7 +189,7 @@ class BenchmarkStore:
             "failure_class": failure_class,
         }
         if details:
-            record["details"] = details
+            record["details"] = dict(details)
 
         line = _canonical_bytes(record).decode("utf-8")
         journal_path = self.run_dir / self.JOURNAL_FILE

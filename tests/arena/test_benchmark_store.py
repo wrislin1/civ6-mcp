@@ -5,6 +5,7 @@ import pytest
 
 from civ_mcp.arena.benchmark_store import (
     BenchmarkStore,
+    BenchmarkStoreError,
     SessionLockMismatchError,
     TrialExistsError,
 )
@@ -205,3 +206,58 @@ def test_commit_trial_at_index_1000_is_not_re_executed_or_overwritten(tmp_path):
 
     with pytest.raises(TrialExistsError):
         store.commit_trial(1000, {"session_fingerprint": store.fingerprint, "terminal": "b"})
+
+
+# ---------------------------------------------------------------------------
+# G8 -- a lock with no (or an empty) session_fingerprint must be refused
+# outright, not silently accepted with fingerprint=None. A None fingerprint
+# lets an unstamped stale trial pass the runner's resume check (None ==
+# None) and makes the report's lock/trial fingerprint cross-check a no-op.
+# ---------------------------------------------------------------------------
+
+
+def test_create_refuses_a_lock_with_no_session_fingerprint(tmp_path):
+    lock = {"schedule_fingerprint": "def456"}  # no session_fingerprint key at all
+    with pytest.raises(BenchmarkStoreError):
+        BenchmarkStore.create(tmp_path / "run", lock)
+
+
+def test_create_refuses_a_lock_with_an_empty_session_fingerprint(tmp_path):
+    lock = {"session_fingerprint": "", "schedule_fingerprint": "def456"}
+    with pytest.raises(BenchmarkStoreError):
+        BenchmarkStore.create(tmp_path / "run", lock)
+
+
+def test_open_refuses_a_lock_with_no_session_fingerprint(tmp_path):
+    # BenchmarkStore.open on a run directory that was never created (no
+    # session.json yet) must still refuse the fingerprint-less lock, not
+    # get as far as FileNotFoundError.
+    lock = {"schedule_fingerprint": "def456"}
+    with pytest.raises(BenchmarkStoreError):
+        BenchmarkStore.open(tmp_path / "run", lock)
+
+
+# ---------------------------------------------------------------------------
+# G9 -- append_event's details kwarg must land flat in the journal record,
+# not double-nested under record["details"]["details"] (the old **details
+# catch-all captured the literal keyword name "details" as just another
+# entry in itself).
+# ---------------------------------------------------------------------------
+
+
+def test_append_event_details_kwarg_lands_flat_not_nested(tmp_path):
+    lock = _lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+
+    record = store.append_event("some_event", trial_index=1, details={"a": 1})
+
+    assert record["details"] == {"a": 1}
+
+
+def test_append_event_with_no_details_omits_the_key(tmp_path):
+    lock = _lock()
+    store = BenchmarkStore.create(tmp_path / "run", lock)
+
+    record = store.append_event("some_event", trial_index=1)
+
+    assert "details" not in record

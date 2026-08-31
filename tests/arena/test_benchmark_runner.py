@@ -271,10 +271,9 @@ async def test_checksum_mismatch_journal_includes_a_field_level_diff(tmp_path):
 
     events = _journal_events(run_dir, "checksum_mismatch")
     assert len(events) == 1
-    # append_event(..., details={...}) nests under record["details"]["details"]
-    # (append_event's **details catch-all collects the "details" kwarg by
-    # that literal name) -- matches every other event in this module.
-    diff = events[0]["details"]["details"]["diff"]
+    # G9: append_event's details kwarg lands flat -- no more
+    # record["details"]["details"] double-nesting.
+    diff = events[0]["details"]["diff"]
     assert diff == {"turn": [157, 999]}
 
 
