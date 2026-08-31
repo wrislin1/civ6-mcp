@@ -18,6 +18,22 @@ from typing import Sequence
 from civ_mcp.lua._helpers import SENTINEL, _bail, _int
 
 
+class CorruptIdentityRow(Exception):
+    """Raised when an IDENTITY row is present but one of its fields fails
+    to coerce (e.g. a non-numeric turn).
+
+    G15: every other row type (UNIT/CITY/TILE) is fine to silently skip on
+    a coercion failure -- one bad row just means one fewer unit/city/tile
+    in the captured state. The IDENTITY row is different: it carries the
+    core fields (`turn`, `player_id`) `capture_canonical_state` uses to
+    decide whether the response was truncated at all. Swallowing an
+    IDENTITY coercion failure the same way as other rows silently
+    discards it, and the resulting near-empty state is then misdiagnosed
+    as "missing identity row" (implying a truncated/dropped response)
+    when the row was actually present and simply corrupt.
+    """
+
+
 def build_benchmark_state_query(
     player_id: int, tile_coords: Sequence[tuple[int, int]]
 ) -> str:
@@ -114,8 +130,12 @@ def parse_benchmark_state(lines: list[str]) -> dict[str, object]:
 
     for line in lines:
         parts = line.split("|")
-        try:
-            if parts[0] == "IDENTITY" and len(parts) >= 8:
+
+        if parts[0] == "IDENTITY" and len(parts) >= 8:
+            # G15: deliberately NOT covered by the try/except below -- a
+            # coercion failure here must propagate as CorruptIdentityRow,
+            # not be silently discarded like other row types.
+            try:
                 state["civ_type"] = parts[1]
                 state["seed"] = int(parts[2])
                 state["turn"] = _int(parts[3])
@@ -123,7 +143,14 @@ def parse_benchmark_state(lines: list[str]) -> dict[str, object]:
                 state["player_id"] = _int(parts[5])
                 state["gold"] = float(parts[6])
                 state["faith"] = float(parts[7])
-            elif parts[0] == "UNIT" and len(parts) >= 6:
+            except (ValueError, IndexError) as exc:
+                raise CorruptIdentityRow(
+                    f"corrupt IDENTITY row -- fields could not be coerced: {line!r} ({exc})"
+                ) from exc
+            continue
+
+        try:
+            if parts[0] == "UNIT" and len(parts) >= 6:
                 state["units"].append(  # type: ignore[union-attr]
                     {
                         "id": _int(parts[1]),

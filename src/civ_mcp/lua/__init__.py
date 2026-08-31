@@ -19,6 +19,7 @@ works identically to the old monolithic ``lua_queries`` module.
 # Re-export helpers & sentinel
 from civ_mcp.lua._helpers import SENTINEL  # noqa: F401
 from civ_mcp.lua.benchmark import (  # noqa: F401
+    CorruptIdentityRow,
     build_benchmark_state_query,
     parse_benchmark_state,
 )

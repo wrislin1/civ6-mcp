@@ -199,7 +199,16 @@ async def capture_canonical_state(
     for line in lines:
         if line.startswith("ERR:"):
             raise BenchmarkStateError(line)
-    state = lq.parse_benchmark_state(lines)
+    # G15: a corrupt-but-present IDENTITY row (e.g. a non-numeric turn)
+    # must be named as exactly that -- not fall through to the generic
+    # "missing identity row" truncation message below, which implies a
+    # dropped/incomplete response rather than a corrupt Lua data row.
+    try:
+        state = lq.parse_benchmark_state(lines)
+    except lq.CorruptIdentityRow as exc:
+        raise BenchmarkStateError(
+            f"corrupt IDENTITY row in benchmark-state response: {exc}"
+        ) from exc
 
     # F13: execute_read swallows read timeouts and returns whatever lines it
     # collected so far. A truncated/empty response with no ERR: line and no

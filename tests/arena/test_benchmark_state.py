@@ -148,6 +148,33 @@ def test_parse_benchmark_state_ignores_malformed_lines():
     assert state["tiles"] == []
 
 
+def test_parse_benchmark_state_raises_on_a_corrupt_identity_row():
+    """G15 repro: the per-line `except (ValueError, IndexError): continue`
+    used to cover the IDENTITY branch too -- a corrupt field there (e.g. a
+    non-numeric turn) silently discarded the whole identity row, and the
+    resulting state was later misreported by capture_canonical_state as a
+    TRUNCATED response (missing identity row entirely) when the row was
+    actually present but corrupt. Other row types (UNIT/CITY/TILE) still
+    skip-on-corrupt -- see test_parse_benchmark_state_ignores_malformed_lines."""
+    from civ_mcp.lua.benchmark import CorruptIdentityRow
+
+    lines = ["IDENTITY|CIVILIZATION_ROME|12345|NOT_A_NUMBER|0|0|42.5|3.0"]
+    with pytest.raises(CorruptIdentityRow):
+        parse_benchmark_state(lines)
+
+
+def test_parse_benchmark_state_still_skips_corrupt_unit_rows_after_a_good_identity_row():
+    """The IDENTITY-specific fail-loud change must not regress the
+    existing skip-on-corrupt behavior for other row types."""
+    lines = [
+        "IDENTITY|CIVILIZATION_ROME|12345|157|0|0|42.5|3.0",
+        "UNIT|not-an-int|X|1|1|0",
+    ]
+    state = parse_benchmark_state(lines)
+    assert state["turn"] == 157
+    assert state["units"] == []
+
+
 @pytest.mark.asyncio
 async def test_capture_canonical_state_queries_parses_and_normalizes():
     class FakeConnection:
@@ -213,6 +240,22 @@ async def test_capture_canonical_state_raises_on_truncated_response_missing_iden
 
     with pytest.raises(BenchmarkStateError):
         await capture_canonical_state(TruncatedConnection(), player_id=0, tile_coords=[])
+
+
+@pytest.mark.asyncio
+async def test_capture_canonical_state_names_a_corrupt_identity_row_not_truncation():
+    """G15: a corrupt (present-but-unparseable) IDENTITY row must surface
+    as a distinct, correctly-diagnosed BenchmarkStateError -- not the
+    generic "missing identity row" truncation message, which would
+    mislead triage toward a network/timeout explanation instead of a
+    corrupt Lua data row."""
+
+    class CorruptIdentityConnection:
+        async def execute_read(self, lua_code, timeout=5.0):
+            return ["IDENTITY|CIVILIZATION_ROME|12345|NOT_A_NUMBER|0|0|42.5|3.0"]
+
+    with pytest.raises(BenchmarkStateError, match="(?i)corrupt.*identity"):
+        await capture_canonical_state(CorruptIdentityConnection(), player_id=0, tile_coords=[])
 
 
 @pytest.mark.asyncio
