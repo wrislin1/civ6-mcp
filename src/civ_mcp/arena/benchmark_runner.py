@@ -1143,6 +1143,47 @@ def _run_ssh_command(host: str, argv: Sequence[str]):
     return CommandResult(argv=tuple(argv), returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
+def _resolve_admission_repos(args: argparse.Namespace) -> tuple[str, str]:
+    """E1 (external review wave E): resolve the two known-repo checkout
+    paths for the live admission/remediation paths, refusing outright
+    (`GateFailure`, code `repo_paths_not_configured`) if either resolves
+    empty.
+
+    `wsl_repo` falls back to this checkout's own root (always non-empty);
+    `windows_repo` has no sane fallback and used to default to `""` -- an
+    empty repo path is catastrophic downstream: `classify_tuner_holder`'s
+    cwd comparison could match an unidentifiable holder's empty
+    (failed-read) cwd against it, minting the one classification
+    (`known_repo_owned`) that `terminate_tuner_pid` is willing to SIGTERM.
+    `classify_tuner_holder` itself now also filters empty repo candidates
+    (defense in depth); this boundary check makes the parameters
+    effectively mandatory so no classification/termination is ever even
+    attempted without both paths configured.
+    """
+    wsl_repo = args.wsl_repo or str(Path(__file__).resolve().parents[3])
+    windows_repo = args.windows_repo or ""
+    missing = [
+        flag
+        for flag, value in (("--wsl-repo", wsl_repo), ("--windows-repo", windows_repo))
+        if not value
+    ]
+    if missing:
+        raise GateFailure(
+            "repo_paths_not_configured",
+            {
+                "missing": missing,
+                "message": (
+                    f"{' and '.join(missing)} did not resolve to a non-empty repo checkout "
+                    "path; the live admission/remediation path refuses to run tuner-holder "
+                    "classification, termination, or checkout evidence without both known-"
+                    "repo paths -- an empty path could match an unidentifiable port "
+                    "holder's unreadable cwd and misclassify it as repo-owned"
+                ),
+            },
+        )
+    return wsl_repo, windows_repo
+
+
 def _build_live_admission_dependencies(
     *, args: argparse.Namespace, api_key: str, user_prompt: str | None = None
 ):
@@ -1185,8 +1226,11 @@ def _build_live_admission_dependencies(
     from civ_mcp.arena.benchmark_gates import check_gpu_conflicts
     from civ_mcp.arena.endpoint_registry import _registry, resolve_gateway
 
-    wsl_repo = args.wsl_repo or str(Path(__file__).resolve().parents[3])
-    windows_repo = args.windows_repo or ""
+    # E1 (external review wave E): raises GateFailure at factory-build time
+    # when either repo path resolves empty -- classification/termination and
+    # checkout evidence are never reachable through this factory without
+    # both known-repo paths configured.
+    wsl_repo, windows_repo = _resolve_admission_repos(args)
 
     def checkout_evidence() -> dict:
         return collect_checkout_evidence(
@@ -1216,24 +1260,36 @@ def _build_live_admission_dependencies(
         # raw load_game_save result here. Two independent copies of that
         # classification could silently drift; one production path can't.
         # reload_position raises RuntimeError on a failure/warning string
-        # (see its docstring); that always means an unverified reload here,
-        # never an unhandled crash out of an admission dependency.
+        # (see its docstring); E3 (external review wave E) broadens that to
+        # every exception shape a live reload genuinely produces
+        # (BenchmarkStateError, OSError, TimeoutError -- asyncio's
+        # TimeoutError is the same class on this Python) so all of them
+        # classify as the production-reload gate failure
+        # (production_reload_not_verified) instead of falling through to
+        # the never-deferral-eligible unexpected_admission_error catch-all.
         connection = GameConnection()
         await connection.connect()
         try:
             try:
                 verified = await reload_position(connection, position)
                 reload_raw: str | None = None
-            except RuntimeError as exc:
+            except (RuntimeError, BenchmarkStateError, OSError, TimeoutError) as exc:
                 verified = False
-                reload_raw = str(exc)
+                reload_raw = f"{type(exc).__name__}: {exc}"
+            if not verified:
+                # E3: return the failed reload evidence IMMEDIATELY --
+                # popup hygiene and canonical capture never run against a
+                # world that did not verifiably reload; an exception from
+                # either would otherwise mask the reload failure as an
+                # unclassified crash.
+                return {"reload": {"verified": False, "raw": reload_raw}}
             popup_status = await dismiss_blocking_popups(connection)
             popup_ok = isinstance(popup_status, str) and popup_status.startswith("POPUPS|")
             canonical_state = await capture_canonical_state(
                 connection, position.player_id, position.relevant_tiles
             )
             return {
-                "reload": {"verified": verified, "raw": reload_raw},
+                "reload": {"verified": True, "raw": reload_raw},
                 "popup_hygiene": {"status": popup_status, "ok": popup_ok},
                 "canonical_state": canonical_state,
             }
@@ -1400,12 +1456,13 @@ def _resolve_campaign_position_path(campaign_path: Path, position_id: str) -> Pa
 
 
 class _CampaignContext:
-    """Everything `_run_campaign_async` and `_run_remediation_async` share:
-    the loaded campaign/position, the resolved tool bundle, and the opened
-    `CampaignStore`. Factored out so a remediation-only invocation
-    (`--terminate-tuner-pid`/`--drain-gpu-service` alongside `--campaign`)
-    can also record its attempts against the right block (see
-    `benchmark_admission.record_remediation_attempt`)."""
+    """Everything `_run_campaign_async` needs from the loaded campaign:
+    the campaign/position manifests, the resolved tool bundle, and the
+    opened `CampaignStore`. E6 (external review wave E): remediation-only
+    invocations no longer share this -- `CampaignStore.create` here builds
+    the full counted-run scaffold and byte-matches a freshly rebuilt
+    campaign lock, both wrong for a remediation (see
+    `_load_remediation_journal_target`)."""
 
     def __init__(self, campaign, position, bundle, store) -> None:
         self.campaign = campaign
@@ -1513,7 +1570,18 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
         return 1
     campaign, store, bundle = context.campaign, context.store, context.bundle
 
-    pipeline = _build_admission_pipeline(args, api_key, user_prompt=campaign.prompt)
+    # E1 (external review wave E): the live-dependency factory refuses
+    # (GateFailure) when either known-repo path resolves empty -- surfaced
+    # here as a clear CLI error before any gate ever runs, never as a raw
+    # traceback.
+    try:
+        pipeline = _build_admission_pipeline(args, api_key, user_prompt=campaign.prompt)
+    except GateFailure as exc:
+        print(
+            f"civ-arena-benchmark: cannot build the admission pipeline: {exc.code}: {exc}",
+            file=sys.stderr,
+        )
+        return 1
 
     blocks_by_id = {block.block_id: block for block in campaign.models}
 
@@ -1772,6 +1840,77 @@ async def _run_non_counting_validation(pipeline, bundle, blocks_by_id, block_id,
     return 0
 
 
+class _RemediationJournalTarget:
+    """Where a campaign-linked remediation attempt gets journaled: a
+    `CampaignStore` attached to the campaign run directory (opened light --
+    see `_load_remediation_journal_target`) plus the next incomplete block
+    id to link the record to (`None` once the campaign is complete --
+    nothing left to admit means no admission attempt to corroborate)."""
+
+    def __init__(self, store, block_id: str | None) -> None:
+        self.store = store
+        self.block_id = block_id
+
+
+def _load_remediation_journal_target(args: argparse.Namespace) -> "_RemediationJournalTarget":
+    """E6 (external review wave E): resolve where a campaign-linked
+    remediation attempt is journaled WITHOUT the counted-run scaffolding.
+
+    `_load_campaign_context` (the counted path) rebuilds the campaign lock
+    from the live checkout and runs `CampaignStore.create` -- which (a)
+    creates the full run-directory tree (campaign.json / schedule.json /
+    admissions/ / blocks/ / campaign-journal.jsonl) as a side effect of a
+    remediation-only invocation, and (b) refuses whenever the freshly-built
+    lock no longer byte-matches the recorded one (e.g. the checkout moved
+    since the campaign was created) -- exactly the situations a remediation
+    exists to help dig out of. Remediation only needs a journal TARGET, and
+    the disk is the authority for that:
+
+    - campaign dir already recorded (campaign.json exists): attach to the
+      recorded lock/schedule verbatim -- no lock rebuild, no byte-match
+      against the current checkout, nothing created or rewritten;
+    - no campaign dir yet: the remediation record itself becomes the first
+      artifact -- `CampaignStore.record_admission` creates ONLY
+      `admissions/` plus the numbered record file (a later real
+      `--campaign` run's `CampaignStore.create` then writes campaign.json/
+      schedule.json around it, and the record keeps its place in the same
+      append-only attempt sequence the reporter's deferral-corroboration
+      scan reads). The schedule is compiled from the manifest purely so
+      `select_next_incomplete_block` can pick the linked block (with no
+      blocks on disk it always selects the first block without reading it).
+
+    The counted path's own dirty-checkout admission gate and campaign-lock
+    byte-match are untouched -- this function is reachable ONLY from
+    `_run_remediation_async`.
+
+    Raises `OSError`/`ValueError` when the manifest or the recorded
+    campaign dir cannot be read/parsed -- the caller refuses to run an
+    unjournaled campaign-linked remediation rather than silently dropping
+    the record the deferral-corroboration logic later looks for.
+    """
+    from civ_mcp.arena import benchmark_admission
+    from civ_mcp.arena.benchmark_campaign import CampaignStore, compile_campaign_schedule
+    from civ_mcp.arena.benchmark_contract import load_campaign_manifest
+
+    campaign = load_campaign_manifest(Path(args.campaign))
+    run_dir = Path(args.run_dir) / args.run_id
+    campaign_file = run_dir / CampaignStore.CAMPAIGN_FILE
+    if campaign_file.exists():
+        lock = json.loads(campaign_file.read_text(encoding="utf-8"))
+        schedule = json.loads(
+            (run_dir / CampaignStore.SCHEDULE_FILE).read_text(encoding="utf-8")
+        )
+        if not isinstance(lock, dict) or not isinstance(schedule, dict):
+            raise ValueError(
+                f"recorded campaign lock/schedule under {run_dir} are not JSON objects"
+            )
+        store = CampaignStore(run_dir, lock, schedule, fingerprint=lock.get("campaign_fingerprint"))
+    else:
+        store = CampaignStore(run_dir, {}, compile_campaign_schedule(campaign), fingerprint=None)
+    next_block = benchmark_admission.select_next_incomplete_block(campaign, store)
+    return _RemediationJournalTarget(store, next_block.block_id if next_block is not None else None)
+
+
 async def _run_remediation_async(args: argparse.Namespace) -> int:
     """Standalone, one-shot remediation: `--terminate-tuner-pid` and/or
     `--drain-gpu-service`. Maps to Task 7's scoped functions only -- never
@@ -1782,12 +1921,25 @@ async def _run_remediation_async(args: argparse.Namespace) -> int:
     When `--campaign` is also given, each remediation invocation's result
     is additionally recorded as its own numbered admission-attempt record
     against the campaign's next incomplete block (see
-    `benchmark_admission.record_remediation_attempt`), so "all remediation
-    attempts" for that block is reconstructible from disk. Without
+    `benchmark_admission.record_remediation_attempt` and E6's
+    `_load_remediation_journal_target` -- the record lands without ever
+    creating the counted-run scaffold or rebuilding the campaign lock). A
+    campaign-linked remediation whose journal target cannot be established
+    refuses up front rather than running unjournaled -- its record is what
+    the reporter's deferral-corroboration scan later reads. Without
     `--campaign` there is no block to link the attempt to -- the action
     still runs (never silently skipped), but only its stdout/stderr record
     survives.
+
+    E4 (external review wave E): evidence collection
+    (`classify_tuner_holder` / `collect_gpu_evidence`) runs INSIDE the same
+    guarded region as the remediation action itself -- a `GateFailure`
+    there (e.g. a missing `ss` binary, a dead SSH session) produces a
+    journaled failed-remediation record (`{"ok": False, ...}` -- which
+    never corroborates a deferral, see wave-D D1) and a classified nonzero
+    exit, never a raw traceback.
     """
+    from civ_mcp.arena import benchmark_admission
     from civ_mcp.arena.benchmark_live_evidence import (
         classify_tuner_holder,
         collect_gpu_evidence,
@@ -1796,36 +1948,55 @@ async def _run_remediation_async(args: argparse.Namespace) -> int:
     )
     from civ_mcp.arena.endpoint_registry import _registry
 
-    wsl_repo = args.wsl_repo or str(Path(__file__).resolve().parents[3])
-    windows_repo = args.windows_repo or ""
     exit_code = 0
 
-    campaign_context = await _load_campaign_context(args) if args.campaign else None
-    linked_block_id: str | None = None
-    if campaign_context is not None:
-        from civ_mcp.arena import benchmark_admission
-
-        next_block = benchmark_admission.select_next_incomplete_block(
-            campaign_context.campaign, campaign_context.store
-        )
-        linked_block_id = next_block.block_id if next_block is not None else None
+    target: _RemediationJournalTarget | None = None
+    if args.campaign:
+        try:
+            target = _load_remediation_journal_target(args)
+        except (OSError, ValueError) as exc:
+            print(
+                f"civ-arena-benchmark: cannot establish the remediation journal target "
+                f"for --campaign {args.campaign}: {exc}; refusing to run an unjournaled "
+                "campaign-linked remediation (its admissions/ record is what corroborates "
+                "a later deferral) -- fix the campaign manifest/run dir, or drop "
+                "--campaign for an unlinked remediation",
+                file=sys.stderr,
+            )
+            return 1
 
     def _record(action: str, result: Mapping[str, object]) -> None:
-        if campaign_context is not None and linked_block_id is not None:
-            from civ_mcp.arena import benchmark_admission
-
+        if target is not None and target.block_id is not None:
             benchmark_admission.record_remediation_attempt(
-                campaign_context.store, linked_block_id, action, result
+                target.store, target.block_id, action, result
             )
 
     if args.terminate_tuner_pid is not None:
-        holder = classify_tuner_holder(run_local=_run_local_command, wsl_repo=wsl_repo, windows_repo=windows_repo)
-        if holder is None:
-            print("civ-arena-benchmark: FireTuner port has no holder; nothing to terminate", file=sys.stderr)
-            _record("terminate_tuner_pid", {"ok": False, "reason": "no_holder"})
-            exit_code = 1
-        else:
-            try:
+        # E1 (external review wave E): refuse BEFORE any classification when
+        # either known-repo path resolves empty -- an unidentifiable
+        # holder's unreadable cwd must never get the chance to match an
+        # empty repo path and be terminated as repo-owned.
+        try:
+            wsl_repo, windows_repo = _resolve_admission_repos(args)
+        except GateFailure as exc:
+            print(
+                f"civ-arena-benchmark: terminate-tuner-pid refused before classification: "
+                f"{exc.code}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            holder = classify_tuner_holder(
+                run_local=_run_local_command, wsl_repo=wsl_repo, windows_repo=windows_repo
+            )
+            if holder is None:
+                print(
+                    "civ-arena-benchmark: FireTuner port has no holder; nothing to terminate",
+                    file=sys.stderr,
+                )
+                _record("terminate_tuner_pid", {"ok": False, "reason": "no_holder"})
+                exit_code = 1
+            else:
                 result = terminate_tuner_pid(
                     run_local=_run_local_command,
                     requested_pid=args.terminate_tuner_pid,
@@ -1835,10 +2006,16 @@ async def _run_remediation_async(args: argparse.Namespace) -> int:
                 )
                 print(f"civ-arena-benchmark: {result}")
                 _record("terminate_tuner_pid", result)
-            except GateFailure as exc:
-                print(f"civ-arena-benchmark: terminate-tuner-pid refused: {exc}", file=sys.stderr)
-                _record("terminate_tuner_pid", {"ok": False, "code": exc.code, "details": dict(exc.details)})
-                exit_code = 1
+        except GateFailure as exc:
+            # E4: classification failures land here too -- journaled as a
+            # failed remediation record with the classified code, never an
+            # unhandled traceback.
+            print(f"civ-arena-benchmark: terminate-tuner-pid refused: {exc}", file=sys.stderr)
+            _record(
+                "terminate_tuner_pid",
+                {"ok": False, "code": exc.code, "details": dict(exc.details)},
+            )
+            exit_code = 1
 
     for unit in args.drain_gpu_service:
         if not args.endpoint_id:
@@ -1846,8 +2023,12 @@ async def _run_remediation_async(args: argparse.Namespace) -> int:
             exit_code = 1
             continue
         registry = _registry()
-        processes = collect_gpu_evidence(run_ssh=_run_ssh_command, registry=registry, endpoint_id=args.endpoint_id)
         try:
+            # E4: the GPU snapshot is evidence collection for this drain --
+            # its GateFailure is journaled exactly like a refused drain.
+            processes = collect_gpu_evidence(
+                run_ssh=_run_ssh_command, registry=registry, endpoint_id=args.endpoint_id
+            )
             result = drain_gpu_service(
                 run_ssh=_run_ssh_command, registry=registry, endpoint_id=args.endpoint_id, processes=processes, unit=unit
             )

@@ -463,7 +463,10 @@ def admit_model_block(
       enforced;
     - `tool_canaries` missing evidence for any id in `expected_arm_ids`, or
       carrying evidence where either canary (`finish_trial_ok` /
-      `required_argument_ok`) did not pass -- proof that a model can emit
+      `required_argument_ok`) did not pass, or whose `errors` is non-empty
+      even when both flags read True (E8, external review wave E -- a
+      recorded canary error is never silently ignored) -- proof that a
+      model can emit
       structured tool calls, and specifically the exact required-argument
       shape a real trial depends on, is required for every arm before any
       trial against it is counted (see `benchmark_backend.probe_tool_capability`);
@@ -551,7 +554,12 @@ def admit_model_block(
     failed_arms: dict[str, object] = {}
     for arm_id in expected_arm_ids:
         canary = tool_canaries[arm_id]
-        if not (canary.finish_trial_ok and canary.required_argument_ok):
+        # E8 (external review wave E): canary.errors is consulted too --
+        # non-empty errors fail the arm even when both ok flags read True
+        # (the exact shape probe_tool_capability's old sticky
+        # required_argument_ok produced for a correct-then-wrong call
+        # sequence). A recorded canary error is never silently ignored.
+        if not (canary.finish_trial_ok and canary.required_argument_ok) or canary.errors:
             failed_arms[arm_id] = {
                 "finish_trial_ok": canary.finish_trial_ok,
                 "required_argument_ok": canary.required_argument_ok,

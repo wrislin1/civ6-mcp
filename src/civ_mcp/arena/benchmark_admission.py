@@ -18,11 +18,12 @@ locked order, for one model block, and either mints a fresh/reused
 
 Locked gate order (see `GATE_ORDER`, and
 `AdmissionPipeline.admit`'s docstring for exactly what evidence flows into
-each): clean checkout; boot health; tuner holder; save deploy; production
-reload; popup hygiene; canonical state; GPU isolation; model admission
-(endpoint/model identity + both tool canaries per arm + seed/latency, all
-inside one `admit_model_block` call); treatment-can-fire; session lock
-creation. `run_resolved_block` itself is deliberately NOT called by
+each): clean checkout; boot health; treatment-can-fire (static, so it runs
+before any expensive live gate -- E7, external review wave E); tuner
+holder; save deploy; production reload; popup hygiene; canonical state;
+GPU isolation; model admission (endpoint/model identity + both tool
+canaries per arm + seed/latency, all inside one `admit_model_block` call);
+session lock creation. `run_resolved_block` itself is deliberately NOT called by
 `admit()` -- `admit()`'s job ends at minting (or reusing) the session lock;
 the caller (the CLI, or a test) decides whether/when to actually run the
 returned `ResolvedBlock`.
@@ -134,6 +135,15 @@ __all__ = [
 GATE_ORDER: tuple[str, ...] = (
     "clean_checkout",
     "boot_health",
+    # E7 (external review wave E): treatment_can_fire is a purely static
+    # manifest+registry check (its inputs are fixed at import/authoring
+    # time -- see _minimal_observation/_standard_capabilities) and runs
+    # right after the cheap checkout/boot-health evidence, BEFORE the
+    # expensive live gates (save deploy, live reload, GPU snapshot over
+    # SSH, and the billed backend/canary probes). It previously sat second-
+    # to-last, spending all of that on a campaign whose position could
+    # never fire its treatment.
+    "treatment_can_fire",
     "tuner_holder",
     "save_deploy",
     "production_reload",
@@ -141,7 +151,6 @@ GATE_ORDER: tuple[str, ...] = (
     "canonical_state",
     "gpu_isolation",
     "model_admission",
-    "treatment_can_fire",
     "session_lock",
 )
 
@@ -548,17 +557,31 @@ class AdmissionPipeline:
             """
             evidence["ok"] = False
             evidence["failure"] = {"code": code, "details": dict(details)}
-            _append_campaign_journal(
-                store, "admission_failed", block_id=block.block_id, mode=mode, code=code
-            )
             admission_error = AdmissionError(code, evidence["failure"])
+            write_errors: list[str] = []
+            # E2 (external review wave E, A8 completion): the journal append
+            # during failure-recording is itself a persistence write and
+            # gets the same protection as the diagnostic record below -- a
+            # full-disk OSError here must never replace the real
+            # AdmissionError with a raw traceback. Guarded separately from
+            # the record write so a failed journal line never prevents the
+            # numbered diagnostic record from being attempted (and vice
+            # versa).
+            try:
+                _append_campaign_journal(
+                    store, "admission_failed", block_id=block.block_id, mode=mode, code=code
+                )
+            except Exception as journal_exc:  # noqa: BLE001 - deliberate: see docstring above
+                write_errors.append(f"journal append failed: {journal_exc!r}")
             try:
                 if mode == "validation":
                     _write_validation_record(store, block.block_id, evidence)
                 else:
                     self._write_record(store, block.block_id, evidence)
             except Exception as write_exc:  # noqa: BLE001 - deliberate: see docstring above
-                admission_error.diagnostic_write_error = repr(write_exc)
+                write_errors.append(f"diagnostic record write failed: {write_exc!r}")
+            if write_errors:
+                admission_error.diagnostic_write_error = "; ".join(write_errors)
             return admission_error
 
         try:
@@ -588,10 +611,24 @@ class AdmissionPipeline:
                 )
             _record_gate("boot_health", boot_health)
 
-            # 3. tuner holder (already gate-checked by the dependency itself)
+            # 3. treatment can fire -- E7 (external review wave E): purely
+            # static manifest+registry evidence, so it runs here, before
+            # any expensive live gate (save deploy, live reload, GPU
+            # snapshot, billed backend/canary probes) can be spent on a
+            # position that could never fire its treatment. First-failure
+            # short-circuit semantics are unchanged -- this is simply the
+            # earliest point its (static) inputs allow.
+            treatment_evidence = check_treatment_can_fire(
+                position=campaign.position,
+                minimal_observation=_minimal_observation(campaign.position),
+                standard_capabilities=_standard_capabilities(),
+            )
+            _record_gate("treatment_can_fire", treatment_evidence)
+
+            # 4. tuner holder (already gate-checked by the dependency itself)
             _record_gate("tuner_holder", self._deps.tuner_evidence())
 
-            # 4. save deploy -- validated immediately (B1, external review):
+            # 5. save deploy -- validated immediately (B1, external review):
             # an unverified deployment must abort admission here, before
             # `reload_and_capture` reconnects to the live game. Mirrors
             # build_session_lock's own deployment check exactly.
@@ -609,7 +646,7 @@ class AdmissionPipeline:
                 )
             _record_gate("save_deploy", deployment)
 
-            # 5-7. production reload / popup hygiene / canonical state
+            # 6-8. production reload / popup hygiene / canonical state
             reload_evidence = await self._deps.reload_and_capture(campaign.position)
             reload_result = dict(reload_evidence.get("reload") or {})
             if not reload_result.get("verified"):
@@ -660,13 +697,13 @@ class AdmissionPipeline:
                 )
             _record_gate("canonical_state", {"state": canonical_state})
 
-            # 8. GPU isolation (already gate-checked by the dependency itself)
+            # 9. GPU isolation (already gate-checked by the dependency itself)
             gpu_evidence = self._deps.gpu_evidence(block.endpoint_id)
             _record_gate("gpu_isolation", gpu_evidence)
 
             endpoint = self._deps.resolve_endpoint(block.endpoint_id)
 
-            # 9-11: endpoint/model identity, both tool canaries per arm,
+            # 10: endpoint/model identity, both tool canaries per arm,
             # seed/latency -- all folded into one admit_model_block call.
             # Plan 2 pins arms [minimal, standard] in that order (see
             # benchmark_contract.PLAN2_ARM_SPEC) -- the broadest (standard)
@@ -724,15 +761,7 @@ class AdmissionPipeline:
             )
             _record_gate("model_admission", model_admission)
 
-            # 12. treatment can fire
-            treatment_evidence = check_treatment_can_fire(
-                position=campaign.position,
-                minimal_observation=_minimal_observation(campaign.position),
-                standard_capabilities=_standard_capabilities(),
-            )
-            _record_gate("treatment_can_fire", treatment_evidence)
-
-            # 13. session lock creation
+            # 11. session lock creation
             block_schedule = store.schedule["blocks"][block.block_id]
             # episode_wall_s is derived once, at first admission, then
             # locked -- a resume's fresh probe recomputes it (needed for

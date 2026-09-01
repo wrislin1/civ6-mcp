@@ -494,6 +494,29 @@ def test_admission_requires_canaries_for_every_arm():
     assert exc_info.value.code == "tool_canary_failed"
     assert "minimal" in exc_info.value.details["failed_arms"]
 
+    # E8 (external review wave E), adversarial OR-branch test in its
+    # weakest form: BOTH ok flags True but a recorded canary error --
+    # exactly the shape probe_tool_capability's old sticky
+    # required_argument_ok produced for a correct-then-wrong call sequence.
+    # admit_model_block must consult canary.errors and reject.
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={
+                    "standard": _good_canary(
+                        "standard",
+                        errors=(
+                            "required-argument canary: expected arguments "
+                            "{'unit_index': 7, 'x': 11, 'y': 13}, got "
+                            "{'unit_index': 7, 'x': 12, 'y': 13}",
+                        ),
+                    ),
+                },
+            )
+        )
+    assert exc_info.value.code == "tool_canary_failed"
+    assert "standard" in exc_info.value.details["failed_arms"]
+
     evidence = admit_model_block(
         **_admit_kwargs(
             tool_canaries={

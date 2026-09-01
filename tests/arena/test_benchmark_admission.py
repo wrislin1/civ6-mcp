@@ -1315,3 +1315,170 @@ async def test_canonical_state_mismatch_stops_before_gpu_or_model_probes(tmp_pat
     assert record["ok"] is False
     assert record["failure"]["code"] == "canonical_state_mismatch"
 
+
+# ---------------------------------------------------------------------------
+# E2 (external review wave E, A8 completion): a persistence failure while
+# RECORDING a gate failure (the campaign-journal append included) must never
+# replace the real AdmissionError with a raw OSError.
+# ---------------------------------------------------------------------------
+
+
+async def test_journal_append_failure_while_recording_failure_yields_classified_refusal(
+    tmp_path, monkeypatch
+):
+    import civ_mcp.arena.benchmark_admission as benchmark_admission_module
+
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    dirty_checkout = {
+        "wsl": {"commit": EXPECTED_COMMIT, "status": " M src/foo.py\n"},
+        "windows": {"commit": EXPECTED_COMMIT, "status": ""},
+    }
+    deps = _make_dependencies([], campaign, block, position, checkout=dirty_checkout)
+    pipeline = AdmissionPipeline(deps)
+
+    real_append = benchmark_admission_module._append_campaign_journal
+
+    def _full_disk_append(store_arg, event, **fields):
+        if event == "admission_failed":
+            raise OSError(28, "No space left on device")
+        return real_append(store_arg, event, **fields)
+
+    monkeypatch.setattr(
+        benchmark_admission_module, "_append_campaign_journal", _full_disk_append
+    )
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "dirty_checkout"
+    assert excinfo.value.diagnostic_write_error is not None
+    assert "No space left" in excinfo.value.diagnostic_write_error
+    # The numbered diagnostic record itself must still have been attempted
+    # and written -- only the journal line was lost.
+    record = _read_last_admission(store, block.block_id)
+    assert record["failure"]["code"] == "dirty_checkout"
+
+
+# ---------------------------------------------------------------------------
+# E7 (external review wave E): treatment_can_fire is a purely static
+# manifest+registry check -- it must run before the expensive live gates
+# (save deploy, production reload, GPU snapshot, billed backend/canary
+# probes), preserving first-failure short-circuit semantics.
+# ---------------------------------------------------------------------------
+
+
+async def test_static_treatment_gate_runs_before_live_deploy_reload_gpu_and_probes(tmp_path):
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    bad_position = dataclasses.replace(
+        position,
+        objectives=(
+            {"task_id": "repair", "unit_index": 4, "target": [9, 8], "requires": ["warp_drive"]},
+        ),
+    )
+    bad_bundle = build_campaign_bundle(campaign, bad_position)
+    calls: list = []
+    deps = _make_dependencies(calls, campaign, block, bad_position)
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bad_bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "treatment_cannot_fire"
+    # Only the cheap checkout/boot-health evidence was ever gathered -- no
+    # save deploy, no live reload, no GPU snapshot, no billed backend call.
+    assert calls == ["checkout_evidence", "boot_health"]
+
+    assert GATE_ORDER.index("treatment_can_fire") < GATE_ORDER.index("save_deploy")
+    assert GATE_ORDER.index("treatment_can_fire") < GATE_ORDER.index("gpu_isolation")
+    assert GATE_ORDER.index("treatment_can_fire") < GATE_ORDER.index("model_admission")
+
+
+# ---------------------------------------------------------------------------
+# E8 (external review wave E): a canary carrying recorded errors fails
+# admission even when both ok flags read True -- the shape the old sticky
+# required_argument_ok produced for a correct-then-wrong call sequence.
+# ---------------------------------------------------------------------------
+
+
+async def test_canary_errors_alone_fail_admission_with_tool_canary_failed(tmp_path):
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    canaries = {arm.arm_id: _good_canary(arm.arm_id) for arm in campaign.arms}
+    canaries["standard"] = ToolCanaryEvidence(
+        arm_id="standard",
+        finish_trial_ok=True,
+        required_argument_ok=True,
+        observed_calls=(),
+        errors=(
+            "required-argument canary: expected arguments "
+            "{'unit_index': 7, 'x': 11, 'y': 13}, got {'unit_index': 7, 'x': 12, 'y': 13}",
+        ),
+    )
+    deps = _make_dependencies([], campaign, block, position, canaries=canaries)
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "tool_canary_failed"
+    # Ruling G: tool_canary_failed stays a deferral-eligible model-
+    # capability code -- this fix must not move it out of the allowlist.
+    assert "tool_canary_failed" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
+
+
+# ---------------------------------------------------------------------------
+# E3 (external review wave E): a live reload_and_capture whose reload raises
+# (OSError et al.) must classify as the production-reload gate failure --
+# never as unexpected_admission_error -- and must never run popup hygiene or
+# canonical capture after the failed reload.
+# ---------------------------------------------------------------------------
+
+
+async def test_live_reload_exception_classifies_as_production_reload_gate_failure(
+    tmp_path, monkeypatch
+):
+    import argparse
+
+    import civ_mcp.arena.benchmark_runner as benchmark_runner_module
+
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+
+    class _FakeConnection:
+        async def connect(self):
+            return None
+
+        async def disconnect(self):
+            return None
+
+    async def _boom_reload(connection, pos):
+        raise OSError("connection reset by peer")
+
+    async def _never_popups(connection):
+        raise AssertionError("popup hygiene must never run after a failed reload")
+
+    async def _never_canonical(connection, player_id, tiles):
+        raise AssertionError("canonical capture must never run after a failed reload")
+
+    monkeypatch.setattr(benchmark_runner_module, "GameConnection", _FakeConnection)
+    monkeypatch.setattr(benchmark_runner_module, "reload_position", _boom_reload)
+    monkeypatch.setattr(benchmark_runner_module, "dismiss_blocking_popups", _never_popups)
+    monkeypatch.setattr(benchmark_runner_module, "capture_canonical_state", _never_canonical)
+
+    live_deps = benchmark_runner_module._build_live_admission_dependencies(
+        args=argparse.Namespace(wsl_repo="/wsl/repo", windows_repo="C:\\repo"), api_key="x"
+    )
+    deps = dataclasses.replace(
+        _make_dependencies([], campaign, block, position),
+        reload_and_capture=live_deps.reload_and_capture,
+    )
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "production_reload_not_verified"
+    assert "OSError" in json.dumps(excinfo.value.details)
+

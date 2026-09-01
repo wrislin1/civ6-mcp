@@ -321,17 +321,26 @@ async def probe_tool_capability(
                 "required-argument canary: expected a move_unit tool call, got "
                 f"tool_calls={[tc.get('name') for tc in calls]!r} text={reply.text!r}"
             )
-        for tc in move_calls:
-            parsed, parse_error = _parse_tool_call_arguments(tc.get("arguments"))
-            if parse_error is not None:
-                errors.append(f"required-argument canary: {parse_error}")
-            elif parsed == REQUIRED_ARGUMENT_SENTINEL:
-                required_argument_ok = True
-            else:
-                errors.append(
-                    "required-argument canary: expected arguments "
-                    f"{REQUIRED_ARGUMENT_SENTINEL!r}, got {parsed!r}"
-                )
+        else:
+            # E8 (external review wave E): EVERY observed move_unit call is
+            # evaluated -- required_argument_ok used to be sticky (first
+            # matching call set it and a later wrong-argument call was
+            # recorded but ignored). One wrong or unparseable call now
+            # fails the canary regardless of order, even when another call
+            # in the same reply matched the sentinel exactly.
+            all_calls_ok = True
+            for tc in move_calls:
+                parsed, parse_error = _parse_tool_call_arguments(tc.get("arguments"))
+                if parse_error is not None:
+                    errors.append(f"required-argument canary: {parse_error}")
+                    all_calls_ok = False
+                elif parsed != REQUIRED_ARGUMENT_SENTINEL:
+                    errors.append(
+                        "required-argument canary: expected arguments "
+                        f"{REQUIRED_ARGUMENT_SENTINEL!r}, got {parsed!r}"
+                    )
+                    all_calls_ok = False
+            required_argument_ok = all_calls_ok
     except Exception as exc:
         errors.append(f"required-argument canary raised: {exc}")
 

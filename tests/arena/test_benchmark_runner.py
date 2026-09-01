@@ -3045,3 +3045,336 @@ async def test_smoke_lock_never_contains_campaign_fingerprint(tmp_path, monkeypa
     assert len(captured_locks) == 1
     assert "campaign_fingerprint" not in captured_locks[0]
     assert captured_locks[0]["ungated_smoke"] is True
+
+
+# ---------------------------------------------------------------------------
+# E3 (external review wave E): a failed production reload must short-circuit
+# reload_and_capture -- popup hygiene and canonical capture never run after
+# it (their own exceptions used to mask the reload failure as
+# unexpected_admission_error) -- and the except must cover more than bare
+# RuntimeError so BenchmarkStateError/OSError/TimeoutError classify as the
+# production-reload gate failure instead of an unclassified crash.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reload_exc",
+    [
+        RuntimeError("reload_position('SAVE') failed: Error: not found"),
+        OSError("connection reset by peer"),
+        BenchmarkStateError("port dropped mid-reload"),
+        TimeoutError("reload timed out"),
+        asyncio.TimeoutError(),
+    ],
+)
+async def test_live_admission_reload_failure_short_circuits_popup_and_canonical(
+    monkeypatch, reload_exc
+):
+    position = _position_manifest()
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeAdmissionConnection)
+    popup_spy = AsyncMock(
+        side_effect=AssertionError("popup hygiene must never run after a failed reload")
+    )
+    canonical_spy = AsyncMock(
+        side_effect=AssertionError("canonical capture must never run after a failed reload")
+    )
+    monkeypatch.setattr(benchmark_runner, "dismiss_blocking_popups", popup_spy)
+    monkeypatch.setattr(benchmark_runner, "capture_canonical_state", canonical_spy)
+
+    async def _failing_reload_position(connection, pos):
+        raise reload_exc
+
+    monkeypatch.setattr(benchmark_runner, "reload_position", _failing_reload_position)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x"
+    )
+
+    result = await deps.reload_and_capture(position)
+
+    assert result["reload"]["verified"] is False
+    assert type(reload_exc).__name__ in result["reload"]["raw"]
+    popup_spy.assert_not_called()
+    canonical_spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_live_admission_unverified_reload_short_circuits_popup_and_canonical(monkeypatch):
+    """reload_position returning verified=False (no exception -- e.g. the
+    F16(b) stable-open-port fallback) must equally return the failed reload
+    evidence immediately, never proceeding into popup/canonical capture."""
+    position = _position_manifest()
+    monkeypatch.setattr(benchmark_runner, "GameConnection", _FakeAdmissionConnection)
+    popup_spy = AsyncMock(
+        side_effect=AssertionError("popup hygiene must never run after an unverified reload")
+    )
+    canonical_spy = AsyncMock(
+        side_effect=AssertionError("canonical capture must never run after an unverified reload")
+    )
+    monkeypatch.setattr(benchmark_runner, "dismiss_blocking_popups", popup_spy)
+    monkeypatch.setattr(benchmark_runner, "capture_canonical_state", canonical_spy)
+
+    async def _unverified_reload_position(connection, pos):
+        return False
+
+    monkeypatch.setattr(benchmark_runner, "reload_position", _unverified_reload_position)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x"
+    )
+
+    result = await deps.reload_and_capture(position)
+
+    assert result["reload"]["verified"] is False
+    popup_spy.assert_not_called()
+    canonical_spy.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# E1(b) (external review wave E): the repo-path parameters are effectively
+# mandatory at the CLI boundary -- no code path may reach tuner-holder
+# classification (or termination) with an empty wsl_repo/windows_repo, where
+# an unidentifiable holder's empty cwd could match an empty repo path.
+# ---------------------------------------------------------------------------
+
+
+def test_live_admission_dependencies_refuse_unconfigured_windows_repo():
+    with pytest.raises(GateFailure) as exc_info:
+        benchmark_runner._build_live_admission_dependencies(
+            args=_admission_args(windows_repo=None), api_key="x"
+        )
+    assert exc_info.value.code == "repo_paths_not_configured"
+
+
+@pytest.mark.asyncio
+async def test_remediation_terminate_refuses_empty_windows_repo_before_classifying(
+    tmp_path, monkeypatch, capsys
+):
+    def _boom_classify(**_kwargs):
+        raise AssertionError("classification must never run with an empty windows_repo")
+
+    monkeypatch.setattr(benchmark_live_evidence_module, "classify_tuner_holder", _boom_classify)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--terminate-tuner-pid", "4242",
+            "--run-id", "remediation-run",
+            "--run-dir", str(tmp_path / "runs"),
+            "--wsl-repo", "/wsl/repo",
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "windows-repo" in err
+
+
+# ---------------------------------------------------------------------------
+# E4 + E6 (external review wave E): remediation-only invocations. Evidence
+# collection failures (GateFailure from classify_tuner_holder /
+# collect_gpu_evidence) must produce a journaled {"ok": false} remediation
+# record and a classified nonzero exit -- never a raw traceback. And a
+# remediation-only invocation must never create the counted-run scaffold
+# (campaign.json/schedule.json/blocks/campaign-journal.jsonl) nor be blocked
+# by campaign-lock reconstruction -- while still journaling into
+# admissions/ where the deferral-corroboration logic looks.
+# ---------------------------------------------------------------------------
+
+
+def _remediation_argv(campaign_path, run_dir, *extra):
+    return [
+        "--campaign", str(campaign_path),
+        "--run-id", "remediation-run",
+        "--run-dir", str(run_dir),
+        "--wsl-repo", "/wsl/repo",
+        "--windows-repo", "C:\\Users\\riz\\civ6-mcp-companion",
+        *extra,
+    ]
+
+
+def _assert_no_counted_scaffold(root):
+    assert not (root / "campaign.json").exists()
+    assert not (root / "schedule.json").exists()
+    assert not (root / "blocks").exists()
+    assert not (root / "campaign-journal.jsonl").exists()
+
+
+@pytest.mark.asyncio
+async def test_remediation_classification_gate_failure_is_journaled_and_classified(
+    tmp_path, monkeypatch, capsys
+):
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    def _boom_classify(**_kwargs):
+        raise GateFailure(
+            "tuner_holder_query_failed",
+            {"query": "listen", "message": "'ss' exited 127; no such binary"},
+        )
+
+    monkeypatch.setattr(benchmark_live_evidence_module, "classify_tuner_holder", _boom_classify)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _remediation_argv(campaign_path, run_dir, "--terminate-tuner-pid", "4242")
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "tuner_holder_query_failed" in err or "terminate-tuner-pid refused" in err
+
+    root = run_dir / "remediation-run"
+    records = sorted((root / "admissions").glob("gemma4-26b-attempt-*.json"))
+    assert len(records) == 1
+    record = json.loads(records[0].read_text())
+    assert record["remediation"] == "terminate_tuner_pid"
+    assert record["result"]["ok"] is False
+    assert record["result"]["code"] == "tuner_holder_query_failed"
+    _assert_no_counted_scaffold(root)
+
+
+@pytest.mark.asyncio
+async def test_remediation_drain_evidence_gate_failure_is_journaled_and_classified(
+    tmp_path, monkeypatch, capsys
+):
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    monkeypatch.setattr(endpoint_registry_module, "_registry", lambda: object())
+
+    def _boom_collect(**_kwargs):
+        raise GateFailure(
+            "gpu_snapshot_query_failed",
+            {"host": "home-llm", "query": "index,uuid", "message": "ssh dead"},
+        )
+
+    monkeypatch.setattr(benchmark_live_evidence_module, "collect_gpu_evidence", _boom_collect)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _remediation_argv(
+            campaign_path, run_dir,
+            "--drain-gpu-service", "ollama@0.service",
+            "--endpoint-id", "home-gpu0",
+        )
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    root = run_dir / "remediation-run"
+    records = sorted((root / "admissions").glob("gemma4-26b-attempt-*.json"))
+    assert len(records) == 1
+    record = json.loads(records[0].read_text())
+    assert record["remediation"] == "drain_gpu_service:ollama@0.service"
+    assert record["result"]["ok"] is False
+    assert record["result"]["code"] == "gpu_snapshot_query_failed"
+    _assert_no_counted_scaffold(root)
+
+
+@pytest.mark.asyncio
+async def test_remediation_only_success_is_journaled_without_counted_scaffold(
+    tmp_path, monkeypatch
+):
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    holder = benchmark_live_evidence_module.TunerHolder(
+        pid=4242, start_ticks=100, cmdline="/usr/bin/civ-mcp",
+        cwd="/wsl/repo", known_repo_owned=True,
+    )
+    monkeypatch.setattr(
+        benchmark_live_evidence_module, "classify_tuner_holder", lambda **_kwargs: holder
+    )
+    monkeypatch.setattr(
+        benchmark_live_evidence_module,
+        "terminate_tuner_pid",
+        lambda **_kwargs: {"ok": True, "terminated_pid": 4242, "port": 4318},
+    )
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _remediation_argv(campaign_path, run_dir, "--terminate-tuner-pid", "4242")
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    root = run_dir / "remediation-run"
+    records = sorted((root / "admissions").glob("gemma4-26b-attempt-*.json"))
+    assert len(records) == 1
+    record = json.loads(records[0].read_text())
+    assert record["remediation"] == "terminate_tuner_pid"
+    assert record["result"] == {"ok": True, "terminated_pid": 4242, "port": 4318}
+    _assert_no_counted_scaffold(root)
+
+
+@pytest.mark.asyncio
+async def test_remediation_journals_into_existing_campaign_dir_without_lock_rebuild(
+    tmp_path, monkeypatch
+):
+    """The recorded campaign dir is the journaling authority: even a lock
+    that could NEVER be rebuilt byte-for-byte from the current checkout
+    (e.g. the checkout moved since the campaign was created) must accept
+    the remediation record -- and remain byte-identical afterwards."""
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+    root = run_dir / "remediation-run"
+    root.mkdir(parents=True)
+    recorded_lock = json.dumps({"campaign_fingerprint": "recorded-fp", "models": []})
+    recorded_schedule = json.dumps({"blocks": {}})
+    (root / "campaign.json").write_text(recorded_lock)
+    (root / "schedule.json").write_text(recorded_schedule)
+
+    holder = benchmark_live_evidence_module.TunerHolder(
+        pid=4242, start_ticks=100, cmdline="/usr/bin/civ-mcp",
+        cwd="/wsl/repo", known_repo_owned=True,
+    )
+    monkeypatch.setattr(
+        benchmark_live_evidence_module, "classify_tuner_holder", lambda **_kwargs: holder
+    )
+    monkeypatch.setattr(
+        benchmark_live_evidence_module,
+        "terminate_tuner_pid",
+        lambda **_kwargs: {"ok": True, "terminated_pid": 4242, "port": 4318},
+    )
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _remediation_argv(campaign_path, run_dir, "--terminate-tuner-pid", "4242")
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    records = sorted((root / "admissions").glob("gemma4-26b-attempt-*.json"))
+    assert len(records) == 1
+    assert json.loads(records[0].read_text())["result"]["ok"] is True
+    # The recorded lock/schedule were never rebuilt or rewritten.
+    assert (root / "campaign.json").read_text() == recorded_lock
+    assert (root / "schedule.json").read_text() == recorded_schedule
+
+
+@pytest.mark.asyncio
+async def test_remediation_refuses_when_campaign_journal_target_unavailable(
+    tmp_path, monkeypatch, capsys
+):
+    """--campaign names a manifest that cannot be loaded: a campaign-linked
+    remediation must refuse up front (its journal record is what later
+    corroborates a deferral) rather than run unjournaled."""
+
+    def _boom_classify(**_kwargs):
+        raise AssertionError("remediation must not run when the journal target is unavailable")
+
+    monkeypatch.setattr(benchmark_live_evidence_module, "classify_tuner_holder", _boom_classify)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _remediation_argv(tmp_path / "missing.yaml", tmp_path / "runs", "--terminate-tuner-pid", "4242")
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "journal" in err

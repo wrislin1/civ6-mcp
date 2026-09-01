@@ -305,6 +305,46 @@ async def test_tool_canary_rejects_text_only_and_malformed_json_replies():
     assert len(evidence.errors) == 2
 
 
+@pytest.mark.asyncio
+async def test_tool_canary_fails_when_a_correct_call_is_followed_by_a_wrong_one():
+    """E8 (external review wave E): `required_argument_ok` must not be
+    sticky/first-wins -- EVERY observed move_unit call is evaluated, and a
+    single wrong-argument call fails the canary even when another call in
+    the same reply matched the sentinel exactly."""
+    backend = _ScriptedCanaryBackend([
+        Reply(text=None, tool_calls=[_tool_call("finish_trial", {})]),
+        Reply(
+            text=None,
+            tool_calls=[
+                _tool_call("move_unit", REQUIRED_ARGUMENT_SENTINEL),
+                _tool_call("move_unit", {"unit_index": 7, "x": 12, "y": 13}),
+            ],
+        ),
+    ])
+    evidence = await probe_tool_capability(backend, arm_id="standard", tools=[])
+    assert evidence.required_argument_ok is False
+    assert any("x" in e or "argument" in e for e in evidence.errors)
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_fails_when_a_correct_call_is_followed_by_malformed_json():
+    """Same order-independence, weakest form for the parse branch: the
+    matching call first, then an unparseable one."""
+    backend = _ScriptedCanaryBackend([
+        Reply(text=None, tool_calls=[_tool_call("finish_trial", {})]),
+        Reply(
+            text=None,
+            tool_calls=[
+                _tool_call("move_unit", REQUIRED_ARGUMENT_SENTINEL),
+                _tool_call("move_unit", "{not valid json"),
+            ],
+        ),
+    ])
+    evidence = await probe_tool_capability(backend, arm_id="standard", tools=[])
+    assert evidence.required_argument_ok is False
+    assert evidence.errors
+
+
 # ---------------------------------------------------------------------------
 # B3 (external review wave B): both tool canaries must run under the exact
 # production system-prompt shape when a caller supplies one (spec Sec 7:

@@ -269,10 +269,17 @@ def classify_tuner_holder(
     a listener -- is detected).
 
     A holder is `known_repo_owned` only when its cmdline names the
-    expected civ-mcp executable AND its cwd is exactly one of the two
-    known repo checkouts (`wsl_repo`/`windows_repo`) -- anything else
-    (including an unreadable `/proc` entry for a PID that vanished between
-    the socket lookup and the read) is unknown.
+    expected civ-mcp executable AND its cwd was positively read (the
+    `readlink` succeeded with a non-empty path) AND that cwd is exactly
+    one of the NON-EMPTY known repo checkouts (`wsl_repo`/`windows_repo`)
+    -- anything else (including an unreadable `/proc` entry for a PID that
+    vanished between the socket lookup and the read) is unknown. E1
+    (external review wave E): a failed cwd read used to fall back to
+    cwd == "", which compared EQUAL to an empty/defaulted repo path --
+    classifying a completely unidentifiable holder as repo-owned, the one
+    class `terminate_tuner_pid` is willing to SIGTERM. Empty repo
+    parameters are therefore never valid match targets, and a failed or
+    empty cwd read never matches anything.
 
     Returns `None` only when both underlying `ss` queries succeeded and
     neither found a holder -- a failed query raises `GateFailure` instead
@@ -294,13 +301,24 @@ def classify_tuner_holder(
         if cmdline_result.returncode == 0
         else ""
     )
-    cwd = cwd_result.stdout.strip() if cwd_result.returncode == 0 else ""
+    cwd_read_ok = cwd_result.returncode == 0
+    cwd = cwd_result.stdout.strip() if cwd_read_ok else ""
 
+    # E1 (external review wave E): repo-owned requires POSITIVE identity on
+    # every axis. The cwd read must have succeeded AND produced a non-empty
+    # path, and it is compared only against non-empty repo candidates -- an
+    # empty/defaulted wsl_repo/windows_repo must never match the empty cwd
+    # a failed `readlink` falls back to (that exact match previously
+    # classified an unidentifiable holder as known_repo_owned, the one
+    # class terminate_tuner_pid is willing to SIGTERM).
+    known_repo_candidates = tuple(repo for repo in (wsl_repo, windows_repo) if repo)
     known_repo_owned = (
         start_ticks is not None
         and bool(cmdline)
         and any(marker in cmdline for marker in _EXPECTED_CMDLINE_MARKERS)
-        and cwd in (wsl_repo, windows_repo)
+        and cwd_read_ok
+        and bool(cwd)
+        and cwd in known_repo_candidates
     )
     return TunerHolder(
         pid=pid,
@@ -461,6 +479,85 @@ def _service_from_cgroup(cgroup_text: str) -> str | None:
     return match.group(1) if match else None
 
 
+# nvidia-smi prints these bracketed sentinels in place of a real value; any
+# of them in a field this collector needs means the line carries no usable
+# evidence for that field -- fail closed, never guess.
+_GPU_CSV_SENTINEL_FIELDS = frozenset(
+    {"[N/A]", "[Not Supported]", "[Unknown Error]", "[Insufficient Permissions]"}
+)
+
+
+def _gpu_csv_parse_failure(
+    *, host: str, query: str, argv: Sequence[str], line: str, reason: str
+) -> GateFailure:
+    """E5 (external review wave E): the fail-closed refusal for any
+    nvidia-smi CSV line this collector cannot positively parse -- a stdout
+    warning line, a truncated/short row, a bracketed `[N/A]`-style
+    sentinel field, a non-numeric index/pid, or a gpu_uuid the index/uuid
+    query never reported. Raised (never `ValueError`, never a silent
+    `continue`): skipping an unparseable line could hide a real process,
+    and an evidence-collection failure must never read as a clear GPU."""
+    return GateFailure(
+        "gpu_snapshot_parse_error",
+        {
+            "host": host,
+            "query": query,
+            "argv": tuple(argv),
+            "line": line,
+            "reason": reason,
+            "message": (
+                f"unparseable nvidia-smi CSV line {line!r} from '{' '.join(argv)}' on "
+                f"{host!r}: {reason}; refusing to skip or guess -- an admission run must "
+                "never mistake an evidence-parsing failure for a clear GPU"
+            ),
+        },
+    )
+
+
+def _gpu_csv_fields(
+    line: str, *, field_count: int, host: str, query: str, argv: Sequence[str]
+) -> list[str]:
+    """Split one nvidia-smi CSV line into exactly `field_count` fields,
+    failing closed (`gpu_snapshot_parse_error`) on a wrong field count or
+    any empty/sentinel (`[N/A]`-style) field. The final field keeps any
+    embedded commas (maxsplit), matching the prior parse's behavior for
+    process names."""
+    parts = [part.strip() for part in line.split(",", field_count - 1)]
+    if len(parts) != field_count:
+        raise _gpu_csv_parse_failure(
+            host=host,
+            query=query,
+            argv=argv,
+            line=line,
+            reason=f"expected {field_count} comma-separated field(s), found {len(parts)}",
+        )
+    for part in parts:
+        if not part or part in _GPU_CSV_SENTINEL_FIELDS:
+            raise _gpu_csv_parse_failure(
+                host=host,
+                query=query,
+                argv=argv,
+                line=line,
+                reason=f"field {part!r} carries no usable value",
+            )
+    return parts
+
+
+def _gpu_csv_int(
+    text: str, *, field: str, line: str, host: str, query: str, argv: Sequence[str]
+) -> int:
+    try:
+        return int(text)
+    except ValueError:
+        raise _gpu_csv_parse_failure(
+            host=host,
+            query=query,
+            argv=argv,
+            line=line,
+            reason=f"{field} field {text!r} is not an integer",
+        ) from None
+
+
 def collect_gpu_evidence(
     *,
     run_ssh: RunSsh,
@@ -510,8 +607,16 @@ def collect_gpu_evidence(
         line = line.strip()
         if not line:
             continue
-        index_text, uuid = (part.strip() for part in line.split(",", 1))
-        uuid_to_index[uuid] = int(index_text)
+        # E5 (external review wave E): parsed fail-closed -- a driver
+        # warning line, truncated read, or `[N/A]` field raises
+        # `gpu_snapshot_parse_error` (quoting the line) instead of
+        # ValueError, and is never silently skipped.
+        index_text, uuid = _gpu_csv_fields(
+            line, field_count=2, host=host, query="index,uuid", argv=gpu_argv
+        )
+        uuid_to_index[uuid] = _gpu_csv_int(
+            index_text, field="index", line=line, host=host, query="index,uuid", argv=gpu_argv
+        )
 
     proc_argv = (
         "nvidia-smi",
@@ -540,13 +645,34 @@ def collect_gpu_evidence(
         line = line.strip()
         if not line:
             continue
-        gpu_uuid, pid_text, process_name = (part.strip() for part in line.split(",", 2))
+        # E5 (external review wave E): every field of every row is
+        # positively parsed BEFORE the endpoint-scope filter -- a warning
+        # line, truncated row, `[N/A]` field, non-numeric pid, or a
+        # gpu_uuid the index/uuid query never reported all raise
+        # `gpu_snapshot_parse_error` (quoting the line). Silently skipping
+        # such a line could hide a real process on this endpoint's GPU.
+        gpu_uuid, pid_text, process_name = _gpu_csv_fields(
+            line, field_count=3, host=host, query="compute-apps", argv=proc_argv
+        )
+        pid = _gpu_csv_int(
+            pid_text, field="pid", line=line, host=host, query="compute-apps", argv=proc_argv
+        )
         gpu_index = uuid_to_index.get(gpu_uuid)
-        if gpu_index is None or gpu_index not in endpoint.gpu_indexes:
+        if gpu_index is None:
+            raise _gpu_csv_parse_failure(
+                host=host,
+                query="compute-apps",
+                argv=proc_argv,
+                line=line,
+                reason=(
+                    f"gpu_uuid {gpu_uuid!r} was not reported by the index,uuid query -- "
+                    "the process cannot be attributed to any GPU"
+                ),
+            )
+        if gpu_index not in endpoint.gpu_indexes:
             # Not one of this endpoint's GPUs -- irrelevant to this
             # endpoint's admission, never even reported.
             continue
-        pid = int(pid_text)
         cgroup_result = run_ssh(host, ("cat", f"/proc/{pid}/cgroup"))
         service = (
             _service_from_cgroup(cgroup_result.stdout) if cgroup_result.returncode == 0 else None

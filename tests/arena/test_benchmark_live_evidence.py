@@ -836,3 +836,224 @@ def test_drain_still_fails_if_the_target_unit_itself_remains_despite_other_own_u
         )
     assert exc_info.value.code == "gpu_conflict_not_acknowledged"
     assert exc_info.value.details["unapproved"] == ["civ-arena-gemma4.service"]
+
+
+# ---------------------------------------------------------------------------
+# E1 (external review wave E): an unidentifiable tuner-port holder must
+# never classify as known_repo_owned. A failed `readlink -f /proc/<pid>/cwd`
+# used to yield cwd == "", which compared EQUAL to a defaulted-empty
+# windows_repo -- so the ONE class terminate_tuner_pid is willing to SIGTERM
+# (stale repo-owned holder) could be minted from zero identity evidence.
+# ---------------------------------------------------------------------------
+
+
+def _proc_fixtures_with_cwd_result(pid: int, *, start_ticks: int, cmdline: str, cwd_result) -> dict:
+    fixtures = _proc_fixtures(pid, start_ticks=start_ticks, cmdline=cmdline, cwd="/ignored")
+    fixtures[("readlink", "-f", f"/proc/{pid}/cwd")] = cwd_result
+    return fixtures
+
+
+def test_failed_cwd_read_with_empty_windows_repo_is_never_known_repo_owned():
+    """The exact E1 fail-open shape: cwd read fails (cwd falls back to ""),
+    windows_repo was defaulted to "" at the CLI boundary -- "" == "" must
+    NOT make an unidentifiable holder repo-owned."""
+    pid = 4242
+    cwd_argv = ("readlink", "-f", f"/proc/{pid}/cwd")
+    fixtures = _proc_fixtures_with_cwd_result(
+        pid,
+        start_ticks=100000,
+        cmdline="/usr/bin/civ-mcp",
+        cwd_result=_err(cwd_argv, returncode=1, stderr="readlink: permission denied"),
+    )
+    run_local = _Recorder(fixtures)
+
+    holder = classify_tuner_holder(run_local=run_local, wsl_repo=WSL_REPO, windows_repo="")
+
+    assert holder is not None
+    assert holder.known_repo_owned is False
+
+
+def test_successful_but_empty_cwd_read_is_never_known_repo_owned():
+    """Weakest form of the empty-cwd match: the readlink 'succeeded'
+    (returncode 0) but produced no path at all. An empty cwd must never
+    match an empty repo candidate."""
+    pid = 4242
+    cwd_argv = ("readlink", "-f", f"/proc/{pid}/cwd")
+    fixtures = _proc_fixtures_with_cwd_result(
+        pid,
+        start_ticks=100000,
+        cmdline="/usr/bin/civ-mcp",
+        cwd_result=_ok(cwd_argv, stdout=""),
+    )
+    run_local = _Recorder(fixtures)
+
+    holder = classify_tuner_holder(run_local=run_local, wsl_repo=WSL_REPO, windows_repo="")
+
+    assert holder is not None
+    assert holder.known_repo_owned is False
+
+
+def test_root_owned_pid_with_unreadable_cwd_is_never_known_repo_owned():
+    """A root-owned holder: /proc/<pid>/cwd is unreadable (permission
+    denied) even though the cmdline happens to match the civ-mcp markers,
+    and both repo paths are genuinely configured. Identity is incomplete ->
+    never repo-owned."""
+    pid = 4242
+    cwd_argv = ("readlink", "-f", f"/proc/{pid}/cwd")
+    fixtures = _proc_fixtures_with_cwd_result(
+        pid,
+        start_ticks=100000,
+        cmdline="/usr/bin/civ-mcp",
+        cwd_result=_err(cwd_argv, returncode=1, stderr="readlink: Permission denied"),
+    )
+    run_local = _Recorder(fixtures)
+
+    holder = classify_tuner_holder(
+        run_local=run_local, wsl_repo=WSL_REPO, windows_repo=WINDOWS_REPO
+    )
+
+    assert holder is not None
+    assert holder.known_repo_owned is False
+
+
+def test_terminate_refuses_unidentifiable_holder_under_empty_windows_repo_and_sends_no_kill():
+    """End-to-end E1 destructive-path proof: with an unreadable cwd and an
+    empty windows_repo, termination must refuse (the holder is NOT
+    stale_repo_owned) and never issue any kill command."""
+    pid = 4242
+    cwd_argv = ("readlink", "-f", f"/proc/{pid}/cwd")
+    fixtures = _proc_fixtures_with_cwd_result(
+        pid,
+        start_ticks=100000,
+        cmdline="/usr/bin/civ-mcp",
+        cwd_result=_err(cwd_argv, returncode=1, stderr="readlink: permission denied"),
+    )
+    run_local = _Recorder(fixtures)
+
+    preceding = classify_tuner_holder(run_local=run_local, wsl_repo=WSL_REPO, windows_repo="")
+    assert preceding is not None
+
+    with pytest.raises(GateFailure) as exc_info:
+        terminate_tuner_pid(
+            run_local=run_local,
+            requested_pid=pid,
+            preceding_evidence=preceding,
+            wsl_repo=WSL_REPO,
+            windows_repo="",
+            sleep=lambda _s: None,
+        )
+    assert exc_info.value.code == "unknown_tuner_holder"
+    assert not any(call and call[0] == "kill" for call in run_local.calls)
+
+
+# ---------------------------------------------------------------------------
+# E5 (external review wave E): nvidia-smi CSV parsing must fail closed on
+# any malformed/unparseable line -- a stdout warning line, a truncated row,
+# or an "[N/A]" field must raise GateFailure (quoting the offending line),
+# never ValueError, and never be silently skipped (skipping could hide a
+# real process).
+# ---------------------------------------------------------------------------
+
+_GPU_ARGV = ("nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader")
+_PROC_ARGV = (
+    "nvidia-smi",
+    "--query-compute-apps=gpu_uuid,pid,process_name",
+    "--format=csv,noheader",
+)
+
+
+def _gpu_endpoint_registry():
+    endpoint = _FakeEndpoint(host_id=_HOST, gpu_indexes=(0,), units=("ollama@0.service",))
+    return _FakeRegistry(endpoint)
+
+
+def test_gpu_index_query_warning_line_raises_gate_failure_quoting_the_line():
+    warning_line = "Warning: infoROM is corrupted on GPU 0000:01:00.0"
+    run_ssh = _SshRecorder(
+        {(_HOST, _GPU_ARGV): _ok(_GPU_ARGV, stdout=f"{warning_line}\n0, {_UUID_GPU0}\n")}
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_parse_error"
+    assert exc_info.value.details["line"] == warning_line
+
+
+def test_compute_apps_warning_line_raises_gate_failure_quoting_the_line():
+    warning_line = "Warning: persistence mode is disabled"
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, _GPU_ARGV): _ok(_GPU_ARGV, stdout=f"0, {_UUID_GPU0}\n"),
+            (_HOST, _PROC_ARGV): _ok(
+                _PROC_ARGV, stdout=f"{warning_line}\n{_UUID_GPU0}, 555, ollama\n"
+            ),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_parse_error"
+    assert exc_info.value.details["line"] == warning_line
+
+
+def test_truncated_compute_apps_row_raises_gate_failure_not_value_error():
+    truncated = f"{_UUID_GPU0}, 55"
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, _GPU_ARGV): _ok(_GPU_ARGV, stdout=f"0, {_UUID_GPU0}\n"),
+            (_HOST, _PROC_ARGV): _ok(_PROC_ARGV, stdout=f"{truncated}\n"),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_parse_error"
+    assert exc_info.value.details["line"] == truncated
+
+
+def test_not_available_fields_raise_gate_failure_not_value_error():
+    na_row = f"{_UUID_GPU0}, [N/A], [N/A]"
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, _GPU_ARGV): _ok(_GPU_ARGV, stdout=f"0, {_UUID_GPU0}\n"),
+            (_HOST, _PROC_ARGV): _ok(_PROC_ARGV, stdout=f"{na_row}\n"),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_parse_error"
+    assert exc_info.value.details["line"] == na_row
+
+
+def test_non_numeric_pid_raises_gate_failure_not_value_error():
+    bad_row = f"{_UUID_GPU0}, notapid, ollama"
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, _GPU_ARGV): _ok(_GPU_ARGV, stdout=f"0, {_UUID_GPU0}\n"),
+            (_HOST, _PROC_ARGV): _ok(_PROC_ARGV, stdout=f"{bad_row}\n"),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_parse_error"
+    assert exc_info.value.details["line"] == bad_row
+
+
+def test_unmapped_gpu_uuid_row_raises_gate_failure_instead_of_silent_skip():
+    """A well-formed row whose gpu_uuid maps to no GPU reported by the
+    index/uuid query cannot be attributed -- skipping it could hide a real
+    process on this endpoint's GPU; it must fail closed instead."""
+    orphan_row = "GPU-cccccccc-0000-0000-0000-000000000000, 555, ollama"
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, _GPU_ARGV): _ok(_GPU_ARGV, stdout=f"0, {_UUID_GPU0}\n"),
+            (_HOST, _PROC_ARGV): _ok(_PROC_ARGV, stdout=f"{orphan_row}\n"),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_parse_error"
+    assert exc_info.value.details["line"] == orphan_row
