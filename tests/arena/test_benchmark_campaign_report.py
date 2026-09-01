@@ -1015,6 +1015,23 @@ def test_admission_success_record_with_mismatched_session_fingerprint_is_refused
         build_campaign_report(campaign_dir)
 
 
+def test_admission_success_record_naming_another_block_is_refused(tmp_path):
+    """I1 defense-in-depth (wave-I verification, Minor 1): the anchor binds
+    the record's own block_id FIELD, not just the filename prefix -- same
+    discipline as _has_valid_replication_deferred_admission. A record
+    identical in every other respect but declaring another block anchors
+    nothing."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    assert _rewrite_gemma_success_records(
+        campaign_dir, lambda r: r.__setitem__("block_id", "qwen")
+    ), "fixture must have written a counted admission success record for gemma"
+
+    with pytest.raises(CampaignReportError, match="counted admission"):
+        build_campaign_report(campaign_dir)
+
+
 def test_admit_only_success_record_never_anchors_a_complete_block(tmp_path):
     """I1, weakest form: an ok=True record from a NON-counting admit_only
     diagnostic invocation (identical in every other field, session

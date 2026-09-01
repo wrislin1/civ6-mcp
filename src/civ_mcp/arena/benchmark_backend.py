@@ -128,6 +128,9 @@ def classify_backend_exception(exc: BaseException) -> str:
     # I3: 404 (model not deployed / name typo) and a response-validation
     # failure at HTTP 200 (gateway returned garbage) are environment
     # evidence -- the model never processed (or never produced) anything.
+    # 404 is deliberately covered twice (type check here, status tuple
+    # below): a NotFoundError constructed without a response carries no
+    # status_code, and a non-openai shape carries no NotFoundError type.
     if isinstance(exc, (openai.NotFoundError, openai.APIResponseValidationError)):
         return ERROR_KIND_TRANSPORT
     # I3: OSError subsumes ConnectionResetError/BrokenPipeError/TimeoutError

@@ -49,10 +49,13 @@ indistinguishable at read time from a genuine one. Full metadata
 relabeling with consistent re-minting of every artifact is therefore
 detectable only by the anchors that live OUTSIDE the filesystem: the
 published campaign contract, and the human metric-fidelity audits --
-hash-bound to specific trial bytes and performed live during the
-campaign, so a post-hoc re-mint invalidates the audit the humans
-actually signed. Those external anchors, not this reader, carry the
-final authority on live provenance.
+hash-bound to specific trial bytes. The audit anchor binds ONLY IF the
+audits are performed against the live run's bytes before anyone could
+re-mint (an audit run post-hoc over whatever is on disk anchors
+nothing); the spec freezes the audit indices but does not yet codify
+this ordering requirement, so it is an OPERATIONAL obligation on the
+campaign runner until the spec does. Those external anchors, not this
+reader, carry the final authority on live provenance.
 
 ## campaign.json integrity (verified before anything else)
 
@@ -514,6 +517,9 @@ def _require_counted_admission_success(
         if (
             record.get("ok") is True
             and record.get("mode") == "counted"
+            # block_id is bound by field, not just filename prefix -- same
+            # discipline as _has_valid_replication_deferred_admission above.
+            and record.get("block_id") == block_id
             and record.get("campaign_fingerprint") == campaign_fingerprint
             and record.get("session_fingerprint") == session_fingerprint
         ):

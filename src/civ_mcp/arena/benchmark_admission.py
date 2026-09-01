@@ -1071,6 +1071,8 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
             if (
                 record.get("ok") is True
                 and record.get("mode") == "counted"
+                # block_id bound by field, not just filename prefix.
+                and record.get("block_id") == block_id
                 and record.get("campaign_fingerprint") == store.fingerprint
                 and record.get("session_fingerprint") == session_lock.get("session_fingerprint")
             ):
