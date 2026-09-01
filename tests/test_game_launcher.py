@@ -631,7 +631,7 @@ async def test_continue_after_lua_load_presses_escape_until_world_ready(monkeypa
     monkeypatch.setattr(
         game_launcher,
         "_classify_frontend_load_state",
-        lambda: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+        lambda *_a: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
@@ -722,7 +722,7 @@ async def test_continue_after_lua_load_presses_escape_only_on_recognized_continu
     monkeypatch.setattr(
         game_launcher,
         "_classify_frontend_load_state",
-        lambda: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+        lambda *_a: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
@@ -750,7 +750,7 @@ async def test_continue_after_lua_load_never_presses_escape_in_world(monkeypatch
     monkeypatch.setattr(
         game_launcher,
         "_classify_frontend_load_state",
-        lambda: game_launcher.FrontendLoadState.IN_WORLD,
+        lambda *_a: game_launcher.FrontendLoadState.IN_WORLD,
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
@@ -782,7 +782,7 @@ async def test_continue_after_lua_load_never_presses_escape_when_tuner_is_open(
         raising=False,
     )
 
-    def fake_classify():
+    def fake_classify(*_a):
         classify_calls.append(None)
         return game_launcher.FrontendLoadState.CONTINUE_SCREEN
 
@@ -815,7 +815,7 @@ async def test_continue_after_lua_load_waits_on_unknown_screen(monkeypatch):
     monkeypatch.setattr(
         game_launcher,
         "_classify_frontend_load_state",
-        lambda: game_launcher.FrontendLoadState.UNKNOWN,
+        lambda *_a: game_launcher.FrontendLoadState.UNKNOWN,
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
@@ -930,7 +930,7 @@ async def test_continue_after_lua_load_presses_once_for_repeated_identical_class
     monkeypatch.setattr(
         game_launcher,
         "_classify_frontend_load_state",
-        lambda: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+        lambda *_a: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
@@ -964,7 +964,7 @@ async def test_continue_after_lua_load_presses_twice_for_a_changed_classificatio
     monkeypatch.setattr(
         game_launcher,
         "_classify_frontend_load_state",
-        lambda: next(states, game_launcher.FrontendLoadState.LEADER_SCREEN),
+        lambda *_a: next(states, game_launcher.FrontendLoadState.LEADER_SCREEN),
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
@@ -1147,6 +1147,180 @@ async def test_continue_after_lua_load_bridge_failure_never_presses_escape(monke
     assert presses == []
     assert "WARNING" in result
     assert "unknown" in result
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_keeps_event_loop_responsive_during_slow_classification(
+    monkeypatch,
+):
+    """Wave F F1: the classify-frontend bridge is a blocking
+    subprocess.run(timeout=30) -- executed directly inside the polling
+    coroutine it wedges the whole event loop for up to 30s per poll
+    (auto-reconnect and everything else on the loop freezes). The
+    classification call must run off-loop so other tasks keep making
+    progress while it is in flight."""
+    import time as _time
+
+    port_states = iter([True, False])
+    monkeypatch.setattr(
+        game_launcher, "_is_tuner_port_open", lambda: next(port_states, False)
+    )
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: True, raising=False
+    )
+
+    def slow_classify(*_args, **_kwargs):
+        _time.sleep(0.5)  # a wedged bridge, scaled down from 30s
+        return game_launcher.FrontendLoadState.UNKNOWN
+
+    monkeypatch.setattr(
+        game_launcher, "_classify_frontend_load_state", slow_classify
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    ticks = 0
+    stop = _asyncio.Event()
+
+    async def heartbeat():
+        nonlocal ticks
+        while not stop.is_set():
+            ticks += 1
+            await real_sleep(0.01)
+
+    hb = _asyncio.ensure_future(heartbeat())
+    try:
+        await game_launcher.continue_after_lua_load(
+            "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=1, press_every=1
+        )
+    finally:
+        stop.set()
+        await hb
+
+    # Blocking classification starves the heartbeat (~2 ticks over the
+    # 0.5s call); an off-loop classification lets it run (~50 ticks).
+    assert ticks >= 10, (
+        f"event loop was blocked during classification: only {ticks} "
+        f"heartbeat ticks during a 0.5s classify call"
+    )
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_bridge_failure_counts_are_per_wait_session(
+    monkeypatch,
+):
+    """Wave F F2(a): the bridge-failure counter was a module-level
+    singleton reset at the start of each call -- two concurrent waits
+    clobbered each other's counts. Each polling session must accumulate
+    its own independent count and report exactly its own failures."""
+    import re
+
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: True)
+
+    def fake_run(cmd, **kwargs):
+        return SimpleNamespace(returncode=1, stdout=b"", stderr=b"boom")
+
+    monkeypatch.setattr(game_launcher.subprocess, "run", fake_run)
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result_a, result_b = await _asyncio.gather(
+        game_launcher.continue_after_lua_load(
+            "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=3, press_every=1
+        ),
+        game_launcher.continue_after_lua_load(
+            "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=5, press_every=1
+        ),
+    )
+
+    def failures(result: str) -> int:
+        m = re.search(r"failures during wait: (\d+)\.", result)
+        assert m, f"no bridge-failure count in: {result!r}"
+        return int(m.group(1))
+
+    assert failures(result_a) == 3  # one per classification poll, A only
+    assert failures(result_b) == 5  # one per classification poll, B only
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_native_winrt_unavailable_counts_as_failure(
+    monkeypatch,
+):
+    """Wave F F2(b): on native win32 WITHOUT winrt OCR available every
+    classification attempt silently yields UNKNOWN with no failure count
+    -- the exact ambiguity C2(c) closed for the WSL bridge. A native
+    classification that cannot run must count as a failure too, so the
+    timeout warning distinguishes "classifier dead all along" from
+    "healthy classifier that never saw a recognized screen"."""
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+
+    def raise_module_not_found():
+        raise ModuleNotFoundError("No module named 'winrt'")
+
+    monkeypatch.setattr(
+        game_launcher, "_winrt_ocr_available", raise_module_not_found, raising=False
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=3, press_every=1
+    )
+
+    assert "WARNING" in result
+    assert "failures during wait: 3." in result
+
+
+def test_classify_frontend_load_state_native_increments_tracker_when_ocr_unavailable(
+    monkeypatch,
+):
+    """Wave F F2(b), unit level: the native classifier must increment a
+    passed failure tracker when winrt is missing/raises OR reports no OCR
+    engine -- but NOT when classification genuinely ran and found nothing
+    (a legitimate UNKNOWN is not a failure)."""
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+
+    # winrt import raises
+    tracker = game_launcher._FrontendBridgeFailureTracker()
+
+    def raise_module_not_found():
+        raise ModuleNotFoundError("No module named 'winrt'")
+
+    monkeypatch.setattr(
+        game_launcher, "_winrt_ocr_available", raise_module_not_found, raising=False
+    )
+    state = game_launcher._classify_frontend_load_state_native(tracker)
+    assert state is game_launcher.FrontendLoadState.UNKNOWN
+    assert tracker.count == 1
+
+    # winrt present but no OCR engine for the user profile
+    tracker = game_launcher._FrontendBridgeFailureTracker()
+    monkeypatch.setattr(
+        game_launcher, "_winrt_ocr_available", lambda: False, raising=False
+    )
+    state = game_launcher._classify_frontend_load_state_native(tracker)
+    assert state is game_launcher.FrontendLoadState.UNKNOWN
+    assert tracker.count == 1
+
+    # OCR ran fine, game window simply not found: legitimate UNKNOWN,
+    # not a classification failure.
+    tracker = game_launcher._FrontendBridgeFailureTracker()
+    monkeypatch.setattr(
+        game_launcher, "_winrt_ocr_available", lambda: True, raising=False
+    )
+    monkeypatch.setattr(
+        game_launcher, "_find_game_window_win32", lambda: None, raising=False
+    )
+    state = game_launcher._classify_frontend_load_state_native(tracker)
+    assert state is game_launcher.FrontendLoadState.UNKNOWN
+    assert tracker.count == 0
 
 
 # ---------------------------------------------------------------------------
