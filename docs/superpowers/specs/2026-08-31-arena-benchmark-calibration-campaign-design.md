@@ -599,6 +599,15 @@ block's time order. Human review must exactly agree with automatic:
 Any disagreement is an instrument failure. Evidence affected by a semantic
 metric fix cannot be retained under the same contract version.
 
+The audit must be performed against the live run's bytes during the
+campaign — the auditor reads each audited trial's content and records its
+hash before the campaign session ends. This ordering is what makes the
+audit a provenance anchor: every stamp inside the evidence tree is
+computable from public pure functions, so a post-hoc audit over whatever
+is on disk anchors nothing, while a live audit binds the hashes the
+humans actually reviewed. An audit not performed under this ordering does
+not satisfy the metric-fidelity gate.
+
 ### Per-model sensitivity and separation
 
 A pair is decided when standard and minimal have different normalized rubric
