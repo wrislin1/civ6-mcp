@@ -1026,6 +1026,52 @@ def test_not_available_fields_raise_gate_failure_not_value_error():
     assert exc_info.value.details["line"] == na_row
 
 
+def test_insufficient_permissions_process_name_is_recorded_verbatim_and_attributed():
+    """J2 (external review wave J): on a shared host nvidia-smi prints
+    "[Insufficient Permissions]" for OTHER users' process names -- but the
+    row is still fully attributable (conflict decisions use only gpu_uuid +
+    pid), so it must parse, with the sentinel recorded verbatim as the
+    process_name, never a gpu_snapshot_parse_error hard-stop."""
+    row = f"{_UUID_GPU0}, 555, [Insufficient Permissions]"
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, _GPU_ARGV): _ok(_GPU_ARGV, stdout=f"0, {_UUID_GPU0}\n"),
+            (_HOST, _PROC_ARGV): _ok(_PROC_ARGV, stdout=f"{row}\n"),
+            (_HOST, ("cat", "/proc/555/cgroup")): _ok(
+                ("cat", "/proc/555/cgroup"), stdout="0::/system.slice/ollama@0.service\n"
+            ),
+        }
+    )
+
+    processes = collect_gpu_evidence(
+        run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0"
+    )
+
+    assert len(processes) == 1
+    assert processes[0].pid == 555
+    assert processes[0].gpu_uuid == _UUID_GPU0
+    assert processes[0].process_name == "[Insufficient Permissions]"
+    assert processes[0].service == "ollama@0.service"
+
+
+def test_sentinel_pid_still_raises_gate_failure_despite_verbatim_process_name():
+    """J2 weakest-form adversarial rejection: relaxing process_name must
+    NOT relax the decision-bearing fields -- an [N/A] pid (the row cannot
+    be attributed) still fails closed."""
+    row = f"{_UUID_GPU0}, [N/A], python3"
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, _GPU_ARGV): _ok(_GPU_ARGV, stdout=f"0, {_UUID_GPU0}\n"),
+            (_HOST, _PROC_ARGV): _ok(_PROC_ARGV, stdout=f"{row}\n"),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        collect_gpu_evidence(run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0")
+    assert exc_info.value.code == "gpu_snapshot_parse_error"
+    assert exc_info.value.details["line"] == row
+
+
 def test_non_numeric_pid_raises_gate_failure_not_value_error():
     bad_row = f"{_UUID_GPU0}, notapid, ollama"
     run_ssh = _SshRecorder(

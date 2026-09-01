@@ -1257,8 +1257,12 @@ Fast-forward the native Windows checkout to the just-created campaign/config fre
 uv run civ-arena-benchmark \
   --campaign benchmarks/campaigns/builder-economy-cal-v1.yaml \
   --run-id builder-economy-cal-v1 \
+  --wsl-repo "$(git rev-parse --show-toplevel)" \
+  --windows-repo /mnt/c/Users/wrisl/dev/civ6-mcp \
   --non-counting-validation gemma4-26b
 ```
+
+(Both repo flags carry derived defaults — the running checkout's git root and the Windows companion checkout the launcher bootstrap already uses — so they are optional; they are spelled out here so the runbook is explicit about which checkouts the clean-checkout/tuner-holder gates compare.)
 
 Expected: full fresh gate evidence, one minimal and one standard episode, no campaign/session fingerprint pair on validation trials, no writes under counted `blocks/`, and deterministic validation reporting.
 
@@ -1316,6 +1320,8 @@ Run `git status --porcelain=v1` in WSL and Windows; both must be empty and both 
 uv run civ-arena-benchmark \
   --campaign benchmarks/campaigns/builder-economy-cal-v1.yaml \
   --run-id builder-economy-cal-v1 \
+  --wsl-repo "$(git rev-parse --show-toplevel)" \
+  --windows-repo /mnt/c/Users/wrisl/dev/civ6-mcp \
   --one-block
 ```
 
@@ -1383,7 +1389,9 @@ Run/resume:
 ```bash
 uv run civ-arena-benchmark \
   --campaign benchmarks/campaigns/builder-economy-cal-v1.yaml \
-  --run-id builder-economy-cal-v1
+  --run-id builder-economy-cal-v1 \
+  --wsl-repo "$(git rev-parse --show-toplevel)" \
+  --windows-repo /mnt/c/Users/wrisl/dev/civ6-mcp
 
 uv run civ-arena-benchmark-report benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b
 ```

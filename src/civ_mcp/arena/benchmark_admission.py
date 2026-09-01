@@ -976,11 +976,18 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     # write time, re-verified here (same shared canonical encoding,
     # `benchmark_store.canonical_json_bytes`) because this function acts on
     # pure filesystem state BEFORE any report runs. `store.schedule` is
-    # trusted: `CampaignStore._open_or_create` already verified it
-    # byte-for-byte against the recorded campaign schedule, which is
-    # digest-bound into campaign_fingerprint. A genuinely admitted block
-    # always has this file (open_block writes it before session.json), so
-    # missing/unreadable/mismatched is NOT complete.
+    # trusted because every path that constructs the store binds it to the
+    # digest-anchored campaign schedule (J4, external review wave J,
+    # corrected the over-broad original claim): the counted path
+    # (`CampaignStore._open_or_create` via create/open) byte-matches the
+    # provided schedule against the recorded schedule.json, and the
+    # remediation-only path (`benchmark_runner.
+    # _load_remediation_journal_target`, which uses the bare constructor
+    # that itself verifies nothing) independently verifies the on-disk
+    # schedule.json's fingerprint against the recorded lock's
+    # digests.schedule before building the store. A genuinely admitted
+    # block always has this file (open_block writes it before
+    # session.json), so missing/unreadable/mismatched is NOT complete.
     block_schedule_path = store.root / CampaignStore.BLOCKS_DIR / block_id / "schedule.json"
     if not block_schedule_path.is_file():
         return False

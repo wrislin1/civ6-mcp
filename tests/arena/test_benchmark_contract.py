@@ -246,8 +246,7 @@ def test_campaign_manifest_rejects_unsafe_block_id(tmp_path, bad_block_id):
         (lambda d: d["rules"].__setitem__("minimum_standard_wins", -1), "minimum_standard_wins"),
         # G6 (external review wave G): a ZERO minimum switches the
         # sensitivity/direction gate off entirely (every block trivially
-        # satisfies >= 0) -- bounds are now >= 1, not >= 0. Zero decided
-        # forces zero wins too (wins may never exceed decided).
+        # satisfies >= 0) -- bounds are now >= 1, not >= 0.
         (
             lambda d: (
                 d["rules"].__setitem__("minimum_decided_pairs", 0),
@@ -258,8 +257,10 @@ def test_campaign_manifest_rejects_unsafe_block_id(tmp_path, bad_block_id):
         (lambda d: d["rules"].__setitem__("minimum_standard_wins", 0), "minimum_standard_wins"),
         # minimum_decided_pairs may never exceed pairs_per_model.
         (lambda d: d["rules"].__setitem__("minimum_decided_pairs", 13), "minimum_decided_pairs"),
-        # decided >= wins is structurally required: wins > decided is unsatisfiable arithmetic.
-        (lambda d: d["rules"].__setitem__("minimum_standard_wins", 11), "minimum_standard_wins"),
+        # J9 (wave J): wins may never exceed pairs_per_model (wins > decided
+        # is satisfiable and no longer rejected -- see the positive test
+        # below).
+        (lambda d: d["rules"].__setitem__("minimum_standard_wins", 13), "minimum_standard_wins"),
         # A zero or negative effect threshold makes the effect gate vacuous.
         (lambda d: d["rules"].__setitem__("minimum_median_normalized_delta", 0), "minimum_median_normalized_delta"),
         (lambda d: d["rules"].__setitem__("minimum_median_normalized_delta", -1.0), "minimum_median_normalized_delta"),
@@ -275,6 +276,25 @@ def test_campaign_manifest_rejects_out_of_bounds_rules_and_caps(tmp_path, mutati
 
     with pytest.raises(ValueError, match=match):
         load_campaign_manifest(path)
+
+
+def test_campaign_manifest_accepts_wins_minimum_exceeding_decided_minimum(tmp_path):
+    """J9 (external review wave J): minimum_standard_wins >
+    minimum_decided_pairs is SATISFIABLE -- every standard win is a decided
+    pair, so 10 wins necessarily produce >= 10 decided pairs; independent
+    minima like (decided=5, wins=10) must load. The old wins<=decided
+    inequality rejected satisfiable configs."""
+
+    def mutate(d):
+        d["rules"]["minimum_decided_pairs"] = 5
+        d["rules"]["minimum_standard_wins"] = 10
+
+    path = _write_campaign(tmp_path, mutate=mutate)
+
+    manifest = load_campaign_manifest(path)
+
+    assert manifest.rules.minimum_decided_pairs == 5
+    assert manifest.rules.minimum_standard_wins == 10
 
 
 def test_campaign_manifest_rejects_required_audits_per_arm_mismatched_with_audit_indices(tmp_path):

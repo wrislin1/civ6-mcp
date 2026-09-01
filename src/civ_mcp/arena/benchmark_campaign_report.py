@@ -357,22 +357,37 @@ def _admission_record_paths(campaign_dir: Path, block_id: str) -> list[Path]:
     ]
 
 
-def _admission_records(campaign_dir: Path, block_id: str) -> list[dict]:
-    """Every admission-attempt record for `block_id`, in on-disk (numbered,
-    i.e. chronological) order -- ordinary failed-gate records, remediation
-    records, and disposition records alike. Tolerates a missing
-    `admissions/` directory and skips any file that fails to parse as JSON --
-    admission evidence is diagnostic, not scoreable, so a corrupt record here
-    must never abort report generation the way corrupt trial evidence does."""
-    records: list[dict] = []
+def _admission_records_with_paths(
+    campaign_dir: Path, block_id: str
+) -> list[tuple[Path, dict]]:
+    """Every admission-attempt record for `block_id` with its file path, in
+    on-disk (numbered, i.e. chronological) order -- ordinary failed-gate
+    records, remediation records, and disposition records alike. Tolerates
+    a genuinely-absent `admissions/` directory (empty list), but -- J5,
+    external review wave J -- a PRESENT record that cannot be read/parsed
+    (or is not a JSON object) raises a typed `CampaignReportError` naming
+    the file, via the same `_read_json_evidence` discipline as every other
+    evidence read: since I1 the admission record is load-bearing (the
+    counted anchor, deferral corroboration), so silently skipping a
+    truncated record would misreport corrupt evidence as absent and accuse
+    the operator of substituted/forged evidence with no filename. Corrupt
+    != absent."""
+    records: list[tuple[Path, dict]] = []
     for path in _admission_record_paths(campaign_dir, block_id):
-        try:
-            record = _read_json(path)
-        except (OSError, ValueError):
-            continue
-        if isinstance(record, Mapping):
-            records.append(dict(record))
+        record = _read_json_evidence(path, f"block {block_id!r} admission-attempt record")
+        if not isinstance(record, Mapping):
+            raise CampaignReportError(
+                f"admission-attempt record {path} must be a JSON object, got "
+                f"{type(record).__name__} -- refusing to build a campaign report over a "
+                "corrupt admission record (corrupt evidence is never treated as absent)"
+            )
+        records.append((path, dict(record)))
     return records
+
+
+def _admission_records(campaign_dir: Path, block_id: str) -> list[dict]:
+    """The records of `_admission_records_with_paths`, without paths."""
+    return [record for _, record in _admission_records_with_paths(campaign_dir, block_id)]
 
 
 def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
@@ -381,10 +396,19 @@ def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
     return [record for record in _admission_records(campaign_dir, block_id) if "disposition" in record]
 
 
-def _has_valid_replication_deferred_admission(
+def _replication_deferral_consumed_records(
     campaign_dir: Path, block_id: str, campaign_fingerprint: str
-) -> bool:
-    """True only for a CORROBORATED `REPLICATION_DEFERRED_ADMISSION` record
+) -> list[Path] | None:
+    """The admission-record files a valid replication deferral CONSUMES --
+    the corroborating counted-mode same-code failure records plus the
+    disposition record itself, in on-disk order -- or `None` when no valid
+    corroborated disposition exists (J10(b), external review wave J: these
+    paths are what `report_inputs` enumerates for a deferred block, so a
+    post-hoc diagnostic record never changes report bytes).
+
+    Validity contract (see `_has_valid_replication_deferred_admission`,
+    the boolean view of this function): true only for a CORROBORATED
+    `REPLICATION_DEFERRED_ADMISSION` record
     for `block_id` -- finding 4 (final review) plus external review finding
     A1: a single admission failure of ANY code must never mint this
     disposition by itself. Spec: "Deferral requires at least one journaled
@@ -454,11 +478,11 @@ def _has_valid_replication_deferred_admission(
     safe).
     """
     records = [
-        record
-        for record in _admission_records(campaign_dir, block_id)
+        (path, record)
+        for path, record in _admission_records_with_paths(campaign_dir, block_id)
         if record.get("campaign_fingerprint") == campaign_fingerprint
     ]
-    for index, record in enumerate(records):
+    for index, (disposition_path, record) in enumerate(records):
         if record.get("disposition") != REPLICATION_DEFERRED_ADMISSION:
             continue
         if record.get("block_id") != block_id:
@@ -470,7 +494,7 @@ def _has_valid_replication_deferred_admission(
         preceding = records[:index]
         same_code_failure_ordinals = [
             i
-            for i, r in enumerate(preceding)
+            for i, (_, r) in enumerate(preceding)
             if r.get("ok") is False
             # Ruling K (wave I, I2): only COUNTED-mode failures corroborate
             # -- an admit_only diagnostic (or a mode-less record) never does.
@@ -481,8 +505,19 @@ def _has_valid_replication_deferred_admission(
         # Ruling J (wave H): the whole predicate. No remediation records
         # are consulted -- see the docstring's subsumption argument.
         if len(same_code_failure_ordinals) >= 2:
-            return True
-    return False
+            return [records[i][0] for i in same_code_failure_ordinals] + [disposition_path]
+    return None
+
+
+def _has_valid_replication_deferred_admission(
+    campaign_dir: Path, block_id: str, campaign_fingerprint: str
+) -> bool:
+    """Boolean view of `_replication_deferral_consumed_records` -- see its
+    docstring for the full validity contract."""
+    return (
+        _replication_deferral_consumed_records(campaign_dir, block_id, campaign_fingerprint)
+        is not None
+    )
 
 
 def _require_counted_admission_success(
@@ -490,7 +525,7 @@ def _require_counted_admission_success(
     block_id: str,
     campaign_fingerprint: str,
     session_fingerprint: str,
-) -> None:
+) -> Path:
     """I1 (external review wave I): every COMPLETE block must be anchored
     by at least one counted admission SUCCESS record in `admissions/` --
     `ok: true`, `mode: "counted"`, stamped with THIS campaign's
@@ -512,8 +547,12 @@ def _require_counted_admission_success(
     minting one) never anchors a complete block; nor does a record whose
     stamp names another campaign or another session. Deferred/incomplete
     blocks are exempt -- their absence of a session is handled by the
-    deferral path."""
-    for record in _admission_records(campaign_dir, block_id):
+    deferral path.
+
+    Returns the path of the FIRST matching anchor record (J10(b), external
+    review wave J) -- the one admission record the report actually
+    consumed for this complete block, enumerated in `report_inputs`."""
+    for path, record in _admission_records_with_paths(campaign_dir, block_id):
         if (
             record.get("ok") is True
             and record.get("mode") == "counted"
@@ -523,7 +562,7 @@ def _require_counted_admission_success(
             and record.get("campaign_fingerprint") == campaign_fingerprint
             and record.get("session_fingerprint") == session_fingerprint
         ):
-            return
+            return path
     raise CampaignReportError(
         f"block {block_id!r} has a complete schedule but no counted admission SUCCESS "
         "record in admissions/ (ok=true, mode='counted', stamped with this campaign's "
@@ -565,6 +604,30 @@ def _require_calibration_rules(rules: object) -> dict[str, object]:
     if missing:
         raise CampaignReportError(f"campaign.json 'rules' is missing required field(s): {missing}")
     rules = dict(rules)
+    # J8 (external review wave J): type discipline BEFORE any bound
+    # arithmetic, mirroring benchmark_manifest._require_int /
+    # _require_optional_number (explicit bool rejection first -- bool is an
+    # int subclass, so True would otherwise pass every bound and be used
+    # as the integer 1; a string threshold would raise a bare TypeError
+    # from the first comparison). Keeps the defense-in-depth pair with
+    # benchmark_contract._load_calibration_rules symmetric.
+    for field in (
+        "pairs_per_model",
+        "minimum_decided_pairs",
+        "minimum_standard_wins",
+        "required_audits_per_arm",
+    ):
+        value = rules[field]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise CampaignReportError(
+                f"campaign.json 'rules' {field} must be an integer (got {value!r})"
+            )
+    delta = rules["minimum_median_normalized_delta"]
+    if isinstance(delta, bool) or not isinstance(delta, (int, float)):
+        raise CampaignReportError(
+            "campaign.json 'rules' minimum_median_normalized_delta must be a number "
+            f"(got {delta!r})"
+        )
     if rules["minimum_decided_pairs"] > rules["pairs_per_model"]:
         raise CampaignReportError(
             "campaign.json 'rules' declares minimum_decided_pairs "
@@ -598,12 +661,17 @@ def _require_calibration_rules(rules: object) -> dict[str, object]:
             f"(got {rules['minimum_standard_wins']!r}) -- a zero or negative direction "
             "threshold switches the direction gate off entirely"
         )
-    if rules["minimum_standard_wins"] > rules["minimum_decided_pairs"]:
+    # J9 (external review wave J): the former wins <= decided inequality
+    # was WRONG MATH and is deliberately gone -- every standard win IS a
+    # decided pair, so N wins necessarily produce >= N decided pairs;
+    # independent minima like (decided=5, wins=10) are satisfiable. Only
+    # wins > pairs_per_model is genuinely unsatisfiable. Mirrors
+    # benchmark_contract._load_calibration_rules.
+    if rules["minimum_standard_wins"] > rules["pairs_per_model"]:
         raise CampaignReportError(
             f"campaign.json 'rules' minimum_standard_wins ({rules['minimum_standard_wins']!r}) "
-            f"must not exceed minimum_decided_pairs ({rules['minimum_decided_pairs']!r}) -- a "
-            "standard win is a decided pair, so requiring more wins than decided pairs is "
-            "unsatisfiable arithmetic"
+            f"must not exceed pairs_per_model ({rules['pairs_per_model']!r}) -- no block "
+            "could ever satisfy direction"
         )
     if rules["minimum_median_normalized_delta"] <= 0:
         raise CampaignReportError(
@@ -893,9 +961,15 @@ def _tie_attribution_section(
     leave this section unresolved (`resolved: False`) -- never silently
     treated as any particular attribution. An entry whose three
     human-review fields (`transcript_finding`, `final_state_finding`,
-    `counterfactual_fixture_result`) are not all non-empty strings is a
-    typed hard error (D7, external review wave D) -- an attribution
-    without recorded findings is not a review at all."""
+    `counterfactual_fixture_result`) are not all non-empty strings is not
+    a review at all (D7, external review wave D) -- J6 (wave J) converted
+    it from a report-aborting hard error to `resolved: False` like every
+    sibling validation here, with the machine-readable
+    `incomplete_reviews` list ([{pair_id, missing_review_fields}, ...])
+    surfaced in the section output: fail-closed is preserved (an
+    unresolved tie still blocks PASS), but one blank finding during the
+    Task 14 audit no longer aborts the ENTIRE campaign report and hides
+    the other block."""
     if not tied_pairs:
         return {"required": False, "resolved": True, "attributions": {}, "reason": None}
 
@@ -941,6 +1015,7 @@ def _tie_attribution_section(
                 by_pair[entry["pair_id"]] = entry
 
     resolved: dict[str, dict[str, object]] = {}
+    incomplete_reviews: list[dict[str, object]] = []
     for pair in tied_pairs:
         pair_id = pair["pair_id"]
         entry = by_pair.get(pair_id)
@@ -992,21 +1067,23 @@ def _tie_attribution_section(
         # attribution/hashes is a mechanical stamp, not a review, and
         # honoring it would mint MODEL_FLOOR_NULL/MODEL_TIE_NULL with no
         # review having happened. Each must be a non-empty (non-blank)
-        # string; anything less is a typed, fail-closed refusal naming
-        # the pair and the missing field(s).
+        # string. J6 (external review wave J): an incomplete review is an
+        # OPERATOR-RECOVERABLE state -- it accumulates into
+        # `incomplete_reviews` and leaves the section resolved: False
+        # (fail-closed: the unresolved tie still blocks PASS via
+        # _block_outcome), instead of raising and aborting the whole
+        # campaign report over one blank field.
         review_fields = ("transcript_finding", "final_state_finding", "counterfactual_fixture_result")
-        missing_review_fields = [
+        missing_review_fields = sorted(
             field
             for field in review_fields
             if not isinstance(entry.get(field), str) or not entry.get(field).strip()
-        ]
+        )
         if missing_review_fields:
-            raise CampaignReportError(
-                f"{path} entry for pair {pair_id!r} is missing non-empty human-review "
-                f"field(s) {missing_review_fields} -- an attribution without recorded "
-                "transcript/final-state/counterfactual findings is not a completed tie "
-                "review and must never resolve a tie-derived outcome"
+            incomplete_reviews.append(
+                {"pair_id": pair_id, "missing_review_fields": missing_review_fields}
             )
+            continue
 
         mechanical_label = (
             "zero_tie"
@@ -1019,6 +1096,26 @@ def _tie_attribution_section(
             "transcript_finding": entry.get("transcript_finding"),
             "final_state_finding": entry.get("final_state_finding"),
             "counterfactual_fixture_result": entry.get("counterfactual_fixture_result"),
+        }
+
+    if incomplete_reviews:
+        # J6 (external review wave J): resolved: False with a
+        # machine-readable reasons list -- see the docstring.
+        described = "; ".join(
+            f"pair {gap['pair_id']!r} is missing non-empty human-review field(s) "
+            f"{gap['missing_review_fields']}"
+            for gap in incomplete_reviews
+        )
+        return {
+            "required": True,
+            "resolved": False,
+            "attributions": resolved,
+            "reason": (
+                f"{path} has incomplete human-review entries -- {described}; an attribution "
+                "without recorded transcript/final-state/counterfactual findings is not a "
+                "completed tie review and must never resolve a tie-derived outcome"
+            ),
+            "incomplete_reviews": incomplete_reviews,
         }
 
     return {"required": True, "resolved": True, "attributions": resolved, "reason": None}
@@ -1302,9 +1399,10 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
                     f"honor any {REPLICATION_DEFERRED_ADMISSION!r} disposition for a block "
                     "that was actually admitted"
                 )
-            if not _has_valid_replication_deferred_admission(
+            deferral_records = _replication_deferral_consumed_records(
                 campaign_dir, block_id, str(campaign_fingerprint)
-            ):
+            )
+            if deferral_records is None:
                 raise CampaignReportError(
                     f"block {block_id!r} has an incomplete schedule "
                     f"({len(committed_indices)}/{len(expected_indices)} trials committed) and "
@@ -1312,9 +1410,11 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
                     "in admissions/ -- refusing to build an official campaign report over an "
                     "incomplete schedule"
                 )
-            report_inputs.extend(
-                f"admissions/{path.name}" for path in _admission_record_paths(campaign_dir, block_id)
-            )
+            # J10(b) (external review wave J): only the records the report
+            # CONSUMED -- the corroborating counted failures plus the
+            # disposition -- are report inputs; a post-hoc diagnostic
+            # record must never change report bytes.
+            report_inputs.extend(f"admissions/{path.name}" for path in deferral_records)
             blocks_report[block_id] = {
                 "status": BLOCK_STATUS_ADMISSION_DEFERRED,
                 "committed_trial_count": len(committed_indices),
@@ -1409,15 +1509,17 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
         # session fingerprint (compute_session_fingerprint over the verified
         # session document; equal to the recorded value per the G1 check
         # above), never a value merely read off disk.
-        _require_counted_admission_success(
+        anchor_record_path = _require_counted_admission_success(
             campaign_dir,
             block_id,
             str(campaign_fingerprint),
             compute_session_fingerprint(block_session),
         )
-        report_inputs.extend(
-            f"admissions/{path.name}" for path in _admission_record_paths(campaign_dir, block_id)
-        )
+        # J10(b) (external review wave J): only the counted anchor record
+        # the report consumed -- never a wholesale admissions/ enumeration,
+        # which would let a post-hoc --admit-only diagnostic change report
+        # bytes with zero scored evidence changed.
+        report_inputs.append(f"admissions/{anchor_record_path.name}")
 
         scored_by_index = _scored_by_index_from_block_report(block_report, str(position_id))
         raw_by_index: dict[int, Mapping[str, object]] = {}

@@ -695,12 +695,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--wsl-repo",
         default=None,
-        help="WSL-side repo checkout path for the clean-checkout gate (--campaign only)",
+        help="WSL-side repo checkout path for the clean-checkout gate (--campaign only; "
+        "defaults to the git root of the running checkout)",
     )
     parser.add_argument(
         "--windows-repo",
         default=None,
-        help="Windows-companion repo checkout path for the clean-checkout gate (--campaign only)",
+        help="Windows-companion repo checkout path for the clean-checkout gate (--campaign "
+        "only; defaults to the companion checkout the launcher bootstrap uses, when present)",
     )
     parser.add_argument(
         "--admit-only",
@@ -1143,25 +1145,66 @@ def _run_ssh_command(host: str, argv: Sequence[str]):
     return CommandResult(argv=tuple(argv), returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
+def _derive_wsl_repo_default() -> str:
+    """J1 (external review wave J): the WSL-side repo default is the git
+    root of the RUNNING package -- walk upward from this file to the first
+    directory containing `.git` (a directory for a primary checkout, a
+    file for a linked worktree; a worktree's root is the worktree dir,
+    which is correct: the tuner-holder/clean-checkout gates compare against
+    the checkout actually running). Chosen over `git rev-parse
+    --show-toplevel` because it needs no subprocess and is anchored to the
+    package's own location rather than the caller's cwd. Falls back to the
+    pre-J1 src-layout heuristic (`parents[3]`) when no `.git` is found, so
+    an installed-package invocation resolves exactly as it always did."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / ".git").exists():
+            return str(parent)
+    return str(Path(__file__).resolve().parents[3])
+
+
+def _derive_windows_repo_default() -> str:
+    """J1 (external review wave J): the Windows companion checkout the
+    codebase already knows -- `game_launcher.WSL_WINDOWS_REPO`, the same
+    repo root the launcher bootstrap lives in. Returns "" (so the caller's
+    typed refusal fires) when that path does not exist on this machine --
+    the default must never point tuner-holder classification at a
+    nonexistent repo path."""
+    from civ_mcp import game_launcher
+
+    windows_repo = game_launcher.WSL_WINDOWS_REPO
+    return windows_repo if os.path.isdir(windows_repo) else ""
+
+
 def _resolve_admission_repos(args: argparse.Namespace) -> tuple[str, str]:
     """E1 (external review wave E): resolve the two known-repo checkout
     paths for the live admission/remediation paths, refusing outright
     (`GateFailure`, code `repo_paths_not_configured`) if either resolves
     empty.
 
-    `wsl_repo` falls back to this checkout's own root (always non-empty);
-    `windows_repo` has no sane fallback and used to default to `""` -- an
-    empty repo path is catastrophic downstream: `classify_tuner_holder`'s
+    J1 (external review wave J): both paths now carry DERIVED defaults, so
+    every documented `--campaign` invocation runs without the flags.
+    Standing rule (b) -- the operating path that satisfies the
+    precondition: a `--campaign` (or campaign-linked remediation)
+    invocation launched from a git checkout of this repo on the gaming PC,
+    where the Windows companion checkout exists at
+    `game_launcher.WSL_WINDOWS_REPO`; `--wsl-repo` then defaults to the
+    running checkout's git root (`_derive_wsl_repo_default`) and
+    `--windows-repo` to that companion root
+    (`_derive_windows_repo_default`). Explicit flags still override, and
+    the refusal below survives for the pathological case (derivation fails
+    AND no flag given).
+
+    An empty repo path is catastrophic downstream: `classify_tuner_holder`'s
     cwd comparison could match an unidentifiable holder's empty
     (failed-read) cwd against it, minting the one classification
     (`known_repo_owned`) that `terminate_tuner_pid` is willing to SIGTERM.
     `classify_tuner_holder` itself now also filters empty repo candidates
-    (defense in depth); this boundary check makes the parameters
+    (defense in depth); this boundary check keeps the parameters
     effectively mandatory so no classification/termination is ever even
-    attempted without both paths configured.
+    attempted without both paths resolved.
     """
-    wsl_repo = args.wsl_repo or str(Path(__file__).resolve().parents[3])
-    windows_repo = args.windows_repo or ""
+    wsl_repo = args.wsl_repo or _derive_wsl_repo_default()
+    windows_repo = args.windows_repo or _derive_windows_repo_default()
     missing = [
         flag
         for flag, value in (("--wsl-repo", wsl_repo), ("--windows-repo", windows_repo))
@@ -1182,6 +1225,23 @@ def _resolve_admission_repos(args: argparse.Namespace) -> tuple[str, str]:
             },
         )
     return wsl_repo, windows_repo
+
+
+def _is_not_found_listing_failure(exc: BaseException) -> bool:
+    """J7/P2a (external review wave J): True for a served-model listing
+    failure that is specifically an HTTP 404 -- the /v1/models route not
+    being implemented on an otherwise-healthy OpenAI-compatible endpoint.
+    Checked by openai type AND by carried status (either the SDK's
+    `status_code` attribute or the httpx `response.status_code`
+    convention), mirroring `classify_backend_exception`'s status probing."""
+    import openai
+
+    if isinstance(exc, openai.NotFoundError):
+        return True
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    return status_code == 404
 
 
 def _build_live_admission_dependencies(
@@ -1274,7 +1334,11 @@ def _build_live_admission_dependencies(
             try:
                 verified = await reload_position(connection, position)
                 reload_raw: str | None = None
-            except (RuntimeError, BenchmarkStateError, OSError, TimeoutError) as exc:
+            except (RuntimeError, OSError) as exc:
+                # J10(c): RuntimeError subsumes BenchmarkStateError (its
+                # direct base) and OSError subsumes TimeoutError (py3.10+;
+                # asyncio.TimeoutError is the same class) -- the old
+                # four-way tuple named both subclasses redundantly.
                 verified = False
                 reload_raw = f"{type(exc).__name__}: {exc}"
             if not verified:
@@ -1404,13 +1468,44 @@ def _build_live_admission_dependencies(
             try:
                 served_model_ids = await backend.list_model_ids()
             except Exception as exc:  # noqa: BLE001 - classified, see above
-                kind = classify_backend_exception(exc)
-                if kind in ("auth", "transport"):
-                    probe = dataclasses.replace(
-                        probe,
-                        errors=[*probe.errors, f"served-model listing failed: {exc}"],
-                        error_kinds=(*tuple(probe.error_kinds or ()), kind),
+                if _is_not_found_listing_failure(exc):
+                    # J7/P2a (external review wave J): a listing 404 means
+                    # the /v1/models route simply isn't implemented on this
+                    # endpoint -- the documented B4 best-effort contract
+                    # applies: served_model_ids stays (), and the failure
+                    # is recorded as NON-GATING diagnostics only. This can
+                    # never admit a broken backend: a 404 alongside a
+                    # FAILED chat probe still fails admission on the
+                    # probe's own recorded errors (the probe gate fires
+                    # first), so the 404 exemption is only ever reached
+                    # into a decision when the chat probe itself succeeded.
+                    print(
+                        f"civ-arena-benchmark: served-model listing returned 404 "
+                        f"(/v1/models not implemented on this endpoint): {exc}; "
+                        "proceeding with best-effort empty served_model_ids "
+                        "(non-gating diagnostics)",
+                        file=sys.stderr,
                     )
+                else:
+                    kind = classify_backend_exception(exc)
+                    if kind in ("auth", "transport"):
+                        # J7 (external review wave J): backfill/align kinds
+                        # for pre-existing errors before appending, so the
+                        # fold-in never manufactures a length mismatch
+                        # (backend_error_classification_misaligned) out of
+                        # a legacy error_kinds=() probe shape. A genuinely
+                        # absent classification defaults to "transport" --
+                        # H6's fail-closed, non-deferral-eligible direction.
+                        existing_kinds = tuple(probe.error_kinds or ())
+                        if len(existing_kinds) < len(probe.errors):
+                            existing_kinds = existing_kinds + ("transport",) * (
+                                len(probe.errors) - len(existing_kinds)
+                            )
+                        probe = dataclasses.replace(
+                            probe,
+                            errors=[*probe.errors, f"served-model listing failed: {exc}"],
+                            error_kinds=(*existing_kinds, kind),
+                        )
                 served_model_ids = ()
             return dataclasses.replace(probe, served_model_ids=served_model_ids)
         finally:
@@ -1533,7 +1628,9 @@ async def _load_campaign_context(args: argparse.Namespace) -> "_CampaignContext 
     provenance = json.loads(Path(campaign.position_provenance).read_text())
     tools_by_arm = {arm.arm_id: resolved_benchmark_tools(arm.tools) for arm in campaign.arms}
     schedule = compile_campaign_schedule(campaign)
-    wsl_repo = args.wsl_repo or str(Path(__file__).resolve().parents[3])
+    # J1: same derivation as _resolve_admission_repos -- the lock's
+    # expected_commit is read from the checkout actually running.
+    wsl_repo = args.wsl_repo or _derive_wsl_repo_default()
     try:
         campaign_lock = build_campaign_lock(
             campaign=campaign,
@@ -1889,8 +1986,14 @@ def _load_remediation_journal_target(args: argparse.Namespace) -> "_RemediationJ
     the disk is the authority for that:
 
     - campaign dir already recorded (campaign.json exists): attach to the
-      recorded lock/schedule verbatim -- no lock rebuild, no byte-match
-      against the current checkout, nothing created or rewritten;
+      recorded lock/schedule -- no lock rebuild, no byte-match against the
+      current checkout, nothing created or rewritten. The recorded lock
+      must pass its own campaign_fingerprint self-check and match the
+      supplied manifest (G4), and -- J4, external review wave J -- the
+      on-disk schedule.json must fingerprint to the lock's frozen
+      digests.schedule (the bare CampaignStore constructor used here
+      verifies nothing itself, unlike the counted path's
+      CampaignStore._open_or_create byte-match);
     - no campaign dir yet: the remediation record itself becomes the first
       artifact -- `CampaignStore.record_admission` creates ONLY
       `admissions/` plus the numbered record file (a later real
@@ -1968,6 +2071,22 @@ def _load_remediation_journal_target(args: argparse.Namespace) -> "_RemediationJ
                 f"{recorded_schedule_fingerprint!r}, but the supplied manifest compiles to "
                 f"{expected_schedule_fingerprint!r} -- refusing to journal a remediation "
                 "against a campaign that does not match the supplied manifest"
+            )
+        # J4 (external review wave J): the bare CampaignStore constructor
+        # below verifies NOTHING against the on-disk schedule.json bytes
+        # (unlike CampaignStore._open_or_create on the counted path), and
+        # the G4 check above only bound the LOCK's digest to the supplied
+        # manifest -- an edited schedule.json would still be trusted
+        # verbatim by select_next_incomplete_block/block_is_complete. Bind
+        # the on-disk schedule itself to the lock's frozen digest.
+        on_disk_schedule_fingerprint = fingerprint(schedule)
+        if on_disk_schedule_fingerprint != recorded_schedule_fingerprint:
+            raise ValueError(
+                f"recorded schedule.json under {run_dir} fingerprints to "
+                f"{on_disk_schedule_fingerprint!r}, but the recorded campaign lock "
+                f"declares digests.schedule {recorded_schedule_fingerprint!r} -- refusing "
+                "to journal a remediation against a schedule that may have been edited "
+                "after the campaign was frozen"
             )
         store = CampaignStore(run_dir, lock, schedule, fingerprint=recorded_fingerprint)
     else:

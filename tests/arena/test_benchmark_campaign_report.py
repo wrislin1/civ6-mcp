@@ -989,6 +989,27 @@ def test_complete_block_without_any_admission_records_is_refused(tmp_path):
         build_campaign_report(campaign_dir)
 
 
+def test_truncated_admission_record_raises_typed_error_naming_the_path(tmp_path):
+    """J5 (external review wave J): since I1 the admission record is
+    load-bearing -- a present-but-unparseable (e.g. truncated) record must
+    raise a typed CampaignReportError NAMING THE FILE, exactly like every
+    other evidence read (corrupt != absent). The old silent skip made a
+    truncated anchor record indistinguishable from a missing one, accusing
+    the operator of substituted/forged evidence with no filename."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    target = sorted((campaign_dir / "admissions").glob("gemma-attempt-*.json"))[0]
+    target.write_text('{"block_id": "gemma", "ok": tru', encoding="utf-8")
+
+    with pytest.raises(CampaignReportError) as excinfo:
+        build_campaign_report(campaign_dir)
+
+    message = str(excinfo.value)
+    assert str(target) in message
+    assert "substituted or forged" not in message
+
+
 def _rewrite_gemma_success_records(campaign_dir: Path, mutate) -> int:
     changed = 0
     for path in sorted((campaign_dir / "admissions").glob("gemma-attempt-*.json")):
@@ -1864,7 +1885,10 @@ def test_calibration_rules_reject_minimum_decided_exceeding_pairs_per_model(tmp_
         ({"minimum_wins": 0}, "minimum_standard_wins"),
         ({"minimum_delta": 0.0}, "minimum_median_normalized_delta"),
         ({"minimum_delta": -1.0}, "minimum_median_normalized_delta"),
-        ({"minimum_wins": 11}, "minimum_standard_wins"),  # wins > decided (10): unsatisfiable arithmetic
+        # J9 (wave J): the former wins>decided case is GONE -- wins >
+        # decided is satisfiable (every win is a decided pair); only wins >
+        # pairs_per_model remains unsatisfiable.
+        ({"minimum_wins": 13}, "pairs_per_model"),
     ],
 )
 def test_report_rejects_vacuous_or_negative_calibration_rule_thresholds(tmp_path, rules_override, match):
@@ -1883,6 +1907,67 @@ def test_report_rejects_vacuous_or_negative_calibration_rule_thresholds(tmp_path
     )
 
     with pytest.raises(CampaignReportError, match=match):
+        build_campaign_report(campaign_dir)
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("pairs_per_model", "12"),
+        ("minimum_decided_pairs", "10"),
+        ("minimum_standard_wins", True),
+        ("minimum_median_normalized_delta", "0.33"),
+        ("minimum_median_normalized_delta", True),
+        ("required_audits_per_arm", False),
+    ],
+)
+def test_report_rejects_non_numeric_or_bool_calibration_rule_types(tmp_path, field, bad_value):
+    """J8 (external review wave J): _require_calibration_rules had bounds
+    but no type checks -- a string threshold raised a bare TypeError from
+    the comparison, and True passed the bounds and was used as the integer
+    1. Mirror benchmark_manifest._require_int's discipline (explicit bool
+    rejection, int/number type checks) so the defense-in-depth pair with
+    benchmark_contract._load_calibration_rules is symmetric: a typed
+    CampaignReportError naming the field, never a raw TypeError or a
+    silently-honored boolean."""
+    rules = {**_rules12(), field: bad_value}
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=rules, audit_indices=[1, 2]
+    )
+
+    with pytest.raises(CampaignReportError, match=field):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_accepts_wins_minimum_exceeding_decided_minimum(tmp_path):
+    """J9 (external review wave J): minimum_standard_wins >
+    minimum_decided_pairs is SATISFIABLE arithmetic -- every standard win
+    IS a decided pair, so 10 wins necessarily produce >= 10 decided pairs;
+    (decided=5, wins=10) are independent minima both achievable at once.
+    The old wins<=decided inequality rejected such configs outright."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(minimum_decided=5, minimum_wins=10),
+        audit_indices=[1, 2],
+    )
+
+    report = build_campaign_report(campaign_dir)
+
+    assert report["blocks"]["gemma"]["outcome"] == "PASS"
+
+
+def test_report_rejects_wins_minimum_exceeding_pairs_per_model(tmp_path):
+    """J9 companion: the genuinely unsatisfiable bound survives --
+    minimum_standard_wins can never exceed pairs_per_model."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(minimum_wins=13),
+        audit_indices=[1, 2],
+    )
+
+    with pytest.raises(CampaignReportError, match="pairs_per_model"):
         build_campaign_report(campaign_dir)
 
 
@@ -2207,14 +2292,17 @@ def test_tie_attribution_invalid_value_leaves_block_unresolved(tmp_path):
         ("counterfactual_fixture_result",),
     ],
 )
-def test_tie_attribution_entry_without_review_findings_is_refused(tmp_path, strip_fields):
-    """D7 (external review wave D): an attribution entry carrying only
-    pair_id/attribution/hashes -- no transcript finding, no final-state
-    finding, no counterfactual fixture result -- is not a human review at
-    all; honoring it would mint MODEL_FLOOR_NULL/MODEL_TIE_NULL without
-    any review evidence. Every review field must be a non-empty string
-    before the entry counts; anything less is refused with a typed
-    CampaignReportError naming the pair and the missing field(s)."""
+def test_tie_attribution_entry_without_review_findings_is_unresolved_not_an_abort(tmp_path, strip_fields):
+    """D7 (external review wave D), reworked by J6 (wave J): an attribution
+    entry carrying only pair_id/attribution/hashes -- no transcript
+    finding, no final-state finding, no counterfactual fixture result --
+    is not a human review at all; honoring it would mint
+    MODEL_FLOOR_NULL/MODEL_TIE_NULL without any review evidence. But an
+    incomplete review is an OPERATOR-RECOVERABLE state, matching every
+    sibling validation in _tie_attribution_section: the section reports
+    resolved: False with a machine-readable reasons list (fail-closed --
+    the unresolved tie still blocks PASS), and the report BUILDS instead
+    of aborting the whole campaign over one blank field."""
     gemma_pairs = [(f"p{i}", 0, 6) for i in range(8)] + [(f"z{i}", 0, 0) for i in range(4)]
     tie_attribution = {f"z{i}": "model_floor" for i in range(4)}
     campaign_dir, _ = _build_campaign_with_gemma(
@@ -2232,16 +2320,28 @@ def test_tie_attribution_entry_without_review_findings_is_refused(tmp_path, stri
                 del entry[field]
     _write_json(tie_path, payload)
 
-    with pytest.raises(CampaignReportError) as excinfo:
-        build_campaign_report(campaign_dir)
-    assert "z2" in str(excinfo.value)
-    assert strip_fields[0] in str(excinfo.value)
+    report = build_campaign_report(campaign_dir)
+    gemma = report["blocks"]["gemma"]
+
+    section = gemma["tie_attribution"]
+    assert section["resolved"] is False
+    assert "z2" in section["reason"]
+    assert strip_fields[0] in section["reason"]
+    assert section["incomplete_reviews"] == [
+        {"pair_id": "z2", "missing_review_fields": sorted(strip_fields)}
+    ]
+    # Fail-closed preserved: the unresolved tie still blocks PASS.
+    assert gemma["outcome"] == "TIE_ATTRIBUTION_REQUIRED"
+    # The report still builds and shows the OTHER block.
+    assert "qwen" in report["blocks"]
 
 
 @pytest.mark.parametrize("empty_value", ["", "   ", None, 42])
-def test_tie_attribution_entry_with_blank_or_nonstring_review_finding_is_refused(tmp_path, empty_value):
-    """D7 companion: a review field that is present but empty, whitespace,
-    None, or a non-string carries no review evidence either."""
+def test_tie_attribution_entry_with_blank_or_nonstring_review_finding_is_unresolved(tmp_path, empty_value):
+    """D7 companion, reworked by J6 (wave J): a review field that is
+    present but empty, whitespace, None, or a non-string carries no review
+    evidence either -- resolved: False with the field named, never a
+    campaign-wide abort."""
     gemma_pairs = [(f"p{i}", 0, 6) for i in range(8)] + [(f"z{i}", 0, 0) for i in range(4)]
     tie_attribution = {f"z{i}": "model_floor" for i in range(4)}
     campaign_dir, _ = _build_campaign_with_gemma(
@@ -2258,8 +2358,15 @@ def test_tie_attribution_entry_with_blank_or_nonstring_review_finding_is_refused
             entry["transcript_finding"] = empty_value
     _write_json(tie_path, payload)
 
-    with pytest.raises(CampaignReportError, match="transcript_finding"):
-        build_campaign_report(campaign_dir)
+    report = build_campaign_report(campaign_dir)
+    section = report["blocks"]["gemma"]["tie_attribution"]
+
+    assert section["resolved"] is False
+    assert "transcript_finding" in section["reason"]
+    assert section["incomplete_reviews"] == [
+        {"pair_id": "z0", "missing_review_fields": ["transcript_finding"]}
+    ]
+    assert report["blocks"]["gemma"]["outcome"] == "TIE_ATTRIBUTION_REQUIRED"
 
 
 def test_tie_attribution_truncated_json_raises_campaign_report_error(tmp_path):
@@ -2503,6 +2610,43 @@ def test_report_enumerates_report_inputs(tmp_path):
     assert "blocks/gemma/audit.json" in inputs
     assert any(p.startswith("admissions/qwen-attempt-") for p in inputs)
     assert inputs == sorted(inputs)
+
+
+def test_report_inputs_unchanged_by_post_hoc_admit_only_record(tmp_path):
+    """J10(b) (external review wave J): report_inputs must enumerate only
+    the admission records the report CONSUMED -- the counted anchor record
+    per complete block, and the disposition plus corroborating counted
+    failure records for a deferred block. A post-hoc --admit-only
+    diagnostic run writes an extra admissions/ record with ZERO scored
+    evidence changed; enumerating admissions/ wholesale made that change
+    the report bytes and break byte-identical regeneration."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    baseline = build_campaign_report(campaign_dir)
+    baseline_bytes = json.dumps(baseline, sort_keys=True)
+    campaign_fingerprint = baseline["campaign"]["campaign_fingerprint"]
+
+    # A later admit_only diagnostic record for each block -- stamped, but
+    # never consumed by the report (not a counted anchor, not counted-mode
+    # corroboration, not a disposition).
+    admissions_dir = campaign_dir / "admissions"
+    for block_id in ("gemma", "qwen"):
+        ordinal = len(list(admissions_dir.glob(f"{block_id}-attempt-*.json"))) + 1
+        _write_json(
+            admissions_dir / f"{block_id}-attempt-{ordinal:03d}.json",
+            {
+                "block_id": block_id,
+                "mode": "admit_only",
+                "gates": {},
+                "ok": True,
+                "campaign_fingerprint": campaign_fingerprint,
+            },
+        )
+
+    regenerated = build_campaign_report(campaign_dir)
+
+    assert json.dumps(regenerated, sort_keys=True) == baseline_bytes
 
 
 # ---------------------------------------------------------------------------

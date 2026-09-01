@@ -336,19 +336,96 @@ def test_classify_backend_exception_unparseable_string_status_fails_closed_to_tr
 @pytest.mark.parametrize(
     "make_exc",
     [
-        lambda: RuntimeError("model emitted malformed tool JSON"),
+        # J3 weakest form: a vLLM/llama.cpp gateway rejecting the locked
+        # config (unsupported seed, unknown chat_template_kwargs key,
+        # tools schema) is a NORMAL 400 -- never capability evidence.
         lambda: _openai_status_error(__import__("openai").BadRequestError, 400),
+        lambda: _openai_status_error(__import__("openai").ConflictError, 409),
         lambda: _openai_status_error(__import__("openai").UnprocessableEntityError, 422),
     ],
 )
-def test_classify_backend_exception_everything_else_stays_model_evidence(make_exc):
-    """G2 (updated by Ruling I, wave H): only auth, transport, and 5xx are
-    carved out -- any other failure shape (a 4xx the server chose to emit,
-    a bare runtime error from a reply that genuinely came back) remains
-    capability-side evidence (backend_probe_errors et al.)."""
+def test_classify_backend_exception_status_bearing_rejections_are_transport(make_exc):
+    """Ruling L (external review wave J, supersedes the wave-G/H 'live 4xx
+    stays model' contract): EVERY status-bearing HTTP rejection classifies
+    as environment -- auth for 401/403, transport for everything else (4xx
+    and 5xx alike) -- because the model never spoke; no HTTP rejection is
+    capability evidence. Model-side capability evidence is recorded
+    explicitly via the _record_model_error paths on SUCCESSFUL responses
+    with defective content."""
     from civ_mcp.arena.benchmark_backend import classify_backend_exception
 
-    assert classify_backend_exception(make_exc()) == "model"
+    assert classify_backend_exception(make_exc()) == "transport"
+
+
+def test_classify_backend_exception_statusless_content_failures_stay_model_evidence():
+    """Ruling L (wave J): ERROR_KIND_MODEL remains ONLY for statusless,
+    non-transport exceptions arising from response content -- a bare
+    runtime error raised while consuming a reply that genuinely came
+    back."""
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    assert (
+        classify_backend_exception(RuntimeError("model emitted malformed tool JSON"))
+        == "model"
+    )
+
+
+def test_probe_400_failure_is_backend_transport_error_never_deferral_eligible():
+    """J3 weakest-form adversarial rejection (Ruling L): a probe whose only
+    failure is a gateway 400 (BadRequestError -- the gateway rejecting the
+    block's locked config) must fail admission under backend_transport_error
+    -- an operator/environment code -- and NEVER under backend_probe_errors
+    (deferral-eligible). backend_transport_error is not in
+    REPLICATION_DEFERRAL_ELIGIBLE_CODES, so the runner's disposition write
+    is refused for it."""
+    from civ_mcp.arena.backends import RetryPolicy, SamplingConfig
+    from civ_mcp.arena.benchmark_admission import REPLICATION_DEFERRAL_ELIGIBLE_CODES
+    from civ_mcp.arena.benchmark_backend import (
+        BackendProbe,
+        ToolCanaryEvidence,
+        classify_backend_exception,
+    )
+    from civ_mcp.arena.benchmark_gates import GateFailure, admit_model_block
+
+    exc = _openai_status_error(__import__("openai").BadRequestError, 400)
+    kind = classify_backend_exception(exc)
+    probe = BackendProbe(
+        samples=10,
+        model="gemma4-26b",
+        model_confirmed=True,
+        seed_honored=True,
+        latencies_s=[0.5] * 10,
+        errors=["Error code: 400 - unsupported seed"],
+        error_kinds=(kind,),
+        seed_verdict="honored",
+        repeated_consistent=True,
+    )
+    canary = ToolCanaryEvidence(
+        arm_id="minimal", finish_trial_ok=True, required_argument_ok=True,
+        observed_calls=(), errors=(),
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            requested_model="gemma4-26b",
+            resolved_model="gemma4-26b",
+            requested_endpoint="http://gw/v1",
+            resolved_endpoint="http://gw/v1",
+            registry_fingerprint="fp",
+            gpu_topology={"host_id": "h", "gpu_indexes": [0]},
+            retry_policy=RetryPolicy(max_attempts=1),
+            sampling=SamplingConfig(),
+            probe=probe,
+            briefing_required=False,
+            briefing_budget_chars=None,
+            tool_canaries={"minimal": canary},
+            expected_arm_ids=["minimal"],
+            max_steps=40,
+        )
+
+    assert exc_info.value.code == "backend_transport_error"
+    assert exc_info.value.code != "backend_probe_errors"
+    assert exc_info.value.code not in REPLICATION_DEFERRAL_ELIGIBLE_CODES
 
 
 @pytest.mark.asyncio

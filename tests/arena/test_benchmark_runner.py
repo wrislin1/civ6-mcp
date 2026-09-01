@@ -2754,6 +2754,129 @@ async def test_live_admission_listing_auth_or_transport_failure_is_classified(
 
 
 @pytest.mark.asyncio
+async def test_live_admission_listing_failure_fold_in_backfills_legacy_error_kinds(monkeypatch):
+    """J7 (external review wave J): folding a classified listing failure
+    into a probe carrying the LEGACY error_kinds=() shape (pre-G2 fakes/
+    callers) used to append one kind against N+1 errors -- a length
+    mismatch that surfaced a real 401 as
+    backend_error_classification_misaligned instead of backend_auth_error.
+    The fold-in must backfill the pre-existing errors' kinds ("transport",
+    H6's fail-closed default for a genuinely absent classification) so it
+    never manufactures misalignment."""
+    from civ_mcp.arena.backends import OpenAICompatBackend, RetryPolicy
+    from civ_mcp.arena.benchmark_gates import admit_model_block
+
+    async def _fake_probe_backend_impl(backend, messages, tools):
+        # Legacy shape: one recorded error, NO error_kinds at all.
+        return benchmark_backend_module.BackendProbe(
+            samples=1,
+            model=backend.model,
+            model_confirmed=True,
+            seed_honored=True,
+            errors=["legacy unclassified probe error"],
+        )
+
+    async def _raising_list_model_ids(self):
+        import httpx
+        import openai
+
+        request = httpx.Request("GET", "http://x/v1/models")
+        raise openai.AuthenticationError(
+            "invalid key", response=httpx.Response(401, request=request), body=None
+        )
+
+    monkeypatch.setattr(benchmark_backend_module, "probe_backend", _fake_probe_backend_impl)
+    monkeypatch.setattr(OpenAICompatBackend, "list_model_ids", _raising_list_model_ids)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x", user_prompt="Assess the current turn and call finish_trial."
+    )
+
+    probe = await deps.probe_backend(
+        model="gemma4-26b",
+        endpoint="http://example.invalid/v1",
+        sampling=SamplingConfig(),
+        chat_template_kwargs={"enable_thinking": False},
+        tools=[],
+    )
+
+    assert len(probe.errors) == 2
+    assert probe.error_kinds == ("transport", "auth")
+
+    from civ_mcp.arena.benchmark_backend import ToolCanaryEvidence
+
+    canary = ToolCanaryEvidence(
+        arm_id="minimal", finish_trial_ok=True, required_argument_ok=True,
+        observed_calls=(), errors=(),
+    )
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            requested_model="gemma4-26b",
+            resolved_model="gemma4-26b",
+            requested_endpoint="http://example.invalid/v1",
+            resolved_endpoint="http://example.invalid/v1",
+            registry_fingerprint="fp",
+            gpu_topology={"host_id": "h", "gpu_indexes": [0]},
+            retry_policy=RetryPolicy(max_attempts=1),
+            sampling=SamplingConfig(),
+            probe=probe,
+            briefing_required=False,
+            briefing_budget_chars=None,
+            tool_canaries={"minimal": canary},
+            expected_arm_ids=["minimal"],
+            max_steps=40,
+        )
+    assert exc_info.value.code == "backend_auth_error"
+
+
+@pytest.mark.asyncio
+async def test_live_admission_listing_404_is_best_effort_nongating_diagnostics(monkeypatch, capsys):
+    """J7/P2a (external review wave J): a served-model listing 404
+    (NotFoundError -- the /v1/models route simply isn't implemented) while
+    the chat probe SUCCEEDED is not an admission failure. The documented B4
+    best-effort contract applies to that one shape: served_model_ids stays
+    (), the failure is recorded as non-gating diagnostics (stderr), and no
+    classified error is folded into the probe. (A 404 alongside a FAILED
+    chat probe never turns a broken backend admissible -- the probe's own
+    recorded errors gate admission first.)"""
+    from civ_mcp.arena.backends import OpenAICompatBackend
+
+    async def _fake_probe_backend_impl(backend, messages, tools):
+        return benchmark_backend_module.BackendProbe(
+            samples=1, model=backend.model, model_confirmed=True, seed_honored=True
+        )
+
+    async def _not_found_list_model_ids(self):
+        import httpx
+        import openai
+
+        request = httpx.Request("GET", "http://x/v1/models")
+        raise openai.NotFoundError(
+            "no such route", response=httpx.Response(404, request=request), body=None
+        )
+
+    monkeypatch.setattr(benchmark_backend_module, "probe_backend", _fake_probe_backend_impl)
+    monkeypatch.setattr(OpenAICompatBackend, "list_model_ids", _not_found_list_model_ids)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x", user_prompt="Assess the current turn and call finish_trial."
+    )
+
+    probe = await deps.probe_backend(
+        model="gemma4-26b",
+        endpoint="http://example.invalid/v1",
+        sampling=SamplingConfig(),
+        chat_template_kwargs={"enable_thinking": False},
+        tools=[],
+    )
+
+    assert probe.served_model_ids == ()
+    assert probe.errors == []
+    assert probe.error_kinds == ()
+    assert "served-model listing" in capsys.readouterr().err
+
+
+@pytest.mark.asyncio
 async def test_live_admission_listing_unsupported_endpoint_stays_best_effort(monkeypatch):
     """G2: any OTHER listing failure (an endpoint that simply doesn't
     expose /v1/models) keeps the B4 best-effort behavior -- empty tuple,
@@ -3347,7 +3470,50 @@ async def test_live_admission_unverified_reload_short_circuits_popup_and_canonic
 # ---------------------------------------------------------------------------
 
 
-def test_live_admission_dependencies_refuse_unconfigured_windows_repo():
+def test_resolve_admission_repos_derives_both_defaults_without_flags(tmp_path, monkeypatch):
+    """J1 (external review wave J), standing rule (b): the operating path
+    that satisfies the repo-path precondition is a --campaign invocation
+    launched from a git checkout of this repo on the gaming PC, where the
+    Windows companion checkout exists at game_launcher.WSL_WINDOWS_REPO --
+    a no-flag invocation must then resolve BOTH repos successfully instead
+    of failing at gate zero (repo_paths_not_configured). The wsl default is
+    the git root of the running package (for a worktree, the worktree dir
+    -- correct: the tuner-holder check compares against the checkout
+    actually running); the windows default is the companion checkout root
+    the codebase already knows from the launcher bootstrap path."""
+    import subprocess
+    from pathlib import Path
+
+    from civ_mcp import game_launcher
+
+    companion = tmp_path / "companion-checkout"
+    companion.mkdir()
+    monkeypatch.setattr(game_launcher, "WSL_WINDOWS_REPO", str(companion))
+
+    wsl_repo, windows_repo = benchmark_runner._resolve_admission_repos(
+        _admission_args(wsl_repo=None, windows_repo=None)
+    )
+
+    expected_wsl = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True, text=True, cwd=str(Path(benchmark_runner.__file__).parent),
+    ).stdout.strip()
+    assert wsl_repo == expected_wsl
+    assert windows_repo == str(companion)
+
+
+def test_live_admission_dependencies_refuse_windows_repo_when_derivation_fails(
+    tmp_path, monkeypatch
+):
+    """J1: the refusal survives for the pathological case -- no
+    --windows-repo flag AND the derived companion checkout does not exist
+    on this machine. The default must never point classification at a
+    nonexistent repo path."""
+    from civ_mcp import game_launcher
+
+    monkeypatch.setattr(
+        game_launcher, "WSL_WINDOWS_REPO", str(tmp_path / "no-such-checkout")
+    )
     with pytest.raises(GateFailure) as exc_info:
         benchmark_runner._build_live_admission_dependencies(
             args=_admission_args(windows_repo=None), api_key="x"
@@ -3363,6 +3529,14 @@ async def test_remediation_terminate_refuses_empty_windows_repo_before_classifyi
         raise AssertionError("classification must never run with an empty windows_repo")
 
     monkeypatch.setattr(benchmark_live_evidence_module, "classify_tuner_holder", _boom_classify)
+    # J1: with derived defaults, a missing --windows-repo flag only refuses
+    # when derivation ALSO fails -- simulate the companion checkout being
+    # absent on this machine.
+    from civ_mcp import game_launcher
+
+    monkeypatch.setattr(
+        game_launcher, "WSL_WINDOWS_REPO", str(tmp_path / "no-such-checkout")
+    )
 
     args = benchmark_runner._build_arg_parser().parse_args(
         [
@@ -3648,6 +3822,59 @@ async def test_remediation_refuses_tampered_or_foreign_recorded_campaign_lock(
     assert exit_code == 1
     err = capsys.readouterr().err
     assert "refus" in err.lower()
+    assert not (root / "admissions").exists() or not list((root / "admissions").iterdir())
+
+
+@pytest.mark.asyncio
+async def test_remediation_refuses_edited_on_disk_schedule(tmp_path, monkeypatch, capsys):
+    """J4 (external review wave J): the remediation-only path builds its
+    CampaignStore via the bare constructor, which -- unlike
+    CampaignStore._open_or_create -- verifies nothing against the on-disk
+    schedule.json bytes. An edited schedule.json (lock left intact and
+    manifest-consistent) must be refused with NOTHING written: the store's
+    schedule feeds select_next_incomplete_block/block_is_complete, whose
+    H1(b) trust argument assumes a digest-verified schedule."""
+    import dataclasses
+
+    from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
+    from civ_mcp.arena.benchmark_contract import load_campaign_manifest
+    from civ_mcp.arena.benchmark_manifest import fingerprint as _fingerprint
+
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+    root = run_dir / "remediation-run"
+    root.mkdir(parents=True)
+    manifest = load_campaign_manifest(campaign_path)
+    compiled_schedule = compile_campaign_schedule(manifest)
+    lock_body = {
+        "campaign_id": manifest.campaign_id,
+        "expected_commit": "0000000000000000000000000000000000000000",
+        "digests": {"schedule": _fingerprint(compiled_schedule)},
+        "models": [dataclasses.asdict(model) for model in manifest.models],
+    }
+    lock_payload = dict(lock_body)
+    lock_payload["campaign_fingerprint"] = _fingerprint(lock_body)
+    (root / "campaign.json").write_text(json.dumps(lock_payload))
+    # The on-disk schedule is EDITED after the lock froze its digest.
+    tampered_schedule = dict(compiled_schedule)
+    tampered_schedule["blocks"] = dict(tampered_schedule["blocks"])
+    tampered_schedule["blocks"]["forged-extra-block"] = {"trials": []}
+    (root / "schedule.json").write_text(json.dumps(tampered_schedule))
+
+    def _boom_classify(**_kwargs):
+        raise AssertionError("remediation must not run against a tampered schedule")
+
+    monkeypatch.setattr(benchmark_live_evidence_module, "classify_tuner_holder", _boom_classify)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _remediation_argv(campaign_path, run_dir, "--terminate-tuner-pid", "4242")
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "schedule" in err
     assert not (root / "admissions").exists() or not list((root / "admissions").iterdir())
 
 

@@ -2000,9 +2000,14 @@ def _press_escape() -> bool:
 _WSL_WINDOWS_PYTHON = (
     "/mnt/c/Users/wrisl/AppData/Local/Programs/Python/Python312/python.exe"
 )
-_WSL_WINDOWS_BOOTSTRAP = (
-    "/mnt/c/Users/wrisl/dev/civ6-mcp/tools/windows/civ6_launcher_bootstrap.py"
-)
+# J1 (external review wave J): the Windows companion checkout root, as seen
+# from WSL -- the single place this path is spelled. The launcher bootstrap
+# below lives inside it, and benchmark_runner derives its --windows-repo
+# default from it (the repo the clean-checkout/tuner-holder gates compare
+# against). Public on purpose: it is cross-module configuration, not a
+# launcher implementation detail.
+WSL_WINDOWS_REPO = "/mnt/c/Users/wrisl/dev/civ6-mcp"
+_WSL_WINDOWS_BOOTSTRAP = f"{WSL_WINDOWS_REPO}/tools/windows/civ6_launcher_bootstrap.py"
 
 
 def _press_escape_windows_bridge() -> bool:
@@ -2186,7 +2191,12 @@ async def continue_after_lua_load(
                 FrontendLoadState.LEADER_SCREEN,
             ):
                 if final_state != last_pressed_state or unknown_streak >= 2:
-                    _press_escape()
+                    # J10(a) (external review wave J): the Escape press is
+                    # blocking work too -- a subprocess.run(timeout=30)
+                    # bridge under WSL, a time.sleep(0.5) key hold on
+                    # native win32 -- so run it off-loop exactly like the
+                    # F1 classification call above.
+                    await asyncio.to_thread(_press_escape)
                     last_pressed_state = final_state
                 unknown_streak = 0
         polls += 1

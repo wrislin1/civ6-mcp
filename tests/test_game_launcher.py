@@ -1153,13 +1153,20 @@ async def test_continue_after_lua_load_bridge_failure_never_presses_escape(monke
 async def test_continue_after_lua_load_keeps_event_loop_responsive_during_slow_classification(
     monkeypatch,
 ):
-    """Wave F F1: the classify-frontend bridge is a blocking
-    subprocess.run(timeout=30) -- executed directly inside the polling
-    coroutine it wedges the whole event loop for up to 30s per poll
-    (auto-reconnect and everything else on the loop freezes). The
-    classification call must run off-loop so other tasks keep making
-    progress while it is in flight."""
-    import time as _time
+    """Wave F F1, made deterministic by wave J J10(d): the classify-
+    frontend bridge is blocking work -- executed directly inside the
+    polling coroutine it wedges the whole event loop (auto-reconnect and
+    everything else freezes). The old test raced wall-clock (heartbeat
+    ticks vs a real 0.5s sleep); this version uses a threading.Event
+    handshake: the classifier BLOCKS until released, and the release can
+    only be performed by another event-loop task -- so it happens exactly
+    when the loop stayed responsive while classification was in flight,
+    and the success path completes in milliseconds."""
+    import threading
+
+    entered = threading.Event()
+    release = threading.Event()
+    released_while_blocked: dict = {}
 
     port_states = iter([True, False])
     monkeypatch.setattr(
@@ -1169,40 +1176,40 @@ async def test_continue_after_lua_load_keeps_event_loop_responsive_during_slow_c
         game_launcher, "_press_escape", lambda: True, raising=False
     )
 
-    def slow_classify(*_args, **_kwargs):
-        _time.sleep(0.5)  # a wedged bridge, scaled down from 30s
+    def blocking_classify(*_args, **_kwargs):
+        entered.set()
+        # If classification runs ON the event loop, the releaser coroutine
+        # below is starved and cannot set `release` -- this wait then
+        # times out and records False (a deterministic failure, not a
+        # tick-count race).
+        released_while_blocked["value"] = release.wait(timeout=2.0)
         return game_launcher.FrontendLoadState.UNKNOWN
 
     monkeypatch.setattr(
-        game_launcher, "_classify_frontend_load_state", slow_classify
+        game_launcher, "_classify_frontend_load_state", blocking_classify
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
     monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
 
-    ticks = 0
-    stop = _asyncio.Event()
+    async def releaser():
+        # Only runs while the loop keeps serving awaits with the
+        # classifier in flight.
+        assert await _asyncio.to_thread(entered.wait, 2.0), "classifier never entered"
+        release.set()
 
-    async def heartbeat():
-        nonlocal ticks
-        while not stop.is_set():
-            ticks += 1
-            await real_sleep(0.01)
-
-    hb = _asyncio.ensure_future(heartbeat())
-    try:
-        await game_launcher.continue_after_lua_load(
+    load_task = _asyncio.ensure_future(
+        game_launcher.continue_after_lua_load(
             "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=1, press_every=1
         )
-    finally:
-        stop.set()
-        await hb
+    )
+    rel_task = _asyncio.ensure_future(releaser())
+    await _asyncio.wait_for(load_task, timeout=5)
+    await _asyncio.wait_for(rel_task, timeout=5)
 
-    # Blocking classification starves the heartbeat (~2 ticks over the
-    # 0.5s call); an off-loop classification lets it run (~50 ticks).
-    assert ticks >= 10, (
-        f"event loop was blocked during classification: only {ticks} "
-        f"heartbeat ticks during a 0.5s classify call"
+    assert released_while_blocked["value"] is True, (
+        "event loop was blocked during classification: the releaser task "
+        "never ran while the classifier thread was waiting"
     )
 
 

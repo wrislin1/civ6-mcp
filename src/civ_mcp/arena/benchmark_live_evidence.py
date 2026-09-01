@@ -515,13 +515,28 @@ def _gpu_csv_parse_failure(
 
 
 def _gpu_csv_fields(
-    line: str, *, field_count: int, host: str, query: str, argv: Sequence[str]
+    line: str,
+    *,
+    field_count: int,
+    host: str,
+    query: str,
+    argv: Sequence[str],
+    verbatim_final: bool = False,
 ) -> list[str]:
     """Split one nvidia-smi CSV line into exactly `field_count` fields,
     failing closed (`gpu_snapshot_parse_error`) on a wrong field count or
     any empty/sentinel (`[N/A]`-style) field. The final field keeps any
     embedded commas (maxsplit), matching the prior parse's behavior for
-    process names."""
+    process names.
+
+    J2 (external review wave J): `verbatim_final=True` exempts the FINAL
+    field from the empty/sentinel rejection -- it is recorded exactly as
+    nvidia-smi printed it. Used for the compute-apps `process_name`, which
+    is purely informational (conflict decisions use only gpu_uuid + pid):
+    on a shared host nvidia-smi prints "[Insufficient Permissions]" for
+    other users' process names, and refusing such a row would hard-stop a
+    campaign over a fully-attributable process. The decision-bearing
+    fields (gpu_uuid, pid, index) keep strict validation."""
     parts = [part.strip() for part in line.split(",", field_count - 1)]
     if len(parts) != field_count:
         raise _gpu_csv_parse_failure(
@@ -531,7 +546,8 @@ def _gpu_csv_fields(
             line=line,
             reason=f"expected {field_count} comma-separated field(s), found {len(parts)}",
         )
-    for part in parts:
+    strict_parts = parts[:-1] if verbatim_final else parts
+    for part in strict_parts:
         if not part or part in _GPU_CSV_SENTINEL_FIELDS:
             raise _gpu_csv_parse_failure(
                 host=host,
@@ -645,14 +661,24 @@ def collect_gpu_evidence(
         line = line.strip()
         if not line:
             continue
-        # E5 (external review wave E): every field of every row is
-        # positively parsed BEFORE the endpoint-scope filter -- a warning
-        # line, truncated row, `[N/A]` field, non-numeric pid, or a
-        # gpu_uuid the index/uuid query never reported all raise
-        # `gpu_snapshot_parse_error` (quoting the line). Silently skipping
-        # such a line could hide a real process on this endpoint's GPU.
+        # E5 (external review wave E): every decision-bearing field of
+        # every row is positively parsed BEFORE the endpoint-scope filter
+        # -- a warning line, truncated row, `[N/A]` uuid/pid field,
+        # non-numeric pid, or a gpu_uuid the index/uuid query never
+        # reported all raise `gpu_snapshot_parse_error` (quoting the
+        # line). Silently skipping such a line could hide a real process
+        # on this endpoint's GPU.
+        # J2 (external review wave J): process_name passes through verbatim
+        # (sentinel or not -- record what nvidia-smi said); strict
+        # validation stays on gpu_uuid and pid, the only fields conflict
+        # decisions consume.
         gpu_uuid, pid_text, process_name = _gpu_csv_fields(
-            line, field_count=3, host=host, query="compute-apps", argv=proc_argv
+            line,
+            field_count=3,
+            host=host,
+            query="compute-apps",
+            argv=proc_argv,
+            verbatim_final=True,
         )
         pid = _gpu_csv_int(
             pid_text, field="pid", line=line, host=host, query="compute-apps", argv=proc_argv

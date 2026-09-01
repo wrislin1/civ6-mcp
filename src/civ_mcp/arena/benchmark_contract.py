@@ -205,7 +205,7 @@ def _load_calibration_rules(raw: object, context: str) -> CalibrationRules:
     # same structural bounds at report time, defense in depth, for a
     # campaign.json that never went through this loader.) The frozen
     # Plan-2 values (pairs 12, decided 10, wins 10, median 4/12, audits 3
-    # per arm) satisfy every bound, including wins <= decided (10 <= 10).
+    # per arm) satisfy every bound.
     mapping = _require_mapping(raw, context)
     _require_exact_keys(mapping, _CALIBRATION_RULES_FIELDS, context)
     pairs_per_model = _require_int(mapping["pairs_per_model"], f"{context}.pairs_per_model", minimum=1)
@@ -231,16 +231,15 @@ def _load_calibration_rules(raw: object, context: str) -> CalibrationRules:
             f"{context}.minimum_decided_pairs ({minimum_decided_pairs}) must not exceed "
             f"pairs_per_model ({pairs_per_model}) -- no block could ever satisfy sensitivity"
         )
+    # J9 (external review wave J): the former wins <= decided inequality
+    # was WRONG MATH and is deliberately gone -- every standard win IS a
+    # decided pair, so N wins necessarily produce >= N decided pairs;
+    # independent minima like (decided=5, wins=10) are satisfiable. Only
+    # wins > pairs_per_model is genuinely unsatisfiable.
     if minimum_standard_wins > pairs_per_model:
         raise ValueError(
             f"{context}.minimum_standard_wins ({minimum_standard_wins}) must not exceed "
             f"pairs_per_model ({pairs_per_model}) -- no block could ever satisfy direction"
-        )
-    if minimum_standard_wins > minimum_decided_pairs:
-        raise ValueError(
-            f"{context}.minimum_standard_wins ({minimum_standard_wins}) must not exceed "
-            f"minimum_decided_pairs ({minimum_decided_pairs}) -- a standard win is a decided "
-            "pair, so requiring more wins than decided pairs is unsatisfiable arithmetic"
         )
     if minimum_median_normalized_delta <= 0:
         raise ValueError(

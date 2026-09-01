@@ -71,33 +71,40 @@ def classify_backend_exception(exc: BaseException) -> str:
     convention `exc.response.status_code` are consulted, so a raw
     `httpx.HTTPStatusError` classifies by its status too):
 
+    Ruling L (external review wave J, finding J3 -- supersedes the wave-G/H
+    "a live 4xx like 400/422 stays model" contract): in probe/admission
+    paths, ERROR_KIND_MODEL is reserved for SUCCESSFUL HTTP responses with
+    defective content; EVERY status-bearing HTTP rejection classifies as
+    environment -- auth (401/403) or transport (everything else, 4xx and
+    5xx alike) -- because the model never spoke, so no HTTP rejection is
+    capability evidence. A gateway 400/422 rejecting the block's locked
+    config (unsupported seed, an unknown extra_body.chat_template_kwargs
+    key, a tools schema the server refuses) is a NORMAL vLLM/llama.cpp
+    response and an operator/config problem, never proof the model failed
+    a capability. Model-side capability evidence is recorded explicitly
+    via the `_record_model_error` paths on successful responses (see
+    `probe_tool_capability`).
+
     - auth: `openai.AuthenticationError` (401), `openai.PermissionDeniedError`
       (403), or any exception carrying status 401/403;
-    - transport: `openai.APIConnectionError` (which subsumes
-      `openai.APITimeoutError`), `openai.RateLimitError` (429),
-      `openai.InternalServerError` (the SDK's typed exception for EVERY
-      5xx), `openai.NotFoundError` (404 -- a model that isn't deployed or
-      a mistyped model/endpoint name, an operator/routing problem, not
-      capability evidence), `openai.APIResponseValidationError` (the
+    - transport: any OTHER exception carrying an HTTP status (or being an
+      `openai.APIStatusError` subclass, even one constructed without a
+      readable status), `openai.APIConnectionError` (which subsumes
+      `openai.APITimeoutError`), `openai.APIResponseValidationError` (the
       gateway returned garbage at HTTP 200 -- broken infrastructure, the
       model never produced that byte stream), `httpx.TransportError`
       (which subsumes `httpx.TimeoutException`), `asyncio.TimeoutError`,
-      the bare `OSError` family (`ConnectionResetError`/`BrokenPipeError`/
-      raw socket errors that escaped the httpx wrappers), or any exception
-      carrying status 404, 408 (request timeout), 429, or any 5xx status.
-      Ruling I (external review wave H, finding I1): ALL HTTP 5xx are
-      environment evidence -- a llama-swap cold-start 503, a gateway
-      500/502/504 -- never model-capability evidence, so they classify as
-      transport and fail admission under the non-deferral-eligible
-      `backend_transport_error` code rather than the deferral-eligible
-      `backend_probe_errors`;
-    - model: everything else -- a response that genuinely came back from
-      the model/server that processed the request (bad tool call, wrong
-      schema, refusal text, a live 4xx like 400/422) remains capability
-      evidence.
+      or the bare `OSError` family (`ConnectionResetError`/
+      `BrokenPipeError`/raw socket errors that escaped the httpx
+      wrappers). Ruling I (wave H) is subsumed: every 5xx -- a llama-swap
+      cold-start 503, a gateway 500/502/504 -- is a status-bearing
+      rejection and therefore transport;
+    - model: everything else -- a statusless, non-transport exception
+      arising from the CONTENT of a response that genuinely came back
+      (e.g. a runtime error raised while consuming a successful reply).
 
     I3 (external review wave I): a status code carried as a STRING
-    ("503") is coerced via `int()` before any range check -- the old
+    ("503") is coerced via `int()` before classification -- the old
     isinstance-int guard silently classified every string-status carrier
     as "model". An UNPARSEABLE string status on an exception shape nothing
     above recognized fails closed to "transport" (the non-deferral-eligible
@@ -121,26 +128,25 @@ def classify_backend_exception(exc: BaseException) -> str:
             unparseable_status = True
     if status_code in (401, 403):
         return ERROR_KIND_AUTH
-    if isinstance(
-        exc, (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError)
-    ):
+    # Ruling L: ANY other status-bearing rejection -- 400/404/408/409/422/
+    # 429, every 5xx, and any other numeric status -- is environment
+    # evidence: the model never spoke.
+    if isinstance(status_code, int) and not isinstance(status_code, bool):
         return ERROR_KIND_TRANSPORT
-    # I3: 404 (model not deployed / name typo) and a response-validation
-    # failure at HTTP 200 (gateway returned garbage) are environment
-    # evidence -- the model never processed (or never produced) anything.
-    # 404 is deliberately covered twice (type check here, status tuple
-    # below): a NotFoundError constructed without a response carries no
-    # status_code, and a non-openai shape carries no NotFoundError type.
-    if isinstance(exc, (openai.NotFoundError, openai.APIResponseValidationError)):
+    # Ruling L, belt-and-braces: an APIStatusError subclass IS a
+    # status-bearing HTTP rejection by construction (RateLimitError,
+    # InternalServerError, NotFoundError, BadRequestError, ...), even when
+    # a test double or a mangled instance carries no readable status.
+    if isinstance(exc, openai.APIStatusError):
+        return ERROR_KIND_TRANSPORT
+    # APIConnectionError subsumes APITimeoutError; a response-validation
+    # failure at HTTP 200 (gateway returned garbage) is environment
+    # evidence -- the model never produced that byte stream.
+    if isinstance(exc, (openai.APIConnectionError, openai.APIResponseValidationError)):
         return ERROR_KIND_TRANSPORT
     # I3: OSError subsumes ConnectionResetError/BrokenPipeError/TimeoutError
     # -- bare socket-level failures that escaped the httpx wrappers.
     if isinstance(exc, (httpx.TransportError, asyncio.TimeoutError, OSError)):
-        return ERROR_KIND_TRANSPORT
-    if status_code in (404, 408, 429):
-        return ERROR_KIND_TRANSPORT
-    # Ruling I: every 5xx is environment, never model capability.
-    if isinstance(status_code, int) and 500 <= status_code <= 599:
         return ERROR_KIND_TRANSPORT
     # I3 fail-closed residue: an unparseable string status on an exception
     # shape nothing above recognized -- infrastructure evidence, never
