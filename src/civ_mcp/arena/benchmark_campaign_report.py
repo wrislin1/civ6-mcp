@@ -50,11 +50,10 @@ relabeling with consistent re-minting of every artifact is therefore
 detectable only by the anchors that live OUTSIDE the filesystem: the
 published campaign contract, and the human metric-fidelity audits --
 hash-bound to specific trial bytes. The audit anchor binds ONLY IF the
-audits are performed against the live run's bytes before anyone could
-re-mint (an audit run post-hoc over whatever is on disk anchors
-nothing); the spec freezes the audit indices but does not yet codify
-this ordering requirement, so it is an OPERATIONAL obligation on the
-campaign runner until the spec does. Those external anchors, not this
+audits are performed against the live run's bytes during the campaign,
+before anyone could re-mint (an audit run post-hoc over whatever is on
+disk anchors nothing); the spec's metric-fidelity gate now codifies
+exactly that ordering requirement. Those external anchors, not this
 reader, carry the final authority on live provenance.
 
 ## campaign.json integrity (verified before anything else)
