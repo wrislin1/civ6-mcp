@@ -11,6 +11,9 @@ import math
 import time
 from dataclasses import dataclass, field, replace
 
+import httpx
+import openai
+
 
 def nearest_rank_p95(values: list[float]) -> float:
     """Nearest-rank p95 of `values`. Shared by `episode_wall_seconds` and the
@@ -40,6 +43,55 @@ def episode_wall_seconds(*, max_steps: int, latencies_s: list[float]) -> int:
     return max(300, math.ceil(max_steps * p95 * 1.5))
 
 
+# G2 (external review wave G, Ruling H): every exception the probe funnel
+# swallows into `BackendProbe.errors` is classified at capture time, so the
+# admission gate can tell an operator/environment failure (a stale or
+# mistyped API key, a wrong endpoint URL, a down gateway, a 429 storm) apart
+# from genuine model-capability evidence. Auth/transport failures must NEVER
+# surface as a deferral-eligible code (endpoint_identity_mismatch /
+# backend_probe_errors / insufficient_warm_latency_samples) -- see
+# benchmark_gates.admit_model_block's backend_auth_error /
+# backend_transport_error gates, neither of which is in
+# REPLICATION_DEFERRAL_ELIGIBLE_CODES.
+ERROR_KIND_AUTH = "auth"
+ERROR_KIND_TRANSPORT = "transport"
+ERROR_KIND_MODEL = "model"
+
+
+def classify_backend_exception(exc: BaseException) -> str:
+    """Classify one exception raised by `backend.chat(...)` (or the served-
+    model listing) into `"auth"`, `"transport"`, or `"model"`.
+
+    The backend client in use is `openai.AsyncOpenAI` (see
+    `civ_mcp.arena.backends.OpenAICompatBackend`), whose transport is httpx
+    -- so the concrete shapes checked are the openai SDK's typed exceptions
+    plus httpx's transport/timeout errors, plus a bare HTTP-status fallback
+    for any status-carrying exception shape:
+
+    - auth: `openai.AuthenticationError` (401), `openai.PermissionDeniedError`
+      (403), or any exception carrying `status_code` 401/403;
+    - transport: `openai.APIConnectionError` (which subsumes
+      `openai.APITimeoutError`), `openai.RateLimitError` (429),
+      `httpx.TransportError` (which subsumes `httpx.TimeoutException`),
+      `asyncio.TimeoutError`, or any exception carrying `status_code` 429;
+    - model: everything else -- a response that genuinely came back from
+      the model/server (bad tool call, wrong schema, refusal text, a 4xx/5xx
+      the server chose to emit) remains capability evidence.
+    """
+    if isinstance(exc, (openai.AuthenticationError, openai.PermissionDeniedError)):
+        return ERROR_KIND_AUTH
+    status_code = getattr(exc, "status_code", None)
+    if status_code in (401, 403):
+        return ERROR_KIND_AUTH
+    if isinstance(exc, (openai.APIConnectionError, openai.RateLimitError)):
+        return ERROR_KIND_TRANSPORT
+    if isinstance(exc, (httpx.TransportError, asyncio.TimeoutError)):
+        return ERROR_KIND_TRANSPORT
+    if status_code == 429:
+        return ERROR_KIND_TRANSPORT
+    return ERROR_KIND_MODEL
+
+
 @dataclass(frozen=True)
 class BackendProbe:
     """Result of exercising a benchmark backend with `samples` exact-sampling,
@@ -50,6 +102,13 @@ class BackendProbe:
     seed_honored: bool
     latencies_s: list[float] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # G2 (external review wave G): one classification per entry in `errors`,
+    # index-aligned ("auth" / "transport" / "model" -- see
+    # classify_backend_exception). Empty for a BackendProbe constructed
+    # without this field (pre-G2 callers/tests); a missing kind is treated
+    # as "model" by the admission gate, preserving those probes' existing
+    # backend_probe_errors behavior.
+    error_kinds: tuple[str, ...] = ()
     # One of: "honored", "not_honored", "not_applicable_greedy" (locked seed
     # but sampling.temperature == 0 -- seed honoring is unobservable and
     # irrelevant under greedy decoding), "no_seed_configured", or
@@ -113,16 +172,26 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
     pre-flight diagnostic, not a step in a scored episode.
     """
     errors: list[str] = []
+    error_kinds: list[str] = []
     latencies: list[float] = []
     outputs: list[str] = []
     models: list[str | None] = []
+
+    def _record_error(exc: Exception, message: str) -> None:
+        # G2 (external review wave G): every swallowed exception is
+        # classified at capture time (auth / transport / model) so the
+        # admission gate can refuse operator/environment failures under
+        # their own non-deferrable codes instead of letting a stale key or
+        # a down gateway masquerade as model-capability evidence.
+        errors.append(message)
+        error_kinds.append(classify_backend_exception(exc))
 
     for _ in range(samples):
         start = time.monotonic()
         try:
             reply = await backend.chat(messages, tools)
         except Exception as exc:
-            errors.append(str(exc))
+            _record_error(exc, str(exc))
             continue
         latencies.append(time.monotonic() - start)
         outputs.append(_reply_signature(reply))
@@ -159,7 +228,7 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
             seed_honored = _reply_signature(varied_reply) != outputs[0]
             seed_verdict = "honored" if seed_honored else "not_honored"
         except Exception as exc:
-            errors.append(str(exc))
+            _record_error(exc, str(exc))
             seed_honored = False
             seed_verdict = "probe_error"
         finally:
@@ -174,6 +243,7 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
         seed_honored=seed_honored,
         latencies_s=latencies,
         errors=errors,
+        error_kinds=tuple(error_kinds),
         seed_verdict=seed_verdict,
         repeated_consistent=repeated_consistent,
     )

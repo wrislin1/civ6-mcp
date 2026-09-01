@@ -26,6 +26,7 @@ position-benchmark-design.md):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -40,6 +41,7 @@ __all__ = [
     "SessionLockMismatchError",
     "TrialExistsError",
     "TrialProvenanceError",
+    "compute_session_fingerprint",
     "trial_filename",
 ]
 
@@ -98,6 +100,33 @@ def _canonical_bytes(value: object) -> bytes:
     their keys were supplied in."""
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return encoded.encode("utf-8")
+
+
+def compute_session_fingerprint(session_lock: Mapping[str, object]) -> str:
+    """Re-derive a session lock's `session_fingerprint` from the lock's own
+    OTHER fields -- the exact canonical computation
+    `benchmark_gates.build_session_lock` performs when minting the lock
+    (canonical-JSON sha256 of the lock dict BEFORE the
+    `session_fingerprint` key exists on it, i.e.
+    `benchmark_manifest.fingerprint` over everything else).
+
+    G1 (external review wave G): the minting side and every consumer that
+    trusts a recorded session.json as evidence
+    (`benchmark_report.build_report`,
+    `benchmark_campaign_report.build_campaign_report`,
+    `benchmark_admission.block_is_complete`) share THIS one function so the
+    computation can never drift between them. A session.json whose recorded
+    `session_fingerprint` does not match this recomputation was edited
+    after minting (e.g. `block_id`/`model_config` rewritten with the stamp
+    left untouched, re-homing another block's trials) and must be refused
+    wherever it is consumed -- exactly as
+    `benchmark_campaign_report._verify_campaign_fingerprint` already
+    refuses an edited campaign.json. Lives here (the session.json storage
+    layer, already imported by every consumer) rather than in
+    `benchmark_gates` so the pure evidence-to-report modules never have to
+    pull in the gates module's heavy backend import graph."""
+    body = {key: value for key, value in session_lock.items() if key != "session_fingerprint"}
+    return hashlib.sha256(_canonical_bytes(body)).hexdigest()
 
 
 def _utc_now_iso() -> str:

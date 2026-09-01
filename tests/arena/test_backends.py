@@ -270,7 +270,14 @@ async def test_list_model_ids_returns_sorted_served_ids(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_list_model_ids_is_best_effort_and_never_raises(monkeypatch):
+async def test_list_model_ids_propagates_failure_for_caller_classification(monkeypatch):
+    """G2 (external review wave G, Ruling H): a failed listing used to be
+    swallowed into an empty tuple -- indistinguishable from a genuinely
+    empty listing, so an auth/transport failure of this call silently
+    passed admission. The exception now propagates; the caller
+    (benchmark_runner's probe_backend_dep) classifies it, keeping the
+    best-effort empty-tuple behavior ONLY for non-auth/transport failures
+    at that call site."""
     b = OpenAICompatBackend("http://x/v1", "k", "m")
 
     async def fake_list():
@@ -278,6 +285,5 @@ async def test_list_model_ids_is_best_effort_and_never_raises(monkeypatch):
 
     monkeypatch.setattr(b._client.models, "list", fake_list)
 
-    result = await b.list_model_ids()
-
-    assert result == ()
+    with pytest.raises(RuntimeError, match="does not support"):
+        await b.list_model_ids()

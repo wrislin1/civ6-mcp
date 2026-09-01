@@ -950,22 +950,26 @@ def test_build_report_accepts_a_trial_stamped_with_the_matching_session_fingerpr
 # ---------------------------------------------------------------------------
 
 
-def _build_counted_run(run_dir: Path) -> None:
+def _build_counted_run(run_dir: Path) -> str:
     """A counted (non-smoke) run: session.json declares BOTH
     session_fingerprint and campaign_fingerprint, and the one committed
-    trial is dual-stamped to match."""
+    trial is dual-stamped to match. G1 (external review wave G):
+    build_report now re-derives a counted lock's session_fingerprint from
+    the lock document itself, so the fixture's is computed for real
+    (compute_session_fingerprint over the lock's other fields) and
+    returned so tests can assert against it."""
+    from civ_mcp.arena.benchmark_store import compute_session_fingerprint
+
     (run_dir / "trials").mkdir(parents=True)
     (run_dir / "attempts").mkdir()
-    _write_json(
-        run_dir / "session.json",
-        {
-            "session_fingerprint": "abc123",
-            "campaign_fingerprint": "camp789",
-            "scorer_fingerprint": "score-v1",
-            "ungated_smoke": False,
-            "positions": {"easy": {"rubric": [_mine_rubric()]}},
-        },
-    )
+    session = {
+        "campaign_fingerprint": "camp789",
+        "scorer_fingerprint": "score-v1",
+        "ungated_smoke": False,
+        "positions": {"easy": {"rubric": [_mine_rubric()]}},
+    }
+    session["session_fingerprint"] = compute_session_fingerprint(session)
+    _write_json(run_dir / "session.json", session)
     _write_json(
         run_dir / "schedule.json",
         {"trials": [{"index": 1, "position_id": "easy"}]},
@@ -977,24 +981,48 @@ def _build_counted_run(run_dir: Path) -> None:
             "position_id": "easy",
             "attempt_count": 1,
             "terminal": "finish_trial",
-            "session_fingerprint": "abc123",
+            "session_fingerprint": session["session_fingerprint"],
             "campaign_fingerprint": "camp789",
             "steps": [],
             "initial_state": {"tiles": [{"improvement": None}]},
             "final_state": {"tiles": [{"improvement": "IMPROVEMENT_MINE"}]},
         },
     )
+    return session["session_fingerprint"]
 
 
 def test_counted_report_accepts_a_trial_with_both_matching_fingerprints(tmp_path):
     run_dir = tmp_path / "run"
-    _build_counted_run(run_dir)
+    session_fingerprint = _build_counted_run(run_dir)
 
     report = build_report(run_dir)  # must not raise
 
-    assert report["session"]["session_fingerprint"] == "abc123"
+    assert report["session"]["session_fingerprint"] == session_fingerprint
     assert report["session"]["campaign_fingerprint"] == "camp789"
     assert report["session"]["ungated_smoke"] is False
+
+
+def test_counted_report_rejects_a_lock_edited_after_minting(tmp_path):
+    """G1 (external review wave G): a counted session lock's
+    session_fingerprint is re-derived from the lock document itself --
+    editing any lock field (here campaign_fingerprint, but block_id/
+    model_config are the exploit's targets) while leaving the stale
+    session_fingerprint in place (so every trial's stamp still "matches")
+    must be a hard ReportError."""
+    run_dir = tmp_path / "run"
+    _build_counted_run(run_dir)
+    session_path = run_dir / "session.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    payload["campaign_fingerprint"] = "camp-EDITED"
+    # session_fingerprint deliberately left stale.
+    _write_json(session_path, payload)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    trial_payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    trial_payload["campaign_fingerprint"] = "camp-EDITED"
+    _write_json(trial_path, trial_payload)
+
+    with pytest.raises(ReportError, match="session_fingerprint"):
+        build_report(run_dir)
 
 
 @pytest.mark.parametrize("missing_field", ["session_fingerprint", "campaign_fingerprint"])

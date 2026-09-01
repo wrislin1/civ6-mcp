@@ -422,13 +422,33 @@ class CampaignStore:
         """Allocate the next append-only `admissions/<block-id>-attempt-
         NNN.json`. Never overwrites a prior attempt -- a crash mid-write
         leaves no half-written file behind (temp file, fsync, atomic
-        `os.replace`, same convention as `BenchmarkStore.record_attempt`)."""
+        `os.replace`, same convention as `BenchmarkStore.record_attempt`).
+
+        G4 (external review wave G): every record written here -- ordinary
+        admission attempts, remediation records, and disposition records
+        alike -- is stamped with this store's own `campaign_fingerprint`,
+        binding it to the campaign it was actually written under. The
+        reporter's deferral-corroboration scan
+        (`benchmark_campaign_report._has_valid_replication_deferred_admission`)
+        ignores any record whose stamp is absent or names a different
+        campaign, so a record forged into (or copied between) run dirs can
+        never corroborate a deferral. A store attached without a recorded
+        campaign lock yet (`fingerprint=None` -- the pre-campaign
+        remediation journal target, see
+        `benchmark_runner._load_remediation_journal_target`) writes its
+        record unstamped: still journaled diagnostics, deliberately never
+        corroboration-grade (a pre-campaign remediation cannot have a
+        preceding same-code admission failure anyway).
+        """
         admissions_dir = self.root / self.ADMISSIONS_DIR
         admissions_dir.mkdir(parents=True, exist_ok=True)
+        payload = dict(evidence)
+        if self.fingerprint:
+            payload["campaign_fingerprint"] = self.fingerprint
         ordinal = self._admission_attempt_count(block_id) + 1
         dest = admissions_dir / f"{block_id}-attempt-{ordinal:03d}.json"
         tmp = admissions_dir / f".{block_id}-attempt-{ordinal:03d}.json.tmp"
-        _fsync_write_bytes(tmp, _canonical_bytes(evidence))
+        _fsync_write_bytes(tmp, _canonical_bytes(payload))
         if dest.exists():
             tmp.unlink(missing_ok=True)
             raise BenchmarkCampaignError(

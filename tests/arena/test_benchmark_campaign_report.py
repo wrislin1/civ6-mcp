@@ -137,12 +137,21 @@ def _pair_indices(pairs: list[tuple[str, int, int]], *, start_index: int = 1) ->
     return result
 
 
+def _self_fingerprinted(session_payload: dict) -> dict:
+    """Stamp `session_payload` with a REAL `session_fingerprint` --
+    `fingerprint()` over its own remaining fields, exactly the computation
+    `benchmark_gates.build_session_lock` mints with (G1, external review
+    wave G: every consumer now re-derives and verifies it, so a fixture
+    session must be genuinely self-consistent)."""
+    body = {k: v for k, v in session_payload.items() if k != "session_fingerprint"}
+    return {**body, "session_fingerprint": fingerprint(body)}
+
+
 def _write_block(
     campaign_dir: Path,
     block_id: str,
     *,
     pairs: list[tuple[str, int, int]],
-    session_fingerprint: str,
     campaign_fingerprint: str,
     scorer_fingerprint: str = "score-v1",
     commit_indices: set[int] | None = None,
@@ -151,23 +160,19 @@ def _write_block(
     endpoint_id: str = "ep-1",
     gpu_ids: list[int] | None = None,
     write_session: bool = True,
-) -> tuple[list[dict], dict[int, dict]]:
+) -> tuple[list[dict], dict[int, dict], str]:
+    """Write one block's schedule/session/trials. The session lock's
+    `session_fingerprint` is computed from the session payload itself (G1)
+    and returned as the third element so callers can stamp audits/tie
+    reviews with the real value."""
     block_dir = campaign_dir / "blocks" / block_id
     schedule_trials = _pairs_schedule(pairs)
-    trial_payloads = _pairs_trial_payloads(
-        pairs,
-        block_id=block_id,
-        session_fingerprint=session_fingerprint,
-        campaign_fingerprint=campaign_fingerprint,
-    )
     # position_id override applies only to the trial/session payloads (used
     # by the position-mismatch negative tests) -- the schedule shape itself
     # always uses the module-wide POSITION_ID for simplicity.
     if position_id != POSITION_ID:
         for entry in schedule_trials:
             entry["position_id"] = position_id
-        for payload in trial_payloads.values():
-            payload["position_id"] = position_id
 
     _write_json(block_dir / "schedule.json", {"trials": schedule_trials})
     sampling = {"temperature": 0.0, "top_p": 1.0}
@@ -188,24 +193,35 @@ def _write_block(
             "briefing_required": False,
         }
     admission_endpoint = model_config["endpoint_id"] if endpoint_id == "ep-1" else endpoint_id
-    session_payload = {
-        "position_id": position_id,
-        "block_id": block_id,
-        "campaign_fingerprint": campaign_fingerprint,
-        "scorer_fingerprint": scorer_fingerprint,
-        "session_fingerprint": session_fingerprint,
-        "positions": {position_id: {"rubric": _rubric(max_score)}},
-        "model_config": model_config,
-        "model_admission": {
-            "requested_model": model_config["model"],
-            "resolved_model": model_config["model"],
-            "requested_endpoint": admission_endpoint,
-            "resolved_endpoint": f"http://{admission_endpoint}.local:8000",
-            "registry_fingerprint": "registry-fp-1",
-            "gpu_topology": {"gpu_ids": gpu_ids if gpu_ids is not None else [0]},
-            "sampling": sampling,
-        },
-    }
+    session_payload = _self_fingerprinted(
+        {
+            "position_id": position_id,
+            "block_id": block_id,
+            "campaign_fingerprint": campaign_fingerprint,
+            "scorer_fingerprint": scorer_fingerprint,
+            "positions": {position_id: {"rubric": _rubric(max_score)}},
+            "model_config": model_config,
+            "model_admission": {
+                "requested_model": model_config["model"],
+                "resolved_model": model_config["model"],
+                "requested_endpoint": admission_endpoint,
+                "resolved_endpoint": f"http://{admission_endpoint}.local:8000",
+                "registry_fingerprint": "registry-fp-1",
+                "gpu_topology": {"gpu_ids": gpu_ids if gpu_ids is not None else [0]},
+                "sampling": sampling,
+            },
+        }
+    )
+    session_fingerprint = session_payload["session_fingerprint"]
+    trial_payloads = _pairs_trial_payloads(
+        pairs,
+        block_id=block_id,
+        session_fingerprint=session_fingerprint,
+        campaign_fingerprint=campaign_fingerprint,
+    )
+    if position_id != POSITION_ID:
+        for payload in trial_payloads.values():
+            payload["position_id"] = position_id
     # write_session=False simulates a block whose admission never actually
     # minted a counted session lock -- the genuine shape of a validly
     # deferred block (A2, external review): a real REPLICATION_DEFERRED_
@@ -216,7 +232,7 @@ def _write_block(
     commit = commit_indices if commit_indices is not None else set(trial_payloads)
     for index in commit:
         _write_json(block_dir / "trials" / f"trial-{index:03d}.json", trial_payloads[index])
-    return schedule_trials, trial_payloads
+    return schedule_trials, trial_payloads, session_fingerprint
 
 
 def _live_automatic_for_score(achieved_score: int) -> dict:
@@ -385,21 +401,28 @@ def _rules12(*, minimum_decided=10, minimum_wins=10, minimum_delta=None, require
 
 
 def _write_qwen_deferral_record(
-    campaign_dir: Path, *, corroboration: str = "two_attempts", code: str = "tool_canary_failed"
+    campaign_dir: Path,
+    *,
+    campaign_fingerprint: str | None = None,
+    corroboration: str = "two_attempts",
+    code: str = "tool_canary_failed",
+    stamp_campaign_fingerprint: bool = True,
 ) -> None:
     """Write a `REPLICATION_DEFERRED_ADMISSION` admission record for
     `qwen`, corroborated on disk per finding 4 (final review), A1
-    (external review), and D1 (external review wave D): a single failed
-    admission of any code is refused, so every caller of this helper that
-    expects the deferral to be HONORED must also produce either (a) TWO
-    preceding failed admission attempts with the same classified code
-    (`corroboration="two_attempts"`, the default -- see A1: the
-    disposition's own triggering failure is itself one of the on-disk
-    attempt records, so genuine corroboration needs a SECOND, independent
-    one before it, not just the one that trips the disposition) or (b) one
-    SUCCESSFUL remediation record followed by a journaled same-code
-    failed retry, then the disposition (`corroboration="remediation"` --
-    D1: a remediation with no post-remediation retry proves nothing).
+    (external review), D1 (external review wave D), and G3 (wave G): a
+    single failed admission of any code is refused, so every caller of
+    this helper that expects the deferral to be HONORED must also produce
+    either (a) TWO preceding failed admission attempts with the same
+    classified code (`corroboration="two_attempts"`, the default -- see
+    A1: the disposition's own triggering failure is itself one of the
+    on-disk attempt records, so genuine corroboration needs a SECOND,
+    independent one before it, not just the one that trips the
+    disposition) or (b) a same-code failure, then one SUCCESSFUL
+    remediation record, then a journaled same-code failed retry, then the
+    disposition (`corroboration="remediation"` -- G3: the failure must be
+    observed both BEFORE the remediation, so the fix was actually a fix
+    FOR it, and AFTER it, proving the fix did not resolve it).
 
     Negative shapes: `"single_failure"` (A1: exactly ONE preceding
     failure, the same failure `admit()` itself just hit);
@@ -408,22 +431,40 @@ def _write_qwen_deferral_record(
     `_run_remediation_async` writes -- plus one failure);
     `"remediation_no_retry"` (D1: a successful remediation that
     POSTDATES the only failure, i.e. zero journaled retries after it);
-    `None` (bare, uncorroborated disposition-only record). All of these
-    must be REFUSED.
+    `"remediation_without_preceding_failure"` (G3: the weakest shape the
+    old D1 predicate accepted -- an UNRELATED remediation with no
+    preceding same-code failure at all, plus one failure first observed
+    only after it); `None` (bare, uncorroborated disposition-only
+    record). All of these must be REFUSED.
 
     `code` defaults to `tool_canary_failed` -- a Ruling-G-allowlisted
     model-capability gate code (D2): any operator-error code (e.g.
     `dirty_checkout`) is deferral-ineligible no matter the corroboration.
+
+    G4 (external review wave G): every record is stamped with this
+    campaign's `campaign_fingerprint` (read from campaign.json when not
+    passed), exactly as `CampaignStore.record_admission` stamps every
+    record it writes; `stamp_campaign_fingerprint=False` produces the
+    unstamped negative shape, which must never corroborate.
     """
     admissions_dir = campaign_dir / "admissions"
     admissions_dir.mkdir(parents=True, exist_ok=True)
+    if campaign_fingerprint is None:
+        campaign_fingerprint = json.loads(
+            (campaign_dir / "campaign.json").read_text(encoding="utf-8")
+        )["campaign_fingerprint"]
     ordinal = 1
+
+    def _stamped(record: dict) -> dict:
+        if stamp_campaign_fingerprint:
+            record["campaign_fingerprint"] = campaign_fingerprint
+        return record
 
     def _write_failure() -> None:
         nonlocal ordinal
         _write_json(
             admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
-            {"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}},
+            _stamped({"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}}),
         )
         ordinal += 1
 
@@ -432,7 +473,7 @@ def _write_qwen_deferral_record(
         result: dict = {"ok": True, "terminated_pid": 4242, "port": 4318} if ok else {"ok": False, "reason": "no_holder"}
         _write_json(
             admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
-            {"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": result},
+            _stamped({"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": result}),
         )
         ordinal += 1
 
@@ -442,6 +483,10 @@ def _write_qwen_deferral_record(
     elif corroboration == "single_failure":
         _write_failure()
     elif corroboration == "remediation":
+        _write_failure()
+        _write_remediation(ok=True)
+        _write_failure()
+    elif corroboration == "remediation_without_preceding_failure":
         _write_remediation(ok=True)
         _write_failure()
     elif corroboration == "failed_remediation":
@@ -454,11 +499,13 @@ def _write_qwen_deferral_record(
         raise ValueError(f"unknown corroboration kind {corroboration!r}")
     _write_json(
         admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
-        {
-            "block_id": "qwen",
-            "disposition": REPLICATION_DEFERRED_ADMISSION,
-            "underlying_failure": {"code": code},
-        },
+        _stamped(
+            {
+                "block_id": "qwen",
+                "disposition": REPLICATION_DEFERRED_ADMISSION,
+                "underlying_failure": {"code": code},
+            }
+        ),
     )
 
 
@@ -507,11 +554,10 @@ def _build_campaign_with_gemma(
     )
     _write_schedule(campaign_dir, schedule["blocks"])
 
-    _, gemma_trials = _write_block(
+    _, gemma_trials, gemma_session_fingerprint = _write_block(
         campaign_dir,
         "gemma",
         pairs=gemma_pairs,
-        session_fingerprint="gemma-session",
         campaign_fingerprint=campaign_fingerprint,
         scorer_fingerprint=gemma_scorer_fingerprint_override or scorer_fingerprint,
         position_id=gemma_position_id or (position_id or POSITION_ID),
@@ -519,7 +565,7 @@ def _build_campaign_with_gemma(
     if not gemma_omit_audit:
         _write_audit(
             campaign_dir / "blocks" / "gemma",
-            session_fingerprint="gemma-session",
+            session_fingerprint=gemma_session_fingerprint,
             audit_indices=audit_indices,
             trial_payloads=gemma_trials,
             disagree_indices=gemma_audit_disagree_indices,
@@ -528,7 +574,7 @@ def _build_campaign_with_gemma(
     if gemma_tie_attribution is not None:
         _write_tie_attribution(
             campaign_dir / "blocks" / "gemma",
-            session_fingerprint="gemma-session",
+            session_fingerprint=gemma_session_fingerprint,
             pairs=gemma_pairs,
             trial_payloads=gemma_trials,
             attribution_by_pair=gemma_tie_attribution,
@@ -539,7 +585,6 @@ def _build_campaign_with_gemma(
         campaign_dir,
         "qwen",
         pairs=_passing_pairs(pair_count),
-        session_fingerprint="qwen-session",
         campaign_fingerprint=campaign_fingerprint,
         scorer_fingerprint=scorer_fingerprint,
         commit_indices=set(),
@@ -551,7 +596,7 @@ def _build_campaign_with_gemma(
     )
 
     if qwen_deferral_record:
-        _write_qwen_deferral_record(campaign_dir)
+        _write_qwen_deferral_record(campaign_dir, campaign_fingerprint=campaign_fingerprint)
 
     return campaign_dir, gemma_trials
 
@@ -579,30 +624,30 @@ def _build_full_two_block_campaign(
     )
     _write_schedule(campaign_dir, schedule["blocks"])
 
-    _, gemma_trials = _write_block(
-        campaign_dir, "gemma", pairs=gemma_pairs, session_fingerprint="gemma-session",
+    _, gemma_trials, gemma_session_fingerprint = _write_block(
+        campaign_dir, "gemma", pairs=gemma_pairs,
         campaign_fingerprint=campaign_fingerprint, scorer_fingerprint=scorer_fingerprint,
     )
-    _, qwen_trials = _write_block(
-        campaign_dir, "qwen", pairs=qwen_pairs, session_fingerprint="qwen-session",
+    _, qwen_trials, qwen_session_fingerprint = _write_block(
+        campaign_dir, "qwen", pairs=qwen_pairs,
         campaign_fingerprint=campaign_fingerprint, scorer_fingerprint=scorer_fingerprint,
     )
     _write_audit(
-        campaign_dir / "blocks" / "gemma", session_fingerprint="gemma-session",
+        campaign_dir / "blocks" / "gemma", session_fingerprint=gemma_session_fingerprint,
         audit_indices=audit_indices, trial_payloads=gemma_trials,
     )
     _write_audit(
-        campaign_dir / "blocks" / "qwen", session_fingerprint="qwen-session",
+        campaign_dir / "blocks" / "qwen", session_fingerprint=qwen_session_fingerprint,
         audit_indices=audit_indices, trial_payloads=qwen_trials,
     )
     if gemma_tie_attribution is not None:
         _write_tie_attribution(
-            campaign_dir / "blocks" / "gemma", session_fingerprint="gemma-session",
+            campaign_dir / "blocks" / "gemma", session_fingerprint=gemma_session_fingerprint,
             pairs=gemma_pairs, trial_payloads=gemma_trials, attribution_by_pair=gemma_tie_attribution,
         )
     if qwen_tie_attribution is not None:
         _write_tie_attribution(
-            campaign_dir / "blocks" / "qwen", session_fingerprint="qwen-session",
+            campaign_dir / "blocks" / "qwen", session_fingerprint=qwen_session_fingerprint,
             pairs=qwen_pairs, trial_payloads=qwen_trials, attribution_by_pair=qwen_tie_attribution,
         )
     return campaign_fingerprint, gemma_trials, qwen_trials
@@ -736,7 +781,17 @@ def test_campaign_report_refuses_copied_evidence_with_forged_block_id(tmp_path):
     session_path = campaign_dir / "blocks" / "qwen" / "session.json"
     session_payload = json.loads(session_path.read_text(encoding="utf-8"))
     session_payload["block_id"] = "qwen"
+    # G1 (external review wave G): the weakest forged input now also
+    # re-mints the session_fingerprint over the edited session AND restamps
+    # every copied trial with it -- otherwise the (new) session-fingerprint
+    # recomputation catches the edit before the model_config cross-check
+    # this test pins ever runs.
+    session_payload = _self_fingerprinted(session_payload)
     _write_json(session_path, session_payload)
+    for trial_path in sorted((campaign_dir / "blocks" / "qwen" / "trials").glob("trial-*.json")):
+        trial_payload = json.loads(trial_path.read_text(encoding="utf-8"))
+        trial_payload["session_fingerprint"] = session_payload["session_fingerprint"]
+        _write_json(trial_path, trial_payload)
 
     with pytest.raises(CampaignReportError, match="model_config"):
         build_campaign_report(campaign_dir)
@@ -961,7 +1016,6 @@ def test_report_refuses_qwen_deferral_when_a_session_lock_was_minted_despite_dis
         campaign_dir,
         "qwen",
         pairs=_passing_pairs(12),
-        session_fingerprint="qwen-session",
         campaign_fingerprint=campaign_fingerprint,
         commit_indices=set(),
         write_session=True,
@@ -997,6 +1051,125 @@ def test_report_refuses_qwen_deferral_from_unclassified_failure_even_if_corrobor
             "disposition": REPLICATION_DEFERRED_ADMISSION,
             "underlying_failure": {"code": "unexpected_admission_error"},
         },
+    )
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+# ---------------------------------------------------------------------------
+# External review wave G
+# ---------------------------------------------------------------------------
+
+
+def test_campaign_report_refuses_copied_evidence_with_forged_identity_and_stale_fingerprint(tmp_path):
+    """G1 (external review wave G), the PROVEN exploit: copy blocks/gemma
+    wholesale to blocks/qwen, edit session.json's block_id to "qwen" AND
+    its model_config to the campaign's declared qwen config, and leave
+    session_fingerprint untouched -- every trial still references that
+    stale fingerprint, so the D4 field cross-checks and every per-trial
+    stamp comparison pass, and the reporter used to emit CALIBRATED with
+    qwen's model_config over gemma's trials. The session_fingerprint must
+    now be re-derived from the session document itself and refused on
+    mismatch (typed error, never a verdict)."""
+    import shutil
+
+    campaign_dir = tmp_path / "campaign"
+    pairs = _passing_gemma_pairs()
+    _build_full_two_block_campaign(
+        campaign_dir, gemma_pairs=pairs, qwen_pairs=pairs, rules=_rules12(), audit_indices=[1, 2]
+    )
+    shutil.rmtree(campaign_dir / "blocks" / "qwen")
+    shutil.copytree(campaign_dir / "blocks" / "gemma", campaign_dir / "blocks" / "qwen")
+    campaign_lock = json.loads((campaign_dir / "campaign.json").read_text(encoding="utf-8"))
+    qwen_declared = next(m for m in campaign_lock["models"] if m["block_id"] == "qwen")
+    session_path = campaign_dir / "blocks" / "qwen" / "session.json"
+    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
+    session_payload["block_id"] = "qwen"
+    session_payload["model_config"] = dict(qwen_declared)
+    # Deliberately NOT re-fingerprinted: the stale stamp is the exploit.
+    _write_json(session_path, session_payload)
+
+    with pytest.raises(CampaignReportError, match="session_fingerprint"):
+        build_campaign_report(campaign_dir)
+
+
+@pytest.mark.parametrize("code", ["backend_auth_error", "backend_transport_error"])
+def test_report_refuses_qwen_deferral_for_auth_or_transport_code_even_fully_corroborated(
+    tmp_path, code
+):
+    """G2 (external review wave G, Ruling H): auth/transport failure codes
+    are operator/environment codes, never deferral-eligible -- a forged
+    REPLICATION_DEFERRED_ADMISSION built on them must be refused even with
+    perfect two-failure corroboration."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(campaign_dir, corroboration="two_attempts", code=code)
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_when_remediation_lacks_preceding_failure(tmp_path):
+    """G3 (external review wave G), the weakest shape the old D1 remediation
+    OR-branch accepted: an UNRELATED successful remediation with NO
+    preceding same-code failure at all (nothing for the "fix" to have been
+    a fix for), followed by a single failure first observed only after it,
+    then the disposition. Must be REJECTED -- the remediation branch
+    requires the same-code failure both before AND after the remediation."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(campaign_dir, corroboration="remediation_without_preceding_failure")
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_from_unstamped_admission_records(tmp_path):
+    """G4 (external review wave G): admission/remediation/disposition
+    records with no campaign_fingerprint stamp at all (forged into the run
+    dir without going through CampaignStore.record_admission) must never
+    corroborate a deferral."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(
+        campaign_dir, corroboration="two_attempts", stamp_campaign_fingerprint=False
+    )
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_stamped_for_a_different_campaign(tmp_path):
+    """G4 (external review wave G): fully corroborated records stamped with
+    a DIFFERENT campaign's fingerprint (copied in from another run dir)
+    must never corroborate a deferral for this campaign."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(
+        campaign_dir,
+        corroboration="two_attempts",
+        campaign_fingerprint="another-campaigns-fingerprint",
     )
 
     with pytest.raises(CampaignReportError, match="incomplete schedule"):
@@ -1212,6 +1385,12 @@ def test_calibration_rules_reject_minimum_decided_exceeding_pairs_per_model(tmp_
     [
         ({"minimum_decided": -1, "minimum_wins": -1, "minimum_delta": -1.0}, "minimum_decided_pairs"),
         ({"minimum_wins": -1}, "minimum_standard_wins"),
+        # G6 (external review wave G): ZERO thresholds switch the
+        # sensitivity/direction gates off entirely -- rejected exactly like
+        # negative ones. minimum_decided=0 forces minimum_wins=0 too (wins
+        # may never exceed decided), so decided is what the error names.
+        ({"minimum_decided": 0, "minimum_wins": 0}, "minimum_decided_pairs"),
+        ({"minimum_wins": 0}, "minimum_standard_wins"),
         ({"minimum_delta": 0.0}, "minimum_median_normalized_delta"),
         ({"minimum_delta": -1.0}, "minimum_median_normalized_delta"),
         ({"minimum_wins": 11}, "minimum_standard_wins"),  # wins > decided (10): unsatisfiable arithmetic
@@ -1221,9 +1400,9 @@ def test_report_rejects_vacuous_or_negative_calibration_rule_thresholds(tmp_path
     """D5 (external review wave D), reporter side (defense in depth --
     load_campaign_manifest enforces the same bounds, but a hand-authored,
     self-consistently-fingerprinted campaign.json never went through that
-    loader): with all minimums at -1, twelve 0-0 ties would satisfy every
-    gate and report PASS. The reporter must refuse such a rules block
-    outright, naming the offending field."""
+    loader): with all minimums at -1 (or, G6, at 0), twelve 0-0 ties would
+    satisfy every gate and report PASS. The reporter must refuse such a
+    rules block outright, naming the offending field."""
     gemma_pairs = [(f"z{i}", 0, 0) for i in range(12)]  # twelve 0-0 ties
     campaign_dir, _ = _build_campaign_with_gemma(
         tmp_path,
@@ -1720,6 +1899,12 @@ def test_scorer_only_fingerprint_change_rescores_same_raw_trials(tmp_path):
     session_payload = json.loads(session_path.read_text(encoding="utf-8"))
     session_payload["scorer_fingerprint"] = "score-v2"
     session_payload["campaign_fingerprint"] = new_campaign_fingerprint
+    # G1 (external review wave G): a legitimate re-freeze re-MINTS the
+    # session lock, so its session_fingerprint is recomputed over the
+    # edited contents (exactly what build_session_lock would produce) and
+    # every trial is re-stamped with both new fingerprints.
+    session_payload = _self_fingerprinted(session_payload)
+    new_session_fingerprint = session_payload["session_fingerprint"]
     _write_json(session_path, session_payload)
 
     trials_dir = campaign_dir / "blocks" / "gemma" / "trials"
@@ -1727,19 +1912,29 @@ def test_scorer_only_fingerprint_change_rescores_same_raw_trials(tmp_path):
     for trial_path in sorted(trials_dir.glob("trial-*.json")):
         trial_payload = json.loads(trial_path.read_text(encoding="utf-8"))
         trial_payload["campaign_fingerprint"] = new_campaign_fingerprint
+        trial_payload["session_fingerprint"] = new_session_fingerprint
         _write_json(trial_path, trial_payload)
         restamped_trials[trial_payload["index"]] = trial_payload
 
     # audit.json's trial_sha256 hash-binds to the exact raw trial bytes --
     # since the re-freeze legitimately changed those bytes (new
-    # campaign_fingerprint stamp), the human review record is re-issued
-    # against the SAME manual findings, re-hashed to the restamped trials.
+    # campaign_fingerprint/session_fingerprint stamps), the human review
+    # record is re-issued against the SAME manual findings, re-hashed to
+    # the restamped trials.
     _write_audit(
         campaign_dir / "blocks" / "gemma",
-        session_fingerprint="gemma-session",
+        session_fingerprint=new_session_fingerprint,
         audit_indices=[1, 2],
         trial_payloads=restamped_trials,
     )
+
+    # G4 (external review wave G): the deferral-corroboration scan only
+    # honors records stamped with the campaign under report -- a re-freeze
+    # re-issues the qwen admission records bound to the new fingerprint.
+    for record_path in sorted((campaign_dir / "admissions").glob("qwen-attempt-*.json")):
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        record["campaign_fingerprint"] = new_campaign_fingerprint
+        _write_json(record_path, record)
 
     report2 = build_campaign_report(campaign_dir)
 

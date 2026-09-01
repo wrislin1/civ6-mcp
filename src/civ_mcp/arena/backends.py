@@ -148,13 +148,21 @@ class OpenAICompatBackend:
         ids instead of discarding them.
 
         B4 (external review wave B): supplementary endpoint-identity
-        evidence only, never a new admission gate of its own -- any
-        failure (an endpoint that doesn't expose `/v1/models`, a transient
-        network error) is swallowed and yields an empty tuple rather than
-        raising, so admission never fails over this best-effort call.
+        evidence, never a new admission gate of its own. G2 (external
+        review wave G, Ruling H): a failed listing is no longer swallowed
+        into an empty tuple here -- an empty tuple was indistinguishable
+        from a genuinely-empty listing, so an auth/transport failure of
+        this call could silently pass admission with `served_model_ids: []`
+        recorded as if the endpoint had answered. The exception now
+        propagates so the caller
+        (`benchmark_runner._build_live_admission_dependencies`'s
+        `probe_backend_dep`) can classify it
+        (`benchmark_backend.classify_backend_exception`): auth/transport
+        failures fail admission under their own non-deferrable codes, while
+        any other failure (an endpoint that simply doesn't expose
+        `/v1/models`) keeps the B4 best-effort empty-tuple behavior at that
+        call site -- the success-path value (sorted ids) is byte-identical
+        to before, so existing locks' `served_model_ids` are unaffected.
         """
-        try:
-            listing = await self._client.models.list()
-            return tuple(sorted(model.id for model in listing.data))
-        except Exception:
-            return ()
+        listing = await self._client.models.list()
+        return tuple(sorted(model.id for model in listing.data))

@@ -160,7 +160,7 @@ from typing import Mapping, Sequence
 from civ_mcp.arena import benchmark_report
 from civ_mcp.arena.benchmark_manifest import fingerprint
 from civ_mcp.arena.benchmark_report import ReportError
-from civ_mcp.arena.benchmark_store import trial_filename
+from civ_mcp.arena.benchmark_store import compute_session_fingerprint, trial_filename
 
 __all__ = [
     "CampaignReportError",
@@ -182,15 +182,17 @@ REPLICATION_DEFERRED_ADMISSION = "REPLICATION_DEFERRED_ADMISSION"
 # no-heavy-import rationale as the constant above; the two frozensets are
 # asserted equal by tests/arena/test_benchmark_admission.py). Deferral
 # eligibility is an explicit ALLOWLIST of model-capability gate failure
-# codes: the endpoint/model-identity gate, the tool-canary gate, the
-# treatment-can-fire gate, and the backend pre-flight probe. A disposition
-# whose underlying_failure.code is outside this set is NEVER a valid
-# replication deferral, no matter how well corroborated -- an operator/
-# environment failure (dirty checkout, tuner holder, GPU conflict, boot/
-# deploy/reload/popup/canonical-state, config or position-authoring errors)
-# must be fixed, never deferred around. Defense in depth: the runner
-# already refuses to WRITE such a disposition; this reader independently
-# refuses to HONOR one.
+# codes: the endpoint/model-identity gate, the tool-canary gate, and the
+# backend pre-flight probe. A disposition whose underlying_failure.code is
+# outside this set is NEVER a valid replication deferral, no matter how
+# well corroborated -- an operator/environment/authoring failure (dirty
+# checkout, tuner holder, GPU conflict, boot/deploy/reload/popup/
+# canonical-state, config errors; G5, wave G: treatment_cannot_fire, a
+# model-independent position-authoring property; G2/Ruling H, wave G:
+# backend_auth_error / backend_transport_error, operator credential/
+# environment failures) must be fixed, never deferred around. Defense in
+# depth: the runner already refuses to WRITE such a disposition; this
+# reader independently refuses to HONOR one.
 REPLICATION_DEFERRAL_ELIGIBLE_CODES = frozenset(
     {
         "endpoint_identity_mismatch",
@@ -199,7 +201,6 @@ REPLICATION_DEFERRAL_ELIGIBLE_CODES = frozenset(
         "insufficient_warm_latency_samples",
         "backend_probe_errors",
         "seed_not_honored",
-        "treatment_cannot_fire",
     }
 )
 
@@ -347,7 +348,9 @@ def _admission_dispositions(campaign_dir: Path, block_id: str) -> list[dict]:
     return [record for record in _admission_records(campaign_dir, block_id) if "disposition" in record]
 
 
-def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str) -> bool:
+def _has_valid_replication_deferred_admission(
+    campaign_dir: Path, block_id: str, campaign_fingerprint: str
+) -> bool:
     """True only for a CORROBORATED `REPLICATION_DEFERRED_ADMISSION` record
     for `block_id` -- finding 4 (final review) plus external review finding
     A1: a single admission failure of ANY code must never mint this
@@ -368,20 +371,24 @@ def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str)
     - corroboration precedes that disposition record in the same
       append-only admissions/ sequence, in one of exactly two shapes:
 
-      (a) remediation-then-retry (D1, external review wave D): a
-          remediation record whose `result.ok` is genuinely true (a
-          concrete fix actually happened -- never a refused/no-op
-          `{"ok": False, ...}` record, which is what
-          `_run_remediation_async` writes for a failed drain or a
-          port with no holder), followed -- STRICTLY BETWEEN that
-          remediation and the disposition, in ordinal order -- by at
-          least one journaled failed admission attempt carrying the
-          SAME code as `underlying_failure`. The disposition's own
-          triggering failure (which always precedes the disposition)
-          may serve as that retry when it postdates the successful
-          remediation. A remediation that postdates the only failure on
-          record proves nothing: the failure was never re-observed after
-          the fix; or
+      (a) failure-then-remediation-then-retry (D1, external review wave
+          D, tightened by G3, wave G): a same-code failed admission
+          attempt BEFORE a remediation record whose `result.ok` is
+          genuinely true (a concrete fix actually happened -- never a
+          refused/no-op `{"ok": False, ...}` record, which is what
+          `_run_remediation_async` writes for a failed drain or a port
+          with no holder), followed by at least one MORE journaled failed
+          admission attempt carrying the SAME code AFTER that remediation
+          (all strictly before the disposition, in ordinal order) -- a
+          genuine failure -> remediation -> retry-failed sequence, at
+          least two observations of the failure in total. G3: the old
+          predicate accepted an UNRELATED remediation (no preceding
+          same-code failure at all -- nothing for the "fix" to have been
+          a fix FOR) plus a single failure first seen only after it; a
+          remediation that precedes the only failure on record remediated
+          nothing, and a remediation with no post-remediation retry
+          proves nothing (the failure was never re-observed after the
+          fix); or
 
       (b) two confirming attempts: at least TWO failed admission
           attempts (at distinct, strictly-preceding attempt ordinals)
@@ -398,10 +405,22 @@ def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str)
       its own corroboration). Genuine corroboration requires the failure to
       have been independently observed at least TWICE before the
       disposition is ever written -- i.e. at least two preceding attempt
-      records, not one -- OR observed again after a concrete, successful
-      remediation.
+      records, not one -- and for shape (a) those two observations must
+      straddle the successful remediation.
+
+    G4 (external review wave G): only records stamped with THIS campaign's
+    `campaign_fingerprint` participate at all -- an unstamped record, or
+    one stamped for a different campaign, corroborates nothing and can
+    never be the disposition record itself (`CampaignStore.record_admission`
+    stamps every admission-attempt/remediation/disposition record it
+    writes; no unstamped live evidence exists, so requiring the stamp is
+    safe).
     """
-    records = _admission_records(campaign_dir, block_id)
+    records = [
+        record
+        for record in _admission_records(campaign_dir, block_id)
+        if record.get("campaign_fingerprint") == campaign_fingerprint
+    ]
     for index, record in enumerate(records):
         if record.get("disposition") != REPLICATION_DEFERRED_ADMISSION:
             continue
@@ -428,8 +447,13 @@ def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str)
             and isinstance(r.get("result"), Mapping)
             and r["result"].get("ok") is True
         ]
+        # G3 (external review wave G): shape (a) requires the same-code
+        # failure to have been observed BOTH before the successful
+        # remediation (the failure the fix was actually for) AND after it
+        # (the journaled retry proving the fix did not resolve it).
         if any(
-            any(failure_ordinal > remediation_ordinal for failure_ordinal in same_code_failure_ordinals)
+            any(f < remediation_ordinal for f in same_code_failure_ordinals)
+            and any(f > remediation_ordinal for f in same_code_failure_ordinals)
             for remediation_ordinal in successful_remediation_ordinals
         ):
             return True
@@ -485,15 +509,21 @@ def _require_calibration_rules(rules: object) -> dict[str, object]:
         raise CampaignReportError(
             f"campaign.json 'rules' pairs_per_model must be >= 1 (got {rules['pairs_per_model']!r})"
         )
-    if rules["minimum_decided_pairs"] < 0:
+    # G6 (external review wave G): >= 1, not >= 0 -- a ZERO threshold is
+    # just as vacuous as a negative one (every block trivially satisfies
+    # decided >= 0 / wins >= 0, switching the sensitivity/direction gate
+    # off entirely). Mirrors benchmark_contract._load_calibration_rules.
+    if rules["minimum_decided_pairs"] < 1:
         raise CampaignReportError(
-            "campaign.json 'rules' minimum_decided_pairs must be >= 0 "
-            f"(got {rules['minimum_decided_pairs']!r}) -- a negative sensitivity threshold is vacuous"
+            "campaign.json 'rules' minimum_decided_pairs must be >= 1 "
+            f"(got {rules['minimum_decided_pairs']!r}) -- a zero or negative sensitivity "
+            "threshold switches the sensitivity gate off entirely"
         )
-    if rules["minimum_standard_wins"] < 0:
+    if rules["minimum_standard_wins"] < 1:
         raise CampaignReportError(
-            "campaign.json 'rules' minimum_standard_wins must be >= 0 "
-            f"(got {rules['minimum_standard_wins']!r}) -- a negative direction threshold is vacuous"
+            "campaign.json 'rules' minimum_standard_wins must be >= 1 "
+            f"(got {rules['minimum_standard_wins']!r}) -- a zero or negative direction "
+            "threshold switches the direction gate off entirely"
         )
     if rules["minimum_standard_wins"] > rules["minimum_decided_pairs"]:
         raise CampaignReportError(
@@ -1167,7 +1197,9 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
                     f"honor any {REPLICATION_DEFERRED_ADMISSION!r} disposition for a block "
                     "that was actually admitted"
                 )
-            if not _has_valid_replication_deferred_admission(campaign_dir, block_id):
+            if not _has_valid_replication_deferred_admission(
+                campaign_dir, block_id, str(campaign_fingerprint)
+            ):
                 raise CampaignReportError(
                     f"block {block_id!r} has an incomplete schedule "
                     f"({len(committed_indices)}/{len(expected_indices)} trials committed) and "
@@ -1194,6 +1226,29 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
         if not isinstance(block_session, Mapping):
             raise CampaignReportError(f"{block_dir / 'session.json'} must be a JSON object")
         report_inputs.append(f"blocks/{block_id}/session.json")
+        # G1 (external review wave G): the session lock's own
+        # session_fingerprint is re-derived from the session document
+        # itself (benchmark_store.compute_session_fingerprint -- the exact
+        # computation build_session_lock minted it with) BEFORE any of its
+        # fields are trusted. The fingerprint covers block_id and
+        # model_config, so the proven exploit -- copy blocks/gemma to
+        # blocks/qwen, edit BOTH bound fields to qwen's declared values,
+        # leave session_fingerprint untouched so every trial's stamp still
+        # "matches" -- fails here even though the D4 field comparisons
+        # below would all pass. Exactly _verify_campaign_fingerprint's
+        # discipline, applied to the per-block lock. Defense in depth:
+        # benchmark_report.build_report and
+        # benchmark_admission.block_is_complete independently apply the
+        # same recomputation.
+        recorded_session_fingerprint = block_session.get("session_fingerprint")
+        if not recorded_session_fingerprint or (
+            compute_session_fingerprint(block_session) != recorded_session_fingerprint
+        ):
+            raise CampaignReportError(
+                f"block {block_id!r} session.json's session_fingerprint does not match a "
+                "fresh fingerprint of its own remaining contents -- refusing to trust a "
+                "session lock that may have been edited after it was minted"
+            )
         if block_session.get("campaign_fingerprint") != campaign_fingerprint:
             raise CampaignReportError(
                 f"block {block_id!r} session.json campaign_fingerprint "

@@ -1191,7 +1191,7 @@ async def _campaign_store_fingerprint(campaign_path: Path, run_dir: Path, run_id
 
 
 def _preseed_gemma_block_complete(
-    run_dir: Path, gemma_block_id: str, schedule: dict, campaign_fingerprint: str, *, session_fingerprint: str = "gemma-preseeded-session"
+    run_dir: Path, gemma_block_id: str, schedule: dict, campaign_fingerprint: str
 ) -> None:
     """Pre-seed gemma's block as already fully committed. A3 (external
     review): `block_is_complete` now also requires each committed trial's
@@ -1210,18 +1210,25 @@ def _preseed_gemma_block_complete(
     campaign_lock = json.loads((run_dir / "campaign-run" / "campaign.json").read_text())
     declared_model_config = next(m for m in campaign_lock["models"] if m["block_id"] == gemma_block_id)
     gemma_block_dir_session = {
-        "session_fingerprint": session_fingerprint,
         "campaign_fingerprint": campaign_fingerprint,
         "block_id": gemma_block_id,
         "model_config": declared_model_config,
     }
+    # G1 (external review wave G): block_is_complete re-derives the
+    # session_fingerprint from the session document itself, so the fixture
+    # must carry a genuinely self-consistent one, not a placeholder label.
+    from civ_mcp.arena.benchmark_store import compute_session_fingerprint
+
+    gemma_block_dir_session["session_fingerprint"] = compute_session_fingerprint(
+        gemma_block_dir_session
+    )
     (gemma_block_dir / "session.json").write_text(json.dumps(gemma_block_dir_session))
     for trial in schedule["blocks"][gemma_block_id]["trials"]:
         (gemma_trials_dir / trial_filename(trial["index"])).write_text(
             json.dumps(
                 {
                     "campaign_fingerprint": campaign_fingerprint,
-                    "session_fingerprint": session_fingerprint,
+                    "session_fingerprint": gemma_block_dir_session["session_fingerprint"],
                 }
             )
         )
@@ -1472,6 +1479,84 @@ async def test_campaign_qwen_operator_error_code_never_records_disposition(tmp_p
     assert exit_code == 1
     err = capsys.readouterr().err.lower()
     assert "dirty_checkout" in err
+    assert "refus" in err
+
+    qwen_block_id = campaign.models[1].block_id
+    admissions_dir = run_dir / "campaign-run" / "admissions"
+    matches = (
+        [
+            json.loads(p.read_text())
+            for p in admissions_dir.iterdir()
+            if p.name.startswith(f"{qwen_block_id}-attempt-")
+        ]
+        if admissions_dir.is_dir()
+        else []
+    )
+    dispositions = [m for m in matches if m.get("disposition") == REPLICATION_DEFERRED_ADMISSION]
+    assert dispositions == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "code", ["backend_auth_error", "backend_transport_error", "treatment_cannot_fire"]
+)
+async def test_campaign_qwen_auth_transport_or_authoring_code_never_records_disposition(
+    tmp_path, monkeypatch, capsys, code
+):
+    """G2 (Ruling H) / G5 (external review wave G): backend_auth_error and
+    backend_transport_error are operator/environment codes, and
+    treatment_cannot_fire is a model-independent authoring/config property
+    -- none may ever be written as a REPLICATION_DEFERRED_ADMISSION
+    disposition, even once Gemma has completed a full counted block."""
+    from civ_mcp.arena.benchmark_admission import (
+        REPLICATION_DEFERRED_ADMISSION,
+        AdmissionError,
+    )
+    from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
+    from civ_mcp.arena.benchmark_contract import load_campaign_manifest
+
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    campaign = load_campaign_manifest(campaign_path)
+    schedule = compile_campaign_schedule(campaign)
+    gemma_block_id = campaign.models[0].block_id
+
+    campaign_fingerprint = await _campaign_store_fingerprint(campaign_path, run_dir)
+    _preseed_gemma_block_complete(run_dir, gemma_block_id, schedule, campaign_fingerprint)
+
+    class _QwenFailsPipeline:
+        def __init__(self, _deps):
+            pass
+
+        async def admit(self, bundle, block, store, *, mode, **_kwargs):
+            raise AdmissionError(code, {"message": f"injected {code}"})
+
+    monkeypatch.setattr(
+        benchmark_runner,
+        "_build_admission_pipeline",
+        lambda args, api_key, **_kwargs: _QwenFailsPipeline(None),
+    )
+
+    def _boom_run_resolved_block(*_args, **_kwargs):
+        raise AssertionError("run_resolved_block must never run when admission fails")
+
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err.lower()
+    assert code in err
     assert "refus" in err
 
     qwen_block_id = campaign.models[1].block_id
@@ -2580,6 +2665,97 @@ async def test_live_admission_probe_backend_folds_served_model_ids(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("make_exc", "expected_kind"),
+    [
+        (
+            lambda: __import__("openai").AuthenticationError(
+                "invalid key",
+                response=__import__("httpx").Response(
+                    401, request=__import__("httpx").Request("GET", "http://x/v1/models")
+                ),
+                body=None,
+            ),
+            "auth",
+        ),
+        (lambda: __import__("httpx").ConnectError("connection refused"), "transport"),
+    ],
+)
+async def test_live_admission_listing_auth_or_transport_failure_is_classified(
+    monkeypatch, make_exc, expected_kind
+):
+    """G2 (external review wave G, Ruling H): a served-model listing that
+    fails for auth/transport reasons must NOT silently fold an empty
+    listing into the probe (indistinguishable from a genuinely-empty
+    endpoint) -- it is recorded as a classified probe error, so
+    admit_model_block refuses under backend_auth_error /
+    backend_transport_error, never endpoint_identity_mismatch."""
+    from civ_mcp.arena.backends import OpenAICompatBackend
+
+    async def _fake_probe_backend_impl(backend, messages, tools):
+        return benchmark_backend_module.BackendProbe(
+            samples=1, model=backend.model, model_confirmed=True, seed_honored=True
+        )
+
+    async def _raising_list_model_ids(self):
+        raise make_exc()
+
+    monkeypatch.setattr(benchmark_backend_module, "probe_backend", _fake_probe_backend_impl)
+    monkeypatch.setattr(OpenAICompatBackend, "list_model_ids", _raising_list_model_ids)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x", user_prompt="Assess the current turn and call finish_trial."
+    )
+
+    probe = await deps.probe_backend(
+        model="gemma4-26b",
+        endpoint="http://example.invalid/v1",
+        sampling=SamplingConfig(),
+        chat_template_kwargs={"enable_thinking": False},
+        tools=[],
+    )
+
+    assert probe.served_model_ids == ()
+    assert len(probe.errors) == 1
+    assert "listing failed" in probe.errors[0]
+    assert probe.error_kinds == (expected_kind,)
+
+
+@pytest.mark.asyncio
+async def test_live_admission_listing_unsupported_endpoint_stays_best_effort(monkeypatch):
+    """G2: any OTHER listing failure (an endpoint that simply doesn't
+    expose /v1/models) keeps the B4 best-effort behavior -- empty tuple,
+    no probe error, admission unaffected."""
+    from civ_mcp.arena.backends import OpenAICompatBackend
+
+    async def _fake_probe_backend_impl(backend, messages, tools):
+        return benchmark_backend_module.BackendProbe(
+            samples=1, model=backend.model, model_confirmed=True, seed_honored=True
+        )
+
+    async def _unsupported_list_model_ids(self):
+        raise RuntimeError("endpoint does not support /v1/models")
+
+    monkeypatch.setattr(benchmark_backend_module, "probe_backend", _fake_probe_backend_impl)
+    monkeypatch.setattr(OpenAICompatBackend, "list_model_ids", _unsupported_list_model_ids)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x", user_prompt="Assess the current turn and call finish_trial."
+    )
+
+    probe = await deps.probe_backend(
+        model="gemma4-26b",
+        endpoint="http://example.invalid/v1",
+        sampling=SamplingConfig(),
+        chat_template_kwargs={"enable_thinking": False},
+        tools=[],
+    )
+
+    assert probe.served_model_ids == ()
+    assert probe.errors == []
+
+
+@pytest.mark.asyncio
 async def test_live_admission_probe_tool_capability_includes_benchmark_system(monkeypatch):
     recorded_kwargs: list = []
 
@@ -3317,14 +3493,37 @@ async def test_remediation_journals_into_existing_campaign_dir_without_lock_rebu
 ):
     """The recorded campaign dir is the journaling authority: even a lock
     that could NEVER be rebuilt byte-for-byte from the current checkout
-    (e.g. the checkout moved since the campaign was created) must accept
-    the remediation record -- and remain byte-identical afterwards."""
+    (e.g. the checkout moved since the campaign was created -- here, an
+    expected_commit no current checkout would produce) must accept the
+    remediation record -- and remain byte-identical afterwards. G4
+    (external review wave G): the recorded lock must still pass its own
+    campaign_fingerprint self-check AND match the supplied manifest
+    (campaign_id + digests.schedule), so this fixture lock is genuinely
+    self-consistent and manifest-bound rather than an arbitrary stub."""
+    import dataclasses
+
+    from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
+    from civ_mcp.arena.benchmark_contract import load_campaign_manifest
+    from civ_mcp.arena.benchmark_manifest import fingerprint as _fingerprint
+
     campaign_path = _write_fixture_campaign_and_position(tmp_path)
     run_dir = tmp_path / "runs"
     root = run_dir / "remediation-run"
     root.mkdir(parents=True)
-    recorded_lock = json.dumps({"campaign_fingerprint": "recorded-fp", "models": []})
-    recorded_schedule = json.dumps({"blocks": {}})
+    manifest = load_campaign_manifest(campaign_path)
+    compiled_schedule = compile_campaign_schedule(manifest)
+    lock_body = {
+        "campaign_id": manifest.campaign_id,
+        # A commit no current checkout would rebuild -- this lock can never
+        # byte-match a freshly built one (E6's whole point).
+        "expected_commit": "0000000000000000000000000000000000000000",
+        "digests": {"schedule": _fingerprint(compiled_schedule)},
+        "models": [dataclasses.asdict(model) for model in manifest.models],
+    }
+    lock_payload = dict(lock_body)
+    lock_payload["campaign_fingerprint"] = _fingerprint(lock_body)
+    recorded_lock = json.dumps(lock_payload)
+    recorded_schedule = json.dumps(compiled_schedule)
     (root / "campaign.json").write_text(recorded_lock)
     (root / "schedule.json").write_text(recorded_schedule)
 
@@ -3351,9 +3550,73 @@ async def test_remediation_journals_into_existing_campaign_dir_without_lock_rebu
     records = sorted((root / "admissions").glob("gemma4-26b-attempt-*.json"))
     assert len(records) == 1
     assert json.loads(records[0].read_text())["result"]["ok"] is True
+    # G4: the record carries the recorded campaign's own fingerprint stamp.
+    assert (
+        json.loads(records[0].read_text())["campaign_fingerprint"]
+        == lock_payload["campaign_fingerprint"]
+    )
     # The recorded lock/schedule were never rebuilt or rewritten.
     assert (root / "campaign.json").read_text() == recorded_lock
     assert (root / "schedule.json").read_text() == recorded_schedule
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tamper", ["self_fingerprint", "campaign_id", "schedule_digest"])
+async def test_remediation_refuses_tampered_or_foreign_recorded_campaign_lock(
+    tmp_path, monkeypatch, capsys, tamper
+):
+    """G4 (external review wave G): _load_remediation_journal_target used
+    to trust the recorded campaign.json verbatim -- a corroboration-grade
+    remediation record could be written into ANY run dir against ANY
+    manifest. It must verify the recorded lock's own campaign_fingerprint
+    self-check AND that the lock matches the supplied manifest
+    (campaign_id + digests.schedule), refusing on mismatch with NOTHING
+    written and the remediation action never run."""
+    import dataclasses
+
+    from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
+    from civ_mcp.arena.benchmark_contract import load_campaign_manifest
+    from civ_mcp.arena.benchmark_manifest import fingerprint as _fingerprint
+
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+    root = run_dir / "remediation-run"
+    root.mkdir(parents=True)
+    manifest = load_campaign_manifest(campaign_path)
+    compiled_schedule = compile_campaign_schedule(manifest)
+    lock_body = {
+        "campaign_id": manifest.campaign_id,
+        "expected_commit": "0000000000000000000000000000000000000000",
+        "digests": {"schedule": _fingerprint(compiled_schedule)},
+        "models": [dataclasses.asdict(model) for model in manifest.models],
+    }
+    if tamper == "campaign_id":
+        lock_body["campaign_id"] = "some-other-campaign"
+    if tamper == "schedule_digest":
+        lock_body["digests"] = {"schedule": "not-the-manifests-schedule"}
+    lock_payload = dict(lock_body)
+    lock_payload["campaign_fingerprint"] = _fingerprint(lock_body)
+    if tamper == "self_fingerprint":
+        # Edit a field AFTER fingerprinting -- the classic post-freeze edit.
+        lock_payload["campaign_id"] = "edited-after-freeze"
+    (root / "campaign.json").write_text(json.dumps(lock_payload))
+    (root / "schedule.json").write_text(json.dumps(compiled_schedule))
+
+    def _boom_classify(**_kwargs):
+        raise AssertionError("remediation must not run when the journal target is refused")
+
+    monkeypatch.setattr(benchmark_live_evidence_module, "classify_tuner_holder", _boom_classify)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        _remediation_argv(campaign_path, run_dir, "--terminate-tuner-pid", "4242")
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "refus" in err.lower()
+    assert not (root / "admissions").exists() or not list((root / "admissions").iterdir())
 
 
 @pytest.mark.asyncio

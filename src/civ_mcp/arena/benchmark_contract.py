@@ -209,11 +209,16 @@ def _load_calibration_rules(raw: object, context: str) -> CalibrationRules:
     mapping = _require_mapping(raw, context)
     _require_exact_keys(mapping, _CALIBRATION_RULES_FIELDS, context)
     pairs_per_model = _require_int(mapping["pairs_per_model"], f"{context}.pairs_per_model", minimum=1)
+    # G6 (external review wave G): minimum 1, not 0 -- a zero
+    # minimum_decided_pairs/minimum_standard_wins switches the sensitivity/
+    # direction gate off entirely (every block trivially satisfies a
+    # >= 0 threshold), which is exactly the vacuous-gate shape D5's bounds
+    # exist to refuse. The frozen Plan-2 values (10/10) are unaffected.
     minimum_decided_pairs = _require_int(
-        mapping["minimum_decided_pairs"], f"{context}.minimum_decided_pairs", minimum=0
+        mapping["minimum_decided_pairs"], f"{context}.minimum_decided_pairs", minimum=1
     )
     minimum_standard_wins = _require_int(
-        mapping["minimum_standard_wins"], f"{context}.minimum_standard_wins", minimum=0
+        mapping["minimum_standard_wins"], f"{context}.minimum_standard_wins", minimum=1
     )
     minimum_median_normalized_delta = _require_number(
         mapping["minimum_median_normalized_delta"], f"{context}.minimum_median_normalized_delta"

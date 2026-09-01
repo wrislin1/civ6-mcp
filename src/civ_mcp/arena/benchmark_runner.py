@@ -1213,6 +1213,7 @@ def _build_live_admission_dependencies(
     from civ_mcp.arena.benchmark_agent import BENCHMARK_SYSTEM
     from civ_mcp.arena import benchmark_admission
     from civ_mcp.arena.backends import OpenAICompatBackend
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
     from civ_mcp.arena.benchmark_backend import probe_backend as _probe_backend_impl
     from civ_mcp.arena.benchmark_backend import probe_tool_capability as _probe_tool_capability_impl
     from civ_mcp.arena.benchmark_deploy import check_boot_health_via_windows, deploy_via_windows
@@ -1389,10 +1390,28 @@ def _build_live_admission_dependencies(
             # B4 (external review wave B): fold the served /v1/models
             # listing -- already reachable cheaply off this same live
             # backend the probe just used -- into the returned probe as
-            # supplementary identity evidence. Best-effort: list_model_ids
-            # never raises, so a server without /v1/models support simply
-            # yields an empty tuple rather than failing the probe.
-            served_model_ids = await backend.list_model_ids()
+            # supplementary identity evidence. G2 (external review wave G,
+            # Ruling H): list_model_ids now raises on failure so a failed
+            # listing is distinguishable from a genuinely-empty one. An
+            # auth/transport failure is folded into the probe as a
+            # classified error -- admit_model_block then refuses under
+            # backend_auth_error / backend_transport_error (non-deferrable
+            # operator codes), never endpoint_identity_mismatch. Any other
+            # failure (an endpoint that simply doesn't expose /v1/models)
+            # keeps the B4 best-effort empty-tuple behavior; the
+            # success-path evidence (sorted ids) is byte-identical to
+            # before, so existing locks are unaffected.
+            try:
+                served_model_ids = await backend.list_model_ids()
+            except Exception as exc:  # noqa: BLE001 - classified, see above
+                kind = classify_backend_exception(exc)
+                if kind in ("auth", "transport"):
+                    probe = dataclasses.replace(
+                        probe,
+                        errors=[*probe.errors, f"served-model listing failed: {exc}"],
+                        error_kinds=(*tuple(probe.error_kinds or ()), kind),
+                    )
+                served_model_ids = ()
             return dataclasses.replace(probe, served_model_ids=served_model_ids)
         finally:
             await backend.aclose()
@@ -1904,7 +1923,50 @@ def _load_remediation_journal_target(args: argparse.Namespace) -> "_RemediationJ
             raise ValueError(
                 f"recorded campaign lock/schedule under {run_dir} are not JSON objects"
             )
-        store = CampaignStore(run_dir, lock, schedule, fingerprint=lock.get("campaign_fingerprint"))
+        # G4 (external review wave G): the recorded campaign.json used to be
+        # trusted verbatim -- any run dir containing any campaign.json,
+        # named alongside any manifest, accepted corroboration-grade
+        # remediation records. Verify (a) the recorded lock's own
+        # self-fingerprint (the exact recomputation
+        # benchmark_campaign_report._verify_campaign_fingerprint performs:
+        # fingerprint over every field except campaign_fingerprint), and
+        # (b) that the recorded lock actually belongs to the SUPPLIED
+        # manifest -- campaign_id equality plus digests.schedule matching an
+        # independently recompiled compile_campaign_schedule(manifest). No
+        # live evidence (expected_commit, ...) is rebuilt or byte-matched,
+        # preserving E6's whole point: a lock that can no longer be rebuilt
+        # from the current checkout still journals, but a tampered or
+        # foreign lock refuses.
+        recorded_fingerprint = lock.get("campaign_fingerprint")
+        recomputed = fingerprint(
+            {key: value for key, value in lock.items() if key != "campaign_fingerprint"}
+        )
+        if not recorded_fingerprint or recomputed != recorded_fingerprint:
+            raise ValueError(
+                f"recorded campaign.json under {run_dir} fails its own campaign_fingerprint "
+                "self-check -- refusing to journal a campaign-linked remediation against a "
+                "campaign lock that may have been edited after it was frozen"
+            )
+        if lock.get("campaign_id") != campaign.campaign_id:
+            raise ValueError(
+                f"recorded campaign.json under {run_dir} declares campaign_id "
+                f"{lock.get('campaign_id')!r}, but the supplied manifest declares "
+                f"{campaign.campaign_id!r} -- refusing to journal a remediation for a "
+                "different campaign"
+            )
+        expected_schedule_fingerprint = fingerprint(compile_campaign_schedule(campaign))
+        recorded_digests = lock.get("digests")
+        recorded_schedule_fingerprint = (
+            recorded_digests.get("schedule") if isinstance(recorded_digests, dict) else None
+        )
+        if recorded_schedule_fingerprint != expected_schedule_fingerprint:
+            raise ValueError(
+                f"recorded campaign.json under {run_dir} declares digests.schedule "
+                f"{recorded_schedule_fingerprint!r}, but the supplied manifest compiles to "
+                f"{expected_schedule_fingerprint!r} -- refusing to journal a remediation "
+                "against a campaign that does not match the supplied manifest"
+            )
+        store = CampaignStore(run_dir, lock, schedule, fingerprint=recorded_fingerprint)
     else:
         store = CampaignStore(run_dir, {}, compile_campaign_schedule(campaign), fingerprint=None)
     next_block = benchmark_admission.select_next_incomplete_block(campaign, store)

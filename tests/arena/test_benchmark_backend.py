@@ -172,6 +172,133 @@ async def test_probe_backend_records_errors_without_raising():
     probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=3)
     assert probe.errors == ["boom"]
     assert len(probe.latencies_s) == 2
+    # G2: a generic exception is capability-side evidence, not operator-side.
+    assert probe.error_kinds == ("model",)
+
+
+# ---------------------------------------------------------------------------
+# G2 (external review wave G, Ruling H): exception classification
+# ---------------------------------------------------------------------------
+
+
+def _openai_status_error(cls, status_code):
+    import httpx
+    import openai as _openai  # noqa: F401 - clarity: exceptions come from the real SDK
+
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    response = httpx.Response(status_code, request=request)
+    return cls("probe error", response=response, body=None)
+
+
+@pytest.mark.parametrize(
+    "make_exc",
+    [
+        lambda: __import__("openai").AuthenticationError(
+            "bad key",
+            response=__import__("httpx").Response(
+                401, request=__import__("httpx").Request("POST", "http://x/v1")
+            ),
+            body=None,
+        ),
+        lambda: _openai_status_error(__import__("openai").PermissionDeniedError, 403),
+    ],
+)
+def test_classify_backend_exception_auth_shapes(make_exc):
+    """G2: 401/403 shapes from the actual client library in use (openai
+    SDK over httpx -- see backends.OpenAICompatBackend) classify as
+    "auth" -- an operator credential problem, never capability evidence."""
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    assert classify_backend_exception(make_exc()) == "auth"
+
+
+@pytest.mark.parametrize(
+    "make_exc",
+    [
+        lambda: __import__("openai").APIConnectionError(
+            request=__import__("httpx").Request("POST", "http://x/v1")
+        ),
+        lambda: __import__("openai").APITimeoutError(
+            request=__import__("httpx").Request("POST", "http://x/v1")
+        ),
+        lambda: _openai_status_error(__import__("openai").RateLimitError, 429),
+        lambda: __import__("httpx").ConnectError("connection refused"),
+        lambda: __import__("httpx").ReadTimeout("read timed out"),
+    ],
+)
+def test_classify_backend_exception_transport_shapes(make_exc):
+    """G2: connection/timeout/rate-limit shapes (openai SDK + raw httpx
+    transport errors) classify as "transport" -- a down gateway, wrong
+    endpoint URL, or 429 storm, never capability evidence."""
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    assert classify_backend_exception(make_exc()) == "transport"
+
+
+@pytest.mark.parametrize(
+    "make_exc",
+    [
+        lambda: RuntimeError("gateway 500 on malformed tool JSON"),
+        lambda: _openai_status_error(__import__("openai").BadRequestError, 400),
+        lambda: _openai_status_error(__import__("openai").InternalServerError, 500),
+    ],
+)
+def test_classify_backend_exception_everything_else_stays_model_evidence(make_exc):
+    """G2: only auth and transport are carved out -- any other failure
+    shape remains capability-side evidence (backend_probe_errors et al.),
+    exactly as before."""
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    assert classify_backend_exception(make_exc()) == "model"
+
+
+@pytest.mark.asyncio
+async def test_probe_backend_classifies_auth_exceptions_in_the_funnel():
+    """G2: the probe funnel records an index-aligned classification for
+    every swallowed exception -- an all-401 probe carries error_kinds all
+    "auth" so admit_model_block can refuse under backend_auth_error
+    instead of endpoint_identity_mismatch."""
+    import httpx
+    import openai
+
+    class _AuthFails(_FakeExactBackend):
+        async def chat(self, messages, tools):
+            self.calls += 1
+            request = httpx.Request("POST", "http://x/v1/chat/completions")
+            raise openai.AuthenticationError(
+                "invalid api key", response=httpx.Response(401, request=request), body=None
+            )
+
+    probe = await probe_backend(_AuthFails(), [{"role": "user", "content": "act"}], [], samples=3)
+    assert len(probe.errors) == 3
+    assert probe.error_kinds == ("auth", "auth", "auth")
+    assert probe.latencies_s == []
+
+
+@pytest.mark.asyncio
+async def test_probe_backend_classifies_transport_exceptions_in_the_funnel():
+    import httpx
+
+    class _Down(_FakeExactBackend):
+        async def chat(self, messages, tools):
+            self.calls += 1
+            raise httpx.ConnectError("connection refused")
+
+    probe = await probe_backend(_Down(), [{"role": "user", "content": "act"}], [], samples=3)
+    assert len(probe.errors) == 3
+    assert probe.error_kinds == ("transport", "transport", "transport")
+
+
+def test_backend_probe_error_kinds_default_empty_for_old_constructors():
+    """Pre-G2 callers/tests construct BackendProbe without error_kinds --
+    it must default to () rather than raising a TypeError; the gate treats
+    a missing kind as "model", preserving old backend_probe_errors
+    behavior."""
+    probe = BackendProbe(
+        samples=10, model="qwen3.6-27b", model_confirmed=True,
+        seed_honored=True, latencies_s=[1.0] * 10, errors=["boom"],
+    )
+    assert probe.error_kinds == ()
 
 
 # ---------------------------------------------------------------------------

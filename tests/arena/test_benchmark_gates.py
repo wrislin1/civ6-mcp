@@ -357,14 +357,23 @@ def test_check_tuner_holder_never_touches_subprocess(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _good_probe(*, seed_honored=True, model="qwen3.6-27b", model_confirmed=True, errors=None):
+def _good_probe(
+    *,
+    seed_honored=True,
+    model="qwen3.6-27b",
+    model_confirmed=True,
+    errors=None,
+    error_kinds=None,
+    latencies_s=None,
+):
     return BackendProbe(
         samples=10,
         model=model,
         model_confirmed=model_confirmed,
         seed_honored=seed_honored,
-        latencies_s=[1.0 + 0.01 * i for i in range(10)],
+        latencies_s=[1.0 + 0.01 * i for i in range(10)] if latencies_s is None else latencies_s,
         errors=list(errors or []),
+        error_kinds=tuple(error_kinds or ()),
     )
 
 
@@ -415,6 +424,68 @@ def test_admit_model_block_rejects_endpoint_identity_mismatch():
 def test_admit_model_block_rejects_probe_reported_model_mismatch():
     with pytest.raises(GateFailure, match="endpoint identity mismatch"):
         admit_model_block(**_admit_kwargs(probe=_good_probe(model="some-other-model")))
+
+
+def test_admit_model_block_classifies_auth_failure_never_identity_mismatch():
+    """G2 (external review wave G, Ruling H): a probe whose calls all
+    failed 401/403 (bad/stale key) produces zero replies, so
+    model_confirmed is False and latencies are short -- the pre-G2 gate
+    reported endpoint_identity_mismatch (deferral-eligible!) for a pure
+    credential problem. It must fail backend_auth_error instead, a
+    non-deferrable operator code."""
+    dead_probe = _good_probe(
+        model=None,
+        model_confirmed=False,
+        seed_honored=False,
+        latencies_s=[],
+        errors=["Error code: 401 - invalid api key"] * 3,
+        error_kinds=["auth"] * 3,
+    )
+    with pytest.raises(GateFailure, match="authentication") as exc_info:
+        admit_model_block(**_admit_kwargs(probe=dead_probe))
+    assert exc_info.value.code == "backend_auth_error"
+    assert exc_info.value.code != "endpoint_identity_mismatch"
+
+
+def test_admit_model_block_classifies_transport_failure_never_identity_mismatch():
+    """G2: a down gateway / wrong URL / timeout / 429 storm must fail
+    backend_transport_error, never endpoint_identity_mismatch /
+    insufficient_warm_latency_samples / backend_probe_errors (all
+    deferral-eligible)."""
+    dead_probe = _good_probe(
+        model=None,
+        model_confirmed=False,
+        seed_honored=False,
+        latencies_s=[],
+        errors=["connection refused"] * 3,
+        error_kinds=["transport"] * 3,
+    )
+    with pytest.raises(GateFailure, match="connection/") as exc_info:
+        admit_model_block(**_admit_kwargs(probe=dead_probe))
+    assert exc_info.value.code == "backend_transport_error"
+
+
+def test_admit_model_block_auth_outranks_transport_and_capability_errors():
+    """A mixed-failure probe names the auth failure first -- credentials
+    are the first thing an operator must fix."""
+    mixed_probe = _good_probe(
+        errors=["401 bad key", "connection refused", "gateway 500"],
+        error_kinds=["auth", "transport", "model"],
+    )
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(**_admit_kwargs(probe=mixed_probe))
+    assert exc_info.value.code == "backend_auth_error"
+    assert exc_info.value.details["errors"] == ["401 bad key"]
+
+
+def test_admit_model_block_unclassified_probe_errors_keep_capability_code():
+    """Backward compatibility: a probe with errors but NO error_kinds (a
+    pre-G2 constructor) must keep failing under the existing capability
+    code (backend_probe_errors), never silently pass and never be
+    misread as auth/transport."""
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(**_admit_kwargs(probe=_good_probe(errors=["boom"])))
+    assert exc_info.value.code == "backend_probe_errors"
 
 
 def test_admit_model_block_rejects_counted_backend_with_hidden_retries():

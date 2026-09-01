@@ -244,6 +244,18 @@ def test_campaign_manifest_rejects_unsafe_block_id(tmp_path, bad_block_id):
         (lambda d: d["rules"].__setitem__("pairs_per_model", -1), "pairs_per_model"),
         (lambda d: d["rules"].__setitem__("minimum_decided_pairs", -1), "minimum_decided_pairs"),
         (lambda d: d["rules"].__setitem__("minimum_standard_wins", -1), "minimum_standard_wins"),
+        # G6 (external review wave G): a ZERO minimum switches the
+        # sensitivity/direction gate off entirely (every block trivially
+        # satisfies >= 0) -- bounds are now >= 1, not >= 0. Zero decided
+        # forces zero wins too (wins may never exceed decided).
+        (
+            lambda d: (
+                d["rules"].__setitem__("minimum_decided_pairs", 0),
+                d["rules"].__setitem__("minimum_standard_wins", 0),
+            ),
+            "minimum_decided_pairs",
+        ),
+        (lambda d: d["rules"].__setitem__("minimum_standard_wins", 0), "minimum_standard_wins"),
         # minimum_decided_pairs may never exceed pairs_per_model.
         (lambda d: d["rules"].__setitem__("minimum_decided_pairs", 13), "minimum_decided_pairs"),
         # decided >= wins is structurally required: wins > decided is unsatisfiable arithmetic.

@@ -34,7 +34,7 @@ from civ_mcp.arena.benchmark_contract import (
 )
 from civ_mcp.arena.benchmark_manifest import PositionManifest, fingerprint
 from civ_mcp.arena.benchmark_runner import ResolvedBlock
-from civ_mcp.arena.benchmark_store import trial_filename
+from civ_mcp.arena.benchmark_store import compute_session_fingerprint, trial_filename
 
 PROVENANCE = {"base_save": "organic-base", "archive_sha256": "deadbeef" * 8}
 CONTRACT = {
@@ -306,12 +306,18 @@ def _read_last_admission(store: CampaignStore, block_id: str) -> dict:
     return json.loads(matches[-1].read_text())
 
 
-def _write_block_session(store: CampaignStore, block_id: str, *, session_fingerprint: str) -> dict:
+def _write_block_session(store: CampaignStore, block_id: str) -> dict:
     """Write a minimal, self-consistent `blocks/<block_id>/session.json`
     directly (bypassing `BenchmarkStore.create`) -- used by
     `block_is_complete` tests (A3, external review) that need a real,
     on-disk session lock for its `session_fingerprint` cross-check to
-    verify against."""
+    verify against. Returns the payload; callers stamp trial files with
+    its `session_fingerprint`.
+
+    G1 (external review wave G): `session_fingerprint` is now computed
+    over the session payload's own remaining fields (the exact
+    `compute_session_fingerprint` computation `block_is_complete`
+    re-derives and verifies), never an arbitrary label."""
     block_dir = store.root / "blocks" / block_id
     block_dir.mkdir(parents=True, exist_ok=True)
     # D4 (external review wave D): block_is_complete now also binds the
@@ -320,11 +326,11 @@ def _write_block_session(store: CampaignStore, block_id: str, *, session_fingerp
     # exactly as build_session_lock's real output does.
     declared_model_config = next(m for m in store.lock["models"] if m["block_id"] == block_id)
     session_payload = {
-        "session_fingerprint": session_fingerprint,
         "campaign_fingerprint": store.fingerprint,
         "block_id": block_id,
         "model_config": dict(declared_model_config),
     }
+    session_payload["session_fingerprint"] = compute_session_fingerprint(session_payload)
     (block_dir / "session.json").write_text(json.dumps(session_payload))
     return session_payload
 
@@ -855,22 +861,32 @@ async def test_one_block_mode_stops_after_next_manifest_order_block(tmp_path):
 
     assert select_next_incomplete_block(campaign, store) is block0
 
-    _write_block_session(store, block0.block_id, session_fingerprint="block0-sess")
+    block0_session = _write_block_session(store, block0.block_id)
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
         (trials_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "block0-sess"})
+            json.dumps(
+                {
+                    "campaign_fingerprint": store.fingerprint,
+                    "session_fingerprint": block0_session["session_fingerprint"],
+                }
+            )
         )
 
     assert select_next_incomplete_block(campaign, store) is block1
 
-    _write_block_session(store, block1.block_id, session_fingerprint="block1-sess")
+    block1_session = _write_block_session(store, block1.block_id)
     trials_dir1 = store.root / "blocks" / block1.block_id / "trials"
     trials_dir1.mkdir(parents=True)
     for trial in store.schedule["blocks"][block1.block_id]["trials"]:
         (trials_dir1 / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "block1-sess"})
+            json.dumps(
+                {
+                    "campaign_fingerprint": store.fingerprint,
+                    "session_fingerprint": block1_session["session_fingerprint"],
+                }
+            )
         )
 
     assert select_next_incomplete_block(campaign, store) is None
@@ -895,7 +911,7 @@ def test_block_is_complete_rejects_a_trial_copied_from_another_campaign(tmp_path
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block0 = campaign.models[0]
 
-    _write_block_session(store, block0.block_id, session_fingerprint="block0-sess")
+    block0_session = _write_block_session(store, block0.block_id)
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
@@ -903,7 +919,7 @@ def test_block_is_complete_rejects_a_trial_copied_from_another_campaign(tmp_path
             json.dumps(
                 {
                     "campaign_fingerprint": "some-other-campaigns-fingerprint",
-                    "session_fingerprint": "block0-sess",
+                    "session_fingerprint": block0_session["session_fingerprint"],
                 }
             )
         )
@@ -916,7 +932,7 @@ def test_block_is_complete_false_on_unparseable_trial_file(tmp_path):
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block0 = campaign.models[0]
 
-    _write_block_session(store, block0.block_id, session_fingerprint="block0-sess")
+    _write_block_session(store, block0.block_id)
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
@@ -929,12 +945,17 @@ def test_block_is_complete_true_when_every_trial_carries_the_matching_fingerprin
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block0 = campaign.models[0]
 
-    _write_block_session(store, block0.block_id, session_fingerprint="block0-sess")
+    block0_session = _write_block_session(store, block0.block_id)
     trials_dir = store.root / "blocks" / block0.block_id / "trials"
     trials_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
         (trials_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "block0-sess"})
+            json.dumps(
+                {
+                    "campaign_fingerprint": store.fingerprint,
+                    "session_fingerprint": block0_session["session_fingerprint"],
+                }
+            )
         )
 
     assert block_is_complete(store, block0.block_id) is True
@@ -970,24 +991,25 @@ def test_block_is_complete_rejects_gemma_trials_copied_into_qwen_directory(tmp_p
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block0, block1 = campaign.models
 
-    _write_block_session(store, block0.block_id, session_fingerprint="gemma-sess")
+    gemma_session = _write_block_session(store, block0.block_id)
+    gemma_fp = gemma_session["session_fingerprint"]
     gemma_dir = store.root / "blocks" / block0.block_id / "trials"
     gemma_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
         (gemma_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": gemma_fp})
         )
     assert block_is_complete(store, block0.block_id) is True
 
     # Copy Gemma's committed trial bytes verbatim into Qwen's own trials
     # directory. Qwen's own session.json declares a DIFFERENT
     # session_fingerprint -- these copied files must not satisfy it.
-    _write_block_session(store, block1.block_id, session_fingerprint="qwen-sess")
+    _write_block_session(store, block1.block_id)
     qwen_dir = store.root / "blocks" / block1.block_id / "trials"
     qwen_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block1.block_id]["trials"]:
         (qwen_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": gemma_fp})
         )
 
     assert block_is_complete(store, block1.block_id) is False
@@ -1004,21 +1026,20 @@ def test_block_is_complete_rejects_gemma_session_and_trials_copied_wholesale_int
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block0, block1 = campaign.models
 
-    _write_block_session(store, block0.block_id, session_fingerprint="gemma-sess")
+    gemma_session = _write_block_session(store, block0.block_id)
+    gemma_fp = gemma_session["session_fingerprint"]
     gemma_dir = store.root / "blocks" / block0.block_id / "trials"
     gemma_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block0.block_id]["trials"]:
         (gemma_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": gemma_fp})
         )
     assert block_is_complete(store, block0.block_id) is True
 
     # Copy gemma's session.json verbatim (block_id/model_config and all)
     # into qwen's directory alongside gemma's trial bytes -- internally
-    # fully self-consistent, so only the block-identity binding can catch it.
-    gemma_session = json.loads(
-        (store.root / "blocks" / block0.block_id / "session.json").read_text()
-    )
+    # fully self-consistent (its session_fingerprint still verifies over
+    # the unedited copy), so only the block-identity binding can catch it.
     qwen_block_dir = store.root / "blocks" / block1.block_id
     qwen_block_dir.mkdir(parents=True, exist_ok=True)
     (qwen_block_dir / "session.json").write_text(json.dumps(gemma_session))
@@ -1026,7 +1047,7 @@ def test_block_is_complete_rejects_gemma_session_and_trials_copied_wholesale_int
     qwen_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block1.block_id]["trials"]:
         (qwen_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": gemma_fp})
         )
 
     assert block_is_complete(store, block1.block_id) is False
@@ -1045,17 +1066,62 @@ def test_block_is_complete_rejects_forged_block_id_with_wrong_model_config(tmp_p
     qwen_block_dir = store.root / "blocks" / block1.block_id
     qwen_block_dir.mkdir(parents=True, exist_ok=True)
     forged_session = {
-        "session_fingerprint": "gemma-sess",
         "campaign_fingerprint": store.fingerprint,
         "block_id": block1.block_id,
         "model_config": dict(gemma_declared),
     }
+    # G1 (external review wave G): the weakest forged input now also
+    # re-mints a VALID self-fingerprint over the forged session (and stamps
+    # the trials with it) -- otherwise the session-fingerprint
+    # recomputation rejects it before the model_config cross-check this
+    # test pins ever runs.
+    forged_session["session_fingerprint"] = compute_session_fingerprint(forged_session)
     (qwen_block_dir / "session.json").write_text(json.dumps(forged_session))
     qwen_dir = qwen_block_dir / "trials"
     qwen_dir.mkdir(parents=True)
     for trial in store.schedule["blocks"][block1.block_id]["trials"]:
         (qwen_dir / trial_filename(trial["index"])).write_text(
-            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+            json.dumps(
+                {
+                    "campaign_fingerprint": store.fingerprint,
+                    "session_fingerprint": forged_session["session_fingerprint"],
+                }
+            )
+        )
+
+    assert block_is_complete(store, block1.block_id) is False
+
+
+def test_block_is_complete_rejects_edited_identity_with_stale_session_fingerprint(tmp_path):
+    """G1 (external review wave G), the PROVEN exploit: copy gemma's
+    session.json and trial files into qwen's directory, edit the session's
+    block_id to qwen's AND its model_config to the campaign lock's declared
+    qwen config, and leave session_fingerprint untouched -- the D4 field
+    cross-checks now all pass, and every copied trial still references the
+    stale fingerprint, so the pre-G1 predicate reported the block complete.
+    block_is_complete must re-derive the session_fingerprint from the
+    session document itself and reject the mismatch."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0, block1 = campaign.models
+
+    gemma_session = _write_block_session(store, block0.block_id)
+    stale_fp = gemma_session["session_fingerprint"]
+
+    forged_session = dict(gemma_session)
+    forged_session["block_id"] = block1.block_id
+    forged_session["model_config"] = dict(
+        next(m for m in store.lock["models"] if m["block_id"] == block1.block_id)
+    )
+    # session_fingerprint left as gemma's stale value -- the exploit.
+    assert forged_session["session_fingerprint"] == stale_fp
+    qwen_block_dir = store.root / "blocks" / block1.block_id
+    qwen_block_dir.mkdir(parents=True, exist_ok=True)
+    (qwen_block_dir / "session.json").write_text(json.dumps(forged_session))
+    qwen_dir = qwen_block_dir / "trials"
+    qwen_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block1.block_id]["trials"]:
+        (qwen_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": stale_fp})
         )
 
     assert block_is_complete(store, block1.block_id) is False
@@ -1132,7 +1198,6 @@ def test_deferral_eligible_codes_exclude_operator_error_and_unclassified_codes()
     assert "tool_canary_failed" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
     assert "endpoint_identity_mismatch" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
     assert "backend_probe_errors" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
-    assert "treatment_cannot_fire" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
     for operator_code in (
         "unexpected_admission_error",
         "dirty_checkout",
@@ -1146,6 +1211,16 @@ def test_deferral_eligible_codes_exclude_operator_error_and_unclassified_codes()
         "popup_hygiene_failed",
         "canonical_state_mismatch",
         "locked_identity_changed",
+        # G5 (external review wave G): treatment_cannot_fire derives purely
+        # from the static position manifest vs the static tool registry --
+        # a model-independent authoring/config property, exactly like its
+        # excluded siblings (malformed_rubric_level,
+        # undeclared_objective_requirements).
+        "treatment_cannot_fire",
+        # G2 (external review wave G, Ruling H): auth/transport failures
+        # are operator/environment codes, never model-capability evidence.
+        "backend_auth_error",
+        "backend_transport_error",
     ):
         assert operator_code not in REPLICATION_DEFERRAL_ELIGIBLE_CODES, operator_code
 

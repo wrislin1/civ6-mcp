@@ -54,6 +54,7 @@ from civ_mcp.arena.benchmark_backend import (
 )
 from civ_mcp.arena.benchmark_manifest import PositionManifest, fingerprint
 from civ_mcp.arena.benchmark_state import state_digest
+from civ_mcp.arena.benchmark_store import compute_session_fingerprint
 
 __all__ = [
     "GateFailure",
@@ -479,7 +480,51 @@ def admit_model_block(
 
     Returns JSON-safe evidence including the ten warm latencies, their p95,
     and the derived episode wall (`benchmark_backend.episode_wall_seconds`).
+
+    G2 (external review wave G, Ruling H): auth/transport failures recorded
+    by the probe funnel (`BackendProbe.error_kinds`, classified at capture
+    time by `benchmark_backend.classify_backend_exception`) are checked
+    FIRST, before any other gate below can misattribute them: a stale or
+    mistyped API key, a wrong endpoint URL, a down gateway, or a 429 storm
+    empties the probe's reply/model evidence, so without this check the
+    identity gate would report `endpoint_identity_mismatch` (and the later
+    gates `insufficient_warm_latency_samples` / `backend_probe_errors`) --
+    all deferral-eligible model-capability codes -- for what is purely an
+    operator/environment failure. `backend_auth_error` and
+    `backend_transport_error` are operator codes: deliberately NOT in
+    `REPLICATION_DEFERRAL_ELIGIBLE_CODES`, never deferrable.
     """
+    error_kinds = tuple(probe.error_kinds or ())
+    classified = list(zip(probe.errors, error_kinds))
+    auth_errors = [message for message, kind in classified if kind == "auth"]
+    transport_errors = [message for message, kind in classified if kind == "transport"]
+    if auth_errors:
+        raise GateFailure(
+            "backend_auth_error",
+            {
+                "errors": auth_errors,
+                "message": (
+                    f"pre-flight backend probe recorded {len(auth_errors)} authentication/"
+                    "authorization failure(s) (401/403); this is an operator/credential "
+                    "problem, never model-capability evidence -- fix the credentials and "
+                    "retry admission"
+                ),
+            },
+        )
+    if transport_errors:
+        raise GateFailure(
+            "backend_transport_error",
+            {
+                "errors": transport_errors,
+                "message": (
+                    f"pre-flight backend probe recorded {len(transport_errors)} connection/"
+                    "timeout/rate-limit failure(s); this is an operator/environment "
+                    "problem, never model-capability evidence -- fix the endpoint/gateway "
+                    "and retry admission"
+                ),
+            },
+        )
+
     identity_mismatches: dict[str, object] = {}
     if resolved_endpoint != requested_endpoint:
         identity_mismatches["endpoint"] = {
@@ -998,5 +1043,10 @@ def build_session_lock(
         ),
         "ok": True,
     }
-    lock["session_fingerprint"] = fingerprint(lock)
+    # G1 (external review wave G): minted through the SAME shared
+    # computation every consumer re-derives with
+    # (benchmark_store.compute_session_fingerprint) -- byte-identical to
+    # the previous `fingerprint(lock)`-before-the-key-existed convention,
+    # but now impossible to drift from the verifying side.
+    lock["session_fingerprint"] = compute_session_fingerprint(lock)
     return lock

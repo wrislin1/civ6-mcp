@@ -51,7 +51,7 @@ from civ_mcp.arena.action_metrics import (
     evaluate_predicate,
 )
 from civ_mcp.arena.benchmark_manifest import fingerprint
-from civ_mcp.arena.benchmark_store import trial_filename
+from civ_mcp.arena.benchmark_store import compute_session_fingerprint, trial_filename
 
 __all__ = [
     "MalformedRubricError",
@@ -704,6 +704,26 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
             "campaign block; refusing to score ambiguous evidence that is none "
             "of these"
         )
+
+    # G1 (external review wave G): a counted campaign block's session lock
+    # is minted self-fingerprinted (benchmark_gates.build_session_lock:
+    # session_fingerprint = compute_session_fingerprint(lock)) -- so for
+    # counted evidence, re-derive it from the lock document itself and
+    # refuse a mismatch. Without this, editing session.json's own bound
+    # fields (block_id, model_config, ...) while leaving
+    # session_fingerprint untouched keeps every trial's per-trial stamp
+    # check below "matching" against the stale value. Deliberately scoped
+    # to counted locks only: an --ungated-smoke lock's session_fingerprint
+    # is a suite/position digest by design (see benchmark_runner._run_async),
+    # not a self-fingerprint, and stays advisory-only.
+    if not ungated_smoke and not validation:
+        recomputed_session_fingerprint = compute_session_fingerprint(lock)
+        if lock.get("session_fingerprint") != recomputed_session_fingerprint:
+            raise ReportError(
+                "session.json's session_fingerprint does not match a fresh fingerprint of "
+                "its own remaining contents -- refusing to score a counted session lock "
+                "that may have been edited after it was minted"
+            )
 
     schedule = _read_json(run_dir / "schedule.json")
     schedule_trials = schedule.get("trials") if isinstance(schedule, Mapping) else None

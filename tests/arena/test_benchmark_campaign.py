@@ -371,8 +371,43 @@ def test_campaign_store_record_admission_is_append_only_and_never_overwrites(tmp
     assert first != second
     assert first.name == f"{block_id}-attempt-001.json"
     assert second.name == f"{block_id}-attempt-002.json"
-    assert json.loads(first.read_text()) == {"ok": True, "attempt": 1}
-    assert json.loads(second.read_text()) == {"ok": True, "attempt": 2}
+    # G4 (external review wave G): every record is stamped with this
+    # campaign's fingerprint at write time.
+    assert json.loads(first.read_text()) == {
+        "ok": True,
+        "attempt": 1,
+        "campaign_fingerprint": store.fingerprint,
+    }
+    assert json.loads(second.read_text()) == {
+        "ok": True,
+        "attempt": 2,
+        "campaign_fingerprint": store.fingerprint,
+    }
+
+
+def test_campaign_store_record_admission_stamps_campaign_fingerprint(tmp_path):
+    """G4 (external review wave G): admission-attempt, remediation, and
+    disposition records are all written through record_admission, which
+    stamps each with the campaign_fingerprint of the campaign it belongs
+    to -- the reporter's deferral-corroboration scan ignores unstamped or
+    foreign-stamped records, so a record forged into another run dir can
+    never corroborate a deferral. A store with no recorded campaign yet
+    (fingerprint=None -- the pre-campaign remediation journal target)
+    writes its record unstamped: journaled diagnostics, deliberately never
+    corroboration-grade."""
+    campaign, position, campaign_lock, schedule = _build_campaign(tmp_path)
+    root = tmp_path / "runs" / campaign.campaign_id
+    store = CampaignStore.create(root, campaign_lock, schedule)
+    block_id = campaign.models[0].block_id
+
+    remediation = store.record_admission(
+        block_id, {"block_id": block_id, "remediation": "terminate_tuner_pid", "result": {"ok": True}}
+    )
+    assert json.loads(remediation.read_text())["campaign_fingerprint"] == store.fingerprint
+
+    unattached = CampaignStore(tmp_path / "runs" / "pre-campaign", {}, dict(schedule), fingerprint=None)
+    record = unattached.record_admission(block_id, {"block_id": block_id, "remediation": "x", "result": {"ok": True}})
+    assert "campaign_fingerprint" not in json.loads(record.read_text())
 
 
 def test_campaign_store_reopen_requires_byte_identical_campaign_lock(tmp_path):

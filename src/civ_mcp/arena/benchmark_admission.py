@@ -101,6 +101,7 @@ from civ_mcp.arena.benchmark_store import (
     BenchmarkStore,
     SessionLockMismatchError,
     TrialProvenanceError,
+    compute_session_fingerprint,
 )
 from civ_mcp.arena.registry import TOOL_REGISTRY, resolve_tools
 
@@ -163,16 +164,21 @@ REPLICATION_DEFERRED_ADMISSION = "REPLICATION_DEFERRED_ADMISSION"
 # Ruling G (external review wave D, finding D2): deferral eligibility is an
 # explicit ALLOWLIST of model-capability gate failure codes -- exactly the
 # codes proving the MODEL/BACKEND failed a capability gate: the endpoint/
-# model-identity gate, the tool-canary gate, the treatment-can-fire gate,
-# and the backend pre-flight probe (all raised by
-# benchmark_gates.admit_model_block / check_treatment_can_fire). Every other
+# model-identity gate, the tool-canary gate, and the backend pre-flight
+# probe (all raised by benchmark_gates.admit_model_block). Every other
 # classified code -- dirty_checkout, stale/unknown tuner holders, GPU
 # conflicts, boot/deploy/reload/popup/canonical-state failures, config
-# errors (counted_backend_hidden_retries, zero_briefing_budget), and
+# errors (counted_backend_hidden_retries, zero_briefing_budget),
 # position-authoring errors (malformed_rubric_level,
-# undeclared_objective_requirements, minimal_observation_not_validated) --
-# is an operator/environment problem that must be FIXED, never converted
-# into a REPLICATION_DEFERRED_ADMISSION. Enforced BOTH at write time
+# undeclared_objective_requirements, minimal_observation_not_validated,
+# and -- G5, external review wave G -- treatment_cannot_fire, which derives
+# purely from the static position manifest vs the static tool registry and
+# is model-independent), and -- G2 (Ruling H), external review wave G --
+# auth/transport failures (backend_auth_error, backend_transport_error:
+# a stale key, wrong endpoint, down gateway, or 429 storm is never model-
+# capability evidence) -- is an operator/environment/authoring problem
+# that must be FIXED, never converted into a
+# REPLICATION_DEFERRED_ADMISSION. Enforced BOTH at write time
 # (benchmark_runner._run_campaign_async refuses to record the disposition)
 # and at report time
 # (benchmark_campaign_report._has_valid_replication_deferred_admission
@@ -190,8 +196,6 @@ REPLICATION_DEFERRAL_ELIGIBLE_CODES = frozenset(
         "insufficient_warm_latency_samples",
         "backend_probe_errors",
         "seed_not_honored",
-        # treatment-can-fire gate (check_treatment_can_fire)
-        "treatment_cannot_fire",
     }
 )
 
@@ -908,6 +912,13 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     treated as "not complete" here, matching this function's own existing
     fail-closed contract of returning `False` rather than raising for a
     corrupt/mismatched trial.
+
+    G1 (external review wave G): before ANY of the recorded session's
+    fields are trusted, its `session_fingerprint` is re-derived from the
+    session document itself (`benchmark_store.compute_session_fingerprint`,
+    the exact computation `build_session_lock` minted it with) -- an edited
+    session.json (block_id/model_config rewritten, stamp left untouched)
+    is never complete.
     """
     trials_dir = store.root / CampaignStore.BLOCKS_DIR / block_id / "trials"
     if not trials_dir.is_dir():
@@ -922,6 +933,16 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     except (OSError, ValueError):
         return False
     if not isinstance(session_lock, dict) or not session_lock.get("session_fingerprint"):
+        return False
+    # G1 (external review wave G): the recorded session_fingerprint must
+    # actually be the fingerprint OF this session document. Without this
+    # recomputation, editing session.json's own bound fields (block_id,
+    # model_config -- the exact fields the D4 checks below compare) while
+    # leaving session_fingerprint untouched keeps every trial's stamp
+    # "matching" and re-homes another block's evidence wholesale. Same
+    # discipline `_verify_campaign_fingerprint` applies to campaign.json,
+    # via the same shared computation build_session_lock mints with.
+    if compute_session_fingerprint(session_lock) != session_lock.get("session_fingerprint"):
         return False
     # The recorded session must actually belong to THIS campaign -- a
     # session.json copied in alongside copied trial files, declaring some
