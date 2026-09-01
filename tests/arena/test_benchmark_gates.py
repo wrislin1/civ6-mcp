@@ -1,3 +1,4 @@
+import dataclasses
 import json
 
 import pytest
@@ -72,7 +73,13 @@ def test_gate_failure_falls_back_to_code_as_message():
 # ---------------------------------------------------------------------------
 
 
-def test_calibration_gate_requires_minimal_progress_and_standard_completion():
+def test_calibration_gate_requires_minimal_observation_source_be_authoring_validation():
+    """B5 (external review wave B): minimal-arm reachability is now proven
+    at authoring time (benchmark_manifest.validate_position_contract), not
+    re-derived here from a live-probe-shaped answer set. A
+    minimal_observation missing (or misdeclaring) `source` must fail
+    closed -- the old `discoverable_task_ids` shape (whatever it claimed)
+    is no longer sufficient evidence that authoring validation ran."""
     position = PositionManifest(
         position_id="builder-cal-v1",
         version=1,
@@ -98,12 +105,13 @@ def test_calibration_gate_requires_minimal_progress_and_standard_completion():
         ),
         split="calibration",
     )
-    with pytest.raises(GateFailure, match="minimal.*levels 1-2"):
+    with pytest.raises(GateFailure, match="authoring_validation") as exc_info:
         check_treatment_can_fire(
             position=position,
-            minimal_observation={"discoverable_task_ids": []},
+            minimal_observation={"discoverable_task_ids": ["repair"]},
             standard_capabilities={"improve_tile", "repair_improvement", "remove_feature"},
         )
+    assert exc_info.value.code == "minimal_observation_not_validated"
 
 
 def test_check_treatment_can_fire_passes_when_minimal_reaches_and_standard_completes():
@@ -119,7 +127,7 @@ def test_check_treatment_can_fire_passes_when_minimal_reaches_and_standard_compl
     )
     evidence = check_treatment_can_fire(
         position=position,
-        minimal_observation={"discoverable_task_ids": ["repair"]},
+        minimal_observation={"source": "authoring_validation"},
         standard_capabilities={"improve_tile", "repair_improvement", "remove_feature"},
     )
     assert evidence["ok"] is True
@@ -137,7 +145,7 @@ def test_check_treatment_can_fire_rejects_undeclared_objective_requirements():
     with pytest.raises(GateFailure, match="do not declare a 'requires' capability") as exc_info:
         check_treatment_can_fire(
             position=position,
-            minimal_observation={"discoverable_task_ids": ["repair"]},
+            minimal_observation={"source": "authoring_validation"},
             standard_capabilities={"improve_tile", "repair_improvement", "remove_feature"},
         )
     assert exc_info.value.code == "undeclared_objective_requirements"
@@ -154,7 +162,7 @@ def test_check_treatment_can_fire_rejects_undeclared_objective_requirements_when
     with pytest.raises(GateFailure) as exc_info:
         check_treatment_can_fire(
             position=position,
-            minimal_observation={"discoverable_task_ids": ["repair"]},
+            minimal_observation={"source": "authoring_validation"},
             standard_capabilities={"repair_improvement"},
         )
     assert exc_info.value.code == "undeclared_objective_requirements"
@@ -167,7 +175,7 @@ def test_check_treatment_can_fire_rejects_standard_arm_missing_capabilities():
     with pytest.raises(GateFailure, match="standard arm lacks capabilit") as exc_info:
         check_treatment_can_fire(
             position=position,
-            minimal_observation={"discoverable_task_ids": ["repair"]},
+            minimal_observation={"source": "authoring_validation"},
             standard_capabilities=set(),
         )
     assert exc_info.value.code == "treatment_cannot_fire"
@@ -551,6 +559,17 @@ def test_admit_model_block_passes_and_derives_wall():
     json.dumps(evidence)
 
 
+def test_admit_model_block_folds_served_model_ids_from_probe():
+    """B4 (external review wave B): the probe's served /v1/models listing
+    must be folded into admit_model_block's own evidence -- supplementary
+    endpoint identity, not just discarded once identity/seed/latency checks
+    pass."""
+    probe = _good_probe()
+    probe = dataclasses.replace(probe, served_model_ids=("qwen3.6-27b", "qwen3.6-27b-fp8"))
+    evidence = admit_model_block(**_admit_kwargs(probe=probe))
+    assert evidence["served_model_ids"] == ["qwen3.6-27b", "qwen3.6-27b-fp8"]
+
+
 # ---------------------------------------------------------------------------
 # build_session_lock
 # ---------------------------------------------------------------------------
@@ -779,6 +798,35 @@ def test_build_session_lock_fingerprint_changes_with_campaign_fingerprint():
     assert lock_a["session_fingerprint"] != lock_b["session_fingerprint"]
 
 
+def test_build_session_lock_folds_served_model_ids_into_locked_identity():
+    """B4 (external review wave B): the served /v1/models listing is
+    stable endpoint identity, not volatile per-attempt timing -- it must
+    survive into the lock's own model_admission record and change
+    session_fingerprint when it changes."""
+    model_admission_a = {"ok": True, "resolved_model": "qwen3.6-27b", "served_model_ids": ["qwen3.6-27b"]}
+    model_admission_b = {
+        "ok": True,
+        "resolved_model": "qwen3.6-27b",
+        "served_model_ids": ["qwen3.6-27b", "qwen3.6-27b-fp8"],
+    }
+    lock_a = build_session_lock(**_lock_kwargs(model_admission=model_admission_a))
+    lock_b = build_session_lock(**_lock_kwargs(model_admission=model_admission_b))
+
+    assert lock_a["model_admission"]["served_model_ids"] == ["qwen3.6-27b"]
+    assert lock_b["model_admission"]["served_model_ids"] == ["qwen3.6-27b", "qwen3.6-27b-fp8"]
+    assert lock_a["session_fingerprint"] != lock_b["session_fingerprint"]
+
+
+def test_build_session_lock_documents_residual_trust():
+    """B4 (external review wave B, Controller ruling): the lock must
+    document, in-band, that an artifact swap behind an unchanged alias and
+    metadata is not client-detectable by this admission pipeline."""
+    lock = build_session_lock(**_lock_kwargs())
+    assert "residual_trust" in lock
+    assert "not" in lock["residual_trust"].lower()
+    assert "detect" in lock["residual_trust"].lower()
+
+
 def test_build_session_lock_also_emits_the_canonical_report_schema_keys():
     # benchmark_report.build_report is the only consumer of session.json and
     # requires a top-level scorer_fingerprint plus a positions mapping with
@@ -799,13 +847,19 @@ def test_build_session_lock_also_emits_the_canonical_report_schema_keys():
     json.dumps(lock)
 
 
-def test_check_treatment_can_fire_does_not_fail_open_on_mapping_shaped_rubric_levels():
-    """F2 repro: the canonical rubric shape is a list of {"score", "predicate"}
-    mappings (per benchmark_report._validate_rubric_shape / build_session_lock).
-    The old `level in (1, 2)` check treats a mapping level as never equal to 1
-    or 2, so no task is ever considered "nontrivial" and the minimal-arm
-    reachability check passes vacuously (fail-open) even when the minimal
-    observation cannot discover the task at all."""
+def test_check_treatment_can_fire_still_recognizes_mapping_shaped_levels_as_nontrivial():
+    """F2 repro, adapted for B5 (external review wave B): the canonical
+    rubric shape is a list of {"score", "predicate"} mappings (per
+    benchmark_report._validate_rubric_shape / build_session_lock). The old
+    `level in (1, 2)` check treated a mapping level as never equal to 1 or
+    2, so no task was ever considered "nontrivial". Minimal-arm
+    reachability is no longer gated live here (see
+    test_calibration_gate_requires_minimal_observation_source_be_
+    authoring_validation) -- that proof moved to
+    benchmark_manifest.validate_position_contract -- but this gate's own
+    `minimal_reachable_task_ids` evidence must still correctly recognize a
+    mapping-shaped score-1/2 level as nontrivial rather than silently
+    miscounting it as trivial."""
     position = _position(
         rubric=(
             {
@@ -819,17 +873,12 @@ def test_check_treatment_can_fire_does_not_fail_open_on_mapping_shaped_rubric_le
         ),
         objectives=({"task_id": "repair", "requires": ["repair_improvement"]},),
     )
-    # standard_capabilities fully satisfies the (only) objective, and
-    # discoverable_task_ids is empty -- if the level-shape bug is present,
-    # nontrivial_task_ids is wrongly computed as empty, "unreachable" is
-    # empty, and the whole gate returns ok=True with NO GateFailure raised
-    # at all (silent fail-open) instead of catching the undiscoverable task.
-    with pytest.raises(GateFailure, match="minimal.*levels 1-2"):
-        check_treatment_can_fire(
-            position=position,
-            minimal_observation={"discoverable_task_ids": []},
-            standard_capabilities={"repair_improvement"},
-        )
+    evidence = check_treatment_can_fire(
+        position=position,
+        minimal_observation={"source": "authoring_validation"},
+        standard_capabilities={"repair_improvement"},
+    )
+    assert evidence["minimal_reachable_task_ids"] == ["repair"]
 
 
 def test_check_treatment_can_fire_rejects_bare_int_levels():
@@ -843,7 +892,7 @@ def test_check_treatment_can_fire_rejects_bare_int_levels():
     with pytest.raises(GateFailure) as exc_info:
         check_treatment_can_fire(
             position=position,
-            minimal_observation={"discoverable_task_ids": ["repair"]},
+            minimal_observation={"source": "authoring_validation"},
             standard_capabilities={"repair_improvement"},
         )
     assert exc_info.value.code == "malformed_rubric_level"

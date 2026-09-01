@@ -353,6 +353,104 @@ def validate_position_contract(position: PositionManifest) -> None:
                 "state_changed_to), never a unit predicate"
             )
 
+    _validate_minimal_observability(position)
+
+
+def _rubric_task_reaches_level_1_or_2(levels: object) -> bool:
+    """True when any of `levels` is a `{"score": ..., "predicate": ...}`
+    mapping whose score is 1 or 2 -- the minimal-arm-reachable levels (see
+    `benchmark_gates.check_treatment_can_fire`'s own docstring for the same
+    definition). A non-mapping level (e.g. the old bare-int rubric shape)
+    is never treated as reaching 1/2 here -- `check_treatment_can_fire`
+    itself still rejects that shape outright via `malformed_rubric_level`;
+    this function only needs to not silently miscount it as trivial or
+    nontrivial."""
+    for level in levels or ():
+        if isinstance(level, Mapping) and level.get("score") in (1, 2):
+            return True
+    return False
+
+
+def _validate_minimal_observability(position: PositionManifest) -> None:
+    """B5 (external review wave B): every rubric task whose levels include
+    score 1 or 2 must reference only entities present in the manifest's own
+    declared observable state -- a tile in `relevant_tiles`, or a unit
+    index within `expected_state["units"]` -- i.e. observable through the
+    minimal read-tool tier (every read/query tool ships on every tier; see
+    `civ_mcp.arena.registry.resolve_tools`).
+
+    This replaces a tautological live-derived reachability check: the old
+    admission-time `discoverable_task_ids` was always computed AS the
+    rubric's own task ids, so the "minimal arm can reach levels 1-2" gate
+    could never fail. This authoring-time assertion is the only thing that
+    can actually catch a rubric task referencing something the minimal tier
+    cannot see (see `benchmark_admission._minimal_observation`, which now
+    records `{"source": "authoring_validation"}` instead of re-deriving an
+    answer set, and `benchmark_gates.check_treatment_can_fire`, which now
+    only confirms this authoring-time check actually ran).
+
+    Scoped to predicate kinds that reference a concrete tile or unit
+    (`tile_state_equals`; a `final_state_equals`/`state_changed_to` whose
+    `path` indexes into `tiles`/`units`) -- the three unit-referencing
+    kinds (`unit_distance_decreased`, `unit_at`, `unit_exists_final`) are
+    already fully covered by this function's caller's own unit-lifecycle
+    checks above (every declared unit id is already required to be present
+    in `expected_state["units"]`), so they are not re-checked here. A
+    predicate over some other, non-entity state field (e.g. `turn`) is out
+    of scope -- it is not an "entity" this check has a declared-observable
+    list for.
+    """
+    relevant_tiles = set(position.relevant_tiles)
+    units = position.expected_state.get("units")
+    unit_count = len(units) if isinstance(units, (list, tuple)) else 0
+
+    for rubric_item in position.rubric:
+        if not isinstance(rubric_item, Mapping):
+            continue
+        levels = rubric_item.get("levels")
+        if not _rubric_task_reaches_level_1_or_2(levels):
+            continue
+        task_id = rubric_item.get("task_id")
+        for level in levels:
+            if not isinstance(level, Mapping) or level.get("score") not in (1, 2):
+                continue
+            predicate = level.get("predicate")
+            if predicate is None:
+                continue
+            for sub in _iter_predicates(predicate):
+                kind = sub.get("kind")
+                if kind == "tile_state_equals":
+                    tile = (sub.get("x"), sub.get("y"))
+                    if tile not in relevant_tiles:
+                        raise ValueError(
+                            f"position manifest {position.position_id!r}: rubric task "
+                            f"{task_id!r} level {level.get('score')} predicate {kind!r} "
+                            f"references tile {tile} which is not in relevant_tiles -- "
+                            "not observable through the minimal read-tool tier"
+                        )
+                elif kind in ("final_state_equals", "state_changed_to"):
+                    path = sub.get("path")
+                    if not isinstance(path, (list, tuple)) or len(path) < 2:
+                        continue
+                    head, index = path[0], path[1]
+                    if head == "tiles" and isinstance(index, int) and not isinstance(index, bool):
+                        if not (0 <= index < len(relevant_tiles)):
+                            raise ValueError(
+                                f"position manifest {position.position_id!r}: rubric task "
+                                f"{task_id!r} level {level.get('score')} predicate {kind!r} "
+                                f"path {list(path)!r} indexes a tile outside relevant_tiles "
+                                "-- not observable through the minimal read-tool tier"
+                            )
+                    elif head == "units" and isinstance(index, int) and not isinstance(index, bool):
+                        if not (0 <= index < unit_count):
+                            raise ValueError(
+                                f"position manifest {position.position_id!r}: rubric task "
+                                f"{task_id!r} level {level.get('score')} predicate {kind!r} "
+                                f"path {list(path)!r} indexes a unit outside "
+                                "expected_state['units'] -- not observable through the "
+                                "minimal read-tool tier"
+                            )
+
 
 def _load_treatment_arm(raw: object, context: str) -> TreatmentArm:
     mapping = _require_mapping(raw, context)

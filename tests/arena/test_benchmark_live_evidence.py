@@ -723,3 +723,116 @@ def test_gpu_processes_to_conflict_rows_shape_matches_check_gpu_conflicts_input(
             "host": _HOST,
         }
     ]
+
+
+# ---------------------------------------------------------------------------
+# B6 (external review wave B): drain_gpu_service must apply the SAME own-
+# endpoint-unit filtering semantics admission's own gpu_evidence collector
+# already uses -- a DIFFERENT one of this endpoint's own declared units
+# resting alongside the drain target must never block the sanctioned
+# remediation admission itself would have tolerated. Unidentified always
+# blocks regardless.
+# ---------------------------------------------------------------------------
+
+
+def test_drain_tolerates_a_different_own_declared_unit_resident_alongside_target():
+    """The endpoint declares TWO units; only one (the drain target) is
+    being remediated. The OTHER own-declared unit resting on the same GPU
+    must not block the drain -- admission's own gpu_evidence collector
+    already tolerates any of an endpoint's own declared units being
+    resident, and drain_gpu_service must apply the identical semantics
+    rather than requiring the operator to separately name every other own
+    unit via approved_services."""
+    endpoint = _FakeEndpoint(
+        host_id=_HOST, gpu_indexes=(0,), units=("civ-arena-gemma4.service", "civ-arena-qwen.service")
+    )
+    registry = _FakeRegistry(endpoint)
+    processes = [
+        GpuProcess(
+            host=_HOST, gpu_index=0, gpu_uuid=_UUID_GPU0, pid=555, process_name="gemma4",
+            service="civ-arena-gemma4.service",
+        ),
+        GpuProcess(
+            host=_HOST, gpu_index=0, gpu_uuid=_UUID_GPU0, pid=556, process_name="qwen",
+            service="civ-arena-qwen.service",
+        ),
+    ]
+    stop_argv = ("systemctl", "stop", "civ-arena-gemma4.service")
+    gpu_argv = ("nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader")
+    proc_argv = (
+        "nvidia-smi",
+        "--query-compute-apps=gpu_uuid,pid,process_name",
+        "--format=csv,noheader",
+    )
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, stop_argv): _ok(stop_argv),
+            (_HOST, gpu_argv): _ok(gpu_argv, stdout=f"0, {_UUID_GPU0}\n"),
+            # civ-arena-gemma4.service (the drained target) is gone; civ-arena-qwen.service
+            # (the OTHER own-declared unit) is still resident, as expected.
+            (_HOST, proc_argv): _ok(proc_argv, stdout=f"{_UUID_GPU0}, 556, qwen\n"),
+            (_HOST, ("cat", "/proc/556/cgroup")): _ok(
+                ("cat", "/proc/556/cgroup"), stdout="0::/system.slice/civ-arena-qwen.service\n"
+            ),
+        }
+    )
+
+    result = drain_gpu_service(
+        run_ssh=run_ssh, registry=registry, endpoint_id="home-gpu0",
+        processes=processes, unit="civ-arena-gemma4.service",
+    )
+
+    assert result["ok"] is True
+    assert result["drained_unit"] == "civ-arena-gemma4.service"
+
+
+def test_drain_still_fails_if_the_target_unit_itself_remains_despite_other_own_unit_tolerance():
+    """The own-unit tolerance must never extend to the unit ACTUALLY being
+    drained -- if civ-arena-gemma4.service (the target) is still resident after the
+    stop command, the drain must still fail, even though civ-arena-qwen.service (a
+    different own-declared unit) being present is fine."""
+    endpoint = _FakeEndpoint(
+        host_id=_HOST, gpu_indexes=(0,), units=("civ-arena-gemma4.service", "civ-arena-qwen.service")
+    )
+    registry = _FakeRegistry(endpoint)
+    processes = [
+        GpuProcess(
+            host=_HOST, gpu_index=0, gpu_uuid=_UUID_GPU0, pid=555, process_name="gemma4",
+            service="civ-arena-gemma4.service",
+        ),
+        GpuProcess(
+            host=_HOST, gpu_index=0, gpu_uuid=_UUID_GPU0, pid=556, process_name="qwen",
+            service="civ-arena-qwen.service",
+        ),
+    ]
+    stop_argv = ("systemctl", "stop", "civ-arena-gemma4.service")
+    gpu_argv = ("nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader")
+    proc_argv = (
+        "nvidia-smi",
+        "--query-compute-apps=gpu_uuid,pid,process_name",
+        "--format=csv,noheader",
+    )
+    run_ssh = _SshRecorder(
+        {
+            (_HOST, stop_argv): _ok(stop_argv),
+            (_HOST, gpu_argv): _ok(gpu_argv, stdout=f"0, {_UUID_GPU0}\n"),
+            # civ-arena-gemma4.service (the drained target) is STILL resident.
+            (_HOST, proc_argv): _ok(
+                proc_argv, stdout=f"{_UUID_GPU0}, 555, gemma4\n{_UUID_GPU0}, 556, qwen\n"
+            ),
+            (_HOST, ("cat", "/proc/555/cgroup")): _ok(
+                ("cat", "/proc/555/cgroup"), stdout="0::/system.slice/civ-arena-gemma4.service\n"
+            ),
+            (_HOST, ("cat", "/proc/556/cgroup")): _ok(
+                ("cat", "/proc/556/cgroup"), stdout="0::/system.slice/civ-arena-qwen.service\n"
+            ),
+        }
+    )
+
+    with pytest.raises(GateFailure) as exc_info:
+        drain_gpu_service(
+            run_ssh=run_ssh, registry=registry, endpoint_id="home-gpu0",
+            processes=processes, unit="civ-arena-gemma4.service",
+        )
+    assert exc_info.value.code == "gpu_conflict_not_acknowledged"
+    assert exc_info.value.details["unapproved"] == ["civ-arena-gemma4.service"]

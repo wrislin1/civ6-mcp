@@ -631,6 +631,35 @@ def test_report_refuses_trials_missing_either_fingerprint(tmp_path, missing_fiel
         build_campaign_report(campaign_dir)
 
 
+def test_campaign_report_refuses_a_validation_shaped_session_promoted_into_blocks(tmp_path):
+    """B2 (external review wave B): benchmark_report.build_report now
+    accepts a `validation: true` lock standalone (no campaign_fingerprint
+    required -- see test_benchmark_report.py). That exemption must NOT let
+    a validation-shaped session.json/trials (single-stamped, no
+    campaign_fingerprint at all) copied or promoted into `blocks/<id>/`
+    satisfy the COUNTED campaign report -- the campaign_fingerprint
+    cross-check at the campaign-report level must still fire."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    session_path = campaign_dir / "blocks" / "gemma" / "session.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    del payload["campaign_fingerprint"]
+    payload["validation"] = True
+    _write_json(session_path, payload)
+    # Strip the second (campaign) stamp from every committed trial to match
+    # a genuinely validation-shaped, single-stamped lock -- exactly what a
+    # real non-counting validation episode would have produced.
+    trials_dir = campaign_dir / "blocks" / "gemma" / "trials"
+    for trial_path in trials_dir.iterdir():
+        trial_payload = json.loads(trial_path.read_text(encoding="utf-8"))
+        trial_payload.pop("campaign_fingerprint", None)
+        _write_json(trial_path, trial_payload)
+
+    with pytest.raises(CampaignReportError):
+        build_campaign_report(campaign_dir)
+
+
 # ---------------------------------------------------------------------------
 # Incomplete schedule: refused unless a valid Qwen deferral is on record
 # ---------------------------------------------------------------------------

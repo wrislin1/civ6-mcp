@@ -23,7 +23,8 @@ import civ_mcp.arena.benchmark_runner as benchmark_runner
 import civ_mcp.arena.endpoint_registry as endpoint_registry_module
 from civ_mcp._vendor.brothereye_registry import Endpoint, Registry
 from civ_mcp.arena.backends import SamplingConfig
-from civ_mcp.arena.benchmark_agent import EpisodeEvidence, EpisodeTerminal, EpisodeTimedOut
+from civ_mcp.arena.benchmark_agent import BENCHMARK_SYSTEM, EpisodeEvidence, EpisodeTerminal, EpisodeTimedOut
+import civ_mcp.arena.benchmark_backend as benchmark_backend_module
 from civ_mcp.arena.benchmark_backend import HealthProbe
 from civ_mcp.arena.benchmark_gates import GateFailure
 from civ_mcp.arena.benchmark_live_evidence import GpuProcess
@@ -1238,7 +1239,7 @@ async def test_campaign_run_refuses_on_first_failed_live_gate(tmp_path, monkeypa
     def _boom_run_resolved_block(*_args, **_kwargs):
         raise AssertionError("run_resolved_block must never be called on an admission failure")
 
-    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _FailFirstGatePipeline(None))
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key, **_kwargs: _FailFirstGatePipeline(None))
     monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
 
     args = benchmark_runner._build_arg_parser().parse_args(
@@ -1297,7 +1298,7 @@ async def test_campaign_qwen_failure_after_gemma_complete_records_disposition(tm
         async def admit(self, bundle, block, store, *, mode, **_kwargs):
             raise AdmissionError("tool_canary_failed", {"message": "qwen never emits tool calls"})
 
-    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _QwenFailsPipeline(None))
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key, **_kwargs: _QwenFailsPipeline(None))
 
     def _boom_run_resolved_block(*_args, **_kwargs):
         raise AssertionError("run_resolved_block must never run when admission fails")
@@ -1363,7 +1364,7 @@ async def test_campaign_qwen_unclassified_failure_never_records_disposition(tmp_
             raise AdmissionError("unexpected_admission_error", {"message": "boom"})
 
     monkeypatch.setattr(
-        benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _QwenFailsUnclassifiedPipeline(None)
+        benchmark_runner, "_build_admission_pipeline", lambda args, api_key, **_kwargs: _QwenFailsUnclassifiedPipeline(None)
     )
 
     def _boom_run_resolved_block(*_args, **_kwargs):
@@ -1414,7 +1415,7 @@ async def test_campaign_admit_only_exits_without_running_trials(tmp_path, monkey
             self.calls.append((block.block_id, mode))
             return {"ok": True, "mode": mode}
 
-    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _AdmitOnlyPipeline(None))
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key, **_kwargs: _AdmitOnlyPipeline(None))
 
     def _boom_run_resolved_block(*_args, **_kwargs):
         raise AssertionError("run_resolved_block must never run for --admit-only")
@@ -1437,7 +1438,15 @@ async def test_campaign_admit_only_exits_without_running_trials(tmp_path, monkey
 
 
 @pytest.mark.asyncio
-async def test_campaign_non_counting_validation_exits_without_running_trials(tmp_path, monkeypatch):
+async def test_campaign_non_counting_validation_runs_one_pair_and_writes_report_under_validation_dir(
+    tmp_path, monkeypatch
+):
+    """B2 (external review wave B): --non-counting-validation must actually
+    run one minimal and one standard episode through the trusted
+    run_resolved_block (spec Task-12: "one complete non-counting episode
+    per arm"), and write a per-block report under validation/ -- never
+    under blocks/, and never stamped with a counted campaign/session
+    fingerprint pair."""
     campaign_path = _write_fixture_campaign_and_position(tmp_path)
     run_dir = tmp_path / "runs"
 
@@ -1447,12 +1456,107 @@ async def test_campaign_non_counting_validation_exits_without_running_trials(tmp
 
         async def admit(self, bundle, block, store, *, mode, **_kwargs):
             assert mode == "validation"
-            return {"ok": True, "validation": True, "campaign_fingerprint": None, "admission_fingerprint": None}
+            return {
+                "ok": True,
+                "validation": True,
+                "campaign_fingerprint": None,
+                "admission_fingerprint": None,
+                "gates": {
+                    "model_admission": {
+                        "resolved_endpoint": "http://validation-endpoint.invalid/v1",
+                        "episode_wall_s": 300,
+                    }
+                },
+            }
 
-    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _ValidationPipeline(None))
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key, **_kwargs: _ValidationPipeline(None))
+
+    ran_schedules: list = []
+
+    async def _fake_run_resolved_block(resolved):
+        # Stand-in for the trusted run_resolved_block: commits one trial per
+        # scheduled TrialSpec directly into the validation store, mirroring
+        # what BenchmarkRunner._finalize_trial actually stamps (single
+        # session_fingerprint stamp only -- no campaign_fingerprint, since
+        # this store's own lock never declares one).
+        ran_schedules.append(resolved.schedule)
+        for spec in resolved.schedule:
+            resolved.store.commit_trial(
+                spec.index,
+                {
+                    "index": spec.index,
+                    "position_id": spec.position_id,
+                    "attempt_count": 1,
+                    "terminal": "finish_trial",
+                    "session_fingerprint": resolved.store.fingerprint,
+                    "steps": [],
+                    "initial_state": {"turn": 157},
+                    "final_state": {"turn": 157},
+                },
+            )
+        return 0
+
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _fake_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+            "--non-counting-validation", "gemma4-26b",
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 0
+    # Exactly one pair (one trial per arm): 2 trials, through the real
+    # run_resolved_block seam.
+    assert len(ran_schedules) == 1
+    assert len(ran_schedules[0]) == 2
+    assert {spec.arm_id for spec in ran_schedules[0]} == {"minimal", "standard"}
+
+    validation_dir = run_dir / "campaign-run" / "validation" / "gemma4-26b"
+    assert (validation_dir / "trials" / "trial-001.json").exists()
+    assert (validation_dir / "trials" / "trial-002.json").exists()
+    assert (validation_dir / "report.json").exists()
+    assert (validation_dir / "report.md").exists()
+
+    report = json.loads((validation_dir / "report.json").read_bytes())
+    assert report["session"]["validation"] is True
+    assert report["session"]["campaign_fingerprint"] is None
+
+    # Structural requirement (B2): validation writes never touch blocks/,
+    # and cannot satisfy block completeness for the real counted block.
+    assert not (run_dir / "campaign-run" / "blocks" / "gemma4-26b").exists()
+    from civ_mcp.arena import benchmark_admission
+
+    context = await benchmark_runner._load_campaign_context(args)
+    assert benchmark_admission.block_is_complete(context.store, "gemma4-26b") is False
+
+
+async def test_campaign_non_counting_validation_admission_failure_never_runs_a_trial(tmp_path, monkeypatch):
+    """A failed validation admission must behave exactly like the diagnostic
+    modes: no trial ever runs, and nothing is written under validation/."""
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    from civ_mcp.arena.benchmark_admission import AdmissionError
+
+    class _FailingValidationPipeline:
+        def __init__(self, _deps):
+            pass
+
+        async def admit(self, bundle, block, store, *, mode, **_kwargs):
+            assert mode == "validation"
+            raise AdmissionError("boot_health_missing_or_failed", {"message": "boom"})
+
+    monkeypatch.setattr(
+        benchmark_runner, "_build_admission_pipeline", lambda args, api_key, **_kwargs: _FailingValidationPipeline(None)
+    )
 
     def _boom_run_resolved_block(*_args, **_kwargs):
-        raise AssertionError("run_resolved_block must never run for --non-counting-validation")
+        raise AssertionError("run_resolved_block must never run when validation admission fails")
 
     monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
 
@@ -1467,7 +1571,8 @@ async def test_campaign_non_counting_validation_exits_without_running_trials(tmp
 
     exit_code = await benchmark_runner._run_async(args)
 
-    assert exit_code == 0
+    assert exit_code == 1
+    assert not (run_dir / "campaign-run" / "validation").exists()
     assert not (run_dir / "campaign-run" / "blocks" / "gemma4-26b").exists()
 
 
@@ -1504,7 +1609,7 @@ async def test_campaign_one_block_mode_stops_after_one_block(tmp_path, monkeypat
         run_resolved_block_calls.append(resolved)
         return 0
 
-    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key: _OneBlockPipeline(None))
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", lambda args, api_key, **_kwargs: _OneBlockPipeline(None))
     monkeypatch.setattr(benchmark_runner, "run_resolved_block", _fake_run_resolved_block)
 
     args = benchmark_runner._build_arg_parser().parse_args(
@@ -2276,6 +2381,217 @@ async def test_live_admission_reload_and_capture_reports_unverified_on_reload_fa
 
 
 # ---------------------------------------------------------------------------
+# B3 (external review wave B): the identity/seed probe and both tool
+# canaries must run under the exact production system-prompt shape (spec
+# Sec 7: "exact system prompt shape") -- BENCHMARK_SYSTEM plus the frozen
+# campaign user prompt, not a bare ad hoc user message with no system turn.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_live_admission_probe_backend_uses_benchmark_system_and_frozen_prompt(monkeypatch):
+    recorded: list = []
+
+    async def _fake_probe_backend_impl(backend, messages, tools):
+        recorded.append(messages)
+        return benchmark_backend_module.BackendProbe(
+            samples=1, model=backend.model, model_confirmed=True, seed_honored=True
+        )
+
+    monkeypatch.setattr(benchmark_backend_module, "probe_backend", _fake_probe_backend_impl)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x", user_prompt="Assess the current turn and call finish_trial."
+    )
+
+    await deps.probe_backend(
+        model="gemma4-26b",
+        endpoint="http://example.invalid/v1",
+        sampling=SamplingConfig(),
+        chat_template_kwargs={"enable_thinking": False},
+        tools=[],
+    )
+
+    assert len(recorded) == 1
+    assert recorded[0] == [
+        {"role": "system", "content": BENCHMARK_SYSTEM},
+        {"role": "user", "content": "Assess the current turn and call finish_trial."},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_live_admission_probe_backend_folds_served_model_ids(monkeypatch):
+    """B4 (external review wave B): probe_backend_dep must fold the live
+    backend's served /v1/models listing into the returned BackendProbe --
+    supplementary endpoint identity, reused from the same live backend the
+    probe itself just used (no separate network call site)."""
+    from civ_mcp.arena.backends import OpenAICompatBackend
+
+    async def _fake_probe_backend_impl(backend, messages, tools):
+        return benchmark_backend_module.BackendProbe(
+            samples=1, model=backend.model, model_confirmed=True, seed_honored=True
+        )
+
+    async def _fake_list_model_ids(self):
+        return ("gemma4-26b", "gemma4-26b-fp8")
+
+    monkeypatch.setattr(benchmark_backend_module, "probe_backend", _fake_probe_backend_impl)
+    monkeypatch.setattr(OpenAICompatBackend, "list_model_ids", _fake_list_model_ids)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x", user_prompt="Assess the current turn and call finish_trial."
+    )
+
+    probe = await deps.probe_backend(
+        model="gemma4-26b",
+        endpoint="http://example.invalid/v1",
+        sampling=SamplingConfig(),
+        chat_template_kwargs={"enable_thinking": False},
+        tools=[],
+    )
+
+    assert probe.served_model_ids == ("gemma4-26b", "gemma4-26b-fp8")
+
+
+@pytest.mark.asyncio
+async def test_live_admission_probe_tool_capability_includes_benchmark_system(monkeypatch):
+    recorded_kwargs: list = []
+
+    async def _fake_probe_tool_capability_impl(backend, *, arm_id, tools, system_prompt=None):
+        recorded_kwargs.append({"arm_id": arm_id, "system_prompt": system_prompt})
+        return benchmark_backend_module.ToolCanaryEvidence(
+            arm_id=arm_id, finish_trial_ok=True, required_argument_ok=True, observed_calls=(), errors=()
+        )
+
+    monkeypatch.setattr(benchmark_backend_module, "probe_tool_capability", _fake_probe_tool_capability_impl)
+
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x", user_prompt="Assess the current turn and call finish_trial."
+    )
+
+    await deps.probe_tool_capability(
+        model="gemma4-26b",
+        endpoint="http://example.invalid/v1",
+        arm_id="standard",
+        tools=[],
+        sampling=SamplingConfig(),
+        chat_template_kwargs={"enable_thinking": False},
+    )
+
+    assert recorded_kwargs == [{"arm_id": "standard", "system_prompt": BENCHMARK_SYSTEM}]
+
+
+# ---------------------------------------------------------------------------
+# B7 (external review wave B): injected command runners must never stall a
+# campaign forever on a lapsed key or hung command -- sensible timeouts
+# surfacing as CommandResult failures (never an unhandled exception), and
+# ssh must never block on an interactive prompt (-o BatchMode=yes) or hang
+# indefinitely trying to connect (-o ConnectTimeout).
+# ---------------------------------------------------------------------------
+
+
+def test_run_local_command_passes_a_timeout_to_subprocess(monkeypatch):
+    recorded_kwargs = {}
+
+    def _fake_run(argv, **kwargs):
+        recorded_kwargs.update(kwargs)
+        import subprocess as _subprocess
+
+        return _subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    result = benchmark_runner._run_local_command(["git", "-C", "/repo", "rev-parse", "HEAD"])
+
+    assert result.returncode == 0
+    assert "timeout" in recorded_kwargs
+    assert recorded_kwargs["timeout"] == pytest.approx(60.0)
+
+
+def test_run_local_command_timeout_surfaces_as_command_result_failure(monkeypatch):
+    import subprocess as _subprocess
+
+    def _fake_run(argv, **kwargs):
+        raise _subprocess.TimeoutExpired(cmd=argv, timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    result = benchmark_runner._run_local_command(["git", "-C", "/repo", "rev-parse", "HEAD"])
+
+    assert result.returncode != 0
+    assert "timed out" in result.stderr.lower()
+
+
+def test_run_windows_command_passes_a_timeout_to_subprocess(monkeypatch):
+    recorded_kwargs = {}
+
+    def _fake_run(argv, **kwargs):
+        recorded_kwargs.update(kwargs)
+        import subprocess as _subprocess
+
+        return _subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    result = benchmark_runner._run_windows_command(["git", "-C", "C:\\repo", "rev-parse", "HEAD"])
+
+    assert result.returncode == 0
+    assert "timeout" in recorded_kwargs
+    assert recorded_kwargs["timeout"] == pytest.approx(60.0)
+
+
+def test_run_windows_command_timeout_surfaces_as_command_result_failure(monkeypatch):
+    import subprocess as _subprocess
+
+    def _fake_run(argv, **kwargs):
+        raise _subprocess.TimeoutExpired(cmd=argv, timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    result = benchmark_runner._run_windows_command(["git", "-C", "C:\\repo", "rev-parse", "HEAD"])
+
+    assert result.returncode != 0
+    assert "timed out" in result.stderr.lower()
+
+
+def test_run_ssh_command_uses_batch_mode_connect_timeout_and_a_run_timeout(monkeypatch):
+    recorded = {}
+
+    def _fake_run(argv, **kwargs):
+        recorded["argv"] = argv
+        recorded["kwargs"] = kwargs
+        import subprocess as _subprocess
+
+        return _subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    result = benchmark_runner._run_ssh_command("riz-llm", ["nvidia-smi", "--query-gpu=index,uuid"])
+
+    assert result.returncode == 0
+    assert recorded["argv"][0] == "ssh"
+    assert "-o" in recorded["argv"] and "BatchMode=yes" in recorded["argv"]
+    assert any(a.startswith("ConnectTimeout=") for a in recorded["argv"])
+    assert recorded["argv"][-2] == "riz-llm"
+    assert "timeout" in recorded["kwargs"]
+    assert recorded["kwargs"]["timeout"] == pytest.approx(120.0)
+
+
+def test_run_ssh_command_timeout_surfaces_as_command_result_failure(monkeypatch):
+    import subprocess as _subprocess
+
+    def _fake_run(argv, **kwargs):
+        raise _subprocess.TimeoutExpired(cmd=argv, timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    result = benchmark_runner._run_ssh_command("riz-llm", ["nvidia-smi"])
+
+    assert result.returncode != 0
+    assert "timed out" in result.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
 # Task 4: extract a resolved-block handoff and structurally exclude smoke
 # evidence from counted (campaign) provenance.
 # ---------------------------------------------------------------------------
@@ -2364,6 +2680,28 @@ def test_gpu_evidence_blocks_on_unidentified_process(monkeypatch):
             [_gpu_proc(service="civ-arena-gemma4"), _gpu_proc(service=None, pid=333)],
         )
     assert exc_info.value.code == "gpu_conflict_unidentified_process"
+
+
+def test_gpu_evidence_records_filtered_own_unit_rows_for_a_busy_gpu(monkeypatch):
+    """B6 (external review wave B): the own-unit rows dropped before
+    check_gpu_conflicts must not simply vanish -- they must appear in the
+    returned gpu_isolation evidence, so a busy GPU (own unit resident) is
+    distinguishable post-mortem from a genuinely idle one."""
+    endpoint = _gpu_endpoint(units=("civ-arena-gemma4",))
+    result = _gpu_evidence_fn(monkeypatch, endpoint, [_gpu_proc(service="civ-arena-gemma4")])
+    assert result["ok"] is True
+    assert len(result["filtered_own_unit_rows"]) == 1
+    assert result["filtered_own_unit_rows"][0]["service"] == "civ-arena-gemma4"
+
+
+def test_gpu_evidence_records_no_filtered_rows_for_an_idle_gpu(monkeypatch):
+    """The idle case (no processes at all) must record an empty
+    filtered_own_unit_rows list, not merely omit the key -- so "busy vs
+    idle" is distinguishable by inspecting the same field either way."""
+    endpoint = _gpu_endpoint(units=("civ-arena-gemma4",))
+    result = _gpu_evidence_fn(monkeypatch, endpoint, [])
+    assert result["ok"] is True
+    assert result["filtered_own_unit_rows"] == []
 
 
 class _FakeBlockConnection:

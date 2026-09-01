@@ -303,3 +303,37 @@ async def test_tool_canary_rejects_text_only_and_malformed_json_replies():
     assert evidence.finish_trial_ok is False
     assert evidence.required_argument_ok is False
     assert len(evidence.errors) == 2
+
+
+# ---------------------------------------------------------------------------
+# B3 (external review wave B): both tool canaries must run under the exact
+# production system-prompt shape when a caller supplies one (spec Sec 7:
+# "exact system prompt shape") -- omitting the system turn entirely
+# exercises the model under a different prompt shape than a counted episode.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_prepends_system_prompt_when_given():
+    backend = _ScriptedCanaryBackend([
+        Reply(text=None, tool_calls=[_tool_call("finish_trial", {})]),
+        Reply(text=None, tool_calls=[_tool_call("move_unit", REQUIRED_ARGUMENT_SENTINEL)]),
+    ])
+    await probe_tool_capability(backend, arm_id="standard", tools=[], system_prompt="SYSTEM PROMPT TEXT")
+
+    assert len(backend.calls) == 2
+    for call in backend.calls:
+        assert call["messages"][0] == {"role": "system", "content": "SYSTEM PROMPT TEXT"}
+        assert call["messages"][1]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_omits_system_prompt_by_default():
+    backend = _ScriptedCanaryBackend([
+        Reply(text=None, tool_calls=[_tool_call("finish_trial", {})]),
+        Reply(text=None, tool_calls=[_tool_call("move_unit", REQUIRED_ARGUMENT_SENTINEL)]),
+    ])
+    await probe_tool_capability(backend, arm_id="standard", tools=[])
+
+    for call in backend.calls:
+        assert call["messages"][0]["role"] == "user"

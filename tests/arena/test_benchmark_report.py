@@ -1297,3 +1297,85 @@ def test_mixed_digest_availability_sums_only_measured_trials(tmp_path):
     aq = easy["action_quality"]
     assert aq["successful_mutations"] == 1
     assert aq["repetitions"] == 0
+
+
+# ---------------------------------------------------------------------------
+# B2 (external review wave B): non-counting validation evidence declares
+# `validation: true` instead of `ungated_smoke: true` -- a distinct, never-
+# reused stamp for a validation lock that also carries no campaign_fingerprint
+# (see benchmark_admission's non-counting validation path). build_report must
+# accept it (single-stamped, no campaign_fingerprint required) exactly as it
+# already accepts ungated_smoke, but must surface it under its own key so a
+# validation report is never confused for ungated smoke evidence.
+# ---------------------------------------------------------------------------
+
+
+def _build_validation_run(run_dir: Path) -> None:
+    """A non-counting validation run: session.json declares `validation:
+    true`, no `campaign_fingerprint`, and the one committed trial is
+    single-stamped (session_fingerprint only) to match."""
+    (run_dir / "trials").mkdir(parents=True)
+    (run_dir / "attempts").mkdir()
+    _write_json(
+        run_dir / "session.json",
+        {
+            "session_fingerprint": "valid123",
+            "scorer_fingerprint": "score-v1",
+            "validation": True,
+            "positions": {"easy": {"rubric": [_mine_rubric()]}},
+        },
+    )
+    _write_json(
+        run_dir / "schedule.json",
+        {"trials": [{"index": 1, "position_id": "easy"}]},
+    )
+    _write_json(
+        run_dir / "trials" / "trial-001.json",
+        {
+            "index": 1,
+            "position_id": "easy",
+            "attempt_count": 1,
+            "terminal": "finish_trial",
+            "session_fingerprint": "valid123",
+            "steps": [],
+            "initial_state": {"tiles": [{"improvement": None}]},
+            "final_state": {"tiles": [{"improvement": "IMPROVEMENT_MINE"}]},
+        },
+    )
+
+
+def test_build_report_accepts_validation_flag_without_campaign_fingerprint(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_validation_run(run_dir)
+
+    report = build_report(run_dir)  # must not raise
+
+    assert report["session"]["validation"] is True
+    assert report["session"]["campaign_fingerprint"] is None
+    assert report["session"]["ungated_smoke"] is False
+
+
+def test_validation_report_is_never_confused_with_ungated_smoke(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_validation_run(run_dir)
+
+    report = build_report(run_dir)
+    markdown = render_markdown(report)
+
+    assert "VALIDATION" in markdown.upper()
+    assert "UNGATED SMOKE" not in markdown.upper()
+
+
+def test_build_report_still_rejects_a_lock_with_neither_smoke_nor_validation_nor_campaign(tmp_path):
+    """The `validation` exemption must not weaken the existing ambiguous-
+    lock refusal: a lock declaring none of `ungated_smoke`, `validation`,
+    or `campaign_fingerprint` remains a hard ReportError."""
+    run_dir = tmp_path / "run"
+    _build_validation_run(run_dir)
+    session_path = run_dir / "session.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    del payload["validation"]
+    _write_json(session_path, payload)
+
+    with pytest.raises(Exception):
+        build_report(run_dir)

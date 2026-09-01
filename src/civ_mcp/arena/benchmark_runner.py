@@ -77,6 +77,7 @@ from civ_mcp.arena.benchmark_state import (
 )
 from civ_mcp.arena.benchmark_store import (
     BenchmarkStore,
+    BenchmarkStoreError,
     SessionLockMismatchError,
     TrialProvenanceError,
 )
@@ -1053,12 +1054,44 @@ def _git_rev_parse_head(repo: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+# B7 (external review wave B): a lapsed key or hung command must never
+# stall a campaign forever -- every injected command runner below has a
+# bounded wall-clock timeout. SSH gets a longer budget (network round trip
+# on top of the remote command itself) than a local/Windows-bridge
+# subprocess.
+_LOCAL_COMMAND_TIMEOUT_S = 60.0
+_WINDOWS_COMMAND_TIMEOUT_S = 60.0
+_SSH_COMMAND_TIMEOUT_S = 120.0
+_SSH_CONNECT_TIMEOUT_S = 10
+
+
+def _timeout_command_result(argv: Sequence[str], timeout_s: float):
+    """A `CommandResult` for a `subprocess.TimeoutExpired` -- surfaces the
+    timeout as an ordinary command failure (Task 7's fail-closed contract:
+    every downstream consumer here already treats a nonzero `returncode` as
+    a hard failure) rather than propagating an unhandled exception out of
+    an injected command runner."""
+    from civ_mcp.arena.benchmark_live_evidence import CommandResult
+
+    return CommandResult(
+        argv=tuple(argv),
+        returncode=124,  # conventional shell timeout exit code
+        stdout="",
+        stderr=f"command timed out after {timeout_s}s: {' '.join(argv)}",
+    )
+
+
 def _run_local_command(argv: Sequence[str]):
     import subprocess
 
     from civ_mcp.arena.benchmark_live_evidence import CommandResult
 
-    result = subprocess.run(list(argv), capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            list(argv), capture_output=True, text=True, timeout=_LOCAL_COMMAND_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired:
+        return _timeout_command_result(argv, _LOCAL_COMMAND_TIMEOUT_S)
     return CommandResult(argv=tuple(argv), returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
@@ -1073,7 +1106,12 @@ def _run_windows_command(argv: Sequence[str]):
     from civ_mcp.arena.benchmark_live_evidence import CommandResult
 
     win_argv = ["git.exe", *argv[1:]] if argv and argv[0] == "git" else list(argv)
-    result = subprocess.run(win_argv, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            win_argv, capture_output=True, text=True, timeout=_WINDOWS_COMMAND_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired:
+        return _timeout_command_result(argv, _WINDOWS_COMMAND_TIMEOUT_S)
     return CommandResult(argv=tuple(argv), returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
@@ -1084,12 +1122,29 @@ def _run_ssh_command(host: str, argv: Sequence[str]):
     from civ_mcp.arena.benchmark_live_evidence import CommandResult
 
     remote_cmd = " ".join(shlex.quote(a) for a in argv)
-    result = subprocess.run(["ssh", host, remote_cmd], capture_output=True, text=True)
+    # B7: -o BatchMode=yes refuses any interactive prompt (password/host-key
+    # confirmation) outright rather than hanging on stdin forever; -o
+    # ConnectTimeout bounds the TCP/handshake phase specifically, ahead of
+    # the overall subprocess timeout below (which also covers the remote
+    # command's own execution time).
+    ssh_argv = [
+        "ssh",
+        "-o", "BatchMode=yes",
+        "-o", f"ConnectTimeout={_SSH_CONNECT_TIMEOUT_S}",
+        host,
+        remote_cmd,
+    ]
+    try:
+        result = subprocess.run(
+            ssh_argv, capture_output=True, text=True, timeout=_SSH_COMMAND_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired:
+        return _timeout_command_result(argv, _SSH_COMMAND_TIMEOUT_S)
     return CommandResult(argv=tuple(argv), returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
 def _build_live_admission_dependencies(
-    *, args: argparse.Namespace, api_key: str
+    *, args: argparse.Namespace, api_key: str, user_prompt: str | None = None
 ):
     """Assemble a real, live `AdmissionDependencies` for the `--campaign`
     path -- the production counterpart to `_build_live_dependencies` above,
@@ -1097,11 +1152,24 @@ def _build_live_admission_dependencies(
     `benchmark_live_evidence`, `endpoint_registry`) plus `benchmark_backend`'s
     probes through the injected `AdmissionDependencies` contract.
 
+    B3 (external review wave B): `user_prompt` is the frozen campaign
+    prompt (`CampaignManifest.prompt`) the counted episode itself will send
+    -- both `probe_backend`/`probe_tool_capability` dependencies below
+    thread it (alongside `benchmark_agent.BENCHMARK_SYSTEM`) into the exact
+    messages sent to the probed backend, so admission-time evidence is
+    gathered under the same system-prompt shape a counted trial actually
+    uses (spec Sec 7). `None` falls back to a generic identity-only prompt
+    for the backend probe and omits the system turn from the tool
+    canaries -- only exercised by direct unit tests of this factory that
+    don't care about probe message shape; every real `--campaign` call site
+    always passes the loaded campaign's own prompt.
+
     Deliberately NOT exercised by this task's test suite (no live game, no
     subprocess, no network, no SSH -- per the plan's constraints, mirroring
     `_build_live_dependencies`'s own precedent): CLI-level tests monkeypatch
     this factory (or `_build_admission_pipeline`) with a fake instead.
     """
+    from civ_mcp.arena.benchmark_agent import BENCHMARK_SYSTEM
     from civ_mcp.arena import benchmark_admission
     from civ_mcp.arena.backends import OpenAICompatBackend
     from civ_mcp.arena.benchmark_backend import probe_backend as _probe_backend_impl
@@ -1112,6 +1180,7 @@ def _build_live_admission_dependencies(
         collect_gpu_evidence,
         collect_tuner_evidence,
         gpu_processes_to_conflict_rows,
+        partition_own_endpoint_processes,
     )
     from civ_mcp.arena.benchmark_gates import check_gpu_conflicts
     from civ_mcp.arena.endpoint_registry import _registry, resolve_gateway
@@ -1181,8 +1250,10 @@ def _build_live_admission_dependencies(
         # `set(endpoint.units)` made an idle GPU (observed set = {}) always
         # fail against approved={declared unit} -- GateFailure on a clean
         # host every single time. Instead: filter the endpoint's own
-        # declared units OUT of the observed conflict rows first, then let
-        # `check_gpu_conflicts` apply its exact-match logic to whatever
+        # declared units OUT of the observed conflict rows first (shared
+        # with `drain_gpu_service`'s own remediation checks -- see B6,
+        # external review wave B, `partition_own_endpoint_processes`), then
+        # let `check_gpu_conflicts` apply its exact-match logic to whatever
         # foreign/unidentified rows remain, with an EMPTY approval set.
         # Declared-unit-resident and declared-unit-absent (idle) both leave
         # an empty remainder and pass; any other named service or any
@@ -1191,11 +1262,17 @@ def _build_live_admission_dependencies(
         registry = _registry()
         endpoint = registry.endpoint(endpoint_id)
         processes = collect_gpu_evidence(run_ssh=_run_ssh_command, registry=registry, endpoint_id=endpoint_id)
-        own_units = set(endpoint.units)
-        remainder = [
-            row for row in gpu_processes_to_conflict_rows(processes) if row.get("service") not in own_units
-        ]
-        return check_gpu_conflicts(processes=remainder, approved_services=set())
+        remainder, filtered_own = partition_own_endpoint_processes(
+            gpu_processes_to_conflict_rows(processes), endpoint.units
+        )
+        result = dict(check_gpu_conflicts(processes=remainder, approved_services=set()))
+        # B6(b), external review wave B: the dropped own-unit rows must not
+        # simply vanish -- recording them here makes a busy GPU (this
+        # endpoint's own unit actually resident) distinguishable post-mortem
+        # from a genuinely idle one, both of which otherwise produce the
+        # identical "ok": True, empty-remainder evidence above.
+        result["filtered_own_unit_rows"] = filtered_own
+        return result
 
     def resolve_endpoint(endpoint_id: str) -> dict:
         # RULING: requested_endpoint is the registry EXPECTATION for this
@@ -1244,10 +1321,23 @@ def _build_live_admission_dependencies(
             retry_policy=RetryPolicy(max_attempts=1),
             chat_template_kwargs=chat_template_kwargs,
         )
+        probe_messages = [
+            {"role": "system", "content": BENCHMARK_SYSTEM},
+            {
+                "role": "user",
+                "content": user_prompt if user_prompt is not None else "Reply with only your model name.",
+            },
+        ]
         try:
-            return await _probe_backend_impl(
-                backend, [{"role": "user", "content": "Reply with only your model name."}], tools
-            )
+            probe = await _probe_backend_impl(backend, probe_messages, tools)
+            # B4 (external review wave B): fold the served /v1/models
+            # listing -- already reachable cheaply off this same live
+            # backend the probe just used -- into the returned probe as
+            # supplementary identity evidence. Best-effort: list_model_ids
+            # never raises, so a server without /v1/models support simply
+            # yields an empty tuple rather than failing the probe.
+            served_model_ids = await backend.list_model_ids()
+            return dataclasses.replace(probe, served_model_ids=served_model_ids)
         finally:
             await backend.aclose()
 
@@ -1269,7 +1359,9 @@ def _build_live_admission_dependencies(
             chat_template_kwargs=chat_template_kwargs,
         )
         try:
-            return await _probe_tool_capability_impl(backend, arm_id=arm_id, tools=tools)
+            return await _probe_tool_capability_impl(
+                backend, arm_id=arm_id, tools=tools, system_prompt=BENCHMARK_SYSTEM
+            )
         finally:
             await backend.aclose()
 
@@ -1286,13 +1378,18 @@ def _build_live_admission_dependencies(
     )
 
 
-def _build_admission_pipeline(args: argparse.Namespace, api_key: str):
+def _build_admission_pipeline(args: argparse.Namespace, api_key: str, *, user_prompt: str | None = None):
     """Factory seam for `_run_campaign_async` -- monkeypatched by tests to
     inject a fake `AdmissionPipeline` instead of the real live-dependency
-    one `_build_live_admission_dependencies` assembles."""
+    one `_build_live_admission_dependencies` assembles.
+
+    `user_prompt` (B3, external review wave B) is threaded straight through
+    to `_build_live_admission_dependencies` -- see its docstring."""
     from civ_mcp.arena import benchmark_admission
 
-    return benchmark_admission.AdmissionPipeline(_build_live_admission_dependencies(args=args, api_key=api_key))
+    return benchmark_admission.AdmissionPipeline(
+        _build_live_admission_dependencies(args=args, api_key=api_key, user_prompt=user_prompt)
+    )
 
 
 def _resolve_campaign_position_path(campaign_path: Path, position_id: str) -> Path:
@@ -1396,7 +1493,7 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
     campaign, store, bundle = context.campaign, context.store, context.bundle
 
     api_key = os.environ.get(args.api_key_env) or "x"
-    pipeline = _build_admission_pipeline(args, api_key)
+    pipeline = _build_admission_pipeline(args, api_key, user_prompt=campaign.prompt)
 
     blocks_by_id = {block.block_id: block for block in campaign.models}
 
@@ -1404,8 +1501,8 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
         return await _run_single_diagnostic(pipeline, bundle, blocks_by_id, args.admit_only, store, mode="admit_only")
 
     if args.non_counting_validation is not None:
-        return await _run_single_diagnostic(
-            pipeline, bundle, blocks_by_id, args.non_counting_validation, store, mode="validation"
+        return await _run_non_counting_validation(
+            pipeline, bundle, blocks_by_id, args.non_counting_validation, store, campaign, api_key
         )
 
     first_block_id = campaign.models[0].block_id
@@ -1491,6 +1588,153 @@ async def _run_single_diagnostic(pipeline, bundle, blocks_by_id, block_id, store
         print(f"civ-arena-benchmark: {mode} for block {block_id} failed: {exc.code}: {exc}", file=sys.stderr)
         return 1
     print(f"civ-arena-benchmark: {mode} for block {block_id} succeeded")
+    return 0
+
+
+def _write_validation_schedule(validation_dir: Path, schedule_payload: Mapping[str, object]) -> None:
+    """Write `<validation_dir>/schedule.json` -- the sibling file
+    `benchmark_report.build_report` cross-checks against a lock's own
+    `schedule_fingerprint` (see G11). Mirrors
+    `CampaignStore.open_block`'s own schedule.json convention (verify
+    byte-for-byte if it already exists, otherwise fsync-write it) since
+    `BenchmarkStore.create` itself never manages this file."""
+    schedule_path = validation_dir / "schedule.json"
+    provided = json.dumps(schedule_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+    if schedule_path.exists():
+        if schedule_path.read_bytes() != provided:
+            raise BenchmarkStoreError(
+                f"validation schedule mismatch at {schedule_path}: provided schedule does "
+                "not match the recorded schedule byte-for-byte"
+            )
+        return
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    with open(schedule_path, "wb") as fh:
+        fh.write(provided)
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
+async def _run_non_counting_validation(pipeline, bundle, blocks_by_id, block_id, store, campaign, api_key) -> int:
+    """B2 (external review wave B): `--non-counting-validation` must not
+    stop at admission -- spec Task-12 requires "one complete non-counting
+    episode per arm" actually running through the trusted
+    `run_resolved_block`, written under `<campaign root>/validation/
+    <block_id>/`, never under `blocks/`, and never carrying a counted
+    campaign/session fingerprint pair.
+
+    On a successful validation admission, this assembles a validation-
+    scoped `ResolvedBlock` (its own `BenchmarkStore`, built directly rather
+    than through `CampaignStore.open_block` -- that helper is BLOCKS_DIR-
+    scoped and requires a real `campaign_fingerprint` match, neither of
+    which a non-counting validation lock has) covering exactly the
+    campaign's already-compiled first pair (one seed, one trial per arm),
+    runs it, and generates a per-block report into the same validation
+    directory via the existing report machinery -- marked non-counting via
+    the lock's own `validation: true` stamp (see benchmark_report.py).
+
+    Never touches `BenchmarkRunner.run`/`run_trial`/the retry taxonomy --
+    the episode itself runs through the same `run_resolved_block` a counted
+    block uses, unmodified.
+    """
+    from civ_mcp.arena import benchmark_admission
+    from civ_mcp.arena.benchmark_contract import suite_for_block
+    from civ_mcp.arena.benchmark_report import write_reports
+
+    block = blocks_by_id.get(block_id)
+    if block is None:
+        print(
+            f"civ-arena-benchmark: unknown block id {block_id!r}; known blocks: "
+            f"{sorted(blocks_by_id)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        evidence = await pipeline.admit(bundle, block, store, mode="validation")
+    except benchmark_admission.AdmissionError as exc:
+        print(f"civ-arena-benchmark: validation for block {block_id} failed: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+
+    model_admission = dict((evidence.get("gates") or {}).get("model_admission") or {})
+    gateway_url = model_admission.get("resolved_endpoint")
+    episode_wall_s = model_admission.get("episode_wall_s")
+    if not gateway_url or not episode_wall_s:
+        print(
+            f"civ-arena-benchmark: validation for block {block_id} admitted but its evidence "
+            "is missing resolved_endpoint/episode_wall_s; refusing to run a validation "
+            "episode without a resolved backend",
+            file=sys.stderr,
+        )
+        return 1
+
+    block_schedule = store.schedule["blocks"][block.block_id]["trials"]
+    if not block_schedule:
+        print(f"civ-arena-benchmark: block {block_id} has an empty schedule; nothing to validate", file=sys.stderr)
+        return 1
+    # "One trial per arm (first seed, one pair)" -- the campaign's own
+    # already-compiled ABBA schedule's first pair_id, taken verbatim (never
+    # re-derived or reordered) so the validation episode exercises the same
+    # arm order the counted run will actually use.
+    first_pair_id = block_schedule[0]["pair_id"]
+    first_pair = [dict(trial) for trial in block_schedule if trial["pair_id"] == first_pair_id]
+    schedule = tuple(TrialSpec(**trial) for trial in first_pair)
+
+    validation_dir = store.root / "validation" / block.block_id
+    schedule_payload = {"trials": [dataclasses.asdict(trial) for trial in schedule]}
+    validation_lock: dict[str, object] = {
+        # Deliberately NOT "ungated_smoke" (Ruling B2): a validation episode
+        # DID go through the full live admission gate pipeline; smoke never
+        # does. A distinct, never-reused stamp so this can never be
+        # confused with -- or promoted into -- either shape of evidence.
+        "validation": True,
+        "block_id": block.block_id,
+        "position_id": bundle.position.position_id,
+        "scorer_fingerprint": campaign.contracts.scorer_fingerprint,
+        "schedule_fingerprint": fingerprint(schedule_payload),
+        "positions": {
+            bundle.position.position_id: {
+                "rubric": list(bundle.position.rubric),
+                "objectives": list(bundle.position.objectives),
+            }
+        },
+    }
+    # No campaign_fingerprint field at all (never merely `None`): this lock
+    # must never resemble a counted block's lock, and BenchmarkStore only
+    # demands a trial's own campaign_fingerprint stamp when
+    # `self.campaign_fingerprint` is truthy -- absent here by construction.
+    validation_lock["session_fingerprint"] = fingerprint(validation_lock)
+
+    validation_store = BenchmarkStore.create(validation_dir, validation_lock)
+    _write_validation_schedule(validation_dir, schedule_payload)
+
+    resolved = ResolvedBlock(
+        position=bundle.position,
+        suite=suite_for_block(campaign, block),
+        schedule=schedule,
+        store=validation_store,
+        gateway_url=str(gateway_url),
+        api_key=api_key,
+        episode_wall_s=int(episode_wall_s),
+        chat_template_kwargs=dict(block.chat_template_kwargs),
+        user_prompt=campaign.prompt,
+    )
+
+    exit_code = await run_resolved_block(resolved)
+    if exit_code != 0:
+        print(
+            f"civ-arena-benchmark: validation episode for block {block_id} failed "
+            f"(exit {exit_code})",
+            file=sys.stderr,
+        )
+        return exit_code
+
+    write_reports(validation_dir)
+    print(
+        f"civ-arena-benchmark: validation for block {block_id} succeeded; "
+        f"report written to {validation_dir}"
+    )
     return 0
 
 

@@ -606,3 +606,124 @@ def test_validate_position_contract_finds_unit_predicates_nested_under_all_any()
 
     with pytest.raises(ValueError, match="undeclared unit id"):
         validate_position_contract(position)
+
+
+# ---------------------------------------------------------------------------
+# B5 (external review wave B): minimal-tier observability is now proven at
+# authoring time, not derived tautologically from the rubric itself at live
+# admission -- every rubric task whose levels include score 1 or 2 (the
+# minimal-arm-reachable levels) must reference only entities present in the
+# manifest's own declared observable state (relevant_tiles / expected_state
+# units), i.e. observable through the minimal read-tool tier.
+# ---------------------------------------------------------------------------
+
+
+def test_validate_position_contract_rejects_level_1_predicate_on_an_undeclared_tile():
+    """A rubric task reachable at level 1 whose predicate references a tile
+    NOT in relevant_tiles is not observable through the minimal read-tool
+    tier -- this must fail authoring validation rather than being silently
+    accepted and later discovered live (the old tautological
+    discoverable_task_ids derivation could never catch this)."""
+    position = _lifecycle_position(
+        rubric=(
+            {
+                "task_id": "repair",
+                "levels": [
+                    {"score": 0, "predicate": {"kind": "always"}},
+                    {
+                        "score": 1,
+                        "predicate": {
+                            "kind": "tile_state_equals",
+                            "x": 99,
+                            "y": 99,
+                            "field": "improvement",
+                            "value": "IMPROVEMENT_MINE",
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="not observable"):
+        validate_position_contract(position)
+
+
+def test_validate_position_contract_accepts_level_1_predicate_on_a_declared_tile():
+    position = _lifecycle_position(
+        rubric=(
+            {
+                "task_id": "repair",
+                "levels": [
+                    {"score": 0, "predicate": {"kind": "always"}},
+                    {
+                        "score": 1,
+                        "predicate": {
+                            "kind": "tile_state_equals",
+                            "x": 9,
+                            "y": 10,
+                            "field": "improvement",
+                            "value": "IMPROVEMENT_MINE",
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+
+    validate_position_contract(position)  # must not raise
+
+
+def test_validate_position_contract_ignores_undeclared_tiles_at_level_0_only():
+    """The observability requirement is scoped to level-1/2 predicates
+    (what the minimal arm must actually reach) -- a level whose only
+    nontrivial score is 0 (baseline/no-op) needs no observability proof."""
+    position = _lifecycle_position(
+        rubric=(
+            {
+                "task_id": "repair",
+                "levels": [
+                    {
+                        "score": 0,
+                        "predicate": {"kind": "tile_state_equals", "x": 99, "y": 99, "field": "x", "value": 1},
+                    },
+                ],
+            },
+        ),
+    )
+
+    validate_position_contract(position)  # must not raise
+
+
+def test_validate_position_contract_rejects_level_1_predicate_nested_under_all_any():
+    """The observability scan must recurse into all/any combinators exactly
+    like the existing unit-lifecycle scan does."""
+    position = _lifecycle_position(
+        rubric=(
+            {
+                "task_id": "repair",
+                "levels": [
+                    {"score": 0, "predicate": {"kind": "always"}},
+                    {
+                        "score": 2,
+                        "predicate": {
+                            "kind": "all",
+                            "predicates": [
+                                {"kind": "always"},
+                                {
+                                    "kind": "tile_state_equals",
+                                    "x": 99,
+                                    "y": 99,
+                                    "field": "improvement",
+                                    "value": "IMPROVEMENT_MINE",
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="not observable"):
+        validate_position_contract(position)

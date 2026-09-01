@@ -39,7 +39,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from civ_mcp.arena.benchmark_gates import GateFailure, check_gpu_conflicts, check_tuner_holder
 
@@ -53,6 +53,7 @@ __all__ = [
     "terminate_tuner_pid",
     "collect_gpu_evidence",
     "gpu_processes_to_conflict_rows",
+    "partition_own_endpoint_processes",
     "drain_gpu_service",
 ]
 
@@ -578,6 +579,31 @@ def gpu_processes_to_conflict_rows(processes: Sequence[GpuProcess]) -> list[dict
     ]
 
 
+def partition_own_endpoint_processes(
+    rows: Sequence[Mapping[str, object]], exempt_units: Iterable[str]
+) -> tuple[list[dict], list[dict]]:
+    """Partition `check_gpu_conflicts`-shaped conflict rows into
+    `(remainder, filtered_own)` by `exempt_units` membership.
+
+    B6 (external review wave B): the shared own-endpoint-unit filtering
+    semantics between admission's `gpu_evidence` collector
+    (`benchmark_runner._build_live_admission_dependencies`) and
+    `drain_gpu_service`'s own remediation checks -- previously duplicated
+    inline in the runner and entirely absent from `drain_gpu_service`,
+    which checked the unfiltered process list and so could never clear
+    what admission itself actually tolerated/rejected.
+
+    A row with no identified `service` (`None`) is NEVER placed into
+    `filtered_own`, regardless of `exempt_units` -- an unidentified/
+    unmanaged process always blocks, matching `check_gpu_conflicts`' own
+    contract, and `None` can never equal a unit name string anyway.
+    """
+    exempt = set(exempt_units)
+    remainder = [row for row in rows if row.get("service") not in exempt]
+    filtered_own = [row for row in rows if row.get("service") in exempt]
+    return remainder, filtered_own
+
+
 def drain_gpu_service(
     *,
     run_ssh: RunSsh,
@@ -590,17 +616,30 @@ def drain_gpu_service(
 
     Legal only when `unit` is both declared by the registry for this
     endpoint AND the exact (and only) conflicting service observed in
-    `processes` -- reuses `check_gpu_conflicts` itself for that check, so
-    an unidentified process anywhere in `processes` blocks up front exactly
-    like an unattended conflict report would, and a named-but-different
+    `processes` OUTSIDE this endpoint's own other declared units -- reuses
+    `check_gpu_conflicts` itself for that check, so an unidentified process
+    anywhere in `processes` blocks up front exactly like an unattended
+    conflict report would, and a named-but-different, non-own-declared
     service is never silently drained alongside the requested one.
+
+    B6 (external review wave B): applies the SAME own-endpoint-unit
+    filtering semantics admission's own `gpu_evidence` collector already
+    uses (`partition_own_endpoint_processes`) -- a DIFFERENT one of this
+    endpoint's own registry-declared units also being resident must never
+    block this remediation (admission itself already tolerates any of the
+    endpoint's own declared units, unconditionally); the drain TARGET
+    itself is deliberately excluded from that exemption on both the pre-
+    and post-drain checks, so its own presence/absence is still explicitly
+    accounted for (`approved_services={unit}` before, `set()` after) rather
+    than silently filtered away.
 
     Never constructs a wildcard/pattern stop command -- `unit` is passed
     to `systemctl stop` verbatim and alone. After stopping it, re-snapshots
     via `collect_gpu_evidence` and runs `check_gpu_conflicts` again with no
-    approvals at all: an unidentified process, the drained unit somehow
-    still running, or any other conflict remaining all block instead of
-    reporting an unverified drain.
+    approvals (beyond the same own-unit exemption): an unidentified
+    process, the drained unit somehow still running, or any other
+    non-own-declared conflict remaining all block instead of reporting an
+    unverified drain.
     """
     endpoint = registry.endpoint(endpoint_id)
     if unit not in endpoint.units:
@@ -617,12 +656,19 @@ def drain_gpu_service(
             },
         )
 
-    # Legal to drain only when the ENTIRE current conflict is exactly this
-    # one unit -- an unidentified process, or any other named service,
-    # blocks here before any stop command is ever issued.
-    check_gpu_conflicts(
-        processes=gpu_processes_to_conflict_rows(processes), approved_services={unit}
+    # Every OTHER own-declared unit is exempt from this check (matching
+    # admission's own tolerance) -- the target `unit` itself is not, so its
+    # presence must still be explicitly approved below.
+    exempt_units = set(endpoint.units) - {unit}
+
+    # Legal to drain only when the ENTIRE current conflict, once this
+    # endpoint's OTHER own-declared units are set aside, is exactly this
+    # one unit -- an unidentified process, or any other named non-own
+    # service, blocks here before any stop command is ever issued.
+    before_remainder, _ = partition_own_endpoint_processes(
+        gpu_processes_to_conflict_rows(processes), exempt_units
     )
+    check_gpu_conflicts(processes=before_remainder, approved_services={unit})
 
     stop_result = run_ssh(endpoint.host_id, ("systemctl", "stop", unit))
     if stop_result.returncode != 0:
@@ -638,9 +684,12 @@ def drain_gpu_service(
 
     after = collect_gpu_evidence(run_ssh=run_ssh, registry=registry, endpoint_id=endpoint_id)
     after_rows = gpu_processes_to_conflict_rows(after)
-    # Post-drain, NOTHING should remain -- reusing check_gpu_conflicts with
-    # no approvals means an unidentified process, the drained unit somehow
-    # still running, or any other conflict all block identically.
-    check_gpu_conflicts(processes=after_rows, approved_services=set())
+    # Post-drain, nothing but this endpoint's OTHER own-declared units
+    # should remain -- reusing check_gpu_conflicts with no approvals (over
+    # the same own-unit-exempted remainder) means an unidentified process,
+    # the drained unit somehow still running, or any other non-own conflict
+    # all block identically.
+    after_remainder, _ = partition_own_endpoint_processes(after_rows, exempt_units)
+    check_gpu_conflicts(processes=after_remainder, approved_services=set())
 
     return {"ok": True, "drained_unit": unit, "remaining_processes": after_rows}

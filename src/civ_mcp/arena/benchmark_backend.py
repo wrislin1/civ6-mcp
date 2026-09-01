@@ -62,6 +62,14 @@ class BackendProbe:
     # constructed without this field (pre-G7 callers/tests) so the field's
     # mere absence never silently reads as "consistent".
     repeated_consistent: bool = False
+    # B4 (external review wave B): the endpoint's served /v1/models listing
+    # at probe time (sorted ids) -- supplementary identity evidence folded
+    # into the locked session identity (see benchmark_gates.
+    # locked_model_admission_evidence), never a new admission gate. Empty
+    # for any BackendProbe constructed without this field (pre-B4 callers/
+    # tests) or when the live probe's best-effort listing call failed/was
+    # unsupported.
+    served_model_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -249,7 +257,7 @@ def _parse_tool_call_arguments(raw: object) -> tuple[object, str | None]:
 
 
 async def probe_tool_capability(
-    backend, *, arm_id: str, tools: list[dict]
+    backend, *, arm_id: str, tools: list[dict], system_prompt: str | None = None
 ) -> ToolCanaryEvidence:
     """Exercise `backend` with two fresh, generic, non-dispatching prompts to
     prove it can actually emit structured tool calls through `tools` --
@@ -264,15 +272,29 @@ async def probe_tool_capability(
     real trial step, but neither reply's tool calls are ever passed to
     `registry.dispatch` or any other tool handler -- this function only
     reads and compares `reply.tool_calls`.
+
+    B3 (external review wave B): `system_prompt`, when given, is prepended
+    as a `{"role": "system", ...}` turn ahead of each canary's user prompt
+    -- spec Sec 7 requires probing under the "exact system prompt shape" a
+    counted episode actually uses (`benchmark_agent.BENCHMARK_SYSTEM`), not
+    a bare user-only message the model never sees during a real trial.
+    `None` (the default) omits the system turn entirely, preserving this
+    function's own pre-existing behavior for any caller that does not pass
+    one.
     """
     observed_calls: list[dict[str, object]] = []
     errors: list[str] = []
 
+    def _messages(user_content: str) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+        if system_prompt is not None:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": user_content})
+        return messages
+
     finish_trial_ok = False
     try:
-        reply = await backend.chat(
-            [{"role": "user", "content": FINISH_TRIAL_CANARY_PROMPT}], tools
-        )
+        reply = await backend.chat(_messages(FINISH_TRIAL_CANARY_PROMPT), tools)
         calls = list(reply.tool_calls or [])
         observed_calls.extend(dict(tc) for tc in calls)
         finish_trial_ok = any(
@@ -288,9 +310,7 @@ async def probe_tool_capability(
 
     required_argument_ok = False
     try:
-        reply = await backend.chat(
-            [{"role": "user", "content": REQUIRED_ARGUMENT_CANARY_PROMPT}], tools
-        )
+        reply = await backend.chat(_messages(REQUIRED_ARGUMENT_CANARY_PROMPT), tools)
         calls = list(reply.tool_calls or [])
         observed_calls.extend(dict(tc) for tc in calls)
         move_calls = [

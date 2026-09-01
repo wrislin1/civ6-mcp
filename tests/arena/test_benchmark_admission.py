@@ -1093,3 +1093,106 @@ async def test_endpoint_identity_mismatch_blocks_admission(tmp_path):
     assert excinfo.value.code == "endpoint_identity_mismatch"
     assert not (store.root / "blocks" / block.block_id).exists()
 
+
+# ---------------------------------------------------------------------------
+# B1 (external review wave B): admission must stop at the FIRST failed gate,
+# not collect evidence through every later gate (including live side
+# effects -- save deployment, GPU drain, real backend/canary calls) and only
+# validate late inside build_session_lock.
+# ---------------------------------------------------------------------------
+
+
+async def test_failed_boot_health_stops_before_deploy_or_any_later_gate(tmp_path):
+    """A failed native boot-health poll must abort admission immediately --
+    `deploy_save` (a live Windows-bridge side effect) and every gate after
+    it must never run."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    calls: list = []
+    bad_boot_health = {
+        "ok": False,
+        "baseline_offset": None,
+        "last_frame": None,
+        "elapsed_s": 0.0,
+        "file_identity": None,
+        "profile_path": None,
+        "reason": "profile_missing",
+    }
+    deps = _make_dependencies(calls, campaign, block, position, boot_health=bad_boot_health)
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "boot_health_missing_or_failed"
+    assert calls == ["checkout_evidence", "boot_health"]
+    assert not (store.root / "blocks" / block.block_id).exists()
+
+    record = _read_last_admission(store, block.block_id)
+    assert record["ok"] is False
+    assert record["failure"]["code"] == "boot_health_missing_or_failed"
+
+
+async def test_failed_deploy_stops_before_reload_or_any_later_gate(tmp_path):
+    """An unverified save deployment must abort admission immediately --
+    `reload_and_capture` (which reconnects to the live game and captures
+    canonical state) and every gate after it must never run."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    calls: list = []
+    bad_deployment = {
+        "ok": False,
+        "save_name": "BUILDER_ECONOMY_CAL_V1",
+        "dest_path": None,
+        "archive_sha256": PROVENANCE["archive_sha256"],
+        "deployed_sha256": "mismatched",
+        "expected_sha256": PROVENANCE["archive_sha256"],
+    }
+    deps = _make_dependencies(calls, campaign, block, position, deployment=bad_deployment)
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "deployment_not_verified"
+    assert calls == ["checkout_evidence", "boot_health", "tuner_evidence", "deploy_save"]
+    assert not (store.root / "blocks" / block.block_id).exists()
+
+    record = _read_last_admission(store, block.block_id)
+    assert record["ok"] is False
+    assert record["failure"]["code"] == "deployment_not_verified"
+
+
+async def test_canonical_state_mismatch_stops_before_gpu_or_model_probes(tmp_path):
+    """Drifted canonical state must abort admission immediately -- GPU
+    isolation, endpoint resolution, and the live backend/canary probes must
+    never run against a save that isn't the expected one (spec: "Wrong-save
+    or drift evidence aborts before a model sees an observation")."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    calls: list = []
+    drifted_reload = {
+        "reload": {"verified": True},
+        "popup_hygiene": {"status": "POPUPS|none", "ok": True},
+        "canonical_state": {"turn": 999},
+    }
+    deps = _make_dependencies(calls, campaign, block, position, reload_evidence=drifted_reload)
+    pipeline = AdmissionPipeline(deps)
+
+    with pytest.raises(AdmissionError) as excinfo:
+        await pipeline.admit(bundle, block, store, mode="counted")
+
+    assert excinfo.value.code == "canonical_state_mismatch"
+    assert calls == [
+        "checkout_evidence",
+        "boot_health",
+        "tuner_evidence",
+        "deploy_save",
+        "reload_and_capture",
+    ]
+    assert not (store.root / "blocks" / block.block_id).exists()
+
+    record = _read_last_admission(store, block.block_id)
+    assert record["ok"] is False
+    assert record["failure"]["code"] == "canonical_state_mismatch"
+

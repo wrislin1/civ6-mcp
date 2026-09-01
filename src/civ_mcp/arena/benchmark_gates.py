@@ -167,11 +167,19 @@ def check_treatment_can_fire(
     """Verify both halves of the treatment design can actually fire for
     `position`:
 
-    1. The minimal arm can reach rubric levels 1-2: every rubric task whose
-       declared `levels` include 1 or 2 must be discoverable from the
-       minimal-tier observation (`minimal_observation["discoverable_task_ids"]`).
-       A task nominally reachable only at level 0 (baseline/no-op) needs no
-       discovery, so it is not required here.
+    1. The minimal arm can reach rubric levels 1-2. B5 (external review
+       wave B): this is now proven at authoring time, not re-derived here
+       -- `minimal_observation["discoverable_task_ids"]` used to be
+       computed FROM the rubric's own task ids (a tautology: the check
+       could never fail). `benchmark_manifest.validate_position_contract`
+       (run by every `load_position_manifest` call) now asserts that every
+       rubric task's level-1/2 predicates reference only entities present
+       in the manifest's declared observable state -- a position whose
+       rubric references something the minimal tier cannot see fails to
+       even load. This gate's job is reduced to confirming that authoring-
+       time check actually ran for `position`
+       (`minimal_observation["source"] == "authoring_validation"`) rather
+       than resembling a live probe that never happened.
     2. The standard arm has the capabilities to complete every objective.
        Every objective must declare its `"requires"` list of capability
        names -- fail closed by design: a missing or empty `"requires"` is
@@ -181,7 +189,6 @@ def check_treatment_can_fire(
        raises the `treatment_cannot_fire` / `standard_arm_missing_capabilities`
        failure instead.
     """
-    discoverable = set(minimal_observation.get("discoverable_task_ids") or ())
     standard_caps = set(standard_capabilities)
 
     def _reaches_level_1_or_2(task_id: object, levels: object) -> bool:
@@ -213,17 +220,19 @@ def check_treatment_can_fire(
             if _reaches_level_1_or_2(rubric_entry.get("task_id"), rubric_entry.get("levels", []))
         }
     )
-    unreachable = sorted(set(nontrivial_task_ids) - discoverable)
-    if unreachable:
+
+    source = minimal_observation.get("source")
+    if source != "authoring_validation":
         raise GateFailure(
-            "treatment_cannot_fire",
+            "minimal_observation_not_validated",
             {
                 "position_id": position.position_id,
-                "reason": "minimal_arm_cannot_reach_levels",
-                "unreachable_task_ids": unreachable,
+                "minimal_observation": dict(minimal_observation),
                 "message": (
-                    f"position {position.position_id}: minimal-tier observation "
-                    f"cannot reach rubric levels 1-2 for task(s) {unreachable}"
+                    f"position {position.position_id}: minimal-tier reachability evidence "
+                    "must declare source='authoring_validation' -- proving "
+                    "benchmark_manifest.validate_position_contract's entity-observability "
+                    f"check actually ran for this position; got source={source!r}"
                 ),
             },
         )
@@ -621,6 +630,14 @@ def admit_model_block(
         "resolved_endpoint": resolved_endpoint,
         "registry_fingerprint": registry_fingerprint,
         "gpu_topology": dict(gpu_topology),
+        # B4 (external review wave B): the served /v1/models listing at
+        # probe time -- folds what the endpoint actually exposes into the
+        # locked identity (see locked_model_admission_evidence /
+        # build_session_lock's residual_trust note), never a new gate of
+        # its own. Empty when the live probe's best-effort listing failed
+        # or the endpoint doesn't support it (see
+        # OpenAICompatBackend.list_model_ids).
+        "served_model_ids": list(probe.served_model_ids),
         "sampling": asdict(sampling),
         "retry_policy": asdict(retry_policy),
         "seed_honored": probe.seed_honored,
@@ -683,7 +700,15 @@ def locked_model_admission_evidence(model_admission: Mapping[str, object]) -> di
     Proven tool-calling capability per arm (pass/fail only, not the raw
     observed calls or probe errors) IS kept -- that boolean outcome is
     part of this locked session's model-capability identity, not a timing
-    measurement."""
+    measurement.
+
+    `served_model_ids` (B4, external review wave B) IS kept, unlike the
+    volatile timing evidence above: the served `/v1/models` listing is
+    stable endpoint-identity evidence (what the endpoint claims to expose),
+    not a per-attempt measurement -- a changed listing between admission
+    attempts is exactly the kind of drift `session_fingerprint` exists to
+    catch. See build_session_lock's `residual_trust` note for what this
+    still cannot detect."""
     tool_canaries = model_admission.get("tool_canaries") or {}
     locked_canaries = {
         arm_id: {
@@ -699,6 +724,7 @@ def locked_model_admission_evidence(model_admission: Mapping[str, object]) -> di
         "resolved_endpoint": model_admission.get("resolved_endpoint"),
         "registry_fingerprint": model_admission.get("registry_fingerprint"),
         "gpu_topology": model_admission.get("gpu_topology"),
+        "served_model_ids": model_admission.get("served_model_ids"),
         "sampling": model_admission.get("sampling"),
         "retry_policy": model_admission.get("retry_policy"),
         "briefing_required": model_admission.get("briefing_required"),
@@ -942,6 +968,26 @@ def build_session_lock(
                 "objectives": list(position.objectives),
             }
         },
+        # B4 (external review wave B, Controller ruling): documents this
+        # lock's actual detection limit rather than silently implying more
+        # than the evidence above proves. The locked identity above (git
+        # commit, requested/resolved gateway URL, GPU topology, backend-
+        # reported model identity, and the served /v1/models listing at
+        # admission time) is everything the OpenAI-compat client can reach
+        # cheaply -- it is NOT a guarantee that the artifact actually
+        # serving requests is unchanged for the life of the block. An
+        # operator who swaps the underlying model artifact/weights behind
+        # an unchanged alias, port, and /v1/models listing produces
+        # identical admission evidence and is not detectable by this
+        # pipeline.
+        "residual_trust": (
+            "Endpoint identity is locked by git commit, requested/resolved "
+            "gateway URL, GPU topology, backend-reported model identity, and "
+            "the served /v1/models listing at admission time. An artifact "
+            "swap behind an unchanged alias, port, and model listing "
+            "(metadata unchanged) is NOT detectable by this admission "
+            "pipeline."
+        ),
         "ok": True,
     }
     lock["session_fingerprint"] = fingerprint(lock)

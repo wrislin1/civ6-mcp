@@ -141,3 +141,20 @@ class OpenAICompatBackend:
             return True
         except Exception:
             return False
+
+    async def list_model_ids(self) -> tuple[str, ...]:
+        """Served model ids from `/v1/models` -- the same cheap OpenAI-
+        compat listing `reachable()` already calls, returning the actual
+        ids instead of discarding them.
+
+        B4 (external review wave B): supplementary endpoint-identity
+        evidence only, never a new admission gate of its own -- any
+        failure (an endpoint that doesn't expose `/v1/models`, a transient
+        network error) is swallowed and yields an empty tuple rather than
+        raising, so admission never fails over this best-effort call.
+        """
+        try:
+            listing = await self._client.models.list()
+            return tuple(sorted(model.id for model in listing.data))
+        except Exception:
+            return ()

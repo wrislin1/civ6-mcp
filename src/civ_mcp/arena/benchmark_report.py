@@ -600,6 +600,22 @@ def _completeness_section(
 #                                                    # session_fingerprint
 #                                                    # above.
 #       "ungated_smoke": <bool>,          # optional; defaults to False
+#       "validation": <bool>,             # optional; defaults to False. B2
+#                                          # (external review wave B): the
+#                                          # distinct stamp a non-counting
+#                                          # validation episode's session
+#                                          # lock carries -- deliberately NOT
+#                                          # `ungated_smoke` (a validation run
+#                                          # DID go through the full live
+#                                          # admission gate pipeline; smoke
+#                                          # never does). Exempts the lock
+#                                          # from the campaign_fingerprint
+#                                          # requirement below exactly like
+#                                          # ungated_smoke does, but is
+#                                          # surfaced under its own report key
+#                                          # so a validation report can never
+#                                          # be mistaken for ungated smoke
+#                                          # evidence (or vice versa).
 #       ...                                # any other writer-specific evidence is ignored here
 #     }
 #
@@ -610,10 +626,12 @@ def _completeness_section(
 # G8: whenever session.json carries a session_fingerprint, a committed trial
 # with no session_fingerprint stamp of its own is ALSO a hard ReportError --
 # not merely a mismatch check that no-ops when either side is missing. A
-# session.json whose "ungated_smoke" is not true MUST also carry a non-empty
-# "campaign_fingerprint" (and every committed trial must be stamped to
-# match) -- a non-smoke lock missing campaign_fingerprint entirely is itself
-# a hard ReportError, not a silent pass (see Task 3/4).
+# session.json whose "ungated_smoke" is not true and whose "validation" is
+# not true MUST also carry a non-empty "campaign_fingerprint" (and every
+# committed trial must be stamped to match) -- a lock that is neither
+# explicitly smoke nor explicitly validation but is missing
+# campaign_fingerprint entirely is itself a hard ReportError, not a silent
+# pass (see Task 3/4).
 
 
 def build_report(run_dir: str | Path) -> dict[str, object]:
@@ -645,6 +663,7 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
     # cross-check below and the `report["session"]` echo at the bottom of
     # this function agree on the same value.
     ungated_smoke = bool(lock.get("ungated_smoke", False))
+    validation = bool(lock.get("validation", False))
 
     schedule = _read_json(run_dir / "schedule.json")
     schedule_trials = schedule.get("trials") if isinstance(schedule, Mapping) else None
@@ -731,22 +750,27 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
         # BenchmarkRunner._finalize_trial). Under Plan 2 there is no
         # legitimate non-smoke, non-campaign session -- evidence is either
         # explicitly `ungated_smoke: true` (benchmark_runner._run_async
-        # always stamps this) or dual-stamped counted (build_campaign_lock /
-        # build_session_lock always stamp both fingerprints together). So
-        # this activates on the SAME condition as "is this evidence counted
-        # at all" -- `not ungated_smoke` -- not merely "the lock happens to
-        # declare a campaign_fingerprint". A lock that is not explicitly
-        # smoke but is ALSO missing campaign_fingerprint entirely (a stale
-        # or hand-crafted session.json) is exactly the ambiguous case this
-        # must fail closed on, not silently treat as smoke-shaped evidence.
-        if not ungated_smoke:
+        # always stamps this), explicitly `validation: true` (B2, external
+        # review: a non-counting validation episode's session lock -- see
+        # the schema comment block above), or dual-stamped counted
+        # (build_campaign_lock / build_session_lock always stamp both
+        # fingerprints together). So this activates on the SAME condition as
+        # "is this evidence counted at all" -- `not ungated_smoke and not
+        # validation` -- not merely "the lock happens to declare a
+        # campaign_fingerprint". A lock that is neither explicitly smoke nor
+        # explicitly validation but is ALSO missing campaign_fingerprint
+        # entirely (a stale or hand-crafted session.json) is exactly the
+        # ambiguous case this must fail closed on, not silently treat as
+        # smoke-shaped evidence.
+        if not ungated_smoke and not validation:
             lock_campaign_fingerprint = lock.get("campaign_fingerprint")
             if not lock_campaign_fingerprint:
                 raise ReportError(
-                    "session.json is not marked ungated_smoke, but is missing a "
-                    "non-empty 'campaign_fingerprint' -- under Plan 2 every non-smoke "
-                    "session must be a dual-stamped counted campaign block; refusing "
-                    "to score ambiguous evidence that is neither"
+                    "session.json is not marked ungated_smoke or validation, but is "
+                    "missing a non-empty 'campaign_fingerprint' -- under Plan 2 every "
+                    "non-smoke, non-validation session must be a dual-stamped counted "
+                    "campaign block; refusing to score ambiguous evidence that is none "
+                    "of these"
                 )
             trial_campaign_fingerprint = trial.get("campaign_fingerprint")
             if not trial_campaign_fingerprint:
@@ -816,6 +840,7 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
             "campaign_fingerprint": lock.get("campaign_fingerprint"),
             "scorer_fingerprint": scorer_fingerprint,
             "ungated_smoke": ungated_smoke,
+            "validation": validation,
         },
         "scorer": {
             "fingerprint": scorer_fingerprint,
@@ -949,6 +974,14 @@ def render_markdown(report: Mapping[str, object]) -> str:
             "`ungated_smoke=true` (no live admission gate pipeline). It is NOT a "
             "counted session and must never be treated as calibration or "
             "screening evidence."
+        )
+        lines.append("")
+    if session.get("validation"):
+        lines.append(
+            "> **NON-COUNTING VALIDATION EVIDENCE** -- this run was produced with "
+            "`validation=true` (full live admission gate pipeline, but no campaign/"
+            "session counted-fingerprint pair). It is NOT a counted session and must "
+            "never be treated as calibration or screening evidence."
         )
         lines.append("")
 

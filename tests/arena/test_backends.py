@@ -235,3 +235,49 @@ async def test_non_timeout_errors_still_retry(monkeypatch):
     r = await b.chat([{"role": "user", "content": "hi"}], tools=[])
     assert r.text == "ok"
     assert calls["n"] == 2
+
+
+# ---------------------------------------------------------------------------
+# B4 (external review wave B): served /v1/models listing -- supplementary
+# identity evidence, never a new admission gate. Reuses the same cheap
+# `self._client.models.list()` call `reachable()` already makes, returning
+# the actual ids instead of discarding them.
+# ---------------------------------------------------------------------------
+
+
+class _FakeModel:
+    def __init__(self, model_id: str) -> None:
+        self.id = model_id
+
+
+class _FakeModelsListing:
+    def __init__(self, ids: list[str]) -> None:
+        self.data = [_FakeModel(i) for i in ids]
+
+
+@pytest.mark.asyncio
+async def test_list_model_ids_returns_sorted_served_ids(monkeypatch):
+    b = OpenAICompatBackend("http://x/v1", "k", "m")
+
+    async def fake_list():
+        return _FakeModelsListing(["gemma4-26b", "qwen3.6-27b"])
+
+    monkeypatch.setattr(b._client.models, "list", fake_list)
+
+    result = await b.list_model_ids()
+
+    assert result == ("gemma4-26b", "qwen3.6-27b")
+
+
+@pytest.mark.asyncio
+async def test_list_model_ids_is_best_effort_and_never_raises(monkeypatch):
+    b = OpenAICompatBackend("http://x/v1", "k", "m")
+
+    async def fake_list():
+        raise RuntimeError("endpoint does not support /v1/models")
+
+    monkeypatch.setattr(b._client.models, "list", fake_list)
+
+    result = await b.list_model_ids()
+
+    assert result == ()

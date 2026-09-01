@@ -95,6 +95,7 @@ from civ_mcp.arena.benchmark_gates import (
 )
 from civ_mcp.arena.benchmark_manifest import PositionManifest, fingerprint
 from civ_mcp.arena.benchmark_schedule import TrialSpec
+from civ_mcp.arena.benchmark_state import state_digest
 from civ_mcp.arena.benchmark_store import (
     BenchmarkStore,
     SessionLockMismatchError,
@@ -283,16 +284,31 @@ def _standard_capabilities() -> set[str]:
 def _minimal_observation(position: PositionManifest) -> dict[str, object]:
     """`check_treatment_can_fire`'s minimal-arm evidence.
 
-    The minimal tool tier restricts ACTION capability, never read/
-    observation capability -- every read/query tool ships on every tier
-    (see `civ_mcp.arena.registry.resolve_tools`) -- so by construction
-    every rubric task a properly authored position manifest declares is
-    discoverable from the minimal tier. A position whose rubric references
-    a task the minimal tier genuinely cannot observe is a position-
-    authoring defect to catch when the position manifest is authored, not
-    something an admission-time live probe re-derives on every attempt.
+    B5 (external review wave B): this used to return
+    `{"discoverable_task_ids": sorted({entry["task_id"] for entry in
+    position.rubric})}` -- derived FROM the rubric's own answer, so the
+    "minimal arm can reach rubric levels 1-2" half of
+    `check_treatment_can_fire` could never fail (it was always checking the
+    rubric against itself). The minimal tool tier restricts ACTION
+    capability, never read/observation capability -- every read/query tool
+    ships on every tier (see `civ_mcp.arena.registry.resolve_tools`) -- so
+    reachability genuinely IS an authoring-time property of the position
+    manifest, not something a live probe can meaningfully re-derive on
+    every attempt. That authoring-time proof now actually happens:
+    `benchmark_manifest.validate_position_contract` (run by every
+    `load_position_manifest` call) asserts that every rubric task's
+    level-1/2 predicates reference only entities present in the manifest's
+    own declared observable state (`relevant_tiles` / `expected_state`
+    units) -- a rubric task referencing an undeclared entity fails to even
+    load as a position manifest.
+
+    This function's only remaining job is to record that this authoring-
+    time check actually ran for `position` (a static fact, not a live
+    probe) -- `check_treatment_can_fire` fails closed if it doesn't see
+    this marker, so the lock never implies a live reachability probe
+    happened when none did.
     """
-    return {"discoverable_task_ids": sorted({entry["task_id"] for entry in position.rubric})}
+    return {"source": "authoring_validation"}
 
 
 def _union_tool_schemas(
@@ -516,15 +532,45 @@ class AdmissionPipeline:
                 "clean_checkout", check_clean_checkout(wsl=checkout["wsl"], windows=checkout["windows"])
             )
 
-            # 2. boot health
+            # 2. boot health -- validated immediately (B1, external review):
+            # a failed/missing poll must abort admission here, before any
+            # later gate runs, rather than being recorded and only checked
+            # late inside build_session_lock. Mirrors build_session_lock's
+            # own boot_health check exactly (same code/message) so the two
+            # checks stay in lockstep.
             boot_health = self._deps.boot_health()
+            if not boot_health or not boot_health.get("ok") or boot_health.get("baseline_offset") is None:
+                raise GateFailure(
+                    "boot_health_missing_or_failed",
+                    {
+                        "boot_health": dict(boot_health) if boot_health else None,
+                        "message": (
+                            "fresh-offset boot-health evidence is missing or reports failure; "
+                            "refusing to start a session without a verified clean boot"
+                        ),
+                    },
+                )
             _record_gate("boot_health", boot_health)
 
             # 3. tuner holder (already gate-checked by the dependency itself)
             _record_gate("tuner_holder", self._deps.tuner_evidence())
 
-            # 4. save deploy
+            # 4. save deploy -- validated immediately (B1, external review):
+            # an unverified deployment must abort admission here, before
+            # `reload_and_capture` reconnects to the live game. Mirrors
+            # build_session_lock's own deployment check exactly.
             deployment = self._deps.deploy_save(campaign.position)
+            if not deployment or not deployment.get("ok"):
+                raise GateFailure(
+                    "deployment_not_verified",
+                    {
+                        "deployment": dict(deployment) if deployment else None,
+                        "message": (
+                            "deployment evidence is missing or unverified; refusing to lock "
+                            "a session on an unverified save"
+                        ),
+                    },
+                )
             _record_gate("save_deploy", deployment)
 
             # 5-7. production reload / popup hygiene / canonical state
@@ -555,6 +601,27 @@ class AdmissionPipeline:
             _record_gate("popup_hygiene", popup_result)
 
             canonical_state = dict(reload_evidence.get("canonical_state") or {})
+            # Validated immediately (B1, external review): wrong-save or
+            # drift evidence must abort admission before a model sees an
+            # observation (spec Sec 4) -- GPU isolation and the live
+            # backend/canary probes below must never run against a
+            # canonical state that doesn't match the frozen position.
+            expected_digest = state_digest(campaign.position.expected_state)
+            captured_digest = state_digest(canonical_state)
+            if captured_digest != expected_digest:
+                raise GateFailure(
+                    "canonical_state_mismatch",
+                    {
+                        "position_id": campaign.position.position_id,
+                        "expected_digest": expected_digest,
+                        "captured_digest": captured_digest,
+                        "message": (
+                            f"canonical-state mismatch for position {campaign.position.position_id}: "
+                            f"captured state digest {captured_digest} does not match expected "
+                            f"state digest {expected_digest}"
+                        ),
+                    },
+                )
             _record_gate("canonical_state", {"state": canonical_state})
 
             # 8. GPU isolation (already gate-checked by the dependency itself)
