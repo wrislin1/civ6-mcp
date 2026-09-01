@@ -274,6 +274,65 @@ def test_classify_backend_exception_reads_httpx_response_status(status, expected
     assert classify_backend_exception(exc) == expected_kind
 
 
+# I3 (external review wave I): residual environment shapes that used to
+# classify "model". 404 = model not deployed / name typo at the gateway; 408
+# = request timeout; APIResponseValidationError = the gateway returned
+# garbage at HTTP 200; bare ConnectionResetError/BrokenPipeError/OSError =
+# raw socket-level failures the httpx wrappers didn't catch. All are
+# operator/environment evidence, never model capability.
+@pytest.mark.parametrize(
+    "make_exc",
+    [
+        lambda: _openai_status_error(__import__("openai").NotFoundError, 404),
+        lambda: _openai_status_error(__import__("openai").APIStatusError, 408),
+        lambda: __import__("openai").APIResponseValidationError(
+            response=__import__("httpx").Response(
+                200, request=__import__("httpx").Request("POST", "http://x/v1")
+            ),
+            body=None,
+        ),
+        lambda: ConnectionResetError(104, "connection reset by peer"),
+        lambda: BrokenPipeError(32, "broken pipe"),
+        lambda: OSError("no route to host"),
+    ],
+)
+def test_classify_backend_exception_residual_environment_shapes_are_transport(make_exc):
+    """I3 (external review wave I): 404/408, a response-validation failure
+    at HTTP 200, and the bare OSError family are environment evidence and
+    must classify as "transport" -- never "model"."""
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    assert classify_backend_exception(make_exc()) == "transport"
+
+
+@pytest.mark.parametrize(
+    ("status_string", "expected_kind"),
+    [("503", "transport"), ("404", "transport"), ("429", "transport"), ("401", "auth")],
+)
+def test_classify_backend_exception_coerces_numeric_string_status(status_string, expected_kind):
+    """I3 (external review wave I): a status code carried as a STRING
+    ("503") must be coerced via int() before the range checks -- the old
+    isinstance-int guard silently classified every string-status carrier
+    as "model"."""
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    carrier = Exception("gateway error")
+    carrier.status_code = status_string
+    assert classify_backend_exception(carrier) == expected_kind
+
+
+def test_classify_backend_exception_unparseable_string_status_fails_closed_to_transport():
+    """I3 (external review wave I), weakest form: an unparseable string
+    status on an unrecognized exception type must classify "transport"
+    (the fail-closed, non-deferral-eligible direction), never fall through
+    to "model"."""
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    carrier = Exception("mystery gateway error")
+    carrier.status_code = "service unavailable"
+    assert classify_backend_exception(carrier) == "transport"
+
+
 @pytest.mark.parametrize(
     "make_exc",
     [

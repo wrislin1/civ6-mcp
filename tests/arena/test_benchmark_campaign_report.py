@@ -147,6 +147,44 @@ def _self_fingerprinted(session_payload: dict) -> dict:
     return {**body, "session_fingerprint": fingerprint(body)}
 
 
+def _write_counted_admission_record(
+    campaign_dir: Path,
+    block_id: str,
+    *,
+    session_fingerprint: str,
+    campaign_fingerprint: str,
+) -> None:
+    """The counted admission SUCCESS record the real writer produces
+    (I1, external review wave I): `AdmissionPipeline.admit(mode="counted")`
+    records `{block_id, mode, gates, ok, session_fingerprint}` via
+    `CampaignStore.record_admission` (which stamps `campaign_fingerprint`)
+    immediately after `open_block` mints session.json and BEFORE any trial
+    runs. Ordinal allocation mirrors `record_admission`'s append-only
+    numbered sequence."""
+    admissions_dir = campaign_dir / "admissions"
+    admissions_dir.mkdir(parents=True, exist_ok=True)
+    prefix = f"{block_id}-attempt-"
+    ordinal = (
+        sum(
+            1
+            for path in admissions_dir.iterdir()
+            if path.is_file() and path.name.startswith(prefix) and path.name.endswith(".json")
+        )
+        + 1
+    )
+    _write_json(
+        admissions_dir / f"{prefix}{ordinal:03d}.json",
+        {
+            "block_id": block_id,
+            "mode": "counted",
+            "gates": {},
+            "ok": True,
+            "session_fingerprint": session_fingerprint,
+            "campaign_fingerprint": campaign_fingerprint,
+        },
+    )
+
+
 def _write_block(
     campaign_dir: Path,
     block_id: str,
@@ -229,6 +267,18 @@ def _write_block(
     # evidence at all, session.json included.
     if write_session:
         _write_json(block_dir / "session.json", session_payload)
+        # I1 (external review wave I): a minted session always has its
+        # counted admission SUCCESS record on disk -- the real writer
+        # records it in the same admit() call that minted the session,
+        # before any trial runs. (A deferred block -- write_session=False
+        # -- never has one, exactly as a real zero-evidence admission
+        # failure never does.)
+        _write_counted_admission_record(
+            campaign_dir,
+            block_id,
+            session_fingerprint=session_fingerprint,
+            campaign_fingerprint=campaign_fingerprint,
+        )
     commit = commit_indices if commit_indices is not None else set(trial_payloads)
     for index in commit:
         _write_json(block_dir / "trials" / f"trial-{index:03d}.json", trial_payloads[index])
@@ -461,10 +511,22 @@ def _write_qwen_deferral_record(
         return record
 
     def _write_failure() -> None:
+        # Ruling K (wave I, I2): the real disposition-writing CLI path runs
+        # admit() in mode="counted", so a genuine corroborating failure
+        # record carries mode/gates exactly as AdmissionPipeline._fail
+        # records them -- and only counted-mode failures corroborate.
         nonlocal ordinal
         _write_json(
             admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
-            _stamped({"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}}),
+            _stamped(
+                {
+                    "block_id": "qwen",
+                    "mode": "counted",
+                    "gates": {},
+                    "ok": False,
+                    "failure": {"code": code, "details": {}},
+                }
+            ),
         )
         ordinal += 1
 
@@ -898,6 +960,131 @@ def test_campaign_report_refuses_the_reminted_exploit_even_with_a_fixed_block_sc
 
 
 # ---------------------------------------------------------------------------
+# I1 (external review wave I): the counted admission SUCCESS anchor. The
+# writer cannot produce trials without first writing an
+# admissions/<block>-attempt-NNN.json success record (ok=True,
+# mode="counted", campaign_fingerprint stamp, session_fingerprint equal to
+# the minted session lock's) -- AdmissionPipeline.admit writes it right
+# after open_block and BEFORE returning the ResolvedBlock the caller runs
+# trials with. The reporter must therefore require one for every COMPLETE
+# block; a complete block with no matching counted admission record is
+# substituted/forged evidence.
+# ---------------------------------------------------------------------------
+
+
+def test_complete_block_without_any_admission_records_is_refused(tmp_path):
+    """I1, the original finding: build_campaign_report used to emit
+    CALIBRATED over a campaign with NO admissions/ directory at all --
+    an evidence tree the real writer can never produce."""
+    import shutil
+
+    campaign_dir = tmp_path / "campaign"
+    pairs = _passing_gemma_pairs()
+    _build_full_two_block_campaign(
+        campaign_dir, gemma_pairs=pairs, qwen_pairs=pairs, rules=_rules12(), audit_indices=[1, 2]
+    )
+    shutil.rmtree(campaign_dir / "admissions", ignore_errors=True)
+
+    with pytest.raises(CampaignReportError, match="counted admission"):
+        build_campaign_report(campaign_dir)
+
+
+def _rewrite_gemma_success_records(campaign_dir: Path, mutate) -> int:
+    changed = 0
+    for path in sorted((campaign_dir / "admissions").glob("gemma-attempt-*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if record.get("ok") is True:
+            mutate(record)
+            _write_json(path, record)
+            changed += 1
+    return changed
+
+
+def test_admission_success_record_with_mismatched_session_fingerprint_is_refused(tmp_path):
+    """I1: a success record whose session_fingerprint does not equal the
+    block's own (re-derived) session fingerprint anchors nothing -- it
+    belongs to some other minted session."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    assert _rewrite_gemma_success_records(
+        campaign_dir, lambda r: r.__setitem__("session_fingerprint", "0" * 64)
+    ), "fixture must have written a counted admission success record for gemma"
+
+    with pytest.raises(CampaignReportError, match="counted admission"):
+        build_campaign_report(campaign_dir)
+
+
+def test_admit_only_success_record_never_anchors_a_complete_block(tmp_path):
+    """I1, weakest form: an ok=True record from a NON-counting admit_only
+    diagnostic invocation (identical in every other field, session
+    fingerprint included -- admit_only proves a session COULD be minted
+    without minting one) must never anchor a complete block."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    assert _rewrite_gemma_success_records(
+        campaign_dir, lambda r: r.__setitem__("mode", "admit_only")
+    ), "fixture must have written a counted admission success record for gemma"
+
+    with pytest.raises(CampaignReportError, match="counted admission"):
+        build_campaign_report(campaign_dir)
+
+
+def _relabel_reminted_qwen_trials_to_schedule(campaign_dir: Path) -> None:
+    """The wave-H ESCALATION on top of `_remint_gemma_evidence_as_qwen(
+    fix_block_schedule=True)`: additionally relabel every copied trial's
+    schedule-bound identity fields to the campaign qwen schedule's declared
+    values at its index (and its `model` label to qwen's), then recompute
+    the audit hashes over the relabelled payloads -- pure metadata
+    relabeling with consistent re-minting of every self-fingerprinted
+    stamp, which defeats H1(a)'s per-trial schedule binding."""
+    campaign_schedule = json.loads((campaign_dir / "schedule.json").read_text(encoding="utf-8"))
+    entries = {e["index"]: e for e in campaign_schedule["blocks"]["qwen"]["trials"]}
+
+    trial_payloads: dict[int, dict] = {}
+    for trial_path in sorted((campaign_dir / "blocks" / "qwen" / "trials").glob("trial-*.json")):
+        payload = json.loads(trial_path.read_text(encoding="utf-8"))
+        entry = entries[payload["index"]]
+        for field in ("pair_id", "arm_id", "position_id"):
+            payload[field] = entry[field]
+        payload["model"] = "qwen"
+        _write_json(trial_path, payload)
+        trial_payloads[payload["index"]] = payload
+
+    audit_path = campaign_dir / "blocks" / "qwen" / "audit.json"
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    for entry in audit["trials"]:
+        entry["trial_sha256"] = fingerprint(trial_payloads[entry["index"]])
+    _write_json(audit_path, audit)
+
+
+def test_wave_h_relabelled_forgery_is_refused_by_the_admission_anchor(tmp_path):
+    """The wave-H relabeling exploit tree (fifth-round review): remint the
+    session (both bound fields + fresh self-fingerprint), swap in the TRUE
+    campaign qwen block schedule, relabel every trial's schedule-bound
+    identity fields to qwen's declared values, restamp trials and audit
+    hashes. Every fingerprint/schedule/identity check passes -- gemma's
+    evidence launders cleanly under the qwen block -- EXCEPT the I1
+    anchor: no counted admission success record exists whose
+    session_fingerprint matches the re-minted session, because the real
+    writer only ever records one for a session it actually minted."""
+    campaign_dir = tmp_path / "campaign"
+    _build_full_two_block_campaign(
+        campaign_dir,
+        gemma_pairs=_passing_gemma_pairs(),
+        qwen_pairs=_distinct_qwen_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+    )
+    _remint_gemma_evidence_as_qwen(campaign_dir, fix_block_schedule=True)
+    _relabel_reminted_qwen_trials_to_schedule(campaign_dir)
+
+    with pytest.raises(CampaignReportError, match="counted admission"):
+        build_campaign_report(campaign_dir)
+
+
+# ---------------------------------------------------------------------------
 # H1(b): reporter-writer parity on the block-schedule <-> campaign-schedule
 # binding (`CampaignStore.open_block` enforces it at write time; the
 # reporter re-verifies it at read time).
@@ -1138,6 +1325,35 @@ def test_report_refuses_qwen_deferral_from_one_preceding_failure_plus_dispositio
         build_campaign_report(campaign_dir)
 
 
+@pytest.mark.parametrize("failure_mode", ["admit_only", None])
+def test_admit_only_diagnostic_failures_never_corroborate_a_deferral(tmp_path, failure_mode):
+    """Ruling K (external review wave I, finding I2): the corroboration
+    filter was mode-blind -- two `admit_only` DIAGNOSTIC failure records
+    (written through the same `admissions/<block>-attempt-NNN.json` path
+    as counted ones) corroborated a deferral, letting non-counting
+    diagnostics stand in for the two independent COUNTED observations the
+    spec demands. Corroborating failure records must carry
+    `mode: "counted"` -- the mode the real disposition-writing CLI
+    campaign loop actually runs in. `failure_mode=None` is the weakest
+    form: a record with NO mode field at all must also never corroborate
+    (the default points in the non-deferral-eligible direction)."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    for path in sorted((campaign_dir / "admissions").glob("qwen-attempt-*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if record.get("ok") is False:
+            if failure_mode is None:
+                record.pop("mode", None)
+            else:
+                record["mode"] = failure_mode
+                record["gates"] = {}
+            _write_json(path, record)
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
 def test_report_refuses_qwen_deferral_when_committed_trials_exist_despite_disposition(tmp_path):
     """A2 (external review): "Replication deferral is only for failures
     that create no trials." A well-corroborated disposition record must
@@ -1361,11 +1577,14 @@ def test_no_admission_sequence_with_fewer_than_two_same_code_failures_is_accepte
     fp = "fp-ruling-j-guard"
     code = "tool_canary_failed"
 
+    # Ruling K (wave I, I2): failure records carry mode="counted" -- the
+    # exhaustive guard must keep exercising the ORDINAL/CODE arithmetic,
+    # not trip on the (separately tested) counted-mode filter.
     def _same_code_failure() -> dict:
-        return {"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}, "campaign_fingerprint": fp}
+        return {"block_id": "qwen", "mode": "counted", "ok": False, "failure": {"code": code, "details": {}}, "campaign_fingerprint": fp}
 
     def _other_code_failure() -> dict:
-        return {"block_id": "qwen", "ok": False, "failure": {"code": "seed_not_honored", "details": {}}, "campaign_fingerprint": fp}
+        return {"block_id": "qwen", "mode": "counted", "ok": False, "failure": {"code": "seed_not_honored", "details": {}}, "campaign_fingerprint": fp}
 
     def _successful_remediation() -> dict:
         return {"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": {"ok": True, "terminated_pid": 4242}, "campaign_fingerprint": fp}
@@ -2175,6 +2394,17 @@ def test_scorer_only_fingerprint_change_rescores_same_raw_trials(tmp_path):
         session_fingerprint=new_session_fingerprint,
         audit_indices=[1, 2],
         trial_payloads=restamped_trials,
+    )
+    # I1 (external review wave I): the re-freeze re-mints the session lock,
+    # so the counted admission SUCCESS record anchoring it is re-issued with
+    # the new fingerprints too (the real re-freeze runs admission again --
+    # a session lock is only ever minted by admit(), which always records
+    # its success before any trial runs).
+    _write_counted_admission_record(
+        campaign_dir,
+        "gemma",
+        session_fingerprint=new_session_fingerprint,
+        campaign_fingerprint=new_campaign_fingerprint,
     )
 
     # G4 (external review wave G): the deferral-corroboration scan only

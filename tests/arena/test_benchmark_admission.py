@@ -341,6 +341,20 @@ def _write_block_session(store: CampaignStore, block_id: str) -> dict:
     }
     session_payload["session_fingerprint"] = compute_session_fingerprint(session_payload)
     (block_dir / "session.json").write_text(json.dumps(session_payload))
+    # I1 (external review wave I): block_is_complete now also requires the
+    # counted admission SUCCESS record the real admit() writes immediately
+    # after minting the session (via the REAL CampaignStore.record_admission,
+    # which stamps campaign_fingerprint), before any trial runs.
+    store.record_admission(
+        block_id,
+        {
+            "block_id": block_id,
+            "mode": "counted",
+            "gates": {},
+            "ok": True,
+            "session_fingerprint": session_payload["session_fingerprint"],
+        },
+    )
     return session_payload
 
 
@@ -1167,6 +1181,59 @@ def _complete_block0(tmp_path):
     return store, block0
 
 
+def _rewrite_success_records(store: CampaignStore, block_id: str, mutate) -> int:
+    admissions_dir = store.root / CampaignStore.ADMISSIONS_DIR
+    changed = 0
+    for path in sorted(admissions_dir.glob(f"{block_id}-attempt-*.json")):
+        record = json.loads(path.read_text())
+        if record.get("ok") is True:
+            mutate(record)
+            path.write_text(json.dumps(record))
+            changed += 1
+    return changed
+
+
+def test_block_is_complete_false_without_counted_admission_success_record(tmp_path):
+    """I1 (external review wave I): a block whose trials/session all verify
+    but with NO counted admission SUCCESS record on disk is never complete
+    -- the real writer records one (ok=true, mode="counted", stamped with
+    the campaign fingerprint and the minted session's fingerprint) in the
+    same admit() call that minted the session, BEFORE any trial runs."""
+    store, block0 = _complete_block0(tmp_path)
+    assert block_is_complete(store, block0.block_id) is True  # sanity: fixture completes
+
+    for path in sorted(
+        (store.root / CampaignStore.ADMISSIONS_DIR).glob(f"{block0.block_id}-attempt-*.json")
+    ):
+        path.unlink()
+    assert block_is_complete(store, block0.block_id) is False
+
+
+def test_block_is_complete_false_when_success_record_is_admit_only(tmp_path):
+    """I1, weakest form: an ok=true record from a NON-counting admit_only
+    diagnostic (identical in every other field) must never anchor
+    completeness."""
+    store, block0 = _complete_block0(tmp_path)
+    assert block_is_complete(store, block0.block_id) is True
+
+    assert _rewrite_success_records(
+        store, block0.block_id, lambda r: r.__setitem__("mode", "admit_only")
+    ), "fixture must have written a counted admission success record"
+    assert block_is_complete(store, block0.block_id) is False
+
+
+def test_block_is_complete_false_when_success_record_names_another_session(tmp_path):
+    """I1: a success record whose session_fingerprint is not this block's
+    own (re-derived) session fingerprint anchors nothing."""
+    store, block0 = _complete_block0(tmp_path)
+    assert block_is_complete(store, block0.block_id) is True
+
+    assert _rewrite_success_records(
+        store, block0.block_id, lambda r: r.__setitem__("session_fingerprint", "0" * 64)
+    ), "fixture must have written a counted admission success record"
+    assert block_is_complete(store, block0.block_id) is False
+
+
 def test_block_is_complete_false_when_block_schedule_is_missing(tmp_path):
     store, block0 = _complete_block0(tmp_path)
     assert block_is_complete(store, block0.block_id) is True  # sanity: fixture completes
@@ -1223,6 +1290,57 @@ def test_existing_locked_episode_wall_verifies_session_fingerprint(tmp_path):
     tampered["episode_wall_s"] = 999999
     session_path.write_text(json.dumps(tampered))
     assert _existing_locked_episode_wall_s(store, block.block_id) is None
+
+
+def test_tampered_session_wall_is_refused_end_to_end_at_reattach(tmp_path):
+    """I4 (external review wave I), the H8 follow-through that was claimed
+    but never exercised: a session.json with an edited `episode_wall_s`
+    and a STALE session_fingerprint (1) yields None from
+    `_existing_locked_episode_wall_s`, so the caller derives a FRESH wall
+    and mints a fresh lock, and (2) `BenchmarkStore`'s byte-for-byte
+    session comparison then refuses to reattach that freshly-built lock
+    over the tampered file (`SessionLockMismatchError`) -- the tamper
+    surfaces loudly on the write path. A positive control first proves an
+    UNtampered file reattaches cleanly, so the raise below is caused by
+    the tamper, not by encoding drift in the fixture."""
+    from civ_mcp.arena.benchmark_admission import _existing_locked_episode_wall_s
+    from civ_mcp.arena.benchmark_store import (
+        BenchmarkStore,
+        SessionLockMismatchError,
+        canonical_json_bytes,
+    )
+
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    block_dir = store.root / "blocks" / block.block_id
+    block_dir.mkdir(parents=True, exist_ok=True)
+    session_path = block_dir / "session.json"
+
+    genuine = {
+        "campaign_fingerprint": store.fingerprint,
+        "block_id": block.block_id,
+        "episode_wall_s": 1234,
+    }
+    genuine["session_fingerprint"] = compute_session_fingerprint(genuine)
+    session_path.write_bytes(canonical_json_bytes(genuine))
+
+    # Positive control: the untampered file reattaches cleanly and yields
+    # its locked wall.
+    BenchmarkStore.create(block_dir, dict(genuine))
+    assert _existing_locked_episode_wall_s(store, block.block_id) == 1234
+
+    # Tamper the wall, leaving the now-stale fingerprint in place.
+    tampered = dict(genuine)
+    tampered["episode_wall_s"] = 999999
+    session_path.write_bytes(canonical_json_bytes(tampered))
+
+    # (1) the tampered value is never reused as the locked wall...
+    assert _existing_locked_episode_wall_s(store, block.block_id) is None
+
+    # (2) ...and the freshly-built lock the caller mints instead refuses
+    # to reattach over the tampered file.
+    with pytest.raises(SessionLockMismatchError):
+        BenchmarkStore.create(block_dir, dict(genuine))
 
 
 def test_existing_locked_episode_wall_none_when_fingerprint_missing(tmp_path):

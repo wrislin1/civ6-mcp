@@ -463,7 +463,18 @@ def _existing_locked_episode_wall_s(store: CampaignStore, block_id: str) -> int 
     self-fingerprinted lock, and `BenchmarkStore.create`'s byte-for-byte
     session.json comparison refuses to reattach over the tampered file --
     the tamper surfaces loudly there, on the write path, instead of being
-    silently laundered into a reused `episode_wall_s` here."""
+    silently laundered into a reused `episode_wall_s` here.
+
+    I4 (external review wave I): what this catches is UN-re-minted tamper
+    only. A RE-MINTED tamper -- `episode_wall_s` edited AND
+    `session_fingerprint` recomputed over the edited document via the
+    public `compute_session_fingerprint` -- verifies here and reattaches
+    cleanly, and is out of read-time reach by construction: every stamp
+    is computable from public pure functions. That residual is anchored
+    outside the filesystem -- see the threat-model boundary note in
+    `benchmark_campaign_report`'s module docstring (the published
+    campaign contract and the hash-bound live human audits are the
+    anchors for live provenance)."""
     session_path = store.root / CampaignStore.BLOCKS_DIR / block_id / "session.json"
     if not session_path.is_file():
         return None
@@ -938,6 +949,21 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     the exact computation `build_session_lock` minted it with) -- an edited
     session.json (block_id/model_config rewritten, stamp left untouched)
     is never complete.
+
+    I1 (external review wave I): completeness additionally requires at
+    least one counted admission SUCCESS record in `admissions/` -- `ok:
+    true`, `mode: "counted"`, stamped with this campaign's fingerprint
+    (`CampaignStore.record_admission` stamps every record it writes) and
+    carrying a `session_fingerprint` equal to this block's own re-derived
+    session fingerprint. Writer parity: `AdmissionPipeline.admit(
+    mode="counted")` records exactly this via `record_admission`
+    immediately after `open_block` mints/reattaches `session.json` and
+    BEFORE any trial can run (trials only run through the `ResolvedBlock`
+    that same call returns afterwards) -- so a complete block without one
+    is substituted evidence, and a record-without-trials left by a crash
+    between admission and completion is simply an incomplete block, never
+    an error. Mirrors
+    `benchmark_campaign_report._require_counted_admission_success`.
     """
     trials_dir = store.root / CampaignStore.BLOCKS_DIR / block_id / "trials"
     if not trials_dir.is_dir():
@@ -1021,6 +1047,36 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=list)
 
     if _canonical(dict(session_model_config)) != _canonical(dict(declared_model_config)):
+        return False
+
+    # I1 (external review wave I): the counted admission SUCCESS anchor --
+    # see the docstring. The session_fingerprint compared against is the
+    # verified (G1-re-derived-equal) recorded one. A missing admissions
+    # directory, an unparseable record, or a record that is admit_only /
+    # unstamped / stamped for another campaign or session all fail in the
+    # NOT-complete direction.
+    admissions_dir = store.root / CampaignStore.ADMISSIONS_DIR
+    admission_anchor_found = False
+    if admissions_dir.is_dir():
+        prefix = f"{block_id}-attempt-"
+        for path in sorted(admissions_dir.iterdir()):
+            if not (path.is_file() and path.name.startswith(prefix) and path.name.endswith(".json")):
+                continue
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(record, dict):
+                continue
+            if (
+                record.get("ok") is True
+                and record.get("mode") == "counted"
+                and record.get("campaign_fingerprint") == store.fingerprint
+                and record.get("session_fingerprint") == session_lock.get("session_fingerprint")
+            ):
+                admission_anchor_found = True
+                break
+    if not admission_anchor_found:
         return False
 
     block_store = BenchmarkStore(trials_dir.parent, session_lock, fingerprint=session_lock.get("session_fingerprint"))

@@ -1229,6 +1229,25 @@ def _preseed_gemma_block_complete(
         gemma_block_dir_session
     )
     (gemma_block_dir / "session.json").write_text(json.dumps(gemma_block_dir_session))
+    # I1 (external review wave I): block_is_complete now also requires the
+    # counted admission SUCCESS record the real admit() writes right after
+    # minting the session and before any trial runs -- ok=true,
+    # mode="counted", stamped with the campaign fingerprint and the minted
+    # session's own fingerprint (CampaignStore.record_admission's shape).
+    admissions_dir = run_dir / "campaign-run" / "admissions"
+    admissions_dir.mkdir(parents=True, exist_ok=True)
+    (admissions_dir / f"{gemma_block_id}-attempt-001.json").write_text(
+        json.dumps(
+            {
+                "block_id": gemma_block_id,
+                "mode": "counted",
+                "gates": {},
+                "ok": True,
+                "session_fingerprint": gemma_block_dir_session["session_fingerprint"],
+                "campaign_fingerprint": campaign_fingerprint,
+            }
+        )
+    )
     for trial in schedule["blocks"][gemma_block_id]["trials"]:
         (gemma_trials_dir / trial_filename(trial["index"])).write_text(
             json.dumps(

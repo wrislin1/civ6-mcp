@@ -25,11 +25,34 @@ own contract:
 This module NEVER reads `<campaign_dir>/blocks/<block-id>/attempts/` --
 infrastructure-attempt records are not scoreable evidence, exactly as
 `benchmark_report.py` already refuses to read `<run_dir>/attempts/` (see that
-module's docstring). `admissions/` IS read, but only to detect a typed
-`REPLICATION_DEFERRED_ADMISSION` disposition -- that disposition is never
-passed to scoring, only used to decide whether an incomplete Qwen schedule is
-a legitimate deferral rather than a refused report. Every file this module
-actually reads is enumerated, campaign-relative, in `report["report_inputs"]`.
+module's docstring). `admissions/` IS read, for exactly two purposes and
+never passed to scoring: (a) to detect a typed
+`REPLICATION_DEFERRED_ADMISSION` disposition, deciding whether an incomplete
+Qwen schedule is a legitimate deferral rather than a refused report; and (b)
+-- I1, external review wave I -- to require, for every COMPLETE block, the
+counted admission SUCCESS record the real writer necessarily produced before
+any trial ran (see `_require_counted_admission_success`). Every file this
+module actually reads is enumerated, campaign-relative, in
+`report["report_inputs"]`.
+
+## Threat-model boundary (what this reporter can and cannot guarantee)
+
+The reporter guarantees that any evidence tree it ACCEPTS is internally
+consistent with the declared campaign: the fingerprint-anchored schedule,
+session lock, committed trials, human audits, and admission records all
+verify against each other and against the frozen campaign lock. It CANNOT
+guarantee live provenance -- that these bytes came from a real run --
+because every stamp it checks (campaign/session/admission/trial
+fingerprints alike) is computable from public pure functions, so a
+forger who re-mints EVERY artifact consistently produces a tree that is
+indistinguishable at read time from a genuine one. Full metadata
+relabeling with consistent re-minting of every artifact is therefore
+detectable only by the anchors that live OUTSIDE the filesystem: the
+published campaign contract, and the human metric-fidelity audits --
+hash-bound to specific trial bytes and performed live during the
+campaign, so a post-hoc re-mint invalidates the audit the humans
+actually signed. Those external anchors, not this reader, carry the
+final authority on live provenance.
 
 ## campaign.json integrity (verified before anything else)
 
@@ -378,7 +401,21 @@ def _has_valid_replication_deferred_admission(
     - corroboration precedes that disposition record in the same
       append-only admissions/ sequence, in exactly ONE shape: at least
       TWO failed admission attempts (at distinct, strictly-preceding
-      attempt ordinals) carrying the SAME code.
+      attempt ordinals) carrying the SAME code AND `mode: "counted"`.
+
+      Ruling K (external review wave I, finding I2): corroborating
+      failure records must carry `mode: "counted"` -- the mode the
+      disposition-writing CLI path (`benchmark_runner._run_campaign_async`)
+      actually runs `admit()` in, so every genuine corroborating failure
+      (the disposition's own underlying failure record included) is a
+      counted-mode record. The old predicate was mode-blind: two
+      `admit_only` DIAGNOSTIC invocations' failure records (written
+      through the same `admissions/<block>-attempt-NNN.json` path --
+      only `mode="validation"` is diverted to `validation/`) corroborated
+      a deferral, letting non-counting diagnostics stand in for the two
+      independent counted observations the spec demands. A record with
+      no `mode` field at all likewise never corroborates (the default
+      points in the non-deferral-eligible direction).
 
       Ruling J (external review wave H, finding I2): the former
       remediation OR-branch ("a same-code failure before AND after a
@@ -432,6 +469,9 @@ def _has_valid_replication_deferred_admission(
             i
             for i, r in enumerate(preceding)
             if r.get("ok") is False
+            # Ruling K (wave I, I2): only COUNTED-mode failures corroborate
+            # -- an admit_only diagnostic (or a mode-less record) never does.
+            and r.get("mode") == "counted"
             and isinstance(r.get("failure"), Mapping)
             and r["failure"].get("code") == code
         ]
@@ -440,6 +480,51 @@ def _has_valid_replication_deferred_admission(
         if len(same_code_failure_ordinals) >= 2:
             return True
     return False
+
+
+def _require_counted_admission_success(
+    campaign_dir: Path,
+    block_id: str,
+    campaign_fingerprint: str,
+    session_fingerprint: str,
+) -> None:
+    """I1 (external review wave I): every COMPLETE block must be anchored
+    by at least one counted admission SUCCESS record in `admissions/` --
+    `ok: true`, `mode: "counted"`, stamped with THIS campaign's
+    `campaign_fingerprint` (`CampaignStore.record_admission` stamps every
+    record it writes), and carrying a `session_fingerprint` equal to the
+    block's own re-derived session fingerprint.
+
+    Writer parity: `AdmissionPipeline.admit(mode="counted")` writes exactly
+    this record via `CampaignStore.record_admission` immediately after
+    `open_block` mints (or reattaches to) `session.json` -- and BEFORE any
+    trial can run, because trials only run through the `ResolvedBlock` that
+    same `admit()` call returns afterwards. The writer therefore cannot
+    produce a complete block without this record, so a complete block
+    lacking one is substituted/forged evidence, refused with a typed error.
+    (The converse -- a record without trials, left by a crash between
+    admission and completion -- is fine: the block is simply incomplete and
+    never reaches this check.) An `ok: true` record from a NON-counting
+    `admit_only` diagnostic (which proves a session COULD be minted without
+    minting one) never anchors a complete block; nor does a record whose
+    stamp names another campaign or another session. Deferred/incomplete
+    blocks are exempt -- their absence of a session is handled by the
+    deferral path."""
+    for record in _admission_records(campaign_dir, block_id):
+        if (
+            record.get("ok") is True
+            and record.get("mode") == "counted"
+            and record.get("campaign_fingerprint") == campaign_fingerprint
+            and record.get("session_fingerprint") == session_fingerprint
+        ):
+            return
+    raise CampaignReportError(
+        f"block {block_id!r} has a complete schedule but no counted admission SUCCESS "
+        "record in admissions/ (ok=true, mode='counted', stamped with this campaign's "
+        "campaign_fingerprint and this block's session_fingerprint) -- the real writer "
+        "always records one before any trial runs, so a complete block without one is "
+        "substituted or forged evidence; refusing to score it"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1313,6 +1398,20 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
                 f"match campaign.json's contracts.scorer_fingerprint "
                 f"{campaign_scorer_fingerprint!r}"
             )
+        # I1 (external review wave I): reporter-writer parity on the counted
+        # admission SUCCESS record -- compared against the RE-DERIVED
+        # session fingerprint (compute_session_fingerprint over the verified
+        # session document; equal to the recorded value per the G1 check
+        # above), never a value merely read off disk.
+        _require_counted_admission_success(
+            campaign_dir,
+            block_id,
+            str(campaign_fingerprint),
+            compute_session_fingerprint(block_session),
+        )
+        report_inputs.extend(
+            f"admissions/{path.name}" for path in _admission_record_paths(campaign_dir, block_id)
+        )
 
         scored_by_index = _scored_by_index_from_block_report(block_report, str(position_id))
         raw_by_index: dict[int, Mapping[str, object]] = {}
