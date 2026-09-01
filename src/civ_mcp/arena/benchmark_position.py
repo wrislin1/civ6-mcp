@@ -37,6 +37,7 @@ from civ_mcp.connection import GameConnection
 __all__ = [
     "REQUIRED_CYCLES",
     "PositionCLIError",
+    "UnverifiedReloadError",
     "capture_position",
     "verify_position",
     "main",
@@ -69,6 +70,20 @@ class PositionCLIError(Exception):
     """A CLI-level input/validation failure (bad provenance JSON, wrong
     --cycles, an unreadable position manifest) -- never a live-game
     failure. `main()` converts this to a stderr message and exit code 1."""
+
+
+class UnverifiedReloadError(Exception):
+    """`reload_position` reported `verified=False` for a `capture`/`verify`
+    cycle -- the F16(b) stable-open-port case, structurally
+    indistinguishable from an inert Network.LoadGame that never actually
+    reloaded anything (see `benchmark_runner.reload_position`'s
+    docstring). Both commands must treat this as a hard stop: `capture`
+    would otherwise bake a "post-reload" state that was never preceded by
+    a confirmed reload, and `verify` would let every cycle silently skip
+    the one thing (an actual reload) its 12-digest match is supposed to
+    prove happened -- freezing a position as "reproducible" on zero
+    evidence. Raised before popup hygiene or state capture ever run for
+    the offending cycle; the CLI writes no output when this propagates."""
 
 
 def _load_provenance(path: str | Path) -> dict[str, object]:
@@ -131,6 +146,15 @@ async def capture_position(provenance: Mapping[str, object]) -> dict[str, object
     await connection.connect()
     try:
         verified = await reload_position(connection, position_stub)
+        if not verified:
+            # C1: an unverified reload is structurally indistinguishable
+            # from an inert Network.LoadGame -- proceeding would capture a
+            # "post-reload" state with no confirmed reload behind it.
+            raise UnverifiedReloadError(
+                f"capture for {game_save_name!r}: reload_position reported "
+                "verified=False (F16(b) stable-open-port case) -- aborting "
+                "before popup hygiene/state capture; no output produced"
+            )
         popup_status = await dismiss_blocking_popups(connection)
         state = await capture_canonical_state(connection, player_id, relevant_tiles)
     finally:
@@ -177,7 +201,18 @@ async def verify_position(position: PositionManifest, cycles: int) -> dict[str, 
         connection = GameConnection()
         await connection.connect()
         try:
-            await reload_position(connection, position)
+            verified = await reload_position(connection, position)
+            if not verified:
+                # C1: every cycle must be backed by a confirmed reload --
+                # otherwise a run that never actually reloads the game
+                # would trivially match its own digest 12 times and freeze
+                # as "reproducible" on zero evidence.
+                raise UnverifiedReloadError(
+                    f"verify {position.position_id!r} cycle {cycle}/{cycles}: "
+                    "reload_position reported verified=False (F16(b) "
+                    "stable-open-port case) -- aborting before popup "
+                    "hygiene/state capture; no output produced"
+                )
             await dismiss_blocking_popups(connection)
             state = await capture_canonical_state(
                 connection, position.player_id, position.relevant_tiles
@@ -239,7 +274,11 @@ def _run_capture(args: argparse.Namespace) -> int:
         print(f"civ-arena-benchmark-position: {exc}", file=sys.stderr)
         return 1
 
-    result = asyncio.run(capture_position(provenance))
+    try:
+        result = asyncio.run(capture_position(provenance))
+    except UnverifiedReloadError as exc:
+        print(f"civ-arena-benchmark-position: {exc}", file=sys.stderr)
+        return 1
     _write_json(args.output, result)
     print(f"civ-arena-benchmark-position: capture written to {args.output}")
     return 0
@@ -263,7 +302,11 @@ def _run_verify(args: argparse.Namespace) -> int:
         print(f"civ-arena-benchmark-position: {exc}", file=sys.stderr)
         return 1
 
-    result = asyncio.run(verify_position(position, args.cycles))
+    try:
+        result = asyncio.run(verify_position(position, args.cycles))
+    except UnverifiedReloadError as exc:
+        print(f"civ-arena-benchmark-position: {exc}", file=sys.stderr)
+        return 1
     if not result["ok"]:
         print(
             "civ-arena-benchmark-position: verification failed at cycle "

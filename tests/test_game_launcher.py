@@ -830,6 +830,153 @@ async def test_continue_after_lua_load_waits_on_unknown_screen(monkeypatch):
     assert "unknown" in result
 
 
+def test_classify_frontend_load_state_native_survives_winrt_ocr_check_raising(monkeypatch):
+    """C2(a): `_winrt_ocr_available()` does `from winrt.windows.media.ocr
+    import OcrEngine` -- on a win32 box without the `winrt` package this
+    raises ModuleNotFoundError. That call previously sat outside any
+    try/except in `_classify_frontend_load_state_native`, so the exception
+    would propagate straight out of `continue_after_lua_load` and crash
+    the reload waiter instead of yielding UNKNOWN (positive-evidence-only
+    classification must fail closed, never crash)."""
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+
+    def raise_module_not_found():
+        raise ModuleNotFoundError("No module named 'winrt'")
+
+    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", raise_module_not_found, raising=False)
+
+    assert (
+        game_launcher._classify_frontend_load_state_native()
+        is game_launcher.FrontendLoadState.UNKNOWN
+    )
+
+
+def test_press_escape_windows_bridge_missing_logs_warning_not_debug(monkeypatch, caplog):
+    """C2(b): a missing CIV6_WINDOWS_PYTHON/bootstrap must be visible at
+    WARNING -- at DEBUG it is invisible during a live run, and a dead
+    bridge means every subsequent Escape press silently no-ops forever."""
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: False)
+
+    with caplog.at_level("WARNING", logger=game_launcher.log.name):
+        result = game_launcher._press_escape_windows_bridge()
+
+    assert result is False
+    assert any(
+        rec.levelname == "WARNING" and "bridge" in rec.message.lower()
+        for rec in caplog.records
+    )
+
+
+def test_classify_frontend_load_state_bridge_missing_logs_warning_not_debug(monkeypatch, caplog):
+    """C2(b): same escalation for the classify-frontend bridge -- a missing
+    interpreter/bootstrap must not be silently swallowed at DEBUG while
+    classification quietly never works."""
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: False)
+
+    with caplog.at_level("WARNING", logger=game_launcher.log.name):
+        result = game_launcher._classify_frontend_load_state_windows_bridge()
+
+    assert result is game_launcher.FrontendLoadState.UNKNOWN
+    assert any(
+        rec.levelname == "WARNING" and "bridge" in rec.message.lower()
+        for rec in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_reports_bridge_failure_count_on_timeout(monkeypatch):
+    """C2(c): when classification never actually worked because the bridge
+    was dead the whole time, the returned warning must say so with a
+    count -- not just report a final "unknown" that looks identical to a
+    healthy classifier that legitimately never saw a recognized screen."""
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: True)
+
+    def fake_run(cmd, **kwargs):
+        return SimpleNamespace(returncode=1, stdout=b"", stderr=b"boom")
+
+    monkeypatch.setattr(game_launcher.subprocess, "run", fake_run)
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=3, press_every=1
+    )
+
+    assert "WARNING" in result
+    assert "bridge failure" in result.lower()
+    assert "3" in result  # one bridge failure per classification poll
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_presses_once_for_repeated_identical_classification(
+    monkeypatch,
+):
+    """C3: an Escape press can land after the world transition but before
+    the tuner port reopens if it fires on every poll a positive
+    classification is seen. CONTINUE, CONTINUE, CONTINUE must press
+    exactly once -- only a genuinely different classification re-arms."""
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    presses: list[bool] = []
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_classify_frontend_load_state",
+        lambda: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=3, press_every=1
+    )
+
+    assert presses == [True]
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_presses_twice_for_a_changed_classification(
+    monkeypatch,
+):
+    """C3: CONTINUE_SCREEN then LEADER_SCREEN is a genuinely distinct
+    positive state each time -- both must press."""
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: False)
+    presses: list[bool] = []
+    monkeypatch.setattr(
+        game_launcher, "_press_escape", lambda: presses.append(True) or True,
+        raising=False,
+    )
+    states = iter(
+        [
+            game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+            game_launcher.FrontendLoadState.LEADER_SCREEN,
+        ]
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_classify_frontend_load_state",
+        lambda: next(states, game_launcher.FrontendLoadState.LEADER_SCREEN),
+    )
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    await game_launcher.continue_after_lua_load(
+        "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=2, press_every=1
+    )
+
+    assert presses == [True, True]
+
+
 def test_press_escape_uses_windows_bridge_from_wsl(monkeypatch):
     """Under WSL (sys.platform == 'linux') the game runs on Windows: Escape
     must be delivered by the Windows companion checkout's signed Python via

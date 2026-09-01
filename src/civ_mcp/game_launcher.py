@@ -2014,7 +2014,14 @@ def _press_escape_windows_bridge() -> bool:
     python_exe = os.environ.get("CIV6_WINDOWS_PYTHON", _WSL_WINDOWS_PYTHON)
     bootstrap = os.environ.get("CIV6_WINDOWS_BOOTSTRAP", _WSL_WINDOWS_BOOTSTRAP)
     if not (os.path.exists(python_exe) and os.path.exists(bootstrap)):
-        log.debug("Windows bridge unavailable (%s, %s)", python_exe, bootstrap)
+        # C2(b): escalated from DEBUG -- a missing interpreter/bootstrap
+        # means every Escape press silently no-ops for the rest of the
+        # run; that must be visible live, not only with debug logging on.
+        missing = [p for p in (python_exe, bootstrap) if not os.path.exists(p)]
+        log.warning(
+            "Windows bridge unavailable for Escape press -- missing path(s): %s",
+            missing,
+        )
         return False
     win_bootstrap = bootstrap
     if bootstrap.startswith("/mnt/") and len(bootstrap) > 7:
@@ -2048,6 +2055,22 @@ class FrontendLoadState(str, Enum):
     LEADER_SCREEN = "leader_screen"
     IN_WORLD = "in_world"
     UNKNOWN = "unknown"
+
+
+class _FrontendBridgeFailureTracker:
+    """C2(c): counts classify-frontend Windows-bridge failures (missing
+    interpreter/bootstrap, subprocess error, nonzero exit, unparseable
+    JSON, unrecognized state) so ``continue_after_lua_load`` can report a
+    bridge-failure count in its returned evidence string. Without this, a
+    dead bridge and a healthy classifier that legitimately never sees a
+    recognized screen both look identical from the outside -- a final
+    "unknown" with no way to tell which one happened. ``continue_after_lua_load``
+    resets ``count`` to 0 at the start of each call."""
+
+    count = 0
+
+
+_frontend_bridge_failures = _FrontendBridgeFailureTracker()
 
 
 async def continue_after_lua_load(
@@ -2115,6 +2138,16 @@ async def continue_after_lua_load(
     polls = 0
     disarmed = False
     final_state = FrontendLoadState.UNKNOWN
+    # C3: track the positive state a press was last fired for, plus a
+    # streak of consecutive UNKNOWN reads since then. A second Escape can
+    # land after the world transition but before the tuner port reopens
+    # if it fires on every poll a positive classification is seen -- so a
+    # press now re-arms only on a genuinely different positive state, or
+    # on returning to the SAME state after at least two intervening
+    # UNKNOWN polls (never on an identical consecutive read).
+    last_pressed_state: FrontendLoadState | None = None
+    unknown_streak = 0
+    _frontend_bridge_failures.count = 0
     while polls < world_polls:
         if _is_tuner_port_open():
             return (
@@ -2129,17 +2162,29 @@ async def continue_after_lua_load(
                 # the rest of this call. Never treated as success on its
                 # own; only the port check above returns success.
                 disarmed = True
+                unknown_streak = 0
+            elif final_state is FrontendLoadState.UNKNOWN:
+                unknown_streak += 1
             elif not disarmed and final_state in (
                 FrontendLoadState.CONTINUE_SCREEN,
                 FrontendLoadState.LEADER_SCREEN,
             ):
-                _press_escape()
+                if final_state != last_pressed_state or unknown_streak >= 2:
+                    _press_escape()
+                    last_pressed_state = final_state
+                unknown_streak = 0
         polls += 1
         await asyncio.sleep(2.0)
+    bridge_note = (
+        f" Frontend classification bridge failures during wait: "
+        f"{_frontend_bridge_failures.count}."
+        if _frontend_bridge_failures.count
+        else ""
+    )
     return (
         f"WARNING: FireTuner port did not reopen within the wait window "
         f"for '{save_name}'. Last frontend classification: "
-        f"{final_state.value}. Check the game manually."
+        f"{final_state.value}.{bridge_note} Check the game manually."
     )
 
 
@@ -2179,7 +2224,22 @@ def _classify_frontend_load_state_native() -> FrontendLoadState:
     if _is_tuner_port_open():
         return FrontendLoadState.IN_WORLD
 
-    if sys.platform != "win32" or not _winrt_ocr_available():
+    if sys.platform != "win32":
+        return FrontendLoadState.UNKNOWN
+
+    try:
+        # C2(a): `_winrt_ocr_available()` imports `winrt.windows.media.ocr`
+        # and can raise ModuleNotFoundError (winrt not installed) or any
+        # other OCR-engine-lookup error. Previously this sat outside any
+        # try/except and could propagate straight out of
+        # `continue_after_lua_load`, crashing the reload waiter instead of
+        # yielding UNKNOWN -- positive-evidence-only classification must
+        # fail closed, never crash.
+        ocr_available = _winrt_ocr_available()
+    except Exception:
+        log.debug("winrt OCR availability check failed", exc_info=True)
+        return FrontendLoadState.UNKNOWN
+    if not ocr_available:
         return FrontendLoadState.UNKNOWN
 
     try:
@@ -2212,7 +2272,16 @@ def _classify_frontend_load_state_windows_bridge() -> FrontendLoadState:
     python_exe = os.environ.get("CIV6_WINDOWS_PYTHON", _WSL_WINDOWS_PYTHON)
     bootstrap = os.environ.get("CIV6_WINDOWS_BOOTSTRAP", _WSL_WINDOWS_BOOTSTRAP)
     if not (os.path.exists(python_exe) and os.path.exists(bootstrap)):
-        log.debug("Windows bridge unavailable (%s, %s)", python_exe, bootstrap)
+        # C2(b): escalated from DEBUG -- a missing interpreter/bootstrap
+        # means classification silently never works for the rest of the
+        # run; that must be visible live, not only with debug logging on.
+        missing = [p for p in (python_exe, bootstrap) if not os.path.exists(p)]
+        _frontend_bridge_failures.count += 1
+        log.warning(
+            "Windows bridge unavailable for frontend classification -- "
+            "missing path(s): %s",
+            missing,
+        )
         return FrontendLoadState.UNKNOWN
     win_bootstrap = bootstrap
     if bootstrap.startswith("/mnt/") and len(bootstrap) > 7:
@@ -2226,10 +2295,12 @@ def _classify_frontend_load_state_windows_bridge() -> FrontendLoadState:
             timeout=30,
         )
     except Exception as exc:
+        _frontend_bridge_failures.count += 1
         log.warning("Windows bridge frontend classification failed: %s", exc)
         return FrontendLoadState.UNKNOWN
 
     if proc.returncode != 0:
+        _frontend_bridge_failures.count += 1
         log.warning(
             "Windows bridge frontend classification exited %d: %s",
             proc.returncode,
@@ -2240,11 +2311,13 @@ def _classify_frontend_load_state_windows_bridge() -> FrontendLoadState:
     stdout = proc.stdout.decode("utf-8", errors="replace").strip()
     lines = [ln for ln in stdout.splitlines() if ln.strip()]
     if not lines:
+        _frontend_bridge_failures.count += 1
         log.warning("Windows bridge frontend classification produced no output")
         return FrontendLoadState.UNKNOWN
     try:
         payload = json.loads(lines[-1])
     except json.JSONDecodeError:
+        _frontend_bridge_failures.count += 1
         log.warning(
             "Windows bridge frontend classification produced non-JSON output: %r",
             stdout,
@@ -2255,6 +2328,7 @@ def _classify_frontend_load_state_windows_bridge() -> FrontendLoadState:
     try:
         return FrontendLoadState(state_str)
     except ValueError:
+        _frontend_bridge_failures.count += 1
         log.warning(
             "Windows bridge frontend classification returned an unrecognized "
             "state: %r",

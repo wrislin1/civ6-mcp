@@ -301,6 +301,37 @@ def test_boot_health_gate_rejects_missing_profile_csv(monkeypatch, capsys, tmp_p
     assert payload["error"]  # actionable, non-empty
 
 
+def test_boot_health_gate_handles_unreadable_profile_csv(monkeypatch, capsys, tmp_path):
+    """C4: Profile.csv can exist (os.path.exists True) but still raise on
+    os.path.getsize -- e.g. a permissions error, or a race where the file
+    is deleted/rotated between the exists() and getsize() calls. That
+    exception must never escape _boot_health uncaught; it must produce the
+    same structured {ok: false, baseline_offset: null, error: ...} JSON
+    promised for a missing profile, never a raw traceback."""
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(
+        launcher_cli.game_launcher, "_profile_csv_path", lambda: str(profile)
+    )
+    monkeypatch.setattr(launcher_cli.os.path, "exists", lambda _p: True)
+
+    def raise_getsize(_path):
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr(launcher_cli.os.path, "getsize", raise_getsize)
+
+    code = launcher_cli.main(["boot-health", "--json", "--timeout", "1"])
+
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["baseline_offset"] is None
+    assert payload["reason"] == "profile_missing"
+    assert payload["error"]  # actionable, non-empty
+    assert "Permission denied" in payload["error"]
+
+
 def test_boot_health_command_without_json_prints_plain_text(monkeypatch, capsys, tmp_path):
     profile = tmp_path / "Profile.csv"
     profile.write_text("")

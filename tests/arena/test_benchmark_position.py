@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 import civ_mcp.arena.benchmark_position as benchmark_position
@@ -160,6 +161,50 @@ async def test_capture_deploys_then_calls_runner_reload_then_capture_state(monke
     assert result["deployment"]["ok"] is True
 
 
+async def test_capture_aborts_when_reload_is_unverified(monkeypatch):
+    """C1: `reload_position` returning `verified=False` (the F16(b)
+    stable-open-port case, structurally indistinguishable from an inert
+    Network.LoadGame) must abort `capture` before popup hygiene or state
+    capture ever run -- proceeding would bake a captured "post-reload"
+    state that was never actually preceded by a reload."""
+
+    async def fake_reload(connection, position):
+        return False
+
+    async def fake_popups(connection):
+        raise AssertionError("popup hygiene must not run after an unverified reload")
+
+    async def fake_capture(connection, player_id, tiles):
+        raise AssertionError("canonical state must not be captured after an unverified reload")
+
+    _patch_common(monkeypatch, reload_fn=fake_reload, popups=fake_popups, capture=fake_capture)
+
+    with pytest.raises(benchmark_position.UnverifiedReloadError, match="verified=False"):
+        await benchmark_position.capture_position(_provenance())
+
+
+def test_capture_cli_does_not_write_output_when_reload_unverified(tmp_path, monkeypatch):
+    provenance_path = tmp_path / "authoring.json"
+    provenance_path.write_text(json.dumps(_provenance()))
+    output_path = tmp_path / "capture.json"
+
+    async def fake_reload(connection, position):
+        return False
+
+    _patch_common(monkeypatch, reload_fn=fake_reload)
+
+    exit_code = benchmark_position.main(
+        [
+            "capture",
+            "--authoring-provenance", str(provenance_path),
+            "--output", str(output_path),
+        ]
+    )
+
+    assert exit_code == 1
+    assert not output_path.exists()
+
+
 def test_module_never_imports_end_turn():
     """Neither CLI command advances a turn -- the module must never import
     or reference an end-turn call at all."""
@@ -244,6 +289,117 @@ async def test_verify_aborts_on_first_digest_mismatch(monkeypatch):
     assert len(result["digests"]) == 2  # only the two matching cycles are kept
     # No further deploy/reload/capture cycles ran past the mismatch.
     assert len(deploy_calls) == 3
+
+
+async def test_verify_aborts_on_first_cycle_when_reload_is_unverified(monkeypatch):
+    """C1: a caller that reads only `reload_position`'s return value would
+    let the F16(b) stable-open-port case sail through as an apparent
+    reload -- if that happened every cycle, all 12 digests would trivially
+    match (nothing ever actually reloaded) and a position would freeze as
+    "reproducible" on zero evidence. Every cycle must require
+    verified=True or abort with no output produced."""
+    position = _position_manifest(expected_state_sha256=_GOOD_DIGEST)
+    deploy_calls: list[object] = []
+    capture_calls: list[object] = []
+
+    def fake_deploy(archive, save_name, sha256):
+        deploy_calls.append(True)
+        return _deployment_evidence(sha256)
+
+    async def fake_reload(connection, pos):
+        return False
+
+    async def fake_popups(connection):
+        raise AssertionError("popup hygiene must not run after an unverified reload")
+
+    async def fake_capture(connection, player_id, tiles):
+        capture_calls.append(True)
+        raise AssertionError("canonical state must not be captured after an unverified reload")
+
+    _patch_common(
+        monkeypatch, deploy=fake_deploy, reload_fn=fake_reload, popups=fake_popups, capture=fake_capture
+    )
+
+    with pytest.raises(benchmark_position.UnverifiedReloadError, match=r"cycle 1/12"):
+        await benchmark_position.verify_position(position, 12)
+
+    assert capture_calls == []
+    assert len(deploy_calls) == 1  # aborted at the first cycle, no further cycles ran
+
+
+async def test_verify_aborts_mid_run_when_a_later_cycle_is_unverified(monkeypatch):
+    """The unverified check must run on EVERY cycle, not just the first --
+    a reload that goes unverified partway through a run is exactly as
+    fatal to the reproducibility guarantee as one on cycle 1."""
+    position = _position_manifest(expected_state_sha256=_GOOD_DIGEST)
+    deploy_calls: list[object] = []
+    reload_call_count = {"n": 0}
+
+    def fake_deploy(archive, save_name, sha256):
+        deploy_calls.append(True)
+        return _deployment_evidence(sha256)
+
+    async def fake_reload(connection, pos):
+        reload_call_count["n"] += 1
+        # First two cycles verify cleanly; the third does not.
+        return reload_call_count["n"] < 3
+
+    async def fake_popups(connection):
+        return "POPUPS|none"
+
+    async def fake_capture(connection, player_id, tiles):
+        return dict(_GOOD_STATE)
+
+    _patch_common(
+        monkeypatch, deploy=fake_deploy, reload_fn=fake_reload, popups=fake_popups, capture=fake_capture
+    )
+
+    with pytest.raises(benchmark_position.UnverifiedReloadError, match=r"cycle 3/12"):
+        await benchmark_position.verify_position(position, 12)
+
+    assert len(deploy_calls) == 3  # cycles 1-2 ran fully; cycle 3 aborted before a 4th deploy
+
+
+def test_verify_cli_does_not_write_output_when_reload_unverified(tmp_path, monkeypatch):
+    position_path = tmp_path / "entity-cal-v1.yaml"
+    position_path.write_text(
+        yaml.safe_dump(
+            {
+                "position_id": "entity-cal-v1",
+                "version": 1,
+                "archive": "benchmarks/saves/ENTITY_CAL_V1.Civ6Save",
+                "archive_sha256": "c" * 64,
+                "game_save_name": "ENTITY_CAL_V1",
+                "player_id": 0,
+                "expected_state": _GOOD_STATE,
+                "expected_state_sha256": _GOOD_DIGEST,
+                "relevant_tiles": [[9, 8]],
+                "objectives": [],
+                "rubric": [],
+                "split": "calibration",
+                "persistent_unit_ids": [],
+                "consumable_unit_ids": [],
+            }
+        )
+    )
+    output_path = tmp_path / "out.json"
+
+    async def fake_reload(connection, pos):
+        return False
+
+    _patch_common(monkeypatch, reload_fn=fake_reload)
+
+    exit_code = benchmark_position.main(
+        [
+            "verify",
+            "--position", str(position_path),
+            "--cycles", "12",
+            "--output", str(output_path),
+        ]
+    )
+
+    assert exit_code == 1
+    assert not output_path.exists()
 
 
 async def test_verify_calls_shared_popup_hygiene_before_each_capture(monkeypatch):

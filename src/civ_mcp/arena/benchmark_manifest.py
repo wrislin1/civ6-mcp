@@ -335,7 +335,11 @@ def validate_position_contract(position: PositionManifest) -> None:
                 f"references undeclared unit id {unit_id!r} -- every unit id used in a "
                 "unit predicate must appear in persistent_unit_ids or consumable_unit_ids"
             )
-        if kind in _UNIT_PREDICATE_KINDS and unit_id in consumable:
+        # `kind in _UNIT_PREDICATE_KINDS` is already guaranteed true here --
+        # the loop above `continue`s past any predicate whose kind isn't in
+        # that set (see the guard a few lines up) -- so only `unit_id in
+        # consumable` is a live condition (C5, external review).
+        if unit_id in consumable:
             # A consumable unit is EXPECTED to vanish from final state on a
             # correct trial (e.g. a settler consumed by found_city) -- that
             # looks identical, to any unit predicate, to the unit having
