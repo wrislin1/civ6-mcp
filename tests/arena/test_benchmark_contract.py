@@ -234,6 +234,37 @@ def test_campaign_manifest_rejects_unsafe_block_id(tmp_path, bad_block_id):
         load_campaign_manifest(path)
 
 
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        # D5 (external review wave D): CalibrationRules bounds. With all
+        # minimums at -1, twelve 0-0 ties would report PASS -- every
+        # threshold must be structurally meaningful.
+        (lambda d: d["rules"].__setitem__("pairs_per_model", 0), "pairs_per_model"),
+        (lambda d: d["rules"].__setitem__("pairs_per_model", -1), "pairs_per_model"),
+        (lambda d: d["rules"].__setitem__("minimum_decided_pairs", -1), "minimum_decided_pairs"),
+        (lambda d: d["rules"].__setitem__("minimum_standard_wins", -1), "minimum_standard_wins"),
+        # minimum_decided_pairs may never exceed pairs_per_model.
+        (lambda d: d["rules"].__setitem__("minimum_decided_pairs", 13), "minimum_decided_pairs"),
+        # decided >= wins is structurally required: wins > decided is unsatisfiable arithmetic.
+        (lambda d: d["rules"].__setitem__("minimum_standard_wins", 11), "minimum_standard_wins"),
+        # A zero or negative effect threshold makes the effect gate vacuous.
+        (lambda d: d["rules"].__setitem__("minimum_median_normalized_delta", 0), "minimum_median_normalized_delta"),
+        (lambda d: d["rules"].__setitem__("minimum_median_normalized_delta", -1.0), "minimum_median_normalized_delta"),
+        (lambda d: d["rules"].__setitem__("required_audits_per_arm", 0), "required_audits_per_arm"),
+        # D6: result_char_cap=-1 silently feeds nearly the whole result via
+        # result_str[:-1] while recording result_chars_fed_to_model=-1.
+        (lambda d: d.__setitem__("result_char_cap", -1), "result_char_cap"),
+        (lambda d: d.__setitem__("result_char_cap", 0), "result_char_cap"),
+    ],
+)
+def test_campaign_manifest_rejects_out_of_bounds_rules_and_caps(tmp_path, mutation, match):
+    path = _write_campaign(tmp_path, mutate=mutation)
+
+    with pytest.raises(ValueError, match=match):
+        load_campaign_manifest(path)
+
+
 def test_campaign_manifest_rejects_required_audits_per_arm_mismatched_with_audit_indices(tmp_path):
     def mutate(d):
         # 2 arms * 2 = 4, but audit_indices still declares 6 (Plan 2's

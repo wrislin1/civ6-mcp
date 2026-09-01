@@ -118,6 +118,7 @@ __all__ = [
     "GATE_ORDER",
     "ADMISSION_MODES",
     "REPLICATION_DEFERRED_ADMISSION",
+    "REPLICATION_DEFERRAL_ELIGIBLE_CODES",
     "AdmissionError",
     "AdmissionDependencies",
     "CampaignBundle",
@@ -149,6 +150,41 @@ ADMISSION_MODES = frozenset({"counted", "admit_only", "validation"})
 # Task 10's job is the final campaign disposition; this module only exposes
 # the typed failure so it's there to expose -- see classify_admission_disposition.
 REPLICATION_DEFERRED_ADMISSION = "REPLICATION_DEFERRED_ADMISSION"
+
+# Ruling G (external review wave D, finding D2): deferral eligibility is an
+# explicit ALLOWLIST of model-capability gate failure codes -- exactly the
+# codes proving the MODEL/BACKEND failed a capability gate: the endpoint/
+# model-identity gate, the tool-canary gate, the treatment-can-fire gate,
+# and the backend pre-flight probe (all raised by
+# benchmark_gates.admit_model_block / check_treatment_can_fire). Every other
+# classified code -- dirty_checkout, stale/unknown tuner holders, GPU
+# conflicts, boot/deploy/reload/popup/canonical-state failures, config
+# errors (counted_backend_hidden_retries, zero_briefing_budget), and
+# position-authoring errors (malformed_rubric_level,
+# undeclared_objective_requirements, minimal_observation_not_validated) --
+# is an operator/environment problem that must be FIXED, never converted
+# into a REPLICATION_DEFERRED_ADMISSION. Enforced BOTH at write time
+# (benchmark_runner._run_campaign_async refuses to record the disposition)
+# and at report time
+# (benchmark_campaign_report._has_valid_replication_deferred_admission
+# never honors a disposition whose underlying code is outside this set --
+# the two frozensets are asserted equal by
+# tests/arena/test_benchmark_admission.py).
+REPLICATION_DEFERRAL_ELIGIBLE_CODES = frozenset(
+    {
+        # endpoint/model-identity gate (admit_model_block)
+        "endpoint_identity_mismatch",
+        # tool-canary gate (admit_model_block)
+        "missing_tool_canary",
+        "tool_canary_failed",
+        # backend pre-flight probe failures (admit_model_block over probe_backend)
+        "insufficient_warm_latency_samples",
+        "backend_probe_errors",
+        "seed_not_honored",
+        # treatment-can-fire gate (check_treatment_can_fire)
+        "treatment_cannot_fire",
+    }
+)
 
 
 class AdmissionError(Exception):
@@ -863,6 +899,36 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     # OTHER campaign's fingerprint, must not be trusted just because it
     # happens to exist. Mirrors `CampaignStore.open_block`'s own check.
     if session_lock.get("campaign_fingerprint") != store.fingerprint:
+        return False
+
+    # D4 (external review wave D): the session must also declare THIS
+    # block's own identity. Copying gemma's session.json AND trial files
+    # together into qwen's directory defeats the A3 session-fingerprint
+    # check above (the copied trials agree with the copied session, and
+    # both carry this campaign's fingerprint) -- so the session's own
+    # `block_id` must equal the block directory it sits under, and its
+    # `model_config` must canonically equal the campaign lock's declared
+    # `ModelBlockConfig` for that block (never object identity -- both
+    # sides are compared as canonical JSON).
+    if session_lock.get("block_id") != block_id:
+        return False
+    lock_models = store.lock.get("models") if isinstance(store.lock, Mapping) else None
+    declared_model_config = None
+    if isinstance(lock_models, Sequence) and not isinstance(lock_models, (str, bytes)):
+        for model in lock_models:
+            if isinstance(model, Mapping) and model.get("block_id") == block_id:
+                declared_model_config = model
+                break
+    if declared_model_config is None:
+        return False
+    session_model_config = session_lock.get("model_config")
+    if not isinstance(session_model_config, Mapping):
+        return False
+
+    def _canonical(value: object) -> str:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=list)
+
+    if _canonical(dict(session_model_config)) != _canonical(dict(declared_model_config)):
         return False
 
     block_store = BenchmarkStore(trials_dir.parent, session_lock, fingerprint=session_lock.get("session_fingerprint"))

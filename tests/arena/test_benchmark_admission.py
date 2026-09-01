@@ -7,6 +7,7 @@ import yaml
 
 from civ_mcp.arena.benchmark_admission import (
     GATE_ORDER,
+    REPLICATION_DEFERRAL_ELIGIBLE_CODES,
     REPLICATION_DEFERRED_ADMISSION,
     AdmissionDependencies,
     AdmissionError,
@@ -313,7 +314,17 @@ def _write_block_session(store: CampaignStore, block_id: str, *, session_fingerp
     verify against."""
     block_dir = store.root / "blocks" / block_id
     block_dir.mkdir(parents=True, exist_ok=True)
-    session_payload = {"session_fingerprint": session_fingerprint, "campaign_fingerprint": store.fingerprint}
+    # D4 (external review wave D): block_is_complete now also binds the
+    # session to its own block -- block_id plus the campaign lock's
+    # declared ModelBlockConfig -- so a fixture session must carry both,
+    # exactly as build_session_lock's real output does.
+    declared_model_config = next(m for m in store.lock["models"] if m["block_id"] == block_id)
+    session_payload = {
+        "session_fingerprint": session_fingerprint,
+        "campaign_fingerprint": store.fingerprint,
+        "block_id": block_id,
+        "model_config": dict(declared_model_config),
+    }
     (block_dir / "session.json").write_text(json.dumps(session_payload))
     return session_payload
 
@@ -982,6 +993,74 @@ def test_block_is_complete_rejects_gemma_trials_copied_into_qwen_directory(tmp_p
     assert block_is_complete(store, block1.block_id) is False
 
 
+def test_block_is_complete_rejects_gemma_session_and_trials_copied_wholesale_into_qwen(tmp_path):
+    """D4 (external review wave D): copying gemma's session.json AND its
+    trial files together into qwen's block directory defeats the A3
+    session-fingerprint check (the copied trials agree with the copied
+    session, and the copied session carries THIS campaign's fingerprint).
+    The session's own declared block identity -- block_id plus the
+    campaign lock's ModelBlockConfig for that block -- must also bind the
+    evidence to the block directory it sits under."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0, block1 = campaign.models
+
+    _write_block_session(store, block0.block_id, session_fingerprint="gemma-sess")
+    gemma_dir = store.root / "blocks" / block0.block_id / "trials"
+    gemma_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block0.block_id]["trials"]:
+        (gemma_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+        )
+    assert block_is_complete(store, block0.block_id) is True
+
+    # Copy gemma's session.json verbatim (block_id/model_config and all)
+    # into qwen's directory alongside gemma's trial bytes -- internally
+    # fully self-consistent, so only the block-identity binding can catch it.
+    gemma_session = json.loads(
+        (store.root / "blocks" / block0.block_id / "session.json").read_text()
+    )
+    qwen_block_dir = store.root / "blocks" / block1.block_id
+    qwen_block_dir.mkdir(parents=True, exist_ok=True)
+    (qwen_block_dir / "session.json").write_text(json.dumps(gemma_session))
+    qwen_dir = qwen_block_dir / "trials"
+    qwen_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block1.block_id]["trials"]:
+        (qwen_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+        )
+
+    assert block_is_complete(store, block1.block_id) is False
+
+
+def test_block_is_complete_rejects_forged_block_id_with_wrong_model_config(tmp_path):
+    """D4 adversarial counterpart (standing rule): the weakest input
+    satisfying ONLY the block_id check -- gemma's copied session with
+    block_id rewritten to qwen's but model_config still gemma's -- must
+    still be rejected by the ModelBlockConfig cross-check against the
+    campaign lock."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0, block1 = campaign.models
+
+    gemma_declared = next(m for m in store.lock["models"] if m["block_id"] == block0.block_id)
+    qwen_block_dir = store.root / "blocks" / block1.block_id
+    qwen_block_dir.mkdir(parents=True, exist_ok=True)
+    forged_session = {
+        "session_fingerprint": "gemma-sess",
+        "campaign_fingerprint": store.fingerprint,
+        "block_id": block1.block_id,
+        "model_config": dict(gemma_declared),
+    }
+    (qwen_block_dir / "session.json").write_text(json.dumps(forged_session))
+    qwen_dir = qwen_block_dir / "trials"
+    qwen_dir.mkdir(parents=True)
+    for trial in store.schedule["blocks"][block1.block_id]["trials"]:
+        (qwen_dir / trial_filename(trial["index"])).write_text(
+            json.dumps({"campaign_fingerprint": store.fingerprint, "session_fingerprint": "gemma-sess"})
+        )
+
+    assert block_is_complete(store, block1.block_id) is False
+
+
 def test_record_admission_disposition_is_reconstructible_from_disk(tmp_path):
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block_id = campaign.models[1].block_id
@@ -1029,6 +1108,46 @@ def test_record_remediation_attempt_is_reconstructible_from_disk(tmp_path):
         "drain_gpu_service:foo.service",
     }
     assert all(m["block_id"] == block_id for m in remediations)
+
+
+def test_deferral_eligible_codes_mirror_is_in_lockstep_with_the_reporter():
+    """D2 (external review wave D, Ruling G): the write-time allowlist
+    (this module) and the report-time allowlist
+    (benchmark_campaign_report, kept as an independent frozenset to avoid
+    the heavy import graph) must be byte-identical -- a divergence would
+    let one side accept a code the other refuses."""
+    from civ_mcp.arena import benchmark_campaign_report
+
+    assert (
+        REPLICATION_DEFERRAL_ELIGIBLE_CODES
+        == benchmark_campaign_report.REPLICATION_DEFERRAL_ELIGIBLE_CODES
+    )
+
+
+def test_deferral_eligible_codes_exclude_operator_error_and_unclassified_codes():
+    """Ruling G: only model-capability gate failure codes are eligible --
+    spot-check that the catch-all and representative operator-error codes
+    from every non-capability gate are excluded, and that each named
+    capability-gate code is included."""
+    assert "tool_canary_failed" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
+    assert "endpoint_identity_mismatch" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
+    assert "backend_probe_errors" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
+    assert "treatment_cannot_fire" in REPLICATION_DEFERRAL_ELIGIBLE_CODES
+    for operator_code in (
+        "unexpected_admission_error",
+        "dirty_checkout",
+        "stale_repo_owned_tuner_holder",
+        "unknown_tuner_holder",
+        "gpu_conflict_not_acknowledged",
+        "gpu_conflict_unidentified_process",
+        "boot_health_missing_or_failed",
+        "deployment_not_verified",
+        "production_reload_not_verified",
+        "popup_hygiene_failed",
+        "canonical_state_mismatch",
+        "locked_identity_changed",
+    ):
+        assert operator_code not in REPLICATION_DEFERRAL_ELIGIBLE_CODES, operator_code
 
 
 def test_classify_admission_disposition_never_applies_to_first_block():

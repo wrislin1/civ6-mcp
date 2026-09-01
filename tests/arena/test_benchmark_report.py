@@ -18,6 +18,7 @@ from civ_mcp.arena import action_metrics
 from civ_mcp.arena.action_metrics import PredicateError
 from civ_mcp.arena.benchmark_report import (
     MalformedRubricError,
+    ReportError,
     build_report,
     render_markdown,
     score_rubric,
@@ -1378,4 +1379,27 @@ def test_build_report_still_rejects_a_lock_with_neither_smoke_nor_validation_nor
     _write_json(session_path, payload)
 
     with pytest.raises(Exception):
+        build_report(run_dir)
+
+
+def test_ambiguous_lock_is_rejected_even_with_zero_committed_trials(tmp_path):
+    """D8 (external review wave D): the mandatory campaign_fingerprint
+    lock-shape check used to sit inside the per-trial loop, so a run with
+    ZERO committed trials skipped it entirely and the ambiguous lock shape
+    the check exists to refuse (neither `ungated_smoke`, nor `validation`,
+    nor any `campaign_fingerprint`) passed clean. The lock's shape must be
+    validated whenever session.json is examined, regardless of how many
+    trials have been committed."""
+    run_dir = tmp_path / "run"
+    _build_validation_run(run_dir)
+    session_path = run_dir / "session.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    del payload["validation"]
+    _write_json(session_path, payload)
+    # Remove every committed trial: the scheduled trial exists but nothing
+    # was ever committed, so the per-trial loop body never runs.
+    for trial_path in (run_dir / "trials").glob("trial-*.json"):
+        trial_path.unlink()
+
+    with pytest.raises(ReportError, match="campaign_fingerprint"):
         build_report(run_dir)

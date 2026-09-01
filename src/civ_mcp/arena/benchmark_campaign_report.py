@@ -177,6 +177,32 @@ __all__ = [
 # graph -- backends/live-evidence/gates/runner -- for one string literal).
 REPLICATION_DEFERRED_ADMISSION = "REPLICATION_DEFERRED_ADMISSION"
 
+# Ruling G (external review wave D, finding D2) -- mirrors
+# benchmark_admission.REPLICATION_DEFERRAL_ELIGIBLE_CODES exactly (same
+# no-heavy-import rationale as the constant above; the two frozensets are
+# asserted equal by tests/arena/test_benchmark_admission.py). Deferral
+# eligibility is an explicit ALLOWLIST of model-capability gate failure
+# codes: the endpoint/model-identity gate, the tool-canary gate, the
+# treatment-can-fire gate, and the backend pre-flight probe. A disposition
+# whose underlying_failure.code is outside this set is NEVER a valid
+# replication deferral, no matter how well corroborated -- an operator/
+# environment failure (dirty checkout, tuner holder, GPU conflict, boot/
+# deploy/reload/popup/canonical-state, config or position-authoring errors)
+# must be fixed, never deferred around. Defense in depth: the runner
+# already refuses to WRITE such a disposition; this reader independently
+# refuses to HONOR one.
+REPLICATION_DEFERRAL_ELIGIBLE_CODES = frozenset(
+    {
+        "endpoint_identity_mismatch",
+        "missing_tool_canary",
+        "tool_canary_failed",
+        "insufficient_warm_latency_samples",
+        "backend_probe_errors",
+        "seed_not_honored",
+        "treatment_cannot_fire",
+    }
+)
+
 # -- block outcomes -----------------------------------------------------
 BLOCK_OUTCOME_PASS = "PASS"
 BLOCK_OUTCOME_MODEL_NULL = "MODEL_NULL"
@@ -230,6 +256,23 @@ def _canonical_bytes(value: object) -> bytes:
 
 def _read_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_json_evidence(path: Path, context: str) -> object:
+    """Every evidence read in this module goes through here (D9, external
+    review wave D): a truncated write mid-multibyte-sequence raises
+    UnicodeDecodeError from `read_text` before `json.loads` ever runs, and
+    an unreadable file raises OSError -- all three failure shapes (plus
+    JSONDecodeError) must surface as the module's typed
+    `CampaignReportError` naming the file and what it was being read as,
+    never a raw decoding exception."""
+    try:
+        return _read_json(path)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CampaignReportError(
+            f"failed to read {context} evidence at {path}: {exc} -- refusing to build a "
+            "campaign report over unreadable or corrupt evidence"
+        ) from exc
 
 
 def _fmt(value: object) -> str:
@@ -313,16 +356,36 @@ def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str)
     demonstrated non-remediable capability failure. Unknown failures cannot
     be converted into a deferral."
 
-    Both requirements must hold for at least one on-disk disposition record:
+    All of the following must hold for at least one on-disk disposition
+    record:
 
-    - the referenced `underlying_failure.code` is present and is not the
-      catch-all `unexpected_admission_error` -- an unclassified failure can
-      never become a deferral no matter how many times it repeats; and
+    - the referenced `underlying_failure.code` is present and is in the
+      Ruling G allowlist `REPLICATION_DEFERRAL_ELIGIBLE_CODES` (D2,
+      external review wave D) -- a model-capability gate failure code.
+      An unclassified (`unexpected_admission_error`) or operator-error
+      code can never become a deferral no matter how many times it
+      repeats or how it was remediated; and
     - corroboration precedes that disposition record in the same
-      append-only admissions/ sequence: either at least one remediation
-      record (a concrete fix was attempted and retried), or at least TWO
-      OTHER failed admission attempts (at distinct, strictly-preceding
-      attempt ordinals) carrying the SAME code.
+      append-only admissions/ sequence, in one of exactly two shapes:
+
+      (a) remediation-then-retry (D1, external review wave D): a
+          remediation record whose `result.ok` is genuinely true (a
+          concrete fix actually happened -- never a refused/no-op
+          `{"ok": False, ...}` record, which is what
+          `_run_remediation_async` writes for a failed drain or a
+          port with no holder), followed -- STRICTLY BETWEEN that
+          remediation and the disposition, in ordinal order -- by at
+          least one journaled failed admission attempt carrying the
+          SAME code as `underlying_failure`. The disposition's own
+          triggering failure (which always precedes the disposition)
+          may serve as that retry when it postdates the successful
+          remediation. A remediation that postdates the only failure on
+          record proves nothing: the failure was never re-observed after
+          the fix; or
+
+      (b) two confirming attempts: at least TWO failed admission
+          attempts (at distinct, strictly-preceding attempt ordinals)
+          carrying the SAME code.
 
       A1 (external review): the real CLI writes exactly ONE failed-gate
       attempt record (the failure `admit()` itself just hit) and THEN, in
@@ -335,7 +398,8 @@ def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str)
       its own corroboration). Genuine corroboration requires the failure to
       have been independently observed at least TWICE before the
       disposition is ever written -- i.e. at least two preceding attempt
-      records, not one.
+      records, not one -- OR observed again after a concrete, successful
+      remediation.
     """
     records = _admission_records(campaign_dir, block_id)
     for index, record in enumerate(records):
@@ -345,18 +409,29 @@ def _has_valid_replication_deferred_admission(campaign_dir: Path, block_id: str)
             continue
         underlying = record.get("underlying_failure")
         code = underlying.get("code") if isinstance(underlying, Mapping) else None
-        if not code or code == "unexpected_admission_error":
+        if not code or code not in REPLICATION_DEFERRAL_ELIGIBLE_CODES:
             continue
         preceding = records[:index]
-        has_preceding_remediation = any("remediation" in r for r in preceding)
-        preceding_same_code_failure_count = sum(
-            1
-            for r in preceding
+        same_code_failure_ordinals = [
+            i
+            for i, r in enumerate(preceding)
             if r.get("ok") is False
             and isinstance(r.get("failure"), Mapping)
             and r["failure"].get("code") == code
-        )
-        if has_preceding_remediation or preceding_same_code_failure_count >= 2:
+        ]
+        if len(same_code_failure_ordinals) >= 2:
+            return True
+        successful_remediation_ordinals = [
+            i
+            for i, r in enumerate(preceding)
+            if "remediation" in r
+            and isinstance(r.get("result"), Mapping)
+            and r["result"].get("ok") is True
+        ]
+        if any(
+            any(failure_ordinal > remediation_ordinal for failure_ordinal in same_code_failure_ordinals)
+            for remediation_ordinal in successful_remediation_ordinals
+        ):
             return True
     return False
 
@@ -399,6 +474,44 @@ def _require_calibration_rules(rules: object) -> dict[str, object]:
             f"({rules['minimum_decided_pairs']!r}) greater than pairs_per_model "
             f"({rules['pairs_per_model']!r}) -- no block could ever satisfy sensitivity, and "
             "a resulting tie review would have zero tied pairs to attribute"
+        )
+    # D5 (external review wave D), defense in depth (mirrors
+    # benchmark_contract._load_calibration_rules -- a hand-authored,
+    # self-consistently-fingerprinted campaign.json never went through
+    # that loader): with all minimums at -1, twelve 0-0 ties would satisfy
+    # every gate and report PASS. Every threshold must be structurally
+    # meaningful before any gate arithmetic runs.
+    if rules["pairs_per_model"] < 1:
+        raise CampaignReportError(
+            f"campaign.json 'rules' pairs_per_model must be >= 1 (got {rules['pairs_per_model']!r})"
+        )
+    if rules["minimum_decided_pairs"] < 0:
+        raise CampaignReportError(
+            "campaign.json 'rules' minimum_decided_pairs must be >= 0 "
+            f"(got {rules['minimum_decided_pairs']!r}) -- a negative sensitivity threshold is vacuous"
+        )
+    if rules["minimum_standard_wins"] < 0:
+        raise CampaignReportError(
+            "campaign.json 'rules' minimum_standard_wins must be >= 0 "
+            f"(got {rules['minimum_standard_wins']!r}) -- a negative direction threshold is vacuous"
+        )
+    if rules["minimum_standard_wins"] > rules["minimum_decided_pairs"]:
+        raise CampaignReportError(
+            f"campaign.json 'rules' minimum_standard_wins ({rules['minimum_standard_wins']!r}) "
+            f"must not exceed minimum_decided_pairs ({rules['minimum_decided_pairs']!r}) -- a "
+            "standard win is a decided pair, so requiring more wins than decided pairs is "
+            "unsatisfiable arithmetic"
+        )
+    if rules["minimum_median_normalized_delta"] <= 0:
+        raise CampaignReportError(
+            "campaign.json 'rules' minimum_median_normalized_delta must be > 0 "
+            f"(got {rules['minimum_median_normalized_delta']!r}) -- a zero or negative effect "
+            "threshold makes the effect gate vacuous"
+        )
+    if rules["required_audits_per_arm"] < 1:
+        raise CampaignReportError(
+            "campaign.json 'rules' required_audits_per_arm must be >= 1 "
+            f"(got {rules['required_audits_per_arm']!r})"
         )
     return rules
 
@@ -546,16 +659,14 @@ def _metric_fidelity_section(
             "entries": [],
             "mismatches": [],
         }
-    try:
-        audit = _read_json(audit_path)
-    except json.JSONDecodeError as exc:
-        # A7 (external review): a truncated/corrupt audit.json must abort
-        # report generation with a typed, file-naming error -- never a raw
-        # JSONDecodeError, and never silently folded into the "missing
-        # file" (ok=False) shape above, which a corrupt file is NOT: unlike
-        # an absent file, corrupt evidence may have once held a real
-        # verdict that a silent "absent" treatment would erase.
-        raise CampaignReportError(f"{audit_path} is not valid JSON: {exc}") from exc
+    # A7 (external review) / D9 (wave D): a truncated/corrupt/unreadable
+    # audit.json must abort report generation with a typed, file-naming
+    # error -- never a raw JSONDecodeError/UnicodeDecodeError/OSError, and
+    # never silently folded into the "missing file" (ok=False) shape
+    # above, which a corrupt file is NOT: unlike an absent file, corrupt
+    # evidence may have once held a real verdict that a silent "absent"
+    # treatment would erase.
+    audit = _read_json_evidence(audit_path, "metric-fidelity audit")
     if not isinstance(audit, Mapping):
         return {
             "ok": False,
@@ -677,7 +788,11 @@ def _tie_attribution_section(
     exactly one of `ALLOWED_TIE_ATTRIBUTIONS`. Missing the file, a missing
     per-pair entry, a hash mismatch, or an invalid attribution value all
     leave this section unresolved (`resolved: False`) -- never silently
-    treated as any particular attribution."""
+    treated as any particular attribution. An entry whose three
+    human-review fields (`transcript_finding`, `final_state_finding`,
+    `counterfactual_fixture_result`) are not all non-empty strings is a
+    typed hard error (D7, external review wave D) -- an attribution
+    without recorded findings is not a review at all."""
     if not tied_pairs:
         return {"required": False, "resolved": True, "attributions": {}, "reason": None}
 
@@ -689,13 +804,12 @@ def _tie_attribution_section(
             "attributions": {},
             "reason": f"{len(tied_pairs)} tied pair(s) but {path} does not exist",
         }
-    try:
-        payload = _read_json(path)
-    except json.JSONDecodeError as exc:
-        # A7 (external review): same discipline as the audit.json parse
-        # above -- a truncated/corrupt tie_attribution.json must hard-abort
-        # naming the file, never silently read as "not yet reviewed".
-        raise CampaignReportError(f"{path} is not valid JSON: {exc}") from exc
+    # A7 (external review) / D9 (wave D): same discipline as the
+    # audit.json read above -- a truncated/corrupt/unreadable
+    # tie_attribution.json must hard-abort with a typed error naming the
+    # file, never silently read as "not yet reviewed" and never a raw
+    # decoding exception.
+    payload = _read_json_evidence(path, "tie-attribution review")
     if not isinstance(payload, Mapping):
         return {
             "required": True,
@@ -769,6 +883,27 @@ def _tie_attribution_section(
                     "the committed trials"
                 ),
             }
+
+        # D7 (external review wave D): the three human-review fields are
+        # the actual review evidence -- an entry carrying only pair_id/
+        # attribution/hashes is a mechanical stamp, not a review, and
+        # honoring it would mint MODEL_FLOOR_NULL/MODEL_TIE_NULL with no
+        # review having happened. Each must be a non-empty (non-blank)
+        # string; anything less is a typed, fail-closed refusal naming
+        # the pair and the missing field(s).
+        review_fields = ("transcript_finding", "final_state_finding", "counterfactual_fixture_result")
+        missing_review_fields = [
+            field
+            for field in review_fields
+            if not isinstance(entry.get(field), str) or not entry.get(field).strip()
+        ]
+        if missing_review_fields:
+            raise CampaignReportError(
+                f"{path} entry for pair {pair_id!r} is missing non-empty human-review "
+                f"field(s) {missing_review_fields} -- an attribution without recorded "
+                "transcript/final-state/counterfactual findings is not a completed tie "
+                "review and must never resolve a tie-derived outcome"
+            )
 
         mechanical_label = (
             "zero_tie"
@@ -902,7 +1037,7 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
     `CampaignReportError`.
     """
     campaign_dir = Path(campaign_dir)
-    lock = _read_json(campaign_dir / "campaign.json")
+    lock = _read_json_evidence(campaign_dir / "campaign.json", "campaign lock")
     if not isinstance(lock, Mapping):
         raise CampaignReportError(f"campaign.json must be a JSON object, got {type(lock).__name__}")
 
@@ -945,7 +1080,7 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
     if not position_id:
         raise CampaignReportError("campaign.json is missing a non-empty 'position_id'")
 
-    schedule = _read_json(campaign_dir / "schedule.json")
+    schedule = _read_json_evidence(campaign_dir / "schedule.json", "campaign schedule")
     if not isinstance(schedule, Mapping) or not isinstance(schedule.get("blocks"), Mapping):
         raise CampaignReportError("schedule.json is missing a 'blocks' mapping")
 
@@ -1055,7 +1190,7 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
         except ReportError as exc:
             raise CampaignReportError(f"block {block_id!r} report failed: {exc}") from exc
 
-        block_session = _read_json(block_dir / "session.json")
+        block_session = _read_json_evidence(block_dir / "session.json", f"block {block_id!r} session lock")
         if not isinstance(block_session, Mapping):
             raise CampaignReportError(f"{block_dir / 'session.json'} must be a JSON object")
         report_inputs.append(f"blocks/{block_id}/session.json")
@@ -1064,6 +1199,32 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
                 f"block {block_id!r} session.json campaign_fingerprint "
                 f"{block_session.get('campaign_fingerprint')!r} does not match this "
                 f"campaign's campaign_fingerprint {campaign_fingerprint!r}"
+            )
+        # D4 (external review wave D): every block of one campaign shares
+        # the same campaign/position/scorer fingerprints, so those three
+        # cross-checks alone cannot catch blocks/gemma copied wholesale to
+        # blocks/qwen. The session's own declared block identity must match
+        # the block directory it is being scored under...
+        if block_session.get("block_id") != block_id:
+            raise CampaignReportError(
+                f"block {block_id!r} session.json declares block_id "
+                f"{block_session.get('block_id')!r} -- refusing to score evidence recorded "
+                "for a different block (cross-block evidence substitution)"
+            )
+        # ...and its model_config must canonically equal campaign.json's
+        # declared ModelBlockConfig for that block (canonical-JSON
+        # comparison, never object identity), so a forged top-level
+        # block_id alone cannot re-home another block's evidence.
+        session_model_config = block_session.get("model_config")
+        declared_model_config = dict(models[block_index])
+        if (
+            not isinstance(session_model_config, Mapping)
+            or _canonical_bytes(dict(session_model_config)) != _canonical_bytes(declared_model_config)
+        ):
+            raise CampaignReportError(
+                f"block {block_id!r} session.json model_config does not match campaign.json's "
+                f"declared ModelBlockConfig for block {block_id!r} -- refusing to score "
+                "evidence recorded under a different locked model configuration"
             )
         # G-round-1 (finding 2c continued): unconditional now that
         # position_id is a required lock field -- no more "only checked
@@ -1087,7 +1248,9 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
         scored_by_index = _scored_by_index_from_block_report(block_report, str(position_id))
         raw_by_index: dict[int, Mapping[str, object]] = {}
         for index in expected_indices:
-            raw_by_index[index] = _read_json(trials_dir / trial_filename(index))
+            raw_by_index[index] = _read_json_evidence(
+                trials_dir / trial_filename(index), f"block {block_id!r} committed trial"
+            )
             report_inputs.append(f"blocks/{block_id}/trials/{trial_filename(index)}")
 
         calibration = _calibration_section(

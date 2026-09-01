@@ -198,22 +198,56 @@ def _load_model_block(raw: object, context: str) -> ModelBlockConfig:
 
 
 def _load_calibration_rules(raw: object, context: str) -> CalibrationRules:
+    # D5 (external review wave D): every threshold is bounded so no rules
+    # block can make the sensitivity/direction/effect gates vacuous -- with
+    # all minimums at -1, twelve 0-0 ties would have reported PASS.
+    # (benchmark_campaign_report._require_calibration_rules enforces the
+    # same structural bounds at report time, defense in depth, for a
+    # campaign.json that never went through this loader.) The frozen
+    # Plan-2 values (pairs 12, decided 10, wins 10, median 4/12, audits 3
+    # per arm) satisfy every bound, including wins <= decided (10 <= 10).
     mapping = _require_mapping(raw, context)
     _require_exact_keys(mapping, _CALIBRATION_RULES_FIELDS, context)
+    pairs_per_model = _require_int(mapping["pairs_per_model"], f"{context}.pairs_per_model", minimum=1)
+    minimum_decided_pairs = _require_int(
+        mapping["minimum_decided_pairs"], f"{context}.minimum_decided_pairs", minimum=0
+    )
+    minimum_standard_wins = _require_int(
+        mapping["minimum_standard_wins"], f"{context}.minimum_standard_wins", minimum=0
+    )
+    minimum_median_normalized_delta = _require_number(
+        mapping["minimum_median_normalized_delta"], f"{context}.minimum_median_normalized_delta"
+    )
+    required_audits_per_arm = _require_int(
+        mapping["required_audits_per_arm"], f"{context}.required_audits_per_arm", minimum=1
+    )
+    if minimum_decided_pairs > pairs_per_model:
+        raise ValueError(
+            f"{context}.minimum_decided_pairs ({minimum_decided_pairs}) must not exceed "
+            f"pairs_per_model ({pairs_per_model}) -- no block could ever satisfy sensitivity"
+        )
+    if minimum_standard_wins > pairs_per_model:
+        raise ValueError(
+            f"{context}.minimum_standard_wins ({minimum_standard_wins}) must not exceed "
+            f"pairs_per_model ({pairs_per_model}) -- no block could ever satisfy direction"
+        )
+    if minimum_standard_wins > minimum_decided_pairs:
+        raise ValueError(
+            f"{context}.minimum_standard_wins ({minimum_standard_wins}) must not exceed "
+            f"minimum_decided_pairs ({minimum_decided_pairs}) -- a standard win is a decided "
+            "pair, so requiring more wins than decided pairs is unsatisfiable arithmetic"
+        )
+    if minimum_median_normalized_delta <= 0:
+        raise ValueError(
+            f"{context}.minimum_median_normalized_delta must be > 0 -- a zero or negative "
+            f"effect threshold makes the effect gate vacuous (got {minimum_median_normalized_delta})"
+        )
     return CalibrationRules(
-        pairs_per_model=_require_int(mapping["pairs_per_model"], f"{context}.pairs_per_model"),
-        minimum_decided_pairs=_require_int(
-            mapping["minimum_decided_pairs"], f"{context}.minimum_decided_pairs"
-        ),
-        minimum_standard_wins=_require_int(
-            mapping["minimum_standard_wins"], f"{context}.minimum_standard_wins"
-        ),
-        minimum_median_normalized_delta=_require_number(
-            mapping["minimum_median_normalized_delta"], f"{context}.minimum_median_normalized_delta"
-        ),
-        required_audits_per_arm=_require_int(
-            mapping["required_audits_per_arm"], f"{context}.required_audits_per_arm"
-        ),
+        pairs_per_model=pairs_per_model,
+        minimum_decided_pairs=minimum_decided_pairs,
+        minimum_standard_wins=minimum_standard_wins,
+        minimum_median_normalized_delta=minimum_median_normalized_delta,
+        required_audits_per_arm=required_audits_per_arm,
     )
 
 
@@ -379,7 +413,10 @@ def load_campaign_manifest(path: str | Path) -> CampaignManifest:
     if max_steps != PLAN2_MAX_STEPS:
         raise ValueError(f"campaign manifest.max_steps must be 8 for Plan 2; got {max_steps}")
 
-    result_char_cap = _require_int(raw["result_char_cap"], "campaign manifest.result_char_cap")
+    # D6 (external review wave D): result_char_cap must be positive -- a
+    # negative cap silently feeds nearly the whole result via
+    # result_str[:-1] while recording result_chars_fed_to_model=-1.
+    result_char_cap = _require_int(raw["result_char_cap"], "campaign manifest.result_char_cap", minimum=1)
 
     audit_indices = tuple(
         _require_int(a, f"campaign manifest.audit_indices[{i}]")

@@ -1202,9 +1202,18 @@ def _preseed_gemma_block_complete(
     gemma_block_dir = run_dir / "campaign-run" / "blocks" / gemma_block_id
     gemma_trials_dir = gemma_block_dir / "trials"
     gemma_trials_dir.mkdir(parents=True)
+    # D4 (external review wave D): block_is_complete now also requires the
+    # session to declare its own block identity -- block_id plus the
+    # campaign lock's ModelBlockConfig for that block. The campaign lock
+    # was already written to disk by _campaign_store_fingerprint's
+    # CampaignStore.create call, so read the declared config from there.
+    campaign_lock = json.loads((run_dir / "campaign-run" / "campaign.json").read_text())
+    declared_model_config = next(m for m in campaign_lock["models"] if m["block_id"] == gemma_block_id)
     gemma_block_dir_session = {
         "session_fingerprint": session_fingerprint,
         "campaign_fingerprint": campaign_fingerprint,
+        "block_id": gemma_block_id,
+        "model_config": declared_model_config,
     }
     (gemma_block_dir / "session.json").write_text(json.dumps(gemma_block_dir_session))
     for trial in schedule["blocks"][gemma_block_id]["trials"]:
@@ -1228,6 +1237,8 @@ async def test_campaign_run_refuses_on_first_failed_live_gate(tmp_path, monkeypa
 
     campaign_path = _write_fixture_campaign_and_position(tmp_path)
     run_dir = tmp_path / "runs"
+
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
 
     class _FailFirstGatePipeline:
         def __init__(self, _deps):
@@ -1290,6 +1301,8 @@ async def test_campaign_qwen_failure_after_gemma_complete_records_disposition(tm
     # run-dir/campaign would actually stamp, not an arbitrary placeholder.
     campaign_fingerprint = await _campaign_store_fingerprint(campaign_path, run_dir)
     _preseed_gemma_block_complete(run_dir, gemma_block_id, schedule, campaign_fingerprint)
+
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
 
     class _QwenFailsPipeline:
         def __init__(self, _deps):
@@ -1356,6 +1369,8 @@ async def test_campaign_qwen_unclassified_failure_never_records_disposition(tmp_
     campaign_fingerprint = await _campaign_store_fingerprint(campaign_path, run_dir)
     _preseed_gemma_block_complete(run_dir, gemma_block_id, schedule, campaign_fingerprint)
 
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
+
     class _QwenFailsUnclassifiedPipeline:
         def __init__(self, _deps):
             pass
@@ -1403,9 +1418,114 @@ async def test_campaign_qwen_unclassified_failure_never_records_disposition(tmp_
 
 
 @pytest.mark.asyncio
+async def test_campaign_qwen_operator_error_code_never_records_disposition(tmp_path, monkeypatch, capsys):
+    """D2 (external review wave D, Ruling G): a classified OPERATOR-ERROR
+    code (dirty_checkout -- and by the same allowlist every tuner/GPU/
+    boot/deploy/reload/popup/canonical-state code) must never be written
+    as a REPLICATION_DEFERRED_ADMISSION disposition, even once Gemma has
+    completed a full counted block. Only model-capability gate failure
+    codes (REPLICATION_DEFERRAL_ELIGIBLE_CODES) are deferral-eligible."""
+    from civ_mcp.arena.benchmark_admission import (
+        REPLICATION_DEFERRED_ADMISSION,
+        AdmissionError,
+    )
+    from civ_mcp.arena.benchmark_campaign import compile_campaign_schedule
+    from civ_mcp.arena.benchmark_contract import load_campaign_manifest
+
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    campaign = load_campaign_manifest(campaign_path)
+    schedule = compile_campaign_schedule(campaign)
+    gemma_block_id = campaign.models[0].block_id
+
+    campaign_fingerprint = await _campaign_store_fingerprint(campaign_path, run_dir)
+    _preseed_gemma_block_complete(run_dir, gemma_block_id, schedule, campaign_fingerprint)
+
+    class _QwenFailsOperatorErrorPipeline:
+        def __init__(self, _deps):
+            pass
+
+        async def admit(self, bundle, block, store, *, mode, **_kwargs):
+            raise AdmissionError("dirty_checkout", {"message": "WSL checkout is dirty"})
+
+    monkeypatch.setattr(
+        benchmark_runner, "_build_admission_pipeline", lambda args, api_key, **_kwargs: _QwenFailsOperatorErrorPipeline(None)
+    )
+
+    def _boom_run_resolved_block(*_args, **_kwargs):
+        raise AssertionError("run_resolved_block must never run when admission fails")
+
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", _boom_run_resolved_block)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err.lower()
+    assert "dirty_checkout" in err
+    assert "refus" in err
+
+    qwen_block_id = campaign.models[1].block_id
+    admissions_dir = run_dir / "campaign-run" / "admissions"
+    matches = (
+        [
+            json.loads(p.read_text())
+            for p in admissions_dir.iterdir()
+            if p.name.startswith(f"{qwen_block_id}-attempt-")
+        ]
+        if admissions_dir.is_dir()
+        else []
+    )
+    dispositions = [m for m in matches if m.get("disposition") == REPLICATION_DEFERRED_ADMISSION]
+    assert dispositions == []
+
+
+@pytest.mark.asyncio
+async def test_campaign_counted_run_refuses_when_api_key_env_is_unset(tmp_path, monkeypatch, capsys):
+    """D3 (external review wave D): a counted --campaign run whose api-key
+    env var is unset/empty must refuse up front, naming the variable --
+    never fall back to the placeholder "x", whose 401s would surface as
+    backend_probe_errors (a deferral-ELIGIBLE model-capability code under
+    Ruling G) instead of the credentials problem they actually are."""
+    monkeypatch.delenv("LITELLM_OPENAI_API_KEY", raising=False)
+    campaign_path = _write_fixture_campaign_and_position(tmp_path)
+    run_dir = tmp_path / "runs"
+
+    def _boom_build_pipeline(*_args, **_kwargs):
+        raise AssertionError("no admission pipeline may be constructed without credentials")
+
+    monkeypatch.setattr(benchmark_runner, "_build_admission_pipeline", _boom_build_pipeline)
+
+    args = benchmark_runner._build_arg_parser().parse_args(
+        [
+            "--campaign", str(campaign_path),
+            "--run-id", "campaign-run",
+            "--run-dir", str(run_dir),
+        ]
+    )
+
+    exit_code = await benchmark_runner._run_async(args)
+
+    assert exit_code == 1
+    err = capsys.readouterr().err
+    assert "LITELLM_OPENAI_API_KEY" in err
+
+
+@pytest.mark.asyncio
 async def test_campaign_admit_only_exits_without_running_trials(tmp_path, monkeypatch):
     campaign_path = _write_fixture_campaign_and_position(tmp_path)
     run_dir = tmp_path / "runs"
+
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
 
     class _AdmitOnlyPipeline:
         def __init__(self, _deps):
@@ -1449,6 +1569,8 @@ async def test_campaign_non_counting_validation_runs_one_pair_and_writes_report_
     fingerprint pair."""
     campaign_path = _write_fixture_campaign_and_position(tmp_path)
     run_dir = tmp_path / "runs"
+
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
 
     class _ValidationPipeline:
         def __init__(self, _deps):
@@ -1543,6 +1665,8 @@ async def test_campaign_non_counting_validation_admission_failure_never_runs_a_t
 
     from civ_mcp.arena.benchmark_admission import AdmissionError
 
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
+
     class _FailingValidationPipeline:
         def __init__(self, _deps):
             pass
@@ -1582,6 +1706,8 @@ async def test_campaign_one_block_mode_stops_after_one_block(tmp_path, monkeypat
     run_dir = tmp_path / "runs"
 
     admitted_blocks: list[str] = []
+
+    monkeypatch.setenv("LITELLM_OPENAI_API_KEY", "test-key")
 
     class _OneBlockPipeline:
         def __init__(self, _deps):

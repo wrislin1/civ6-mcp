@@ -1487,12 +1487,32 @@ async def _load_campaign_context(args: argparse.Namespace) -> "_CampaignContext 
 async def _run_campaign_async(args: argparse.Namespace) -> int:
     from civ_mcp.arena import benchmark_admission
 
+    # D3 (external review wave D): a counted --campaign run (and the
+    # admit_only/validation paths sharing this pipeline) must never fall
+    # back to the placeholder api key "x" -- against a real endpoint the
+    # placeholder's 401s surface as backend_probe_errors, which is a
+    # deferral-ELIGIBLE model-capability code under Ruling G, so a missing
+    # credential could masquerade as a corroborable model failure. Checked
+    # before the campaign context is even loaded, so no store/pipeline is
+    # ever constructed on a credentials error. (--ungated-smoke keeps its
+    # loud placeholder-warning behavior -- a local gateway needs no key,
+    # and smoke evidence is never counted.)
+    api_key = os.environ.get(args.api_key_env)
+    if not api_key:
+        print(
+            f"civ-arena-benchmark: {args.api_key_env} is unset or empty; a --campaign run "
+            "requires real credentials and never falls back to a placeholder api key "
+            "(placeholder-driven 401s would be misclassified as backend_probe_errors, a "
+            f"deferral-eligible failure code). Export {args.api_key_env} and retry.",
+            file=sys.stderr,
+        )
+        return 1
+
     context = await _load_campaign_context(args)
     if context is None:
         return 1
     campaign, store, bundle = context.campaign, context.store, context.bundle
 
-    api_key = os.environ.get(args.api_key_env) or "x"
     pipeline = _build_admission_pipeline(args, api_key, user_prompt=campaign.prompt)
 
     blocks_by_id = {block.block_id: block for block in campaign.models}
@@ -1521,21 +1541,35 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
             disposition = benchmark_admission.classify_admission_disposition(
                 block_index=block_index, first_block_counted_complete=first_complete
             )
-            # Finding 4 (final review), part (b): an unclassified failure
-            # (the catch-all AdmissionPipeline.admit wraps an unrecognized
-            # exception in) must never be written as a
-            # REPLICATION_DEFERRED_ADMISSION disposition -- "Unknown
-            # failures cannot be converted into a deferral." This is a
-            # necessary condition at write time; the reporter separately
-            # requires on-disk corroboration (a preceding remediation or a
-            # second same-code failure) before honoring even a classified
+            # D2 (external review wave D, Ruling G) -- supersedes finding 4
+            # (final review), part (b): deferral eligibility is an explicit
+            # ALLOWLIST of model-capability gate failure codes
+            # (benchmark_admission.REPLICATION_DEFERRAL_ELIGIBLE_CODES:
+            # endpoint/model-identity, tool-canary, treatment-can-fire, and
+            # backend-probe codes). Everything else -- the catch-all
+            # unexpected_admission_error ("Unknown failures cannot be
+            # converted into a deferral.") AND every classified operator-
+            # error code (dirty_checkout, tuner-holder codes, GPU
+            # conflicts, boot/deploy/reload/popup/canonical-state codes)
+            # -- must never be written as a REPLICATION_DEFERRED_ADMISSION
+            # disposition: an operator/environment failure is fixed and
+            # retried, never deferred around. This is a necessary condition
+            # at write time; the reporter separately enforces the same
+            # allowlist AND requires on-disk corroboration (a successful
+            # remediation followed by a same-code retry, or a second
+            # same-code failure) before honoring even an eligible
             # disposition record -- see
             # benchmark_campaign_report._has_valid_replication_deferred_admission.
-            if disposition is not None and exc.code == "unexpected_admission_error":
+            if (
+                disposition is not None
+                and exc.code not in benchmark_admission.REPLICATION_DEFERRAL_ELIGIBLE_CODES
+            ):
                 print(
                     f"civ-arena-benchmark: block {next_block.block_id} admission failed "
-                    f"({exc.code}); refusing to record a {disposition} disposition for an "
-                    "unclassified failure",
+                    f"({exc.code}); refusing to record a {disposition} disposition -- "
+                    f"{exc.code!r} is not a model-capability gate failure code eligible "
+                    "for replication deferral (Ruling G); fix the underlying "
+                    "operator/environment problem and retry admission",
                     file=sys.stderr,
                 )
                 return 1

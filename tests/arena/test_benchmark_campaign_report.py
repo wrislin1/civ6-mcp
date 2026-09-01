@@ -171,6 +171,23 @@ def _write_block(
 
     _write_json(block_dir / "schedule.json", {"trials": schedule_trials})
     sampling = {"temperature": 0.0, "top_p": 1.0}
+    # D4 (external review wave D): the reporter cross-checks each block
+    # session's model_config against campaign.json's declared
+    # ModelBlockConfig for that block (canonical comparison) -- so a
+    # well-formed fixture session must carry the SAME model_config the
+    # lock declares (see _default_models), exactly as a real
+    # build_session_lock output does (model_config=asdict(block)).
+    model_config = next((dict(m) for m in _default_models() if m["block_id"] == block_id), None)
+    if model_config is None:
+        model_config = {
+            "block_id": block_id,
+            "model": f"{block_id}-model",
+            "endpoint_id": endpoint_id,
+            "sampling": sampling,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "briefing_required": False,
+        }
+    admission_endpoint = model_config["endpoint_id"] if endpoint_id == "ep-1" else endpoint_id
     session_payload = {
         "position_id": position_id,
         "block_id": block_id,
@@ -178,19 +195,12 @@ def _write_block(
         "scorer_fingerprint": scorer_fingerprint,
         "session_fingerprint": session_fingerprint,
         "positions": {position_id: {"rubric": _rubric(max_score)}},
-        "model_config": {
-            "block_id": block_id,
-            "model": f"{block_id}-model",
-            "endpoint_id": endpoint_id,
-            "sampling": sampling,
-            "chat_template_kwargs": {"enable_thinking": False},
-            "briefing_required": False,
-        },
+        "model_config": model_config,
         "model_admission": {
-            "requested_model": f"{block_id}-model",
-            "resolved_model": f"{block_id}-model",
-            "requested_endpoint": endpoint_id,
-            "resolved_endpoint": f"http://{endpoint_id}.local:8000",
+            "requested_model": model_config["model"],
+            "resolved_model": model_config["model"],
+            "requested_endpoint": admission_endpoint,
+            "resolved_endpoint": f"http://{admission_endpoint}.local:8000",
             "registry_fingerprint": "registry-fp-1",
             "gpu_topology": {"gpu_ids": gpu_ids if gpu_ids is not None else [0]},
             "sampling": sampling,
@@ -374,48 +384,72 @@ def _rules12(*, minimum_decided=10, minimum_wins=10, minimum_delta=None, require
     }
 
 
-def _write_qwen_deferral_record(campaign_dir: Path, *, corroboration: str = "two_attempts") -> None:
+def _write_qwen_deferral_record(
+    campaign_dir: Path, *, corroboration: str = "two_attempts", code: str = "tool_canary_failed"
+) -> None:
     """Write a `REPLICATION_DEFERRED_ADMISSION` admission record for
-    `qwen`, corroborated on disk per finding 4 (final review) and A1
-    (external review): a single failed admission of any code is refused,
-    so every caller of this helper that expects the deferral to be HONORED
-    must also produce either (a) TWO preceding failed admission attempts
-    with the same classified code (`corroboration="two_attempts"`, the
-    default -- see A1: the disposition's own triggering failure is itself
-    one of the on-disk attempt records, so genuine corroboration needs a
-    SECOND, independent one before it, not just the one that trips the
-    disposition) or (b) one remediation record preceding the deferral
-    (`corroboration="remediation"`). Pass `corroboration="single_failure"`
-    for the shape A1 closes: exactly ONE preceding failure (the same
-    failure `admit()` itself just hit, immediately followed by the CLI's
-    own disposition write in the same invocation) -- this must now be
-    REFUSED. Pass `corroboration=None` for the negative-test helper that
-    wants the bare, uncorroborated disposition-only record (no preceding
-    attempt record at all).
+    `qwen`, corroborated on disk per finding 4 (final review), A1
+    (external review), and D1 (external review wave D): a single failed
+    admission of any code is refused, so every caller of this helper that
+    expects the deferral to be HONORED must also produce either (a) TWO
+    preceding failed admission attempts with the same classified code
+    (`corroboration="two_attempts"`, the default -- see A1: the
+    disposition's own triggering failure is itself one of the on-disk
+    attempt records, so genuine corroboration needs a SECOND, independent
+    one before it, not just the one that trips the disposition) or (b) one
+    SUCCESSFUL remediation record followed by a journaled same-code
+    failed retry, then the disposition (`corroboration="remediation"` --
+    D1: a remediation with no post-remediation retry proves nothing).
+
+    Negative shapes: `"single_failure"` (A1: exactly ONE preceding
+    failure, the same failure `admit()` itself just hit);
+    `"failed_remediation"` (D1: a no-op remediation -- `result.ok` false,
+    e.g. the real `{"ok": False, "reason": "no_holder"}` record
+    `_run_remediation_async` writes -- plus one failure);
+    `"remediation_no_retry"` (D1: a successful remediation that
+    POSTDATES the only failure, i.e. zero journaled retries after it);
+    `None` (bare, uncorroborated disposition-only record). All of these
+    must be REFUSED.
+
+    `code` defaults to `tool_canary_failed` -- a Ruling-G-allowlisted
+    model-capability gate code (D2): any operator-error code (e.g.
+    `dirty_checkout`) is deferral-ineligible no matter the corroboration.
     """
     admissions_dir = campaign_dir / "admissions"
     admissions_dir.mkdir(parents=True, exist_ok=True)
-    code = "endpoint_unreachable"
     ordinal = 1
-    if corroboration == "two_attempts":
-        for _ in range(2):
-            _write_json(
-                admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
-                {"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}},
-            )
-            ordinal += 1
-    elif corroboration == "single_failure":
+
+    def _write_failure() -> None:
+        nonlocal ordinal
         _write_json(
             admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
             {"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}},
         )
         ordinal += 1
-    elif corroboration == "remediation":
+
+    def _write_remediation(*, ok: bool) -> None:
+        nonlocal ordinal
+        result: dict = {"ok": True, "terminated_pid": 4242, "port": 4318} if ok else {"ok": False, "reason": "no_holder"}
         _write_json(
             admissions_dir / f"qwen-attempt-{ordinal:03d}.json",
-            {"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": {"ok": True}},
+            {"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": result},
         )
         ordinal += 1
+
+    if corroboration == "two_attempts":
+        _write_failure()
+        _write_failure()
+    elif corroboration == "single_failure":
+        _write_failure()
+    elif corroboration == "remediation":
+        _write_remediation(ok=True)
+        _write_failure()
+    elif corroboration == "failed_remediation":
+        _write_remediation(ok=False)
+        _write_failure()
+    elif corroboration == "remediation_no_retry":
+        _write_failure()
+        _write_remediation(ok=True)
     elif corroboration is not None:
         raise ValueError(f"unknown corroboration kind {corroboration!r}")
     _write_json(
@@ -660,6 +694,54 @@ def test_campaign_report_refuses_a_validation_shaped_session_promoted_into_block
         build_campaign_report(campaign_dir)
 
 
+def test_campaign_report_refuses_gemma_evidence_copied_under_qwen_block(tmp_path):
+    """D4 (external review wave D): cross-block evidence substitution --
+    copying blocks/gemma wholesale to blocks/qwen used to pass because
+    only campaign/position/scorer fingerprints were cross-checked, and
+    every block of one campaign shares all three. The session's own
+    declared block identity must match the block directory it is scored
+    under, via a typed error -- never a silent verdict."""
+    import shutil
+
+    campaign_dir = tmp_path / "campaign"
+    pairs = _passing_gemma_pairs()
+    _build_full_two_block_campaign(
+        campaign_dir, gemma_pairs=pairs, qwen_pairs=pairs, rules=_rules12(), audit_indices=[1, 2]
+    )
+    # Replace qwen's evidence with a byte-identical copy of gemma's --
+    # internally fully self-consistent (session/trials/audit all agree
+    # with each other and with the shared campaign fingerprint).
+    shutil.rmtree(campaign_dir / "blocks" / "qwen")
+    shutil.copytree(campaign_dir / "blocks" / "gemma", campaign_dir / "blocks" / "qwen")
+
+    with pytest.raises(CampaignReportError, match="block_id"):
+        build_campaign_report(campaign_dir)
+
+
+def test_campaign_report_refuses_copied_evidence_with_forged_block_id(tmp_path):
+    """D4 adversarial counterpart (standing rule): the weakest input
+    satisfying ONLY the block_id check -- gemma's evidence copied under
+    blocks/qwen with the session's block_id rewritten to "qwen" but its
+    model_config still gemma's -- must still be rejected, by the
+    model_config-vs-campaign-lock cross-check."""
+    import shutil
+
+    campaign_dir = tmp_path / "campaign"
+    pairs = _passing_gemma_pairs()
+    _build_full_two_block_campaign(
+        campaign_dir, gemma_pairs=pairs, qwen_pairs=pairs, rules=_rules12(), audit_indices=[1, 2]
+    )
+    shutil.rmtree(campaign_dir / "blocks" / "qwen")
+    shutil.copytree(campaign_dir / "blocks" / "gemma", campaign_dir / "blocks" / "qwen")
+    session_path = campaign_dir / "blocks" / "qwen" / "session.json"
+    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
+    session_payload["block_id"] = "qwen"
+    _write_json(session_path, session_payload)
+
+    with pytest.raises(CampaignReportError, match="model_config"):
+        build_campaign_report(campaign_dir)
+
+
 # ---------------------------------------------------------------------------
 # Incomplete schedule: refused unless a valid Qwen deferral is on record
 # ---------------------------------------------------------------------------
@@ -696,9 +778,12 @@ def test_gemma_pass_with_valid_qwen_deferral_is_calibrated_deferred(tmp_path):
 
 def test_gemma_pass_with_qwen_deferral_via_preceding_remediation_is_calibrated_deferred(tmp_path):
     """The other corroboration path (spec: "at least one journaled retry
-    after a concrete remediation"): a single failed admission preceded by
-    a remediation attempt (e.g. terminate_tuner_pid) is honored exactly
-    like two confirming same-code failures."""
+    after a concrete remediation"): a SUCCESSFUL remediation attempt
+    (e.g. terminate_tuner_pid, result.ok true) followed by a journaled
+    same-code failed retry is honored exactly like two confirming
+    same-code failures (D1, external review wave D: the retry AFTER the
+    remediation is what proves the fix was actually attempted and did not
+    resolve the failure)."""
     campaign_dir, _ = _build_campaign_with_gemma(
         tmp_path,
         gemma_pairs=_passing_gemma_pairs(),
@@ -711,6 +796,79 @@ def test_gemma_pass_with_qwen_deferral_via_preceding_remediation_is_calibrated_d
     report = build_campaign_report(campaign_dir)
 
     assert report["verdict"]["outcome"] == "CALIBRATED_REPLICATION_DEFERRED"
+
+
+def test_report_refuses_qwen_deferral_via_failed_remediation(tmp_path):
+    """D1 (external review wave D), adversarial branch test: the weakest
+    input satisfying ONLY the remediation OR-branch of the old predicate
+    -- a record that merely CONTAINS a `remediation` key but whose result
+    reports failure (`{"ok": False, "reason": "no_holder"}`, the exact
+    shape `_run_remediation_async` records for a refused/no-op
+    remediation) plus one same-code failure -- must be REJECTED. A
+    remediation that never actually did anything corroborates nothing."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(campaign_dir, corroboration="failed_remediation")
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_when_remediation_postdates_the_only_failure(tmp_path):
+    """D1 (external review wave D): a SUCCESSFUL remediation with zero
+    journaled failed retries AFTER it (the only failure on record precedes
+    the remediation) must be rejected -- "at least one journaled retry
+    after a concrete remediation" requires the same-code failure to have
+    been observed again once the fix was in place."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    _write_qwen_deferral_record(campaign_dir, corroboration="remediation_no_retry")
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_report_refuses_qwen_deferral_for_operator_error_code_even_fully_corroborated(tmp_path):
+    """D2 (external review wave D, Ruling G): deferral eligibility is an
+    explicit ALLOWLIST of model-capability gate failure codes. An
+    operator-error code (`dirty_checkout`) must never be honored as a
+    REPLICATION_DEFERRED_ADMISSION -- even with perfect two-failure
+    corroboration AND a successful remediation followed by a retry."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=_passing_gemma_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        qwen_deferral_record=False,
+    )
+    admissions_dir = campaign_dir / "admissions"
+    admissions_dir.mkdir(parents=True, exist_ok=True)
+    records = [
+        {"block_id": "qwen", "ok": False, "failure": {"code": "dirty_checkout", "details": {}}},
+        {"block_id": "qwen", "ok": False, "failure": {"code": "dirty_checkout", "details": {}}},
+        {"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": {"ok": True}},
+        {"block_id": "qwen", "ok": False, "failure": {"code": "dirty_checkout", "details": {}}},
+        {
+            "block_id": "qwen",
+            "disposition": REPLICATION_DEFERRED_ADMISSION,
+            "underlying_failure": {"code": "dirty_checkout"},
+        },
+    ]
+    for ordinal, record in enumerate(records, start=1):
+        _write_json(admissions_dir / f"qwen-attempt-{ordinal:03d}.json", record)
+
+    with pytest.raises(CampaignReportError, match="incomplete schedule"):
+        build_campaign_report(campaign_dir)
 
 
 def test_report_refuses_qwen_deferral_from_single_uncorroborated_failure(tmp_path):
@@ -1049,6 +1207,35 @@ def test_calibration_rules_reject_minimum_decided_exceeding_pairs_per_model(tmp_
         build_campaign_report(campaign_dir)
 
 
+@pytest.mark.parametrize(
+    ("rules_override", "match"),
+    [
+        ({"minimum_decided": -1, "minimum_wins": -1, "minimum_delta": -1.0}, "minimum_decided_pairs"),
+        ({"minimum_wins": -1}, "minimum_standard_wins"),
+        ({"minimum_delta": 0.0}, "minimum_median_normalized_delta"),
+        ({"minimum_delta": -1.0}, "minimum_median_normalized_delta"),
+        ({"minimum_wins": 11}, "minimum_standard_wins"),  # wins > decided (10): unsatisfiable arithmetic
+    ],
+)
+def test_report_rejects_vacuous_or_negative_calibration_rule_thresholds(tmp_path, rules_override, match):
+    """D5 (external review wave D), reporter side (defense in depth --
+    load_campaign_manifest enforces the same bounds, but a hand-authored,
+    self-consistently-fingerprinted campaign.json never went through that
+    loader): with all minimums at -1, twelve 0-0 ties would satisfy every
+    gate and report PASS. The reporter must refuse such a rules block
+    outright, naming the offending field."""
+    gemma_pairs = [(f"z{i}", 0, 0) for i in range(12)]  # twelve 0-0 ties
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=gemma_pairs,
+        rules=_rules12(**rules_override),
+        audit_indices=[1, 2],
+    )
+
+    with pytest.raises(CampaignReportError, match=match):
+        build_campaign_report(campaign_dir)
+
+
 def test_block_outcome_never_derives_floor_null_from_empty_attributions():
     """Direct unit test of the defense-in-depth guard in `_block_outcome`:
     even if `tie_attribution` reports `resolved: True` with an EMPTY
@@ -1346,6 +1533,71 @@ def test_tie_attribution_invalid_value_leaves_block_unresolved(tmp_path):
     assert gemma["outcome"] == "TIE_ATTRIBUTION_REQUIRED"
 
 
+@pytest.mark.parametrize(
+    "strip_fields",
+    [
+        # All three human-review fields absent: only pair_id/attribution/hashes.
+        ("transcript_finding", "final_state_finding", "counterfactual_fixture_result"),
+        ("transcript_finding",),
+        ("final_state_finding",),
+        ("counterfactual_fixture_result",),
+    ],
+)
+def test_tie_attribution_entry_without_review_findings_is_refused(tmp_path, strip_fields):
+    """D7 (external review wave D): an attribution entry carrying only
+    pair_id/attribution/hashes -- no transcript finding, no final-state
+    finding, no counterfactual fixture result -- is not a human review at
+    all; honoring it would mint MODEL_FLOOR_NULL/MODEL_TIE_NULL without
+    any review evidence. Every review field must be a non-empty string
+    before the entry counts; anything less is refused with a typed
+    CampaignReportError naming the pair and the missing field(s)."""
+    gemma_pairs = [(f"p{i}", 0, 6) for i in range(8)] + [(f"z{i}", 0, 0) for i in range(4)]
+    tie_attribution = {f"z{i}": "model_floor" for i in range(4)}
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=gemma_pairs,
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        gemma_tie_attribution=tie_attribution,
+    )
+    tie_path = campaign_dir / "blocks" / "gemma" / "tie_attribution.json"
+    payload = json.loads(tie_path.read_text(encoding="utf-8"))
+    for entry in payload["attributions"]:
+        if entry["pair_id"] == "z2":
+            for field in strip_fields:
+                del entry[field]
+    _write_json(tie_path, payload)
+
+    with pytest.raises(CampaignReportError) as excinfo:
+        build_campaign_report(campaign_dir)
+    assert "z2" in str(excinfo.value)
+    assert strip_fields[0] in str(excinfo.value)
+
+
+@pytest.mark.parametrize("empty_value", ["", "   ", None, 42])
+def test_tie_attribution_entry_with_blank_or_nonstring_review_finding_is_refused(tmp_path, empty_value):
+    """D7 companion: a review field that is present but empty, whitespace,
+    None, or a non-string carries no review evidence either."""
+    gemma_pairs = [(f"p{i}", 0, 6) for i in range(8)] + [(f"z{i}", 0, 0) for i in range(4)]
+    tie_attribution = {f"z{i}": "model_floor" for i in range(4)}
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path,
+        gemma_pairs=gemma_pairs,
+        rules=_rules12(),
+        audit_indices=[1, 2],
+        gemma_tie_attribution=tie_attribution,
+    )
+    tie_path = campaign_dir / "blocks" / "gemma" / "tie_attribution.json"
+    payload = json.loads(tie_path.read_text(encoding="utf-8"))
+    for entry in payload["attributions"]:
+        if entry["pair_id"] == "z0":
+            entry["transcript_finding"] = empty_value
+    _write_json(tie_path, payload)
+
+    with pytest.raises(CampaignReportError, match="transcript_finding"):
+        build_campaign_report(campaign_dir)
+
+
 def test_tie_attribution_truncated_json_raises_campaign_report_error(tmp_path):
     """A7 (external review), tie_attribution.json side: same discipline as
     the audit.json truncation test above."""
@@ -1362,6 +1614,34 @@ def test_tie_attribution_truncated_json_raises_campaign_report_error(tmp_path):
     tie_path.write_text('{"session_fingerprint": "gemma-session", "attributions": [', encoding="utf-8")
 
     with pytest.raises(CampaignReportError, match=re.escape(str(tie_path))):
+        build_campaign_report(campaign_dir)
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "campaign.json",
+        "schedule.json",
+        "blocks/gemma/session.json",
+        "blocks/gemma/trials/trial-001.json",
+        "blocks/gemma/audit.json",
+    ],
+)
+def test_truncated_multibyte_evidence_raises_typed_error_not_unicode_decode_error(tmp_path, relative_path):
+    """D9 (external review wave D): a write truncated mid-multibyte-
+    sequence raises UnicodeDecodeError from read_text before json.loads
+    ever runs -- only json.JSONDecodeError was wrapped, and campaign.json/
+    schedule.json/session.json/trial reads were entirely unwrapped. Every
+    evidence read must surface as a typed CampaignReportError naming the
+    file, never a raw UnicodeDecodeError/OSError/JSONDecodeError."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    target = campaign_dir / relative_path
+    # b'{"a": "\xe2\x82' -- a euro sign truncated after two of its three bytes.
+    target.write_bytes(b'{"a": "\xe2\x82')
+
+    with pytest.raises(CampaignReportError, match=re.escape(str(target))):
         build_campaign_report(campaign_dir)
 
 
@@ -1498,9 +1778,11 @@ def test_report_surfaces_model_configuration_and_topology(tmp_path):
     assert "chat_template_kwargs" in campaign_models["gemma"]
 
     gemma_block = report["blocks"]["gemma"]
-    assert gemma_block["model_config"]["endpoint_id"] == "ep-1"
+    # D4: the surfaced model_config is the session's own, which must (and
+    # here does) match campaign.json's declared config for the block.
+    assert gemma_block["model_config"]["endpoint_id"] == "ep-gemma"
     assert gemma_block["model_admission"]["gpu_topology"] == {"gpu_ids": [0]}
-    assert gemma_block["model_admission"]["resolved_endpoint"] == "http://ep-1.local:8000"
+    assert gemma_block["model_admission"]["resolved_endpoint"] == "http://ep-gemma.local:8000"
 
 
 def test_report_surfaces_pair_trial_hashes(tmp_path):

@@ -96,7 +96,21 @@ def _canonical_bytes(value: object) -> bytes:
 
 
 def _read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    """Read one evidence file as JSON, wrapping every read/decode/parse
+    failure into the module's typed `ReportError` naming the file (D9,
+    external review wave D): a truncated write mid-multibyte-sequence
+    raises UnicodeDecodeError from `read_text` before `json.loads` ever
+    runs, and an unreadable file raises OSError -- none of those may
+    escape as a raw exception (the campaign-level reporter wraps
+    `ReportError` into its own typed error; a raw decoding exception would
+    bypass that fail-closed path entirely)."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ReportError(
+            f"failed to read evidence at {path}: {exc} -- refusing to build a report over "
+            "unreadable or corrupt evidence"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -665,6 +679,32 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
     ungated_smoke = bool(lock.get("ungated_smoke", False))
     validation = bool(lock.get("validation", False))
 
+    # Counted-campaign lock-shape validation (Task 3/4, tightened per
+    # round-1 review; hoisted out of the per-trial loop per D8, external
+    # review wave D -- inside the loop, a run with ZERO committed trials
+    # skipped this check entirely and the ambiguous lock shape it exists
+    # to refuse passed clean). Under Plan 2 there is no legitimate
+    # non-smoke, non-campaign session -- evidence is either explicitly
+    # `ungated_smoke: true` (benchmark_runner._run_async always stamps
+    # this), explicitly `validation: true` (B2, external review: a
+    # non-counting validation episode's session lock -- see the schema
+    # comment block above), or dual-stamped counted (build_campaign_lock /
+    # build_session_lock always stamp both fingerprints together). A lock
+    # that is neither explicitly smoke nor explicitly validation but is
+    # ALSO missing campaign_fingerprint entirely (a stale or hand-crafted
+    # session.json) is exactly the ambiguous case this must fail closed
+    # on, not silently treat as smoke-shaped evidence -- regardless of
+    # whether any trial has been committed yet.
+    lock_campaign_fingerprint = lock.get("campaign_fingerprint")
+    if not ungated_smoke and not validation and not lock_campaign_fingerprint:
+        raise ReportError(
+            "session.json is not marked ungated_smoke or validation, but is "
+            "missing a non-empty 'campaign_fingerprint' -- under Plan 2 every "
+            "non-smoke, non-validation session must be a dual-stamped counted "
+            "campaign block; refusing to score ambiguous evidence that is none "
+            "of these"
+        )
+
     schedule = _read_json(run_dir / "schedule.json")
     schedule_trials = schedule.get("trials") if isinstance(schedule, Mapping) else None
     if not isinstance(schedule_trials, Sequence):
@@ -747,31 +787,14 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
         # Counted-campaign provenance (Task 3/4, tightened per round-1
         # review): the SECOND stamp a counted block's trials carry alongside
         # session_fingerprint (see BenchmarkStore.is_trial_complete /
-        # BenchmarkRunner._finalize_trial). Under Plan 2 there is no
-        # legitimate non-smoke, non-campaign session -- evidence is either
-        # explicitly `ungated_smoke: true` (benchmark_runner._run_async
-        # always stamps this), explicitly `validation: true` (B2, external
-        # review: a non-counting validation episode's session lock -- see
-        # the schema comment block above), or dual-stamped counted
-        # (build_campaign_lock / build_session_lock always stamp both
-        # fingerprints together). So this activates on the SAME condition as
-        # "is this evidence counted at all" -- `not ungated_smoke and not
-        # validation` -- not merely "the lock happens to declare a
-        # campaign_fingerprint". A lock that is neither explicitly smoke nor
-        # explicitly validation but is ALSO missing campaign_fingerprint
-        # entirely (a stale or hand-crafted session.json) is exactly the
-        # ambiguous case this must fail closed on, not silently treat as
-        # smoke-shaped evidence.
+        # BenchmarkRunner._finalize_trial). This activates on the SAME
+        # condition as "is this evidence counted at all" -- `not
+        # ungated_smoke and not validation` -- not merely "the lock happens
+        # to declare a campaign_fingerprint"; the ambiguous-lock refusal
+        # itself now runs unconditionally, before this loop (see the
+        # lock-shape validation above -- D8), so `lock_campaign_fingerprint`
+        # is always non-empty here for counted evidence.
         if not ungated_smoke and not validation:
-            lock_campaign_fingerprint = lock.get("campaign_fingerprint")
-            if not lock_campaign_fingerprint:
-                raise ReportError(
-                    "session.json is not marked ungated_smoke or validation, but is "
-                    "missing a non-empty 'campaign_fingerprint' -- under Plan 2 every "
-                    "non-smoke, non-validation session must be a dual-stamped counted "
-                    "campaign block; refusing to score ambiguous evidence that is none "
-                    "of these"
-                )
             trial_campaign_fingerprint = trial.get("campaign_fingerprint")
             if not trial_campaign_fingerprint:
                 raise ReportError(
