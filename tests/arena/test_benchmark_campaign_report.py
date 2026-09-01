@@ -410,19 +410,19 @@ def _write_qwen_deferral_record(
 ) -> None:
     """Write a `REPLICATION_DEFERRED_ADMISSION` admission record for
     `qwen`, corroborated on disk per finding 4 (final review), A1
-    (external review), D1 (external review wave D), and G3 (wave G): a
-    single failed admission of any code is refused, so every caller of
-    this helper that expects the deferral to be HONORED must also produce
-    either (a) TWO preceding failed admission attempts with the same
-    classified code (`corroboration="two_attempts"`, the default -- see
-    A1: the disposition's own triggering failure is itself one of the
-    on-disk attempt records, so genuine corroboration needs a SECOND,
-    independent one before it, not just the one that trips the
-    disposition) or (b) a same-code failure, then one SUCCESSFUL
-    remediation record, then a journaled same-code failed retry, then the
-    disposition (`corroboration="remediation"` -- G3: the failure must be
-    observed both BEFORE the remediation, so the fix was actually a fix
-    FOR it, and AFTER it, proving the fix did not resolve it).
+    (external review), D1 (external review wave D), G3 (wave G), and
+    Ruling J (wave H): the predicate is now exactly ">= 2 same-code
+    allowlisted failures at distinct ordinals on stamped records strictly
+    preceding the disposition" -- so every caller of this helper that
+    expects the deferral to be HONORED must produce at least TWO preceding
+    same-code failed admission attempts (see A1: the disposition's own
+    triggering failure is itself one of the on-disk attempt records, so
+    genuine corroboration needs a SECOND, independent one before it).
+    `corroboration="two_attempts"` (the default) is the minimal honored
+    shape; `corroboration="remediation"` (F, R-ok, F) is honored because
+    its two failures straddling the remediation ARE two same-code
+    failures -- Ruling J deleted the dedicated remediation branch as dead
+    code, since that shape was already subsumed.
 
     Negative shapes: `"single_failure"` (A1: exactly ONE preceding
     failure, the same failure `admit()` itself just hit);
@@ -798,6 +798,172 @@ def test_campaign_report_refuses_copied_evidence_with_forged_block_id(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# H1 (external review wave H, CRITICAL): the full re-mint exploit. Copy
+# blocks/gemma to blocks/qwen, edit BOTH bound fields (block_id +
+# model_config) to qwen's declared values, re-mint session_fingerprint via
+# the PUBLIC compute_session_fingerprint, restamp every trial, and recompute
+# the audit hashes -- every pre-H1 check passes, yet every scored trial is
+# gemma's evidence laundered under the qwen block.
+# ---------------------------------------------------------------------------
+
+
+def _remint_gemma_evidence_as_qwen(campaign_dir: Path, *, fix_block_schedule: bool) -> None:
+    """Perform the full H1 exploit against `campaign_dir`. With
+    `fix_block_schedule=True` the attacker additionally swaps in the TRUE
+    campaign qwen block schedule (defeating the H1(b) block-schedule
+    binding), leaving only the per-trial schedule binding (H1(a)) to catch
+    the substitution."""
+    import shutil
+
+    shutil.rmtree(campaign_dir / "blocks" / "qwen")
+    shutil.copytree(campaign_dir / "blocks" / "gemma", campaign_dir / "blocks" / "qwen")
+
+    campaign = json.loads((campaign_dir / "campaign.json").read_text(encoding="utf-8"))
+    declared_qwen_config = next(m for m in campaign["models"] if m["block_id"] == "qwen")
+
+    session_path = campaign_dir / "blocks" / "qwen" / "session.json"
+    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
+    session_payload["block_id"] = "qwen"
+    session_payload["model_config"] = declared_qwen_config
+    session_payload = _self_fingerprinted(session_payload)
+    _write_json(session_path, session_payload)
+    new_session_fingerprint = session_payload["session_fingerprint"]
+
+    trial_payloads: dict[int, dict] = {}
+    for trial_path in sorted((campaign_dir / "blocks" / "qwen" / "trials").glob("trial-*.json")):
+        payload = json.loads(trial_path.read_text(encoding="utf-8"))
+        payload["session_fingerprint"] = new_session_fingerprint
+        _write_json(trial_path, payload)
+        trial_payloads[payload["index"]] = payload
+
+    audit_path = campaign_dir / "blocks" / "qwen" / "audit.json"
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    audit["session_fingerprint"] = new_session_fingerprint
+    for entry in audit["trials"]:
+        entry["trial_sha256"] = fingerprint(trial_payloads[entry["index"]])
+    _write_json(audit_path, audit)
+
+    if fix_block_schedule:
+        campaign_schedule = json.loads((campaign_dir / "schedule.json").read_text(encoding="utf-8"))
+        _write_json(
+            campaign_dir / "blocks" / "qwen" / "schedule.json",
+            campaign_schedule["blocks"]["qwen"],
+        )
+
+
+def _distinct_qwen_pairs() -> list[tuple[str, int, int]]:
+    """Qwen pairs with pair_ids DISTINCT from gemma's (`q{i}` vs `p{i}`) --
+    the realistic campaign shape the exploit launders across."""
+    return [(f"q{i}", 6, 0) for i in range(12)]
+
+
+def test_campaign_report_refuses_the_full_reminted_cross_block_substitution(tmp_path):
+    """H1: both bound fields edited, fingerprint re-minted, trials
+    restamped, audit hashes recomputed -- the complete exploit must be a
+    typed refusal (here via the H1(b) block-schedule binding: the copied
+    blocks/qwen/schedule.json is gemma's, not the campaign schedule's
+    declared qwen entry)."""
+    campaign_dir = tmp_path / "campaign"
+    _build_full_two_block_campaign(
+        campaign_dir,
+        gemma_pairs=_passing_gemma_pairs(),
+        qwen_pairs=_distinct_qwen_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+    )
+    _remint_gemma_evidence_as_qwen(campaign_dir, fix_block_schedule=False)
+
+    with pytest.raises(CampaignReportError):
+        build_campaign_report(campaign_dir)
+
+
+def test_campaign_report_refuses_the_reminted_exploit_even_with_a_fixed_block_schedule(tmp_path):
+    """H1(a) adversarial counterpart: the attacker additionally swaps in
+    the TRUE campaign qwen block schedule, defeating the block-schedule
+    binding -- the per-trial schedule binding (trial pair_id/model/arm/seed
+    must equal the scheduled entry at that index) must still refuse, since
+    the restamped trials carry gemma's scheduled identities."""
+    campaign_dir = tmp_path / "campaign"
+    _build_full_two_block_campaign(
+        campaign_dir,
+        gemma_pairs=_passing_gemma_pairs(),
+        qwen_pairs=_distinct_qwen_pairs(),
+        rules=_rules12(),
+        audit_indices=[1, 2],
+    )
+    _remint_gemma_evidence_as_qwen(campaign_dir, fix_block_schedule=True)
+
+    with pytest.raises(CampaignReportError, match="schedule"):
+        build_campaign_report(campaign_dir)
+
+
+# ---------------------------------------------------------------------------
+# H1(b): reporter-writer parity on the block-schedule <-> campaign-schedule
+# binding (`CampaignStore.open_block` enforces it at write time; the
+# reporter re-verifies it at read time).
+# ---------------------------------------------------------------------------
+
+
+def test_campaign_report_refuses_a_tampered_block_schedule(tmp_path):
+    """H1(b), weakest form: a single edited field in one block's local
+    schedule.json (here one entry's arm_id) must be a typed refusal."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    block_schedule_path = campaign_dir / "blocks" / "gemma" / "schedule.json"
+    payload = json.loads(block_schedule_path.read_text(encoding="utf-8"))
+    payload["trials"][0]["arm_id"] = TREATMENT_ARM
+    _write_json(block_schedule_path, payload)
+
+    with pytest.raises(CampaignReportError, match="schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_campaign_report_refuses_a_complete_block_missing_its_schedule(tmp_path):
+    """H1(b): a complete block with NO blocks/<id>/schedule.json at all is
+    itself substituted evidence -- open_block always writes the schedule
+    before any trial is committed."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    (campaign_dir / "blocks" / "gemma" / "schedule.json").unlink()
+
+    with pytest.raises(CampaignReportError, match="schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_campaign_report_refuses_a_tampered_block_schedule_on_a_deferred_block(tmp_path):
+    """H1(b) parity for the deferral path: a deferred block may lack a
+    local schedule.json entirely, but one that EXISTS and diverges from
+    the campaign schedule's declared entry is still a refusal."""
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    block_schedule_path = campaign_dir / "blocks" / "qwen" / "schedule.json"
+    payload = json.loads(block_schedule_path.read_text(encoding="utf-8"))
+    payload["trials"][0]["pair_id"] = "forged-pair"
+    _write_json(block_schedule_path, payload)
+
+    with pytest.raises(CampaignReportError, match="schedule"):
+        build_campaign_report(campaign_dir)
+
+
+def test_valid_deferral_still_honored_when_deferred_block_has_no_schedule_file(tmp_path):
+    """H1(b) non-regression: a genuinely deferred block (zero evidence)
+    may legitimately have no blocks/<id>/schedule.json -- absence there
+    must not refuse the otherwise-valid deferral."""
+    import shutil
+
+    campaign_dir, _ = _build_campaign_with_gemma(
+        tmp_path, gemma_pairs=_passing_gemma_pairs(), rules=_rules12(), audit_indices=[1, 2]
+    )
+    shutil.rmtree(campaign_dir / "blocks" / "qwen")
+
+    report = build_campaign_report(campaign_dir)
+    assert report["verdict"]["outcome"] == "CALIBRATED_REPLICATION_DEFERRED"
+
+
+# ---------------------------------------------------------------------------
 # Incomplete schedule: refused unless a valid Qwen deferral is on record
 # ---------------------------------------------------------------------------
 
@@ -831,14 +997,15 @@ def test_gemma_pass_with_valid_qwen_deferral_is_calibrated_deferred(tmp_path):
     assert report["verdict"]["outcome"] == "CALIBRATED_REPLICATION_DEFERRED"
 
 
-def test_gemma_pass_with_qwen_deferral_via_preceding_remediation_is_calibrated_deferred(tmp_path):
-    """The other corroboration path (spec: "at least one journaled retry
-    after a concrete remediation"): a SUCCESSFUL remediation attempt
-    (e.g. terminate_tuner_pid, result.ok true) followed by a journaled
-    same-code failed retry is honored exactly like two confirming
-    same-code failures (D1, external review wave D: the retry AFTER the
-    remediation is what proves the fix was actually attempted and did not
-    resolve the failure)."""
+def test_gemma_pass_with_qwen_deferral_via_two_failures_straddling_a_remediation(tmp_path):
+    """Ruling J (external review wave H): the F, R-ok, F sequence
+    (`corroboration="remediation"`) is honored because it contains TWO
+    same-code failures at distinct preceding ordinals -- the ONLY
+    predicate that remains after the dead remediation branch was deleted.
+    The spec's "journaled retry after a concrete remediation" path is
+    SUBSUMED by this, not dropped: the post-remediation retry that fails
+    IS the second same-code observation. This fixture keeps the F, R, F
+    shape (rather than F, F) precisely to pin that subsumption."""
     campaign_dir, _ = _build_campaign_with_gemma(
         tmp_path,
         gemma_pairs=_passing_gemma_pairs(),
@@ -1174,6 +1341,74 @@ def test_report_refuses_qwen_deferral_stamped_for_a_different_campaign(tmp_path)
 
     with pytest.raises(CampaignReportError, match="incomplete schedule"):
         build_campaign_report(campaign_dir)
+
+
+def test_no_admission_sequence_with_fewer_than_two_same_code_failures_is_accepted(tmp_path):
+    """Ruling J (external review wave H) enumeration guard: over every
+    admissions/ sequence of length <= 3 drawn from {same-code failure,
+    other-code failure, successful remediation, failed remediation}
+    containing FEWER than two same-code failures, followed by a fully
+    stamped, allowlisted-code disposition, the corroboration predicate
+    must refuse -- no remediation combination can substitute for the
+    second independent same-code observation. A minimal two-failure
+    positive control proves the harness itself can accept."""
+    from itertools import product
+
+    from civ_mcp.arena.benchmark_campaign_report import (
+        _has_valid_replication_deferred_admission,
+    )
+
+    fp = "fp-ruling-j-guard"
+    code = "tool_canary_failed"
+
+    def _same_code_failure() -> dict:
+        return {"block_id": "qwen", "ok": False, "failure": {"code": code, "details": {}}, "campaign_fingerprint": fp}
+
+    def _other_code_failure() -> dict:
+        return {"block_id": "qwen", "ok": False, "failure": {"code": "seed_not_honored", "details": {}}, "campaign_fingerprint": fp}
+
+    def _successful_remediation() -> dict:
+        return {"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": {"ok": True, "terminated_pid": 4242}, "campaign_fingerprint": fp}
+
+    def _failed_remediation() -> dict:
+        return {"block_id": "qwen", "remediation": "terminate_tuner_pid", "result": {"ok": False, "reason": "no_holder"}, "campaign_fingerprint": fp}
+
+    alphabet = {
+        "F": _same_code_failure,
+        "O": _other_code_failure,
+        "R": _successful_remediation,
+        "r": _failed_remediation,
+    }
+    disposition = {
+        "block_id": "qwen",
+        "disposition": REPLICATION_DEFERRED_ADMISSION,
+        "underlying_failure": {"code": code},
+        "campaign_fingerprint": fp,
+    }
+
+    def _write_sequence(seq_dir: Path, letters: tuple[str, ...]) -> None:
+        admissions = seq_dir / "admissions"
+        admissions.mkdir(parents=True)
+        for ordinal, letter in enumerate(letters, start=1):
+            _write_json(admissions / f"qwen-attempt-{ordinal:03d}.json", alphabet[letter]())
+        _write_json(admissions / f"qwen-attempt-{len(letters) + 1:03d}.json", disposition)
+
+    checked = 0
+    for length in range(0, 4):
+        for combo in product(alphabet, repeat=length):
+            if sum(1 for letter in combo if letter == "F") >= 2:
+                continue
+            seq_dir = tmp_path / f"seq-{checked:03d}-{''.join(combo) or 'empty'}"
+            _write_sequence(seq_dir, combo)
+            assert _has_valid_replication_deferred_admission(seq_dir, "qwen", fp) is False, combo
+            checked += 1
+    assert checked > 0
+
+    # Positive control: the minimal two-same-code-failure shape IS accepted
+    # -- proves the fixtures above are capable of acceptance at all.
+    positive_dir = tmp_path / "seq-positive-FF"
+    _write_sequence(positive_dir, ("F", "F"))
+    assert _has_valid_replication_deferred_admission(positive_dir, "qwen", fp) is True
 
 
 # ---------------------------------------------------------------------------
@@ -1550,14 +1785,28 @@ def test_campaign_missing_position_id_fails_closed(tmp_path):
 
 
 def test_campaign_position_id_mismatch_fails_closed(tmp_path):
+    """The session lock's own declared position_id must equal
+    campaign.json's declared position_id. H1 (wave H) note: the tamper is
+    applied to session.json's position_id field ALONE (re-minted and
+    restamped so every fingerprint check passes) -- a block whose
+    schedule/trials also diverged would now be refused earlier, by the
+    H1(b) block-schedule binding or the H1(a) per-trial schedule binding,
+    before this session-level cross-check is ever reached."""
     campaign_dir, _ = _build_campaign_with_gemma(
         tmp_path,
         gemma_pairs=_passing_gemma_pairs(),
         rules=_rules12(),
         audit_indices=[1, 2],
-        position_id=POSITION_ID,
-        gemma_position_id="pos-OTHER",
     )
+    session_path = campaign_dir / "blocks" / "gemma" / "session.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    payload["position_id"] = "pos-OTHER"
+    payload = _self_fingerprinted(payload)
+    _write_json(session_path, payload)
+    for trial_path in sorted((campaign_dir / "blocks" / "gemma" / "trials").glob("trial-*.json")):
+        trial_payload = json.loads(trial_path.read_text(encoding="utf-8"))
+        trial_payload["session_fingerprint"] = payload["session_fingerprint"]
+        _write_json(trial_path, trial_payload)
 
     with pytest.raises(CampaignReportError, match="position_id"):
         build_campaign_report(campaign_dir)

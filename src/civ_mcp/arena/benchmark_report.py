@@ -830,6 +830,40 @@ def build_report(run_dir: str | Path) -> dict[str, object]:
                     "campaign block's current lock"
                 )
 
+        # H1(a) (external review wave H): bind every committed trial to the
+        # scheduled entry at its index. The schedule is the only thing that
+        # decides which (position, model, arm, seed) combination runs at
+        # each index (benchmark_schedule.TrialSpec), the runner writes all
+        # of those fields into every committed payload
+        # (benchmark_runner._finalize_trial), and the schedule itself is
+        # digest-anchored (session.json's schedule_fingerprint above /
+        # campaign.json's digests.schedule at the campaign layer) -- yet
+        # this loop used to read only index/position_id from the schedule
+        # and merely ECHO trial.get("model")/arm_id/seed into the report.
+        # That let restamped trials carrying a different model's evidence
+        # score under whatever identity they claimed for themselves (the
+        # proven cross-block substitution exploit: copy blocks/gemma to
+        # blocks/qwen, re-mint every fingerprint, and the report happily
+        # aggregates gemma trials under a "qwen" block). Every identity
+        # field the schedule entry declares must now equal the committed
+        # trial's own recorded value -- a trial missing a field the
+        # schedule declares is a mismatch (None != value), never a skip.
+        # A schedule entry that does not declare a field (legacy smoke
+        # fixtures with index/position_id only) has nothing to bind
+        # against; in the counted path the schedule always carries every
+        # TrialSpec field and is itself digest-anchored, so an attacker
+        # cannot strip fields from it to disable this check.
+        for bound_field in ("index", "pair_id", "position_id", "model", "arm_id", "seed"):
+            if bound_field not in entry:
+                continue
+            if trial.get(bound_field) != entry[bound_field]:
+                raise ReportError(
+                    f"{trial_path}: recorded {bound_field}={trial.get(bound_field)!r} does not "
+                    f"match the scheduled entry at index {index} "
+                    f"({bound_field}={entry[bound_field]!r}) -- refusing to score evidence "
+                    "that does not match the digest-anchored schedule for this trial slot"
+                )
+
         position_lock = positions_lock.get(position_id)
         if not isinstance(position_lock, Mapping) or "rubric" not in position_lock:
             raise ReportError(

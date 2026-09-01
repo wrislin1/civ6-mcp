@@ -50,7 +50,7 @@ from civ_mcp.arena.benchmark_contract import CampaignManifest, suite_for_block
 from civ_mcp.arena.benchmark_gates import GateFailure
 from civ_mcp.arena.benchmark_manifest import PositionManifest, fingerprint
 from civ_mcp.arena.benchmark_schedule import compile_schedule
-from civ_mcp.arena.benchmark_store import BenchmarkStore
+from civ_mcp.arena.benchmark_store import BenchmarkStore, canonical_json_bytes
 
 __all__ = [
     "BenchmarkCampaignError",
@@ -71,16 +71,15 @@ class CampaignLockMismatchError(BenchmarkCampaignError):
     (canonical JSON) on reopen."""
 
 
-def _canonical_bytes(value: object) -> bytes:
-    """Canonical-JSON encoding: sorted keys, no incidental whitespace. Same
-    convention as `benchmark_store._canonical_bytes` -- kept as a small,
-    independent copy here rather than importing that module's private
-    helper across module boundaries; the trial-storage semantics it backs
-    (atomic commit, resume, the journal) are NOT duplicated, only this
-    generic byte-encoding step, which already appears this way in more than
-    one module in this package (see `benchmark_manifest.fingerprint`)."""
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return encoded.encode("utf-8")
+# H1 (external review wave H): the canonical encoding behind every
+# byte-for-byte lock/schedule comparison in this module is now the SHARED
+# public `benchmark_store.canonical_json_bytes` -- the reporters
+# (`benchmark_campaign_report.build_campaign_report`,
+# `benchmark_admission.block_is_complete`) re-verify `open_block`'s
+# blocks/<id>/schedule.json == campaign schedule entry invariant at read
+# time, and writer and readers must agree on one encoding rather than
+# maintaining drifting private copies.
+_canonical_bytes = canonical_json_bytes
 
 
 def _fsync_write_bytes(path: Path, data: bytes) -> None:

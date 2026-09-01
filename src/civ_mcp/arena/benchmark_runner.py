@@ -1632,8 +1632,11 @@ async def _run_campaign_async(args: argparse.Namespace) -> int:
             # (final review), part (b): deferral eligibility is an explicit
             # ALLOWLIST of model-capability gate failure codes
             # (benchmark_admission.REPLICATION_DEFERRAL_ELIGIBLE_CODES:
-            # endpoint/model-identity, tool-canary, treatment-can-fire, and
-            # backend-probe codes). Everything else -- the catch-all
+            # endpoint/model-identity, tool-canary, and backend-probe
+            # codes -- G5, wave G, removed treatment_cannot_fire from the
+            # allowlist: it derives purely from the static position
+            # manifest vs the static tool registry and is
+            # model-independent). Everything else -- the catch-all
             # unexpected_admission_error ("Unknown failures cannot be
             # converted into a deferral.") AND every classified operator-
             # error code (dirty_checkout, tuner-holder codes, GPU

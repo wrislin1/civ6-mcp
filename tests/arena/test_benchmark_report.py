@@ -1160,6 +1160,118 @@ def test_build_report_skips_schedule_verification_when_lock_has_no_schedule_fing
     build_report(run_dir)  # must not raise
 
 
+# ---------------------------------------------------------------------------
+# H1(a) (external review wave H) -- every committed trial's identity fields
+# must equal the digest-anchored schedule entry at its index. The reporter
+# used to read only index/position_id from the schedule and merely ECHO
+# trial.get("model")/arm_id/seed -- the load-bearing gap in the proven
+# cross-block substitution exploit.
+# ---------------------------------------------------------------------------
+
+
+def _build_schedule_bound_run(run_dir: Path) -> None:
+    """One committed trial whose schedule entry declares the FULL TrialSpec
+    field set (index, pair_id, position_id, model, arm_id, seed), exactly
+    as compile_schedule always emits for a counted run."""
+    (run_dir / "trials").mkdir(parents=True)
+    _write_json(
+        run_dir / "session.json",
+        {
+            "session_fingerprint": "abc123",
+            "scorer_fingerprint": "score-v1",
+            "ungated_smoke": True,  # keeps the fixture single-stamped/simple
+            "positions": {"easy": {"rubric": [_mine_rubric()]}},
+        },
+    )
+    _write_json(
+        run_dir / "schedule.json",
+        {
+            "trials": [
+                {
+                    "index": 1,
+                    "pair_id": "easy:gemma:seed11:0",
+                    "position_id": "easy",
+                    "model": "gemma4-27b",
+                    "arm_id": "standard",
+                    "seed": 11,
+                },
+            ],
+        },
+    )
+    _write_json(
+        run_dir / "trials" / "trial-001.json",
+        {
+            "index": 1,
+            "pair_id": "easy:gemma:seed11:0",
+            "position_id": "easy",
+            "model": "gemma4-27b",
+            "arm_id": "standard",
+            "seed": 11,
+            "attempt_count": 1,
+            "terminal": "finish_trial",
+            "session_fingerprint": "abc123",
+            "steps": [],
+            "initial_state": {"tiles": [{"improvement": None}]},
+            "final_state": {"tiles": [{"improvement": "IMPROVEMENT_MINE"}]},
+        },
+    )
+
+
+def test_build_report_accepts_a_trial_matching_its_schedule_entry(tmp_path):
+    run_dir = tmp_path / "run"
+    _build_schedule_bound_run(run_dir)
+    report = build_report(run_dir)  # must not raise
+    group = report["positions"]["easy"]["by_group"]["gemma4-27b::standard"]
+    assert group["trial_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "forged_value"),
+    [
+        ("model", "qwen3.6-27b"),
+        ("arm_id", "minimal"),
+        ("seed", 12),
+        ("pair_id", "easy:qwen:seed11:0"),
+        ("position_id", "hard"),
+        ("index", 2),
+    ],
+)
+def test_build_report_rejects_a_trial_disagreeing_with_its_schedule_entry(
+    tmp_path, field, forged_value
+):
+    """H1(a), weakest form per field: a single edited identity field on a
+    committed trial (the restamped-evidence shape of the cross-block
+    substitution exploit) must be a typed ReportError, never silently
+    scored under the identity the trial claims for itself."""
+    run_dir = tmp_path / "run"
+    _build_schedule_bound_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    payload[field] = forged_value
+    _write_json(trial_path, payload)
+
+    with pytest.raises(ReportError, match="schedule"):
+        build_report(run_dir)
+
+
+@pytest.mark.parametrize("field", ["model", "arm_id", "seed", "pair_id"])
+def test_build_report_rejects_a_trial_missing_a_field_its_schedule_entry_declares(
+    tmp_path, field
+):
+    """H1(a) fail-closed default: a trial that simply OMITS a field the
+    schedule entry declares is a mismatch (None != value), never a skip --
+    stripping the field from the evidence must not disable the binding."""
+    run_dir = tmp_path / "run"
+    _build_schedule_bound_run(run_dir)
+    trial_path = run_dir / "trials" / "trial-001.json"
+    payload = json.loads(trial_path.read_text(encoding="utf-8"))
+    del payload[field]
+    _write_json(trial_path, payload)
+
+    with pytest.raises(ReportError, match="schedule"):
+        build_report(run_dir)
+
+
 def test_build_report_surfaces_ungated_smoke_flag(tmp_path):
     run_dir = tmp_path / "run"
     _build_basic_run(run_dir)

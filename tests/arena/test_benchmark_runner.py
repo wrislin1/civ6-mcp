@@ -1202,6 +1202,12 @@ def _preseed_gemma_block_complete(
     gemma_block_dir = run_dir / "campaign-run" / "blocks" / gemma_block_id
     gemma_trials_dir = gemma_block_dir / "trials"
     gemma_trials_dir.mkdir(parents=True)
+    # H1(b) (external review wave H): block_is_complete now also requires
+    # blocks/<id>/schedule.json to exist and equal the campaign schedule's
+    # declared entry for the block (open_block's write-time invariant).
+    (gemma_block_dir / "schedule.json").write_text(
+        json.dumps(schedule["blocks"][gemma_block_id], sort_keys=True)
+    )
     # D4 (external review wave D): block_is_complete now also requires the
     # session to declare its own block identity -- block_id plus the
     # campaign lock's ModelBlockConfig for that block. The campaign lock
@@ -1693,6 +1699,13 @@ async def test_campaign_non_counting_validation_runs_one_pair_and_writes_report_
                 {
                     "index": spec.index,
                     "position_id": spec.position_id,
+                    # H1(a) (wave H): _finalize_trial stamps the full
+                    # TrialSpec identity, and build_report now binds each
+                    # committed trial to the scheduled entry at its index.
+                    "pair_id": spec.pair_id,
+                    "model": spec.model,
+                    "arm_id": spec.arm_id,
+                    "seed": spec.seed,
                     "attempt_count": 1,
                     "terminal": "finish_trial",
                     "session_fingerprint": resolved.store.fingerprint,

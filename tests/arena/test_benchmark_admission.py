@@ -317,9 +317,18 @@ def _write_block_session(store: CampaignStore, block_id: str) -> dict:
     G1 (external review wave G): `session_fingerprint` is now computed
     over the session payload's own remaining fields (the exact
     `compute_session_fingerprint` computation `block_is_complete`
-    re-derives and verifies), never an arbitrary label."""
+    re-derives and verifies), never an arbitrary label.
+
+    H1(b) (external review wave H): `block_is_complete` now also requires
+    `blocks/<id>/schedule.json` to exist and equal the campaign schedule's
+    declared entry for the block (the invariant `CampaignStore.open_block`
+    enforces at write time), so this fixture writes it too -- exactly as a
+    genuinely admitted block always has it."""
     block_dir = store.root / "blocks" / block_id
     block_dir.mkdir(parents=True, exist_ok=True)
+    (block_dir / "schedule.json").write_text(
+        json.dumps(store.schedule["blocks"][block_id], sort_keys=True)
+    )
     # D4 (external review wave D): block_is_complete now also binds the
     # session to its own block -- block_id plus the campaign lock's
     # declared ModelBlockConfig -- so a fixture session must carry both,
@@ -545,6 +554,11 @@ async def test_real_admission_failure_plus_real_cli_disposition_write_is_refused
                 "pair_id": trial["pair_id"],
                 "arm_id": trial["arm_id"],
                 "model": trial["model"],
+                # H1(a) (wave H): the reporter now binds every committed
+                # trial's identity fields (seed included) to the scheduled
+                # entry at its index -- exactly as the real runner stamps
+                # them from TrialSpec.
+                "seed": trial["seed"],
                 "attempt_count": 1,
                 "terminal": "finish_trial",
                 "session_fingerprint": resolved.store.fingerprint,
@@ -1127,6 +1141,103 @@ def test_block_is_complete_rejects_edited_identity_with_stale_session_fingerprin
     assert block_is_complete(store, block1.block_id) is False
 
 
+# ---------------------------------------------------------------------------
+# H1(b) (external review wave H): block_is_complete re-verifies open_block's
+# write-time invariant -- blocks/<id>/schedule.json must equal the campaign
+# schedule's declared entry for that block.
+# ---------------------------------------------------------------------------
+
+
+def _complete_block0(tmp_path):
+    """A genuinely complete block 0 (session + schedule + stamped trials)."""
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block0 = campaign.models[0]
+    session = _write_block_session(store, block0.block_id)
+    trials_dir = store.root / "blocks" / block0.block_id / "trials"
+    trials_dir.mkdir(parents=True, exist_ok=True)
+    for trial in store.schedule["blocks"][block0.block_id]["trials"]:
+        (trials_dir / trial_filename(trial["index"])).write_text(
+            json.dumps(
+                {
+                    "campaign_fingerprint": store.fingerprint,
+                    "session_fingerprint": session["session_fingerprint"],
+                }
+            )
+        )
+    return store, block0
+
+
+def test_block_is_complete_false_when_block_schedule_is_missing(tmp_path):
+    store, block0 = _complete_block0(tmp_path)
+    assert block_is_complete(store, block0.block_id) is True  # sanity: fixture completes
+
+    (store.root / "blocks" / block0.block_id / "schedule.json").unlink()
+    assert block_is_complete(store, block0.block_id) is False
+
+
+def test_block_is_complete_false_when_block_schedule_diverges_from_campaign_schedule(tmp_path):
+    """H1(b), weakest form: a single edited field in the block's local
+    schedule.json (one entry's seed) must make the block NOT complete --
+    open_block would refuse to reattach over it, and the read side must be
+    at least as strict as that writer."""
+    store, block0 = _complete_block0(tmp_path)
+    assert block_is_complete(store, block0.block_id) is True
+
+    schedule_path = store.root / "blocks" / block0.block_id / "schedule.json"
+    payload = json.loads(schedule_path.read_text())
+    payload["trials"][0]["seed"] = 999999
+    schedule_path.write_text(json.dumps(payload, sort_keys=True))
+    assert block_is_complete(store, block0.block_id) is False
+
+
+# ---------------------------------------------------------------------------
+# H8 (external review wave H): _existing_locked_episode_wall_s applies G1's
+# session-fingerprint verification before reusing any recorded value.
+# ---------------------------------------------------------------------------
+
+
+def test_existing_locked_episode_wall_verifies_session_fingerprint(tmp_path):
+    from civ_mcp.arena.benchmark_admission import _existing_locked_episode_wall_s
+
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    block_dir = store.root / "blocks" / block.block_id
+    block_dir.mkdir(parents=True, exist_ok=True)
+    session_path = block_dir / "session.json"
+
+    genuine = {
+        "campaign_fingerprint": store.fingerprint,
+        "block_id": block.block_id,
+        "episode_wall_s": 1234,
+    }
+    genuine["session_fingerprint"] = compute_session_fingerprint(genuine)
+    session_path.write_text(json.dumps(genuine))
+    assert _existing_locked_episode_wall_s(store, block.block_id) == 1234
+
+    # Tamper the wall value, leaving the stale fingerprint in place -- the
+    # forged value must never be reused as the locked wall. None here is
+    # still fail-closed end to end: the caller derives fresh and
+    # BenchmarkStore.create's byte-for-byte session comparison then refuses
+    # to reattach over the tampered file.
+    tampered = dict(genuine)
+    tampered["episode_wall_s"] = 999999
+    session_path.write_text(json.dumps(tampered))
+    assert _existing_locked_episode_wall_s(store, block.block_id) is None
+
+
+def test_existing_locked_episode_wall_none_when_fingerprint_missing(tmp_path):
+    """H8 fail-closed default: a recorded session with NO
+    session_fingerprint at all is never a source of a reusable wall."""
+    from civ_mcp.arena.benchmark_admission import _existing_locked_episode_wall_s
+
+    campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
+    block = campaign.models[0]
+    block_dir = store.root / "blocks" / block.block_id
+    block_dir.mkdir(parents=True, exist_ok=True)
+    (block_dir / "session.json").write_text(json.dumps({"episode_wall_s": 1234}))
+    assert _existing_locked_episode_wall_s(store, block.block_id) is None
+
+
 def test_record_admission_disposition_is_reconstructible_from_disk(tmp_path):
     campaign, position, store, bundle = _build_campaign_and_store(tmp_path)
     block_id = campaign.models[1].block_id
@@ -1490,6 +1601,10 @@ async def test_canary_errors_alone_fail_admission_with_tool_canary_failed(tmp_pa
             "required-argument canary: expected arguments "
             "{'unit_index': 7, 'x': 11, 'y': 13}, got {'unit_index': 7, 'x': 12, 'y': 13}",
         ),
+        # H4 (wave H): probe_tool_capability stamps a "model" kind for
+        # this genuinely model-side failure; an unclassified canary error
+        # would now refuse as backend_transport_error instead.
+        error_kinds=("model",),
     )
     deps = _make_dependencies([], campaign, block, position, canaries=canaries)
     pipeline = AdmissionPipeline(deps)

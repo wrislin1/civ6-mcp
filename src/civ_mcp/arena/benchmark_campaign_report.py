@@ -160,7 +160,11 @@ from typing import Mapping, Sequence
 from civ_mcp.arena import benchmark_report
 from civ_mcp.arena.benchmark_manifest import fingerprint
 from civ_mcp.arena.benchmark_report import ReportError
-from civ_mcp.arena.benchmark_store import compute_session_fingerprint, trial_filename
+from civ_mcp.arena.benchmark_store import (
+    canonical_json_bytes,
+    compute_session_fingerprint,
+    trial_filename,
+)
 
 __all__ = [
     "CampaignReportError",
@@ -250,9 +254,12 @@ class CampaignReportError(Exception):
     this module to fall back to a partial or silently-wrong verdict."""
 
 
-def _canonical_bytes(value: object) -> bytes:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return encoded.encode("utf-8")
+# H1 (external review wave H): the shared canonical encoding
+# (`benchmark_store.canonical_json_bytes`) -- the same helper
+# `CampaignStore.open_block`'s write-time schedule comparison builds on, so
+# this reader's re-verification of that invariant can never drift from the
+# writer's encoding.
+_canonical_bytes = canonical_json_bytes
 
 
 def _read_json(path: Path) -> object:
@@ -369,30 +376,21 @@ def _has_valid_replication_deferred_admission(
       code can never become a deferral no matter how many times it
       repeats or how it was remediated; and
     - corroboration precedes that disposition record in the same
-      append-only admissions/ sequence, in one of exactly two shapes:
+      append-only admissions/ sequence, in exactly ONE shape: at least
+      TWO failed admission attempts (at distinct, strictly-preceding
+      attempt ordinals) carrying the SAME code.
 
-      (a) failure-then-remediation-then-retry (D1, external review wave
-          D, tightened by G3, wave G): a same-code failed admission
-          attempt BEFORE a remediation record whose `result.ok` is
-          genuinely true (a concrete fix actually happened -- never a
-          refused/no-op `{"ok": False, ...}` record, which is what
-          `_run_remediation_async` writes for a failed drain or a port
-          with no holder), followed by at least one MORE journaled failed
-          admission attempt carrying the SAME code AFTER that remediation
-          (all strictly before the disposition, in ordinal order) -- a
-          genuine failure -> remediation -> retry-failed sequence, at
-          least two observations of the failure in total. G3: the old
-          predicate accepted an UNRELATED remediation (no preceding
-          same-code failure at all -- nothing for the "fix" to have been
-          a fix FOR) plus a single failure first seen only after it; a
-          remediation that precedes the only failure on record remediated
-          nothing, and a remediation with no post-remediation retry
-          proves nothing (the failure was never re-observed after the
-          fix); or
-
-      (b) two confirming attempts: at least TWO failed admission
-          attempts (at distinct, strictly-preceding attempt ordinals)
-          carrying the SAME code.
+      Ruling J (external review wave H, finding I2): the former
+      remediation OR-branch ("a same-code failure before AND after a
+      successful remediation") is DELETED as dead code, not as a policy
+      change -- exhaustive enumeration proved it added zero accepting
+      power. Its own requirements imply at least two same-code failures
+      strictly before the disposition (one before the remediation, one
+      after), so every sequence it accepted was already accepted by the
+      two-failures predicate above. The spec's "at least one journaled
+      retry after a concrete remediation" path is therefore SUBSUMED, not
+      dropped: a post-remediation retry that fails IS the second
+      same-code observation.
 
       A1 (external review): the real CLI writes exactly ONE failed-gate
       attempt record (the failure `admit()` itself just hit) and THEN, in
@@ -405,8 +403,7 @@ def _has_valid_replication_deferred_admission(
       its own corroboration). Genuine corroboration requires the failure to
       have been independently observed at least TWICE before the
       disposition is ever written -- i.e. at least two preceding attempt
-      records, not one -- and for shape (a) those two observations must
-      straddle the successful remediation.
+      records, not one.
 
     G4 (external review wave G): only records stamped with THIS campaign's
     `campaign_fingerprint` participate at all -- an unstamped record, or
@@ -438,24 +435,9 @@ def _has_valid_replication_deferred_admission(
             and isinstance(r.get("failure"), Mapping)
             and r["failure"].get("code") == code
         ]
+        # Ruling J (wave H): the whole predicate. No remediation records
+        # are consulted -- see the docstring's subsumption argument.
         if len(same_code_failure_ordinals) >= 2:
-            return True
-        successful_remediation_ordinals = [
-            i
-            for i, r in enumerate(preceding)
-            if "remediation" in r
-            and isinstance(r.get("result"), Mapping)
-            and r["result"].get("ok") is True
-        ]
-        # G3 (external review wave G): shape (a) requires the same-code
-        # failure to have been observed BOTH before the successful
-        # remediation (the failure the fix was actually for) AND after it
-        # (the journaled retry proving the fix did not resolve it).
-        if any(
-            any(f < remediation_ordinal for f in same_code_failure_ordinals)
-            and any(f > remediation_ordinal for f in same_code_failure_ordinals)
-            for remediation_ordinal in successful_remediation_ordinals
-        ):
             return True
     return False
 
@@ -1160,6 +1142,38 @@ def build_campaign_report(campaign_dir: str | Path) -> dict[str, object]:
         trials_dir = block_dir / "trials"
         committed_indices = {index for index in expected_indices if (trials_dir / trial_filename(index)).is_file()}
         complete = committed_indices == set(expected_indices)
+
+        # H1(b) (external review wave H): re-verify at read time the exact
+        # invariant `CampaignStore.open_block` enforces at write time --
+        # blocks/<id>/schedule.json must equal the campaign schedule's
+        # entry for that block (same shared canonical encoding,
+        # `benchmark_store.canonical_json_bytes`). The campaign schedule is
+        # digest-bound into campaign_fingerprint (digests.schedule,
+        # verified above), so this closes the chain campaign_fingerprint ->
+        # campaign schedule -> block schedule -> (via the per-trial
+        # schedule binding in benchmark_report.build_report) every
+        # committed trial's model/arm/seed identity. Required for a
+        # complete block (open_block always writes it before any trial is
+        # committed -- a complete block with no block schedule at all is
+        # itself substituted evidence); for an incomplete (deferral-shaped)
+        # block the file may legitimately be absent, but if it EXISTS it
+        # must still match.
+        block_schedule_path = block_dir / "schedule.json"
+        if complete or block_schedule_path.is_file():
+            recorded_block_schedule = _read_json_evidence(
+                block_schedule_path, f"block {block_id!r} schedule"
+            )
+            if canonical_json_bytes(recorded_block_schedule) != canonical_json_bytes(
+                dict(block_schedule)
+            ):
+                raise CampaignReportError(
+                    f"block {block_id!r} schedule.json does not match the campaign "
+                    "schedule's declared entry for this block "
+                    "(schedule.json['blocks'][block_id]) -- refusing to score a block "
+                    "whose local schedule diverges from the digest-anchored campaign "
+                    "schedule"
+                )
+            report_inputs.append(f"blocks/{block_id}/schedule.json")
 
         if not complete:
             if is_primary:

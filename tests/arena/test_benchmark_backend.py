@@ -224,29 +224,69 @@ def test_classify_backend_exception_auth_shapes(make_exc):
         lambda: _openai_status_error(__import__("openai").RateLimitError, 429),
         lambda: __import__("httpx").ConnectError("connection refused"),
         lambda: __import__("httpx").ReadTimeout("read timed out"),
+        # H2 (external review wave H, Ruling I): ALL HTTP 5xx are
+        # environment evidence -- a llama-swap cold-start 503, a gateway
+        # 500/502/504 -- never model capability. openai.InternalServerError
+        # is the SDK's typed exception for every 5xx.
+        lambda: _openai_status_error(__import__("openai").InternalServerError, 500),
+        lambda: _openai_status_error(__import__("openai").InternalServerError, 503),
+        lambda: _openai_status_error(__import__("openai").InternalServerError, 502),
     ],
 )
 def test_classify_backend_exception_transport_shapes(make_exc):
-    """G2: connection/timeout/rate-limit shapes (openai SDK + raw httpx
-    transport errors) classify as "transport" -- a down gateway, wrong
-    endpoint URL, or 429 storm, never capability evidence."""
+    """G2 + Ruling I (wave H): connection/timeout/rate-limit shapes AND
+    every HTTP 5xx (openai SDK + raw httpx transport errors) classify as
+    "transport" -- a down gateway, wrong endpoint URL, 429 storm, or
+    cold-start 503, never capability evidence."""
     from civ_mcp.arena.benchmark_backend import classify_backend_exception
 
     assert classify_backend_exception(make_exc()) == "transport"
 
 
+def test_classify_backend_exception_bare_5xx_status_is_transport():
+    """Ruling I (wave H): the status-code fallback covers any
+    status-carrying exception shape at 5xx, not just the openai SDK's
+    typed InternalServerError."""
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    class _StatusCarrier(Exception):
+        status_code = 502
+
+    assert classify_backend_exception(_StatusCarrier("bad gateway")) == "transport"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_kind"),
+    [(401, "auth"), (403, "auth"), (429, "transport"), (500, "transport"), (503, "transport")],
+)
+def test_classify_backend_exception_reads_httpx_response_status(status, expected_kind):
+    """H5 (external review wave H): the status-code fallback must also read
+    the httpx convention `exc.response.status_code` -- a raw
+    httpx.HTTPStatusError carries no `status_code` attribute of its own."""
+    import httpx
+
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    exc = httpx.HTTPStatusError(
+        f"HTTP {status}", request=request, response=httpx.Response(status, request=request)
+    )
+    assert classify_backend_exception(exc) == expected_kind
+
+
 @pytest.mark.parametrize(
     "make_exc",
     [
-        lambda: RuntimeError("gateway 500 on malformed tool JSON"),
+        lambda: RuntimeError("model emitted malformed tool JSON"),
         lambda: _openai_status_error(__import__("openai").BadRequestError, 400),
-        lambda: _openai_status_error(__import__("openai").InternalServerError, 500),
+        lambda: _openai_status_error(__import__("openai").UnprocessableEntityError, 422),
     ],
 )
 def test_classify_backend_exception_everything_else_stays_model_evidence(make_exc):
-    """G2: only auth and transport are carved out -- any other failure
-    shape remains capability-side evidence (backend_probe_errors et al.),
-    exactly as before."""
+    """G2 (updated by Ruling I, wave H): only auth, transport, and 5xx are
+    carved out -- any other failure shape (a 4xx the server chose to emit,
+    a bare runtime error from a reply that genuinely came back) remains
+    capability-side evidence (backend_probe_errors et al.)."""
     from civ_mcp.arena.benchmark_backend import classify_backend_exception
 
     assert classify_backend_exception(make_exc()) == "model"
@@ -470,6 +510,98 @@ async def test_tool_canary_fails_when_a_correct_call_is_followed_by_malformed_js
     evidence = await probe_tool_capability(backend, arm_id="standard", tools=[])
     assert evidence.required_argument_ok is False
     assert evidence.errors
+
+
+# ---------------------------------------------------------------------------
+# H4 (external review wave H): canary errors are classified at capture time,
+# mirroring the probe funnel -- a 429 storm or token expiry between
+# probe_backend and the canary loop must be distinguishable from genuine
+# model-side canary failures.
+# ---------------------------------------------------------------------------
+
+
+class _RaisingCanaryBackend:
+    def __init__(self, exc: Exception):
+        self._exc = exc
+
+    async def chat(self, messages, tools):
+        raise self._exc
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_classifies_auth_exception():
+    import httpx
+    import openai
+
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    exc = openai.AuthenticationError(
+        "invalid api key", response=httpx.Response(401, request=request), body=None
+    )
+    evidence = await probe_tool_capability(_RaisingCanaryBackend(exc), arm_id="standard", tools=[])
+    assert len(evidence.errors) == 2  # both canaries raised
+    assert evidence.error_kinds == ("auth", "auth")
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_classifies_transport_exception():
+    import httpx
+    import openai
+
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    exc = openai.RateLimitError(
+        "429 too many requests", response=httpx.Response(429, request=request), body=None
+    )
+    evidence = await probe_tool_capability(_RaisingCanaryBackend(exc), arm_id="standard", tools=[])
+    assert evidence.error_kinds == ("transport", "transport")
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_cold_start_503_classifies_transport():
+    """Ruling I (wave H): a llama-swap cold-start 503 during the canary
+    loop is environment evidence, kind "transport" -- never a model-side
+    canary failure."""
+    import httpx
+    import openai
+
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    exc = openai.InternalServerError(
+        "503 loading model", response=httpx.Response(503, request=request), body=None
+    )
+    evidence = await probe_tool_capability(_RaisingCanaryBackend(exc), arm_id="standard", tools=[])
+    assert evidence.error_kinds == ("transport", "transport")
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_model_side_failures_classify_as_model_kind():
+    """A genuine model-side canary failure (prose instead of a tool call,
+    wrong arguments) stays kind "model" -- exactly the evidence
+    tool_canary_failed exists for."""
+    backend = _ScriptedCanaryBackend([
+        Reply(text="Sure, I am done for this turn.", tool_calls=[]),
+        Reply(text=None, tool_calls=[_tool_call("move_unit", {"unit_index": 7, "x": 12, "y": 13})]),
+    ])
+    evidence = await probe_tool_capability(backend, arm_id="standard", tools=[])
+    assert len(evidence.errors) == 2
+    assert evidence.error_kinds == ("model", "model")
+
+
+@pytest.mark.asyncio
+async def test_tool_canary_error_kinds_stay_aligned_with_errors():
+    """H6 alignment invariant at the source: every error appended by
+    probe_tool_capability carries exactly one index-aligned kind."""
+    backend = _ScriptedCanaryBackend([
+        Reply(text=None, tool_calls=[_tool_call("finish_trial", {})]),
+        Reply(
+            text=None,
+            tool_calls=[
+                _tool_call("move_unit", REQUIRED_ARGUMENT_SENTINEL),
+                _tool_call("move_unit", "{not valid json"),
+            ],
+        ),
+    ])
+    evidence = await probe_tool_capability(backend, arm_id="standard", tools=[])
+    assert len(evidence.error_kinds) == len(evidence.errors)
+    assert evidence.error_kinds == ("model",)
 
 
 # ---------------------------------------------------------------------------

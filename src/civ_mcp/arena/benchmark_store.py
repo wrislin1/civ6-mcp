@@ -41,6 +41,7 @@ __all__ = [
     "SessionLockMismatchError",
     "TrialExistsError",
     "TrialProvenanceError",
+    "canonical_json_bytes",
     "compute_session_fingerprint",
     "trial_filename",
 ]
@@ -94,12 +95,28 @@ def trial_filename(index: int) -> str:
     return f"trial-{int(index):03d}.json"
 
 
-def _canonical_bytes(value: object) -> bytes:
+def canonical_json_bytes(value: object) -> bytes:
     """Canonical-JSON encoding: sorted keys, no incidental whitespace. Two
     dicts that are equal encode to identical bytes regardless of the order
-    their keys were supplied in."""
+    their keys were supplied in.
+
+    H1 (external review wave H): public, because the campaign layer's
+    write-time schedule comparison (`benchmark_campaign.CampaignStore.
+    open_block` -- blocks/<id>/schedule.json must equal the declared block
+    schedule byte-for-byte) and the reporters' read-time re-verification of
+    the same invariant (`benchmark_campaign_report.build_campaign_report`,
+    `benchmark_admission.block_is_complete`) must share ONE canonical
+    encoding rather than three private copies that could drift apart.
+    Lives here (the storage layer every one of those modules already
+    imports) so the pure evidence-to-report modules never pull in a
+    heavier import graph for one encoding helper."""
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return encoded.encode("utf-8")
+
+
+# Backwards-compatible private alias -- every in-module caller predates the
+# H1 rename above.
+_canonical_bytes = canonical_json_bytes
 
 
 def compute_session_fingerprint(session_lock: Mapping[str, object]) -> str:

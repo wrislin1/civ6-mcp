@@ -101,6 +101,7 @@ from civ_mcp.arena.benchmark_store import (
     BenchmarkStore,
     SessionLockMismatchError,
     TrialProvenanceError,
+    canonical_json_bytes,
     compute_session_fingerprint,
 )
 from civ_mcp.arena.registry import TOOL_REGISTRY, resolve_tools
@@ -451,8 +452,18 @@ def _existing_locked_episode_wall_s(store: CampaignStore, block_id: str) -> int 
     re-runs the full live probe and necessarily observes different
     latencies) must reuse that already-locked value rather than passing a
     freshly re-derived one. `None` only when no prior session exists yet
-    (first admission for this block) or the existing file cannot be read/
-    parsed -- either way the caller falls back to deriving fresh."""
+    (first admission for this block), the existing file cannot be read/
+    parsed, or -- H8 (external review wave H) -- the recorded
+    session.json fails G1's `compute_session_fingerprint` verification
+    (its session_fingerprint is not the fingerprint of its own remaining
+    contents): a value read out of a tampered lock must never be reused as
+    the locked wall. Returning `None` (matching this function's existing
+    missing/unreadable semantics) rather than raising is still fail-closed
+    end to end: the caller then derives a FRESH wall and mints a fresh
+    self-fingerprinted lock, and `BenchmarkStore.create`'s byte-for-byte
+    session.json comparison refuses to reattach over the tampered file --
+    the tamper surfaces loudly there, on the write path, instead of being
+    silently laundered into a reused `episode_wall_s` here."""
     session_path = store.root / CampaignStore.BLOCKS_DIR / block_id / "session.json"
     if not session_path.is_file():
         return None
@@ -460,7 +471,15 @@ def _existing_locked_episode_wall_s(store: CampaignStore, block_id: str) -> int 
         existing = json.loads(session_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    value = existing.get("episode_wall_s") if isinstance(existing, dict) else None
+    if not isinstance(existing, dict):
+        return None
+    # H8: same G1 verification block_is_complete applies before trusting
+    # any recorded session field.
+    if not existing.get("session_fingerprint") or (
+        compute_session_fingerprint(existing) != existing.get("session_fingerprint")
+    ):
+        return None
+    value = existing.get("episode_wall_s")
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
@@ -924,6 +943,29 @@ def block_is_complete(store: CampaignStore, block_id: str) -> bool:
     if not trials_dir.is_dir():
         return False
     scheduled = store.schedule["blocks"][block_id]["trials"]
+
+    # H1(b) (external review wave H): the block's own recorded
+    # schedule.json must equal the campaign schedule's entry for this
+    # block -- the exact invariant `CampaignStore.open_block` enforces at
+    # write time, re-verified here (same shared canonical encoding,
+    # `benchmark_store.canonical_json_bytes`) because this function acts on
+    # pure filesystem state BEFORE any report runs. `store.schedule` is
+    # trusted: `CampaignStore._open_or_create` already verified it
+    # byte-for-byte against the recorded campaign schedule, which is
+    # digest-bound into campaign_fingerprint. A genuinely admitted block
+    # always has this file (open_block writes it before session.json), so
+    # missing/unreadable/mismatched is NOT complete.
+    block_schedule_path = store.root / CampaignStore.BLOCKS_DIR / block_id / "schedule.json"
+    if not block_schedule_path.is_file():
+        return False
+    try:
+        recorded_block_schedule = json.loads(block_schedule_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if canonical_json_bytes(recorded_block_schedule) != canonical_json_bytes(
+        dict(store.schedule["blocks"][block_id])
+    ):
+        return False
 
     session_path = store.root / CampaignStore.BLOCKS_DIR / block_id / "session.json"
     if not session_path.is_file():

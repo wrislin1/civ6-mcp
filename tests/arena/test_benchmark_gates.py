@@ -478,14 +478,65 @@ def test_admit_model_block_auth_outranks_transport_and_capability_errors():
     assert exc_info.value.details["errors"] == ["401 bad key"]
 
 
-def test_admit_model_block_unclassified_probe_errors_keep_capability_code():
-    """Backward compatibility: a probe with errors but NO error_kinds (a
-    pre-G2 constructor) must keep failing under the existing capability
-    code (backend_probe_errors), never silently pass and never be
-    misread as auth/transport."""
+def test_admit_model_block_unclassified_probe_errors_refuse_as_transport():
+    """H6 (external review wave H), weakest form: a probe with errors but
+    NO error_kinds (a pre-classification constructor) must refuse under
+    backend_transport_error -- a NON-deferral-eligible operator code --
+    never under backend_probe_errors (deferral-eligible). A missing
+    classification must always land in the refusing, non-deferrable
+    direction."""
     with pytest.raises(GateFailure) as exc_info:
         admit_model_block(**_admit_kwargs(probe=_good_probe(errors=["boom"])))
-    assert exc_info.value.code == "backend_probe_errors"
+    assert exc_info.value.code == "backend_transport_error"
+    assert exc_info.value.code != "backend_probe_errors"
+    from civ_mcp.arena.benchmark_campaign_report import REPLICATION_DEFERRAL_ELIGIBLE_CODES
+
+    assert "backend_transport_error" not in REPLICATION_DEFERRAL_ELIGIBLE_CODES
+
+
+def test_admit_model_block_misaligned_probe_error_kinds_refuse_outright():
+    """H6: a non-empty error_kinds whose length disagrees with errors must
+    be a typed refusal -- list(zip(...)) used to silently truncate, which
+    could drop exactly the auth/transport entry."""
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                probe=_good_probe(errors=["401 bad key", "boom"], error_kinds=["auth"])
+            )
+        )
+    assert exc_info.value.code == "backend_error_classification_misaligned"
+    from civ_mcp.arena.benchmark_campaign_report import REPLICATION_DEFERRAL_ELIGIBLE_CODES
+
+    assert "backend_error_classification_misaligned" not in REPLICATION_DEFERRAL_ELIGIBLE_CODES
+
+
+def test_admit_model_block_5xx_probe_errors_refuse_as_transport():
+    """H2 (external review wave H, Ruling I): a probe whose calls failed
+    with HTTP 5xx (e.g. a llama-swap cold-start 503 across the sample set)
+    carries "transport" kinds from classify_backend_exception and must
+    refuse under backend_transport_error, never the deferral-eligible
+    backend_probe_errors."""
+    import httpx
+    import openai
+
+    from civ_mcp.arena.benchmark_backend import classify_backend_exception
+
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    exc = openai.InternalServerError(
+        "503 loading model", response=httpx.Response(503, request=request), body=None
+    )
+    kind = classify_backend_exception(exc)
+    dead_probe = _good_probe(
+        model=None,
+        model_confirmed=False,
+        seed_honored=False,
+        latencies_s=[],
+        errors=["503 loading model"] * 10,
+        error_kinds=[kind] * 10,
+    )
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(**_admit_kwargs(probe=dead_probe))
+    assert exc_info.value.code == "backend_transport_error"
 
 
 def test_admit_model_block_rejects_counted_backend_with_hidden_retries():
@@ -569,7 +620,10 @@ def test_admission_requires_canaries_for_every_arm():
     # weakest form: BOTH ok flags True but a recorded canary error --
     # exactly the shape probe_tool_capability's old sticky
     # required_argument_ok produced for a correct-then-wrong call sequence.
-    # admit_model_block must consult canary.errors and reject.
+    # admit_model_block must consult canary.errors and reject. (H4: the
+    # error carries its real "model" classification, as
+    # probe_tool_capability now always stamps -- an UNCLASSIFIED canary
+    # error refuses as transport instead, see the H4/H6 tests below.)
     with pytest.raises(GateFailure) as exc_info:
         admit_model_block(
             **_admit_kwargs(
@@ -581,6 +635,7 @@ def test_admission_requires_canaries_for_every_arm():
                             "{'unit_index': 7, 'x': 11, 'y': 13}, got "
                             "{'unit_index': 7, 'x': 12, 'y': 13}",
                         ),
+                        error_kinds=("model",),
                     ),
                 },
             )
@@ -602,6 +657,113 @@ def test_admission_requires_canaries_for_every_arm():
     json.dumps(evidence)
 
 
+# ---------------------------------------------------------------------------
+# H4 (external review wave H): auth/transport-kind canary errors refuse
+# admission under their own non-deferrable operator codes BEFORE the
+# (deferral-eligible) tool_canary_failed gate can fire for them.
+# ---------------------------------------------------------------------------
+
+
+def test_admit_model_block_auth_kind_canary_error_refuses_backend_auth_error():
+    """H4: token expiry between probe_backend and the canary loop is an
+    operator credential failure -- never tool_canary_failed
+    (deferral-eligible)."""
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={
+                    "standard": _good_canary(
+                        "standard",
+                        finish_trial_ok=False,
+                        errors=("finish_trial canary raised: Error code: 401",),
+                        error_kinds=("auth",),
+                    ),
+                },
+            )
+        )
+    assert exc_info.value.code == "backend_auth_error"
+    assert exc_info.value.code != "tool_canary_failed"
+
+
+def test_admit_model_block_transport_kind_canary_error_refuses_backend_transport_error():
+    """H4: a 429 storm (or a cold-start 503, Ruling I) during the canary
+    loop is an operator/environment failure -- never tool_canary_failed."""
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={
+                    "standard": _good_canary(
+                        "standard",
+                        finish_trial_ok=False,
+                        errors=("finish_trial canary raised: Error code: 429",),
+                        error_kinds=("transport",),
+                    ),
+                },
+            )
+        )
+    assert exc_info.value.code == "backend_transport_error"
+    from civ_mcp.arena.benchmark_campaign_report import REPLICATION_DEFERRAL_ELIGIBLE_CODES
+
+    assert "backend_transport_error" not in REPLICATION_DEFERRAL_ELIGIBLE_CODES
+
+
+def test_admit_model_block_model_kind_canary_error_still_tool_canary_failed():
+    """H4: a genuine model-side canary failure (wrong arguments, no tool
+    call -- kind "model") keeps failing under tool_canary_failed, the
+    deferral-eligible capability code."""
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={
+                    "standard": _good_canary(
+                        "standard",
+                        required_argument_ok=False,
+                        errors=("required-argument canary: expected arguments ..., got ...",),
+                        error_kinds=("model",),
+                    ),
+                },
+            )
+        )
+    assert exc_info.value.code == "tool_canary_failed"
+
+
+def test_admit_model_block_unclassified_canary_errors_refuse_as_transport():
+    """H6, weakest form for the canary path: canary errors non-empty +
+    error_kinds empty must refuse under backend_transport_error (the
+    non-deferral-eligible direction), never tool_canary_failed."""
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={
+                    "standard": _good_canary(
+                        "standard",
+                        errors=("unclassified canary error",),
+                    ),
+                },
+            )
+        )
+    assert exc_info.value.code == "backend_transport_error"
+    assert exc_info.value.code != "tool_canary_failed"
+
+
+def test_admit_model_block_misaligned_canary_error_kinds_refuse_outright():
+    """H6: canary errors/error_kinds length disagreement is a typed
+    refusal, mirroring the probe-side misalignment check."""
+    with pytest.raises(GateFailure) as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                tool_canaries={
+                    "standard": _good_canary(
+                        "standard",
+                        errors=("error one", "error two"),
+                        error_kinds=("model",),
+                    ),
+                },
+            )
+        )
+    assert exc_info.value.code == "backend_error_classification_misaligned"
+
+
 def test_admit_model_block_rejects_insufficient_warm_latency_samples():
     short_probe = BackendProbe(
         samples=10, model="qwen3.6-27b", model_confirmed=True,
@@ -612,8 +774,17 @@ def test_admit_model_block_rejects_insufficient_warm_latency_samples():
 
 
 def test_admit_model_block_rejects_probe_errors():
-    with pytest.raises(GateFailure, match="probe"):
-        admit_model_block(**_admit_kwargs(probe=_good_probe(errors=["seed check failed"])))
+    # H6: model-kind classification keeps this on the capability code
+    # (backend_probe_errors); an UNCLASSIFIED error now refuses as
+    # transport instead -- see
+    # test_admit_model_block_unclassified_probe_errors_refuse_as_transport.
+    with pytest.raises(GateFailure, match="probe") as exc_info:
+        admit_model_block(
+            **_admit_kwargs(
+                probe=_good_probe(errors=["seed check failed"], error_kinds=["model"])
+            )
+        )
+    assert exc_info.value.code == "backend_probe_errors"
 
 
 def test_admit_model_block_rejects_seed_not_honored():

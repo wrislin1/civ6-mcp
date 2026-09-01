@@ -66,28 +66,48 @@ def classify_backend_exception(exc: BaseException) -> str:
     `civ_mcp.arena.backends.OpenAICompatBackend`), whose transport is httpx
     -- so the concrete shapes checked are the openai SDK's typed exceptions
     plus httpx's transport/timeout errors, plus a bare HTTP-status fallback
-    for any status-carrying exception shape:
+    for any status-carrying exception shape (H5, external review wave H:
+    both the openai SDK's `exc.status_code` attribute AND the httpx
+    convention `exc.response.status_code` are consulted, so a raw
+    `httpx.HTTPStatusError` classifies by its status too):
 
     - auth: `openai.AuthenticationError` (401), `openai.PermissionDeniedError`
-      (403), or any exception carrying `status_code` 401/403;
+      (403), or any exception carrying status 401/403;
     - transport: `openai.APIConnectionError` (which subsumes
       `openai.APITimeoutError`), `openai.RateLimitError` (429),
-      `httpx.TransportError` (which subsumes `httpx.TimeoutException`),
-      `asyncio.TimeoutError`, or any exception carrying `status_code` 429;
+      `openai.InternalServerError` (the SDK's typed exception for EVERY
+      5xx), `httpx.TransportError` (which subsumes
+      `httpx.TimeoutException`), `asyncio.TimeoutError`, or any exception
+      carrying status 429 or any 5xx status. Ruling I (external review
+      wave H, finding I1): ALL HTTP 5xx are environment evidence -- a
+      llama-swap cold-start 503, a gateway 500/502/504 -- never
+      model-capability evidence, so they classify as transport and fail
+      admission under the non-deferral-eligible `backend_transport_error`
+      code rather than the deferral-eligible `backend_probe_errors`;
     - model: everything else -- a response that genuinely came back from
-      the model/server (bad tool call, wrong schema, refusal text, a 4xx/5xx
+      the model/server (bad tool call, wrong schema, refusal text, a 4xx
       the server chose to emit) remains capability evidence.
     """
     if isinstance(exc, (openai.AuthenticationError, openai.PermissionDeniedError)):
         return ERROR_KIND_AUTH
     status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        # H5: httpx convention -- httpx.HTTPStatusError (and anything else
+        # carrying a response object) records the status on
+        # exc.response.status_code, not exc.status_code.
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
     if status_code in (401, 403):
         return ERROR_KIND_AUTH
-    if isinstance(exc, (openai.APIConnectionError, openai.RateLimitError)):
+    if isinstance(
+        exc, (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError)
+    ):
         return ERROR_KIND_TRANSPORT
     if isinstance(exc, (httpx.TransportError, asyncio.TimeoutError)):
         return ERROR_KIND_TRANSPORT
     if status_code == 429:
+        return ERROR_KIND_TRANSPORT
+    # Ruling I: every 5xx is environment, never model capability.
+    if isinstance(status_code, int) and 500 <= status_code <= 599:
         return ERROR_KIND_TRANSPORT
     return ERROR_KIND_MODEL
 
@@ -105,9 +125,13 @@ class BackendProbe:
     # G2 (external review wave G): one classification per entry in `errors`,
     # index-aligned ("auth" / "transport" / "model" -- see
     # classify_backend_exception). Empty for a BackendProbe constructed
-    # without this field (pre-G2 callers/tests); a missing kind is treated
-    # as "model" by the admission gate, preserving those probes' existing
-    # backend_probe_errors behavior.
+    # without this field (pre-G2 callers/tests). H6 (external review wave
+    # H): the admission gate treats a missing classification as
+    # "transport" (the NON-deferral-eligible direction -- unclassified
+    # errors must never land in the deferral-eligible
+    # backend_probe_errors bucket), and refuses outright if a non-empty
+    # error_kinds disagrees in length with `errors` (silent zip truncation
+    # could drop exactly the auth/transport entry).
     error_kinds: tuple[str, ...] = ()
     # One of: "honored", "not_honored", "not_applicable_greedy" (locked seed
     # but sampling.temperature == 0 -- seed honoring is unobservable and
@@ -311,6 +335,21 @@ class ToolCanaryEvidence:
     required_argument_ok: bool
     observed_calls: tuple[dict[str, object], ...]
     errors: tuple[str, ...]
+    # H4 (external review wave H): one classification per entry in
+    # `errors`, index-aligned, mirroring BackendProbe.error_kinds. A canary
+    # error caused by an exception from `backend.chat(...)` is classified
+    # at capture time via `classify_backend_exception` (auth / transport /
+    # model); a canary error describing the MODEL's own behavior (no tool
+    # call, wrong arguments, unparseable JSON) is "model". The admission
+    # gate refuses auth/transport-kind canary errors under
+    # backend_auth_error / backend_transport_error BEFORE
+    # tool_canary_failed can fire -- a 429 storm or an expired token
+    # between probe_backend and the canary loop is an operator/environment
+    # failure, never model-capability evidence. Empty for a
+    # ToolCanaryEvidence constructed without this field (pre-H4 callers/
+    # tests); the gate then treats every error as "transport" (H6: the
+    # non-deferral-eligible direction) and refuses on length misalignment.
+    error_kinds: tuple[str, ...] = ()
 
 
 def _parse_tool_call_arguments(raw: object) -> tuple[object, str | None]:
@@ -354,6 +393,25 @@ async def probe_tool_capability(
     """
     observed_calls: list[dict[str, object]] = []
     errors: list[str] = []
+    error_kinds: list[str] = []
+
+    def _record_model_error(message: str) -> None:
+        """A canary failure describing the MODEL's own behavior (no tool
+        call, wrong arguments, unparseable JSON) -- genuine capability
+        evidence, kind "model"."""
+        errors.append(message)
+        error_kinds.append(ERROR_KIND_MODEL)
+
+    def _record_exception(exc: Exception, message: str) -> None:
+        """H4 (external review wave H): an exception from
+        `backend.chat(...)` during a canary is classified at capture time
+        exactly like the probe funnel's `_record_error` -- a 429 storm or
+        an expired token between probe_backend and the canary loop must
+        surface as an auth/transport-kind error the admission gate can
+        refuse under its own non-deferrable code, never as
+        tool_canary_failed (deferral-eligible)."""
+        errors.append(message)
+        error_kinds.append(classify_backend_exception(exc))
 
     def _messages(user_content: str) -> list[dict[str, str]]:
         messages: list[dict[str, str]] = []
@@ -371,12 +429,12 @@ async def probe_tool_capability(
             tc.get("name") == FINISH_TRIAL_CANARY_TOOL_NAME for tc in calls
         )
         if not finish_trial_ok:
-            errors.append(
+            _record_model_error(
                 "finish_trial canary: expected a finish_trial tool call, got "
                 f"tool_calls={[tc.get('name') for tc in calls]!r} text={reply.text!r}"
             )
     except Exception as exc:
-        errors.append(f"finish_trial canary raised: {exc}")
+        _record_exception(exc, f"finish_trial canary raised: {exc}")
 
     required_argument_ok = False
     try:
@@ -387,7 +445,7 @@ async def probe_tool_capability(
             tc for tc in calls if tc.get("name") == REQUIRED_ARGUMENT_CANARY_TOOL_NAME
         ]
         if not move_calls:
-            errors.append(
+            _record_model_error(
                 "required-argument canary: expected a move_unit tool call, got "
                 f"tool_calls={[tc.get('name') for tc in calls]!r} text={reply.text!r}"
             )
@@ -402,17 +460,17 @@ async def probe_tool_capability(
             for tc in move_calls:
                 parsed, parse_error = _parse_tool_call_arguments(tc.get("arguments"))
                 if parse_error is not None:
-                    errors.append(f"required-argument canary: {parse_error}")
+                    _record_model_error(f"required-argument canary: {parse_error}")
                     all_calls_ok = False
                 elif parsed != REQUIRED_ARGUMENT_SENTINEL:
-                    errors.append(
+                    _record_model_error(
                         "required-argument canary: expected arguments "
                         f"{REQUIRED_ARGUMENT_SENTINEL!r}, got {parsed!r}"
                     )
                     all_calls_ok = False
             required_argument_ok = all_calls_ok
     except Exception as exc:
-        errors.append(f"required-argument canary raised: {exc}")
+        _record_exception(exc, f"required-argument canary raised: {exc}")
 
     return ToolCanaryEvidence(
         arm_id=arm_id,
@@ -420,4 +478,5 @@ async def probe_tool_capability(
         required_argument_ok=required_argument_ok,
         observed_calls=tuple(observed_calls),
         errors=tuple(errors),
+        error_kinds=tuple(error_kinds),
     )

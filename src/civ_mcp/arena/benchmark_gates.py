@@ -430,6 +430,47 @@ def check_tuner_holder(*, holder: Mapping[str, object] | None) -> dict[str, obje
 # ---------------------------------------------------------------------------
 
 
+def _classified_error_pairs(
+    errors: Sequence[str], error_kinds: Sequence[str], *, source: str
+) -> list[tuple[str, str]]:
+    """Index-aligned (message, kind) pairs for one evidence object's
+    error/classification lists (H6, external review wave H). Fail-closed on
+    both degenerate shapes the old `list(zip(...))` silently tolerated:
+
+    - a non-empty `error_kinds` whose length disagrees with `errors` is a
+      typed `GateFailure` (`backend_error_classification_misaligned`, an
+      operator/harness code deliberately NOT in
+      REPLICATION_DEFERRAL_ELIGIBLE_CODES) -- silent zip truncation could
+      drop exactly the auth/transport entry and let an operator failure
+      fall through to a deferral-eligible capability code;
+    - an EMPTY `error_kinds` under non-empty `errors` (a pre-classification
+      evidence object) defaults every error to "transport" -- the
+      NON-deferral-eligible direction. The old default let unclassified
+      errors land in `backend_probe_errors` / `tool_canary_failed`, both
+      deferral-eligible, which is exactly the direction a missing
+      classification must never point.
+    """
+    error_list = list(errors)
+    kind_list = list(error_kinds or ())
+    if not kind_list and error_list:
+        kind_list = ["transport"] * len(error_list)
+    if len(kind_list) != len(error_list):
+        raise GateFailure(
+            "backend_error_classification_misaligned",
+            {
+                "source": source,
+                "error_count": len(error_list),
+                "error_kind_count": len(kind_list),
+                "message": (
+                    f"{source}: recorded {len(error_list)} error(s) but "
+                    f"{len(kind_list)} classification(s); refusing to zip misaligned "
+                    "evidence (truncation could silently drop an auth/transport entry)"
+                ),
+            },
+        )
+    return list(zip(error_list, kind_list))
+
+
 def admit_model_block(
     *,
     requested_model: str,
@@ -493,9 +534,26 @@ def admit_model_block(
     operator/environment failure. `backend_auth_error` and
     `backend_transport_error` are operator codes: deliberately NOT in
     `REPLICATION_DEFERRAL_ELIGIBLE_CODES`, never deferrable.
+
+    H4 (external review wave H): the same discipline applies to
+    tool-canary errors (`ToolCanaryEvidence.error_kinds`, classified at
+    capture time by `probe_tool_capability`): an auth/transport-kind canary
+    error -- a 429 storm or token expiry between `probe_backend` and the
+    canary loop -- raises backend_auth_error / backend_transport_error
+    BEFORE the (deferral-eligible) tool_canary_failed gate can fire;
+    tool_canary_failed remains for genuine model-side canary failures.
+    H6: for both the probe and every canary, `errors`/`error_kinds`
+    misalignment is a typed refusal
+    (`backend_error_classification_misaligned`) and a missing
+    classification defaults to "transport" (the non-deferral-eligible
+    direction) -- see `_classified_error_pairs`.
     """
-    error_kinds = tuple(probe.error_kinds or ())
-    classified = list(zip(probe.errors, error_kinds))
+    # H6 (external review wave H): alignment is asserted (misalignment is a
+    # typed refusal) and a missing classification defaults to "transport"
+    # -- see _classified_error_pairs.
+    classified = _classified_error_pairs(
+        probe.errors, probe.error_kinds, source="pre-flight backend probe"
+    )
     auth_errors = [message for message, kind in classified if kind == "auth"]
     transport_errors = [message for message, kind in classified if kind == "transport"]
     if auth_errors:
@@ -592,6 +650,60 @@ def admit_model_block(
                     "structured tool-calling capability "
                     "(benchmark_backend.probe_tool_capability) before a model "
                     "block can be admitted"
+                ),
+            },
+        )
+
+    # H4 (external review wave H): a canary error caused by an auth/
+    # transport failure (a 429 storm, token expiry, or a dead gateway
+    # between probe_backend and the canary loop -- classified at capture
+    # time by probe_tool_capability via classify_backend_exception) is an
+    # operator/environment failure and must refuse admission under its own
+    # non-deferrable code BEFORE tool_canary_failed (deferral-eligible) can
+    # fire for it. Genuine model-side canary failures (no tool call, wrong
+    # arguments) carry kind "model" and still fall through to
+    # tool_canary_failed below. Same H6 alignment/fail-closed discipline as
+    # the probe funnel above.
+    canary_auth_errors: dict[str, list[str]] = {}
+    canary_transport_errors: dict[str, list[str]] = {}
+    for arm_id in expected_arm_ids:
+        canary = tool_canaries[arm_id]
+        canary_classified = _classified_error_pairs(
+            canary.errors,
+            getattr(canary, "error_kinds", ()),
+            source=f"tool canary for arm {arm_id!r}",
+        )
+        auth_messages = [message for message, kind in canary_classified if kind == "auth"]
+        transport_messages = [
+            message for message, kind in canary_classified if kind == "transport"
+        ]
+        if auth_messages:
+            canary_auth_errors[arm_id] = auth_messages
+        if transport_messages:
+            canary_transport_errors[arm_id] = transport_messages
+    if canary_auth_errors:
+        raise GateFailure(
+            "backend_auth_error",
+            {
+                "canary_errors": canary_auth_errors,
+                "message": (
+                    "tool-canary probe recorded authentication/authorization "
+                    f"failure(s) for arm(s) {sorted(canary_auth_errors)}; this is an "
+                    "operator/credential problem, never model-capability evidence -- "
+                    "fix the credentials and retry admission"
+                ),
+            },
+        )
+    if canary_transport_errors:
+        raise GateFailure(
+            "backend_transport_error",
+            {
+                "canary_errors": canary_transport_errors,
+                "message": (
+                    "tool-canary probe recorded connection/timeout/rate-limit "
+                    f"failure(s) for arm(s) {sorted(canary_transport_errors)}; this is "
+                    "an operator/environment problem, never model-capability evidence "
+                    "-- fix the endpoint/gateway and retry admission"
                 ),
             },
         )
@@ -706,6 +818,8 @@ def admit_model_block(
                 "required_argument_ok": tool_canaries[arm_id].required_argument_ok,
                 "observed_calls": list(tool_canaries[arm_id].observed_calls),
                 "errors": list(tool_canaries[arm_id].errors),
+                # H4 (external review wave H): index-aligned with "errors".
+                "error_kinds": list(getattr(tool_canaries[arm_id], "error_kinds", ())),
             }
             for arm_id in expected_arm_ids
         },
