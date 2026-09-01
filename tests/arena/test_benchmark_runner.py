@@ -3011,6 +3011,45 @@ def test_run_windows_command_timeout_surfaces_as_command_result_failure(monkeypa
     assert "timed out" in result.stderr.lower()
 
 
+def _recorded_windows_argv(monkeypatch, argv):
+    seen = {}
+
+    def _fake_run(run_argv, **kwargs):
+        seen["argv"] = list(run_argv)
+        import subprocess as _subprocess
+
+        return _subprocess.CompletedProcess(run_argv, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    benchmark_runner._run_windows_command(argv)
+    return seen["argv"]
+
+
+def test_run_windows_command_rewrites_to_git_exe_for_a_windows_shaped_path(monkeypatch):
+    """A `C:\\...` repo path is only reachable through the Windows git, so
+    the .exe rewrite stays for that shape."""
+    argv = _recorded_windows_argv(
+        monkeypatch, ["git", "-C", "C:\\Users\\wrisl\\dev\\civ6-mcp", "rev-parse", "HEAD"]
+    )
+
+    assert argv[0] == "git.exe"
+
+
+def test_run_windows_command_uses_the_linux_git_for_a_wsl_mounted_path(monkeypatch):
+    """NEW-1 (wave-J verification): `_derive_windows_repo_default` yields the
+    WSL-mounted view (`/mnt/c/...`) of the Windows companion checkout. The
+    Linux git reads that working tree directly; rewriting to `git.exe`
+    would impose a Git-for-Windows dependency that is absent on this
+    machine, failing the clean-checkout gate with FileNotFoundError before
+    any evidence is collected."""
+    argv = _recorded_windows_argv(
+        monkeypatch, ["git", "-C", "/mnt/c/Users/wrisl/dev/civ6-mcp", "rev-parse", "HEAD"]
+    )
+
+    assert argv[0] == "git"
+    assert "git.exe" not in argv
+
+
 def test_run_ssh_command_uses_batch_mode_connect_timeout_and_a_run_timeout(monkeypatch):
     recorded = {}
 

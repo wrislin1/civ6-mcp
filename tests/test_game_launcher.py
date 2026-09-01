@@ -1214,6 +1214,50 @@ async def test_continue_after_lua_load_keeps_event_loop_responsive_during_slow_c
 
 
 @pytest.mark.asyncio
+async def test_escape_press_runs_off_the_event_loop_thread(monkeypatch):
+    """J10(a), pinned per NEW-3 (wave-J verification): the Escape press is
+    blocking work (a subprocess.run(timeout=30) bridge under WSL, a
+    time.sleep(0.5) key hold on native win32). The responsiveness test
+    above stubs `_press_escape` out entirely, so nothing pinned it
+    off-loop -- reverting `await asyncio.to_thread(_press_escape)` to a
+    direct call passed the suite. Asserting the press runs on a thread
+    other than the loop's targets that property directly."""
+    import asyncio as _asyncio
+    import threading
+
+    loop_thread_id = threading.get_ident()
+    press_thread_ids: list[int] = []
+
+    port_states = iter([True, False])
+    monkeypatch.setattr(
+        game_launcher, "_is_tuner_port_open", lambda: next(port_states, False)
+    )
+    monkeypatch.setattr(
+        game_launcher,
+        "_classify_frontend_load_state",
+        lambda *_a, **_k: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+    )
+
+    def _recording_press() -> bool:
+        press_thread_ids.append(threading.get_ident())
+        return True
+
+    monkeypatch.setattr(game_launcher, "_press_escape", _recording_press, raising=False)
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    await _asyncio.wait_for(
+        game_launcher.continue_after_lua_load(
+            "CHANNELS_GATE_V1_T157", engage_polls=2, world_polls=1, press_every=1
+        ),
+        timeout=5,
+    )
+
+    assert press_thread_ids, "the CONTINUE screen must have triggered an Escape press"
+    assert all(tid != loop_thread_id for tid in press_thread_ids)
+
+
+@pytest.mark.asyncio
 async def test_continue_after_lua_load_bridge_failure_counts_are_per_wait_session(
     monkeypatch,
 ):

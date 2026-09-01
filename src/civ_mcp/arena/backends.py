@@ -158,11 +158,16 @@ class OpenAICompatBackend:
         (`benchmark_runner._build_live_admission_dependencies`'s
         `probe_backend_dep`) can classify it
         (`benchmark_backend.classify_backend_exception`): auth/transport
-        failures fail admission under their own non-deferrable codes, while
-        any other failure (an endpoint that simply doesn't expose
-        `/v1/models`) keeps the B4 best-effort empty-tuple behavior at that
-        call site -- the success-path value (sorted ids) is byte-identical
-        to before, so existing locks' `served_model_ids` are unaffected.
+        failures fail admission under their own non-deferrable codes.
+
+        NEW-4 (wave-J verification): under Ruling L every status-bearing
+        rejection classifies auth/transport, so the B4 best-effort
+        empty-tuple behavior now survives for exactly two shapes: a 404
+        (the endpoint simply doesn't expose `/v1/models` -- recognized by
+        `benchmark_runner._is_not_found_listing_failure` and exempted
+        there), and a statusless non-transport failure. The success-path
+        value (sorted ids) is byte-identical to before, so existing locks'
+        `served_model_ids` are unaffected.
         """
         listing = await self._client.models.list()
         return tuple(sorted(model.id for model in listing.data))

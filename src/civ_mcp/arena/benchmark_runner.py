@@ -1103,11 +1103,28 @@ def _run_windows_command(argv: Sequence[str]):
     # Mirrors the git argv shape benchmark_live_evidence.collect_checkout_evidence
     # always passes ("git", "-C", <windows path>, ...) -- only the
     # executable itself needs the .exe suffix.
+    #
+    # NEW-1 (wave-J verification): the .exe rewrite applies ONLY to a
+    # Windows-shaped repo path (`C:\...`). When the target is the
+    # WSL-mounted view of the same checkout (`/mnt/c/...`, which is what
+    # `_derive_windows_repo_default` yields), the LINUX git reads that
+    # working tree and its .git directory directly -- verified against
+    # /mnt/c/Users/wrisl/dev/civ6-mcp -- so rewriting to `git.exe` would
+    # impose a Git-for-Windows dependency that is not installed on this
+    # machine and would fail the clean-checkout gate with
+    # FileNotFoundError before any evidence is collected. The gate's
+    # question ("is the Windows companion checkout clean and at the
+    # expected commit?") is answered identically from either side because
+    # both read the same files. Caveat: this assumes the checkout is
+    # stored with LF endings (no core.autocrlf), which holds here -- a
+    # CRLF-normalizing checkout would read mass-dirty under the Linux git.
     import subprocess
 
     from civ_mcp.arena.benchmark_live_evidence import CommandResult
 
-    win_argv = ["git.exe", *argv[1:]] if argv and argv[0] == "git" else list(argv)
+    targets_wsl_mounted_path = any(arg.startswith("/") for arg in argv[1:])
+    rewrite_to_windows_git = argv and argv[0] == "git" and not targets_wsl_mounted_path
+    win_argv = ["git.exe", *argv[1:]] if rewrite_to_windows_git else list(argv)
     try:
         result = subprocess.run(
             win_argv, capture_output=True, text=True, timeout=_WINDOWS_COMMAND_TIMEOUT_S
