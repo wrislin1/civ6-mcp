@@ -48,7 +48,7 @@
 - Consumes: existing `PositionManifest`, `SuiteManifest`, `TreatmentArm`, and `SamplingConfig` dataclasses.
 - Produces: unchanged public `load_position_manifest(path) -> PositionManifest` and `load_suite_manifest(path) -> SuiteManifest` signatures with field-specific `ValueError` failures.
 
-- [ ] **Step 1: Add failing tests for YAML nulls and wrong scalar/container types**
+- [x] **Step 1: Add failing tests for YAML nulls and wrong scalar/container types**
 
 Add parameterized cases for every collection that currently executes `tuple(None)` or `dict(None)`, plus representative scalar failures:
 
@@ -69,13 +69,13 @@ def test_manifest_nulls_raise_field_specific_value_errors(...): ...
 
 Also assert that booleans are rejected where an integer is required, every tile is exactly two integers, seeds/audit indices are integers, strings are non-empty, and sampling values are either their declared numeric type or `None`.
 
-- [ ] **Step 2: Run the focused tests and confirm the existing bare `TypeError`/unclear failure**
+- [x] **Step 2: Run the focused tests and confirm the existing bare `TypeError`/unclear failure**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_manifest.py`
 
 Expected: new cases fail because loaders currently call constructors on unchecked YAML values.
 
-- [ ] **Step 3: Add reusable strict field readers and use them in both loaders**
+- [x] **Step 3: Add reusable strict field readers and use them in both loaders**
 
 Keep unknown/missing-key rejection, then validate before conversion:
 
@@ -89,13 +89,13 @@ def _require_optional_number(value: object, field: str) -> float | None: ...
 
 All public loader errors remain `ValueError`; messages begin with the exact manifest and field name. Do not add permissive defaults.
 
-- [ ] **Step 4: Verify the focused and neighboring manifest/schedule tests**
+- [x] **Step 4: Verify the focused and neighboring manifest/schedule tests**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_manifest.py tests/arena/test_benchmark_schedule.py`
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/civ_mcp/arena/benchmark_manifest.py tests/arena/test_benchmark_manifest.py
@@ -118,7 +118,7 @@ git commit -m "fix(benchmark): reject malformed manifest values explicitly"
 - Consumes: Task 1 strict field readers, `resolved_benchmark_tools`, `BENCHMARK_SYSTEM`, `SamplingConfig`, `RetryPolicy`.
 - Produces: `ContractVersions`, `ModelBlockConfig`, `CalibrationRules`, `CampaignManifest`, `load_campaign_manifest`, `suite_for_block`, `tool_surface_identity`, `tool_input_identity`, `scorer_source_fingerprint`, `write_contract_candidate`, and injected `SingleTurnAgent.user_prompt`.
 
-- [ ] **Step 1: Write failing tests for contract parsing and the two tool fingerprints**
+- [x] **Step 1: Write failing tests for contract parsing and the two tool fingerprints**
 
 Pin these distinctions:
 
@@ -134,13 +134,13 @@ async def test_single_turn_agent_uses_injected_frozen_prompt_verbatim(): ...
 
 The input-fingerprint mutation test must alter one nested required argument and prove the digest changes. The surface test must alter descriptions while leaving ordered tool names/capability IDs unchanged and prove the surface digest does not change.
 
-- [ ] **Step 2: Run the tests and confirm imports/types are absent**
+- [x] **Step 2: Run the tests and confirm imports/types are absent**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_contract.py tests/arena/test_benchmark_agent.py`
 
 Expected: contract imports fail and the new fingerprint assertions cannot run.
 
-- [ ] **Step 3: Add immutable contract and campaign dataclasses**
+- [x] **Step 3: Add immutable contract and campaign dataclasses**
 
 Define and strictly load:
 
@@ -192,7 +192,7 @@ class CampaignManifest:
 
 `load_campaign_manifest` resolves the contract and provenance paths relative to the campaign YAML and verifies the provenance digest. It must require exactly two Plan-2 arms (`minimal`, `standard` tool tiers, empty `options`), Gemma before Qwen, one position, 12 seeds, ABBA, `single_turn`, fresh context true, `RetryPolicy(max_attempts=1)`, 8 max steps, and six balanced local audit indices. Add `suite_for_block(campaign, model_block)` to construct the existing one-model `SuiteManifest`; each block therefore has local trial indices 1–24 and the same balanced audits. Keep those campaign-specific restrictions here rather than weakening reusable `SuiteManifest` rules.
 
-- [ ] **Step 4: Expose exact resolved schemas once and fingerprint them canonically**
+- [x] **Step 4: Expose exact resolved schemas once and fingerprint them canonically**
 
 Add a public agent helper that returns the already benchmark-safe tier schema (no `end_turn`, with `finish_trial`). Extend `SingleTurnAgent` with an optional immutable `user_prompt`; when present, `_run_episode` uses it verbatim, and when absent the existing smoke/legacy `benchmark_prompt(turn, player_id)` behavior remains. The campaign prompt fingerprint covers both `BENCHMARK_SYSTEM` and the frozen injected user prompt. In `benchmark_contract.py` implement:
 
@@ -217,7 +217,7 @@ Give `benchmark_contract.py` a `python -m` `freeze` subcommand that accepts the 
 
 The surface identity omits descriptions and JSON schemas; the input identity includes them verbatim. Fail if a resolved schema exposes `end_turn` or omits `finish_trial`.
 
-- [ ] **Step 5: Verify with counterfactual mutations**
+- [x] **Step 5: Verify with counterfactual mutations**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_contract.py tests/arena/test_benchmark_agent.py`
 
@@ -225,7 +225,7 @@ Then temporarily include `description` in the surface identity and confirm `test
 
 Expected: all tests pass after the revert.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/civ_mcp/arena/benchmark_contract.py src/civ_mcp/arena/benchmark_agent.py tests/arena/test_benchmark_contract.py tests/arena/test_benchmark_agent.py
@@ -250,7 +250,7 @@ git commit -m "feat(benchmark): version campaign contracts and tool identities"
 - Consumes: Task 2 `CampaignManifest`, `suite_for_block`, tool identities, existing `compile_schedule`, `BenchmarkStore`, and `build_session_lock` evidence checks.
 - Produces: `compile_campaign_schedule(campaign) -> dict`, `build_campaign_lock(...) -> dict`, `CampaignStore`, and an evolved `BenchmarkStore`/`session.json` contract with both fingerprints.
 
-- [ ] **Step 1: Write failing tests for the two-level artifact layout**
+- [x] **Step 1: Write failing tests for the two-level artifact layout**
 
 Cover creation, reopen, mismatch, and absence:
 
@@ -278,13 +278,13 @@ benchmark_runs/<campaign-id>/
   blocks/<block-id>/trials/
 ```
 
-- [ ] **Step 2: Run the tests and observe missing campaign types/validation**
+- [x] **Step 2: Run the tests and observe missing campaign types/validation**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_campaign.py tests/arena/test_benchmark_store.py tests/arena/test_benchmark_gates.py`
 
 Expected: the new module/API does not exist.
 
-- [ ] **Step 3: Implement `CampaignStore` as a small wrapper**
+- [x] **Step 3: Implement `CampaignStore` as a small wrapper**
 
 Use the canonical/fsync write behavior already proven in `benchmark_store.py`; do not duplicate trial storage:
 
@@ -302,7 +302,7 @@ class CampaignStore:
 
 Add `compile_campaign_schedule(campaign)` returning a canonical `{"blocks": {block_id: {"trials": [...]}}}` payload. It calls the existing `compile_schedule(suite_for_block(...))` once per model, preserving local indices 1–24; it never renumbers or reorders those block schedules.
 
-- [ ] **Step 4: Build the campaign lock from every shared frozen input**
+- [x] **Step 4: Build the campaign lock from every shared frozen input**
 
 Implement:
 
@@ -322,7 +322,7 @@ def build_campaign_lock(
 
 The lock includes campaign schema version, the non-empty clean WSL commit expected on both checkouts, save archive/state/provenance digests, environment identity, full rubric/objectives, prompt, arms, seeds/order, driver/fresh-context rule, model configurations, retry policy, audit indices, calibration rules, all contract versions, scorer fingerprint, and the tool-surface identity. It deliberately does **not** include exact input schemas: schema text is block admission evidence, so it changes `session_fingerprint` without rewriting the scientific campaign. Compute `campaign_fingerprint` over every other field. Reject any missing digest, non-empty treatment option, or mismatch between the manifest, compiled schedule, position, provenance, and contract candidate. Capture the expected commit after the campaign/config freeze commit; it must remain unchanged until both model blocks finish.
 
-- [ ] **Step 5: Evolve `build_session_lock` into the per-model block lock**
+- [x] **Step 5: Evolve `build_session_lock` into the per-model block lock**
 
 Add required fields:
 
@@ -340,11 +340,11 @@ Keep the filename `session.json` and key `session_fingerprint`. Remove shared ca
 
 Add a counterfactual test proving a description-only schema edit preserves `campaign_fingerprint` but changes `session_fingerprint` through `tool_input_fingerprint`.
 
-- [ ] **Step 6: Make `BenchmarkStore` enforce both stamps for counted blocks**
+- [x] **Step 6: Make `BenchmarkStore` enforce both stamps for counted blocks**
 
 Store `campaign_fingerprint` alongside the existing `fingerprint`. `is_trial_complete` must parse an existing trial and return true only when both stored stamps match the lock. A corrupt, stale, copied, or single-stamped file is not silently skipped; surface a provenance error so the campaign stops for operator review.
 
-- [ ] **Step 7: Verify with fingerprint mutation tests**
+- [x] **Step 7: Verify with fingerprint mutation tests**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_campaign.py tests/arena/test_benchmark_store.py tests/arena/test_benchmark_gates.py`
 
@@ -352,7 +352,7 @@ Mutate a fixture's campaign fingerprint after creation and prove reopen/resume f
 
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/civ_mcp/arena/benchmark_campaign.py src/civ_mcp/arena/benchmark_gates.py src/civ_mcp/arena/benchmark_store.py tests/arena/test_benchmark_campaign.py tests/arena/test_benchmark_gates.py tests/arena/test_benchmark_store.py
@@ -375,7 +375,7 @@ git commit -m "feat(benchmark): add campaign and per-model block locks"
 - Consumes: Task 3 `CampaignStore`/block `BenchmarkStore`, existing `BenchmarkRunner`, `PositionManifest`, `SuiteManifest`, and `TrialSpec`.
 - Produces: `ResolvedBlock`, `run_resolved_block(block) -> int`, dual-stamped counted trial payloads, and preserved single-stamped ungated-smoke diagnostics.
 
-- [ ] **Step 1: Add failing preservation and provenance tests**
+- [x] **Step 1: Add failing preservation and provenance tests**
 
 Pin the boundary before refactoring:
 
@@ -390,13 +390,13 @@ def test_resume_rejects_copied_trial_from_another_campaign(): ...
 
 Use a spy `BenchmarkRunner` and assert the exact compiled schedule is passed unchanged and in order.
 
-- [ ] **Step 2: Run the focused tests and confirm the missing handoff/stamp failures**
+- [x] **Step 2: Run the focused tests and confirm the missing handoff/stamp failures**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_report.py`
 
 Expected: new tests fail; existing smoke tests remain green.
 
-- [ ] **Step 3: Extract only the production assembly boundary**
+- [x] **Step 3: Extract only the production assembly boundary**
 
 Add:
 
@@ -418,15 +418,15 @@ async def run_resolved_block(block: ResolvedBlock) -> int: ...
 
 This function connects, calls `_build_live_dependencies`, constructs the existing `BenchmarkRunner`, invokes `runner.run(block.schedule)`, and closes dependencies. It must not replicate or modify the trial loop. Change smoke `_run_async` to assemble a non-counted `ResolvedBlock` and call it.
 
-- [ ] **Step 4: Thread resolved model settings without implementing Plan-3 options**
+- [x] **Step 4: Thread resolved model settings without implementing Plan-3 options**
 
 Pass `episode_wall_s` and the frozen `user_prompt` into every `SingleTurnAgent`, and `chat_template_kwargs` into every cached backend. Keep the fail-closed non-empty `arm.options` branch, but change its message to state that options are deferred to Plan 3 rather than this plan.
 
-- [ ] **Step 5: Stamp and validate both identities at the existing finalization boundary**
+- [x] **Step 5: Stamp and validate both identities at the existing finalization boundary**
 
 In `_finalize_trial`, copy both fingerprints from the store lock into the payload. In report loading, require exact matches when `ungated_smoke` is false. For smoke, require `ungated_smoke: true`, omit `campaign_fingerprint`, and retain the existing warning; a campaign-level report will reject it in Task 11.
 
-- [ ] **Step 6: Run focused tests and the counterfactual runner test**
+- [x] **Step 6: Run focused tests and the counterfactual runner test**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_report.py`
 
@@ -434,7 +434,7 @@ Temporarily remove the campaign stamp from `_finalize_trial`, verify the new tes
 
 Expected: all pass; the original retry/failure-classification tests are unchanged.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/civ_mcp/arena/benchmark_runner.py src/civ_mcp/arena/benchmark_report.py tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_report.py
@@ -459,7 +459,7 @@ git commit -m "refactor(benchmark): hand resolved blocks to the trusted runner"
 - Consumes: Task 2 `ModelBlockConfig`, resolved per-arm schemas, existing `OpenAICompatBackend`, `BackendProbe`, and `admit_model_block`.
 - Produces: configurable `OpenAICompatBackend.chat_template_kwargs`, `ToolCanaryEvidence`, `probe_tool_capability(...)`, and conditional briefing/tool-canary admission evidence including `episode_wall_s`.
 
-- [ ] **Step 1: Add failing wire-format and canary tests**
+- [x] **Step 1: Add failing wire-format and canary tests**
 
 Cover exact request forwarding and both canaries:
 
@@ -475,13 +475,13 @@ def test_admission_requires_positive_budget_when_briefing_is_on(): ...
 
 The required-argument canary asks for `move_unit` with the exact sentinel `{"unit_index": 7, "x": 11, "y": 13}`. The test must prove no dispatcher/game connection is called.
 
-- [ ] **Step 2: Run the focused tests and observe the hardcoded request body/missing canaries**
+- [x] **Step 2: Run the focused tests and observe the hardcoded request body/missing canaries**
 
 Run: `uv run pytest -q tests/arena/test_backends.py tests/arena/test_benchmark_backend.py tests/arena/test_benchmark_gates.py`
 
 Expected: new tests fail because `enable_thinking=False` is hardcoded and admission has no structured-call evidence.
 
-- [ ] **Step 3: Make chat-template settings an immutable backend input**
+- [x] **Step 3: Make chat-template settings an immutable backend input**
 
 Extend the constructor while preserving arena defaults:
 
@@ -494,7 +494,7 @@ def __init__(..., chat_template_kwargs: Mapping[str, object] | None = None):
 
 Send a defensive copy in `extra_body`. Counted blocks always pass the exact mapping from `ModelBlockConfig`; ordinary arena callers retain current behavior.
 
-- [ ] **Step 4: Implement two nondispatching structured-call probes**
+- [x] **Step 4: Implement two nondispatching structured-call probes**
 
 Define JSON-safe evidence:
 
@@ -512,7 +512,7 @@ async def probe_tool_capability(backend, *, arm_id: str, tools: list[dict]) -> T
 
 Use two fresh, generic prompts: one requires `finish_trial`, one requires the exact sentinel `move_unit`. Parse the returned JSON arguments and compare exact values. Validate only; never route the call to a tool handler.
 
-- [ ] **Step 5: Tighten model admission without requiring a treatment that is off**
+- [x] **Step 5: Tighten model admission without requiring a treatment that is off**
 
 Change `admit_model_block` to accept:
 
@@ -525,7 +525,7 @@ expected_arm_ids: Sequence[str]
 
 Require both canaries for every arm. Only enforce `briefing_budget_chars > 0` when `briefing_required` is true; for this calibration it is false and the locked evidence explicitly records `briefing_budget_chars: null`. Keep retry, identity, seed, latency, and per-model wall-clock rules.
 
-- [ ] **Step 6: Prove the gates fail counterfactually**
+- [x] **Step 6: Prove the gates fail counterfactually**
 
 Run: `uv run pytest -q tests/arena/test_backends.py tests/arena/test_benchmark_backend.py tests/arena/test_benchmark_gates.py`
 
@@ -533,7 +533,7 @@ Then change the fake required-argument reply from `x=11` to `x=12` and confirm a
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/civ_mcp/arena/backends.py src/civ_mcp/arena/benchmark_backend.py src/civ_mcp/arena/benchmark_gates.py tests/arena/test_backends.py tests/arena/test_benchmark_backend.py tests/arena/test_benchmark_gates.py
@@ -559,7 +559,7 @@ git commit -m "feat(benchmark): admit exact model configs and tool callers"
 - Consumes: existing Windows bridge, `BootHealthEvidence`, `wait_for_boot_health`, WinRT OCR/key helpers, and `continue_after_lua_load`.
 - Produces: nullable `BootHealthEvidence.baseline_offset`, explicit missing-profile failures, `FrontendLoadState`, and a continuation path that sends Escape only on positive frontend evidence.
 
-- [ ] **Step 1: Add failing tests for absent `Profile.csv` and Escape classification**
+- [x] **Step 1: Add failing tests for absent `Profile.csv` and Escape classification**
 
 Tests must cover:
 
@@ -574,17 +574,17 @@ async def test_continue_after_lua_load_waits_on_unknown_screen(): ...
 
 Use injected OCR/screen classifiers and key senders; no GUI is required.
 
-- [ ] **Step 2: Run the focused tests and observe the current `0` default/periodic Escape behavior**
+- [x] **Step 2: Run the focused tests and observe the current `0` default/periodic Escape behavior**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_deploy.py tests/test_game_launcher.py tests/test_launcher_cli.py`
 
 Expected: new tests fail because `baseline_offset` defaults to `0` and `continue_after_lua_load` can press Escape without positive screen evidence.
 
-- [ ] **Step 3: Preserve missing boot evidence end to end**
+- [x] **Step 3: Preserve missing boot evidence end to end**
 
 Change `BootHealthEvidence.baseline_offset` to `int | None`; parse with `payload.get("baseline_offset")`, never `0`. Native `wait_for_boot_health` must return an explicit error when `Profile.csv` is absent or has no readable baseline. The CLI bridge returns JSON with `ok: false`, `baseline_offset: null`, and an actionable `error`.
 
-- [ ] **Step 4: Add a conservative frontend state classifier**
+- [x] **Step 4: Add a conservative frontend state classifier**
 
 Use a small enum:
 
@@ -598,7 +598,7 @@ class FrontendLoadState(str, Enum):
 
 The classifier may use WinRT OCR and existing tuner-port state. `continue_after_lua_load` sends one scan-code Escape only for `CONTINUE_SCREEN` or `LEADER_SCREEN`. `IN_WORLD` or an open tuner permanently disarms the Escape waiter. `UNKNOWN` only polls until timeout. Include the final classification in the returned result string/evidence.
 
-- [ ] **Step 5: Verify counterfactually**
+- [x] **Step 5: Verify counterfactually**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_deploy.py tests/test_game_launcher.py tests/test_launcher_cli.py`
 
@@ -606,7 +606,7 @@ Temporarily map `UNKNOWN` to an Escape send and confirm the unknown-screen test 
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/civ_mcp/arena/benchmark_deploy.py src/civ_mcp/game_launcher.py src/civ_mcp/launcher_cli.py tools/windows/civ6_launcher_bootstrap.py tests/arena/test_benchmark_deploy.py tests/test_game_launcher.py tests/test_launcher_cli.py
@@ -629,7 +629,7 @@ git commit -m "fix(launcher): gate boot health and continuation on positive evid
 - Consumes: Task 6 boot evidence, vendored endpoint registry, local/Windows Git checkouts, Linux socket/process metadata, remote `nvidia-smi`/cgroup evidence, and existing pure checkout/GPU gates.
 - Produces: `CommandResult`, `TunerHolder`, `GpuProcess`, checkout/tuner/GPU collector functions, and exact PID/service-scoped remediation functions returning JSON-safe evidence.
 
-- [ ] **Step 1: Add failing pure-parser and safety tests**
+- [x] **Step 1: Add failing pure-parser and safety tests**
 
 Cover WSL/Windows checkout evidence, FireTuner ownership, and remote GPU snapshots:
 
@@ -645,13 +645,13 @@ def test_named_service_drain_rechecks_and_fails_if_process_remains(): ...
 
 Use captured command output fixtures. Tests must assert no broad `pkill`, wildcard, or process-name termination command is generated.
 
-- [ ] **Step 2: Run the tests and observe the missing collector module**
+- [x] **Step 2: Run the tests and observe the missing collector module**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_live_evidence.py tests/arena/test_benchmark_gates.py`
 
 Expected: import/API failures.
 
-- [ ] **Step 3: Implement injected command runners and JSON-safe evidence**
+- [x] **Step 3: Implement injected command runners and JSON-safe evidence**
 
 Define:
 
@@ -683,15 +683,15 @@ class GpuProcess:
 
 All external calls go through injected `run_local`, `run_windows`, or `run_ssh` functions. Parse `git rev-parse HEAD` plus `git status --porcelain=v1` on WSL and the native Windows checkout. Empty/missing revisions fail in `check_clean_checkout`.
 
-- [ ] **Step 4: Implement exact FireTuner-holder classification and scoped remediation**
+- [x] **Step 4: Implement exact FireTuner-holder classification and scoped remediation**
 
 Read socket/PID data, then `/proc/<pid>/stat`, `/proc/<pid>/cmdline`, and `/proc/<pid>/cwd`. A known owner must have an expected civ-mcp executable and a cwd under one of the two exact repo checkouts. If `--terminate-tuner-pid N` is requested, compare all four identity fields to the immediately preceding evidence, send `SIGTERM` only to that PID, wait a bounded interval, and re-run the port-holder check. If it survives or identity changes, block.
 
-- [ ] **Step 5: Implement endpoint-scoped GPU evidence and named service drain**
+- [x] **Step 5: Implement endpoint-scoped GPU evidence and named service drain**
 
 Resolve the endpoint through the vendored registry, query its host for GPU index/UUID and compute-process PID/name, and map each PID to a service from its cgroup. `check_gpu_conflicts` receives the actual relevant processes, not all GPUs on both hosts. A requested `--drain-gpu-service UNIT` is legal only when `UNIT` exactly matches a registry-managed/cgroup-observed service; stop that single unit with a non-interactive remote command, then re-snapshot. Unknown processes or remaining conflicts block.
 
-- [ ] **Step 6: Verify pure tests and counterfactual safety**
+- [x] **Step 6: Verify pure tests and counterfactual safety**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_live_evidence.py tests/arena/test_benchmark_gates.py`
 
@@ -699,7 +699,7 @@ Temporarily drop the start-ticks comparison and verify the PID-reuse test fails;
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/civ_mcp/arena/benchmark_live_evidence.py src/civ_mcp/arena/benchmark_gates.py tests/arena/test_benchmark_live_evidence.py tests/arena/test_benchmark_gates.py
@@ -724,7 +724,7 @@ git commit -m "feat(benchmark): collect safe live admission evidence"
 - Consumes: Tasks 3–7 campaign store, resolved-block handoff, model/tool probes, boot/deploy evidence, live collectors, and session-lock builder.
 - Produces: `AdmissionDependencies`, `AdmissionPipeline.admit(...)`, counted/validation/admit-only/one-block CLI modes, numbered admission attempts, and fresh resume validation against immutable session locks.
 
-- [ ] **Step 1: Add failing orchestration tests for exact gate order and freshness**
+- [x] **Step 1: Add failing orchestration tests for exact gate order and freshness**
 
 Use injected async dependencies to record calls:
 
@@ -742,13 +742,13 @@ async def test_one_block_mode_stops_after_next_manifest_order_block(): ...
 
 The expected order is: clean checkout; boot health; tuner holder; save deploy; production reload; popup hygiene; canonical state; GPU isolation; endpoint/model identity; both tool canaries per arm; seed/latency; treatment-can-fire; session lock creation; `run_resolved_block`.
 
-- [ ] **Step 2: Run the focused tests and confirm counted mode still refuses**
+- [x] **Step 2: Run the focused tests and confirm counted mode still refuses**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_admission.py tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_gates.py`
 
 Expected: new module is absent and non-smoke CLI still reports unwired gates.
 
-- [ ] **Step 3: Implement one injected `AdmissionPipeline`**
+- [x] **Step 3: Implement one injected `AdmissionPipeline`**
 
 Define:
 
@@ -771,7 +771,7 @@ class AdmissionPipeline:
 
 The pipeline journals each gate result in the campaign journal and writes the complete diagnostic to the next `admissions/<block-id>-attempt-NNN.json`. On the first `mode="counted"` admission for a block, all-green evidence calls `build_session_lock` and returns a `ResolvedBlock`. On resume, the same gates run again, but immutable `session.json` is reused only when model, endpoint, topology, sampling, schema, and code/position identities match. New volatile latency/health evidence remains in the numbered admission attempt. A changed locked identity blocks resume instead of reminting a lock over existing trials.
 
-- [ ] **Step 4: Wire counted, diagnostic, validation, and smoke CLI modes**
+- [x] **Step 4: Wire counted, diagnostic, validation, and smoke CLI modes**
 
 Extend `civ-arena-benchmark`:
 
@@ -788,11 +788,11 @@ Extend `civ-arena-benchmark`:
 
 Make `--campaign` and `--suite --ungated-smoke` mutually exclusive. The default campaign path runs blocks in manifest order, reacquiring admission immediately before each incomplete block. `--one-block` exits after that next block and cannot select or reorder it. `--admit-only` exits after diagnostics. Validation writes under `benchmark_runs/<id>/validation/` with a validation stamp and no counted fingerprint pair.
 
-- [ ] **Step 5: Keep the Gemma/Qwen admission semantics explicit**
+- [x] **Step 5: Keep the Gemma/Qwen admission semantics explicit**
 
 Gemma must complete a counted block. Qwen is mandatory-to-attempt. Only after Gemma passes may repeated Qwen admission failures be recorded as `REPLICATION_DEFERRED_ADMISSION`; they are not a model null and do not create trials. That final campaign disposition is implemented in Task 11, but the admission artifact must expose the typed failure and all remediation attempts.
 
-- [ ] **Step 6: Verify with counterfactual ordering and freshness tests**
+- [x] **Step 6: Verify with counterfactual ordering and freshness tests**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_admission.py tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_gates.py`
 
@@ -800,7 +800,7 @@ Temporarily move session creation before the tool canary and prove the ordering 
 
 Expected: all pass, and the old “gates not wired” refusal test is replaced by a test that refuses a counted run on the first failed live gate.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/civ_mcp/arena/benchmark_admission.py src/civ_mcp/arena/benchmark_runner.py src/civ_mcp/arena/benchmark_gates.py tests/arena/test_benchmark_admission.py tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_gates.py
@@ -829,7 +829,7 @@ git commit -m "feat(benchmark): gate counted model blocks at execution time"
 - Consumes: Task 8 deploy/reload/popup/canonical-state production path, existing predicate evaluator, and strict position manifests.
 - Produces: `validate_position_contract(position) -> None`, safe `unit_exists_final`/`unit_at`/`tile_state_equals` predicates, top-level `reload_position(connection, position) -> bool`, and `civ-arena-benchmark-position capture|verify`.
 
-- [ ] **Step 1: Write failing lifecycle and predicate tests**
+- [x] **Step 1: Write failing lifecycle and predicate tests**
 
 Add required `persistent_unit_ids` and `consumable_unit_ids` fields to position manifests and test:
 
@@ -845,7 +845,7 @@ def test_tile_state_equals_finds_tile_by_coordinates_not_list_offset(): ...
 
 Update the smoke manifest with explicit lists based on its rubric (both empty are valid because it has no entity predicate).
 
-- [ ] **Step 2: Write failing CLI tests that prove production-function reuse**
+- [x] **Step 2: Write failing CLI tests that prove production-function reuse**
 
 Use spies on the exact imported callables:
 
@@ -859,13 +859,13 @@ def test_position_cli_requires_exactly_twelve_cycles_for_freeze_mode(): ...
 
 Assert call order for every cycle: `deploy_via_windows` → production `reload_position` → `dismiss_blocking_popups` → `capture_canonical_state` → digest compare.
 
-- [ ] **Step 3: Run focused tests and observe absent lifecycle/CLI behavior**
+- [x] **Step 3: Run focused tests and observe absent lifecycle/CLI behavior**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_manifest.py tests/arena/test_action_metrics.py tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_position.py`
 
 Expected: new tests fail.
 
-- [ ] **Step 4: Implement the safe predicate vocabulary and authoring validator**
+- [x] **Step 4: Implement the safe predicate vocabulary and authoring validator**
 
 Add `unit_exists_final`, `unit_at`, and `tile_state_equals` predicates. Unit predicates require the unit in canonical initial state; final disappearance returns false. `tile_state_equals` locates the declared relevant tile by `(x, y)` and compares a named field, avoiding list-index coupling. Change `unit_distance_decreased` to the same safe runtime behavior, then validate it only for IDs in `persistent_unit_ids`. IDs in `consumable_unit_ids` must be scored through a tile/state predicate. Reject undeclared unit IDs, overlap, and lifecycle declarations for IDs absent from canonical state.
 
@@ -877,7 +877,7 @@ def validate_position_contract(position: PositionManifest) -> None: ...
 
 Call it in manifest admission and the position-freeze CLI.
 
-- [ ] **Step 5: Extract the existing reload closure as the single production function**
+- [x] **Step 5: Extract the existing reload closure as the single production function**
 
 Move the body of `_build_live_dependencies`' nested reload closure to:
 
@@ -887,7 +887,7 @@ async def reload_position(connection: GameConnection, position: PositionManifest
 
 The dependencies closure calls this function directly. Keep `_reload_result_is_success` and its verified/unverified semantics unchanged. The new CLI imports this function; it does not duplicate the classifier.
 
-- [ ] **Step 6: Implement `civ-arena-benchmark-position`**
+- [x] **Step 6: Implement `civ-arena-benchmark-position`**
 
 Add the console script and two subcommands:
 
@@ -903,7 +903,7 @@ civ-arena-benchmark-position verify \
 
 The authoring-provenance input contains the archive path/digest, game save name, player ID, relevant tile coordinates, game build, ruleset, DLC, mods, base-save identity, and mutation journal. `capture` validates those fields and writes the post-reload normalized state/digest plus deployment/reload evidence. `verify` freshly deploys on every cycle, runs the same production reload/capture path, stops at the first mismatch, and writes all twelve successful digests only when complete. Neither command advances a turn.
 
-- [ ] **Step 7: Verify with counterfactual production-path tests**
+- [x] **Step 7: Verify with counterfactual production-path tests**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_manifest.py tests/arena/test_action_metrics.py tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_position.py`
 
@@ -911,7 +911,7 @@ Temporarily replace the production reload call with a local stub and prove the s
 
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add pyproject.toml src/civ_mcp/arena/benchmark_manifest.py src/civ_mcp/arena/action_metrics.py src/civ_mcp/arena/benchmark_runner.py src/civ_mcp/arena/benchmark_position.py tests/arena/test_benchmark_manifest.py tests/arena/test_action_metrics.py tests/arena/test_benchmark_runner.py tests/arena/test_benchmark_position.py benchmarks/positions/smoke-seondeok-pyramid-v1.yaml
@@ -935,7 +935,7 @@ git commit -m "feat(benchmark): freeze positions through the production reload p
 - Consumes: Tasks 2–4 contract/campaign/block locks and dual stamps, existing `score_trial`/per-block reports, Task 9 predicate semantics, human `audit.json`, and optional `tie-attribution.json`.
 - Produces: `build_campaign_report`, `render_campaign_markdown`, `write_campaign_reports`, deterministic campaign verdicts, and `civ-arena-benchmark-campaign-report`.
 
-- [ ] **Step 1: Write failing report fixtures for every verdict path**
+- [x] **Step 1: Write failing report fixtures for every verdict path**
 
 Build tiny campaign directories in tests and cover:
 
@@ -960,7 +960,7 @@ def test_scorer_only_fingerprint_change_rescores_same_raw_trials(): ...
 
 Include the four aggregate outcomes: `CALIBRATED`, `CALIBRATED_REPLICATION_DEFERRED`, `BLOCKED`, and `RUBRIC_NONDISCRIMINATIVE`, plus per-block `MODEL_FLOOR_NULL` and `MODEL_TIE_NULL`.
 
-- [ ] **Step 2: Add failing audit-fidelity and attribution schema tests**
+- [x] **Step 2: Add failing audit-fidelity and attribution schema tests**
 
 Define immutable post-trial review files:
 
@@ -981,13 +981,13 @@ Define immutable post-trial review files:
 
 Tie attribution files cite every tied trial pair, both raw trial digests, transcript/final-state findings, counterfactual fixture result, and one allowed attribution. Missing audits, mismatches, missing tied pairs, or changed trial hashes block an official verdict.
 
-- [ ] **Step 3: Run the focused tests and observe the absent campaign reporter**
+- [x] **Step 3: Run the focused tests and observe the absent campaign reporter**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_report.py tests/arena/test_benchmark_campaign_report.py`
 
 Expected: imports and verdict assertions fail.
 
-- [ ] **Step 4: Implement a pure campaign projection**
+- [x] **Step 4: Implement a pure campaign projection**
 
 Add:
 
@@ -999,7 +999,7 @@ def write_campaign_reports(campaign_dir: str | Path) -> dict[str, object]: ...
 
 For each block, call the existing per-block scorer, normalize each trial by that frozen rubric maximum, pair by `pair_id`, and retain all twelve signed deltas. Load only locks, schedules, audits/attributions, and `trials/`. Admission/attempt counts may be summarized from immutable admission/journal metadata but are never passed to scoring.
 
-- [ ] **Step 5: Encode the locked sensitivity/separation arithmetic**
+- [x] **Step 5: Encode the locked sensitivity/separation arithmetic**
 
 For each completed block:
 
@@ -1011,11 +1011,11 @@ median_delta = statistics.median(deltas)
 
 Require `decided >= 10`, `standard_wins >= 10`, and `median_delta >= rules.minimum_median_normalized_delta`. If fewer than ten are decided, require reviewed tie attribution before a block/campaign verdict. Mechanical zero/nonzero labels never decide attribution themselves.
 
-- [ ] **Step 6: Keep output deterministic and fingerprinted**
+- [x] **Step 6: Keep output deterministic and fingerprinted**
 
 Use canonical JSON plus stable Markdown ordering. Include both evidence fingerprints, all contract versions, scorer fingerprint, model configuration, endpoint/GPU topology, trial/audit hashes, and report inputs. Do not call `datetime.now()` or read filesystem mtimes. Add `civ-arena-benchmark-campaign-report` to `pyproject.toml`.
 
-- [ ] **Step 7: Prove the scorer and reporter tests counterfactually**
+- [x] **Step 7: Prove the scorer and reporter tests counterfactually**
 
 Run: `uv run pytest -q tests/arena/test_benchmark_report.py tests/arena/test_benchmark_campaign_report.py`
 
@@ -1023,7 +1023,7 @@ Then temporarily pool arms in one grouping and confirm the separation test fails
 
 Expected: all pass and hashes match.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add pyproject.toml src/civ_mcp/arena/benchmark_campaign_report.py src/civ_mcp/arena/benchmark_report.py tests/arena/test_benchmark_campaign_report.py tests/arena/test_benchmark_report.py
@@ -1108,7 +1108,27 @@ uv run civ-arena-benchmark-position capture \
 
 The provenance file already contains the actual three recorded coordinates; no guessed, shell-substituted, or provisional coordinate may enter the manifest.
 
-- [ ] **Step 6: Author the position manifest and frozen 0/1/2/4 rubric**
+- [ ] **Step 6: Prove the deployed save is reachable through the menu fallback**
+
+**Required skill:** `civ6-arena-live`. Keep the display/AVR path active and do not touch mouse/keyboard while the OCR loader runs.
+
+Smoke finding 3 (2026-08-31): the Tier-2 OCR loader could not find an old save buried under 12+ MCP autosaves. The design spec defers generalized scrolling and instead requires proof that fresh native deployment makes the exact save selectable by name. Nothing in Step 8's twelve-cycle check exercises this path -- `load_game_save` tries both Lua tiers first and only falls to the menu when they fail -- and `restart_and_load` (the crash-recovery path used mid-block) goes through the menu loader unconditionally. This step is the one deliberate exercise of that path.
+
+Immediately after the Step 5 deployment, from the main menu (quit to menu if in-game), force the OCR menu path:
+
+```
+load_save_from_menu("BUILDER_ECONOMY_CAL_V1")
+get_game_overview
+```
+
+Then re-run the Step 5 capture command against the menu-loaded world and compare its digest to the Step 5 capture digest.
+
+Append to `benchmarks/provenance/builder-economy-cal-v1-authoring.json` one `menu_reachability` record: the raw `load_save_from_menu` result string, the number of scroll pages the loader needed (from the launcher log, `Scrolled Windows save list down` count), the digest from the post-menu capture, and `match: true|false` against the Step 5 digest. Also note whether the load-screen Escape waiter was observed toggling the pause menu (smoke finding 4) -- this is the first frontend-path load since that fix landed.
+
+Expected: exact selection on the first page (zero scrolls), digest match, no pause-menu toggle. If selection fails or needs scrolling, stop: that is the spec's trigger for deepening exact-save menu navigation. Fix the loader, redeploy via Step 5, and repeat this step before continuing to Step 7. Do not proceed to counted blocks with an unproven crash-recovery path.
+
+
+- [ ] **Step 7: Author the position manifest and frozen 0/1/2/4 rubric**
 
 Use the capture's exact state/digest, archive digest, three builder IDs, and target coordinates. Declare all three builders persistent. For each equal-weight task:
 
@@ -1119,7 +1139,7 @@ Use the capture's exact state/digest, archive digest, three builder IDs, and tar
 
 Do not add level 3 unless live state contains a separate observable intermediate. Use coordinate-based tile predicates, not brittle list indices. Add tests that load the real manifest, validate all lifecycle/predicate references, prove minimal can reach levels 1–2, and standard can reach level 4 in counterfactual state fixtures.
 
-- [ ] **Step 7: Run all twelve fresh deployment/reload checks through the production path**
+- [ ] **Step 8: Run all twelve fresh deployment/reload checks through the production path**
 
 Run:
 
@@ -1132,7 +1152,7 @@ uv run civ-arena-benchmark-position verify \
 
 Expected: twelve records, each with a fresh deployment hash match, verified production reload, popup hygiene success, and the exact frozen state digest. A single mismatch invalidates the freeze; diagnose and repeat the complete twelve-cycle check after fixing the artifact.
 
-- [ ] **Step 8: Verify repository artifacts and commit**
+- [ ] **Step 9: Verify repository artifacts and commit**
 
 Run:
 
