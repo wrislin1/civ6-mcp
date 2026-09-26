@@ -491,3 +491,84 @@ def test_tile_state_equals_raises_when_tile_coordinates_not_found():
     final_state = {"tiles": [{"x": 1, "y": 1, "improvement": None}]}
     with pytest.raises(PredicateError):
         evaluate_predicate(predicate, final_state=final_state)
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-26 counted campaign builder-economy-cal-v1, Qwen block audit
+# (indices 2 and 11): two implementation deviations from the frozen
+# definitions in docs/superpowers/specs/2026-08-30-arena-controlled-position-
+# benchmark-design.md ("Domain rejection: a valid call reached game rules/
+# state and was rejected"; "Useful action: the action advances a
+# position-declared objective; success alone is insufficient").
+# ---------------------------------------------------------------------------
+
+
+def test_classify_result_err_prefix_is_a_domain_rejection():
+    """recruit_great_person answered 'ERR:CANNOT_RECRUIT|Not enough GP points'
+    -- the game refused the call -- but only 'Error:' / '|BLOCKED' were
+    recognized, so it scored as a success."""
+    from civ_mcp.arena.action_metrics import classify_result
+
+    assert classify_result("ERR:CANNOT_RECRUIT|Not enough GP points to recruit X") == "domain_rejection"
+    assert classify_result("err:lookup_failed") == "domain_rejection"
+    assert classify_result("ERRAND_DONE|ok") == "success"   # only the ERR: prefix, not any 'err' substring
+
+
+def _objective_state(*, repair_builder_xy, pillaged):
+    return {
+        "units": [{"id": 1769484, "type": "UNIT_BUILDER", "x": repair_builder_xy[0], "y": repair_builder_xy[1], "charges": 3},
+                  {"id": 1572874, "type": "UNIT_BUILDER", "x": 72, "y": 21, "charges": 3}],
+        "tiles": [{"x": 68, "y": 23, "feature": None, "improvement": "IMPROVEMENT_MINE", "pillaged": pillaged, "resource": "RESOURCE_IRON"}],
+    }
+
+
+_REPAIR_OBJECTIVE = {
+    "task_id": "repair-iron-mine",
+    "requires": ["repair_improvement"],
+    "tools": ["move_unit", "repair_improvement"],
+    "progress_predicate": {"kind": "any", "predicates": [
+        {"kind": "unit_at", "unit_index": 1769484, "x": 68, "y": 23},
+        {"kind": "tile_state_equals", "x": 68, "y": 23, "field": "pillaged", "value": False},
+    ]},
+}
+
+
+def _step(tool, args, result, before, after, dig_before, dig_after):
+    return {"tool_name": tool, "tool_args": args, "tool_result_full": result,
+            "state_before": before, "state_after": after,
+            "state_digest_before": dig_before, "state_digest_after": dig_after}
+
+
+def test_useful_action_requires_the_action_itself_to_advance_an_objective():
+    """Qwen trial 2: after the repair builder reached (68,23), a LATER
+    off-target move of a different builder was credited as useful because
+    the progress predicate (unit_at, absolute) already held in the
+    resulting state. Only a mutation that flips a progress sub-predicate
+    from unsatisfied to satisfied advances the objective."""
+    from civ_mcp.arena.action_metrics import classify_action_quality
+
+    s0 = _objective_state(repair_builder_xy=(69, 22), pillaged=True)
+    s1 = _objective_state(repair_builder_xy=(68, 23), pillaged=True)   # builder on target
+    s2 = dict(s1); s2["units"] = [dict(u) for u in s1["units"]]; s2["units"][1] = {**s1["units"][1], "x": 71, "y": 19}  # other builder moved off-target
+    s3 = _objective_state(repair_builder_xy=(68, 23), pillaged=False)  # repaired
+    steps = [
+        _step("move_unit", {"unit_index": 12, "x": 68, "y": 23}, "MOVING_TO|68,23", s0, s1, "d0", "d1"),
+        _step("move_unit", {"unit_index": 10, "x": 71, "y": 19}, "MOVING_TO|71,19", s1, s2, "d1", "d2"),
+        _step("repair_improvement", {"unit_index": 12}, "REPAIRING|IMPROVEMENT_MINE at (68,23)", s2, s3, "d2", "d3"),
+    ]
+    q = classify_action_quality(steps=steps, invalid_tool_calls=[], objectives=[_REPAIR_OBJECTIVE])
+    assert q["successful_mutations"] == 3
+    assert q["useful_actions"] == 2      # the on-target move and the repair; not the off-target move
+
+
+def test_useful_action_second_progress_step_of_an_any_predicate_still_counts():
+    """With an `any` progress predicate the repair after the on-target move
+    must still count: it flips the pillaged sub-predicate even though the
+    whole `any` was already satisfied by unit_at."""
+    from civ_mcp.arena.action_metrics import classify_action_quality
+
+    s1 = _objective_state(repair_builder_xy=(68, 23), pillaged=True)
+    s3 = _objective_state(repair_builder_xy=(68, 23), pillaged=False)
+    steps = [_step("repair_improvement", {"unit_index": 12}, "REPAIRING|IMPROVEMENT_MINE at (68,23)", s1, s3, "d1", "d3")]
+    q = classify_action_quality(steps=steps, invalid_tool_calls=[], objectives=[_REPAIR_OBJECTIVE])
+    assert q["useful_actions"] == 1

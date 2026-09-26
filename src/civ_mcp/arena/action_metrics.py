@@ -55,7 +55,12 @@ def classify_result(result: str) -> str:
     normalized = (result or "").strip().lower()
     if normalized.startswith("unavailable") or normalized.startswith("malformed_arguments"):
         return "not_dispatched"
-    if normalized.startswith("error") or "|blocked" in normalized:
+    # 2026-09-26 (counted campaign audit): game_state's Lua-bridged actions
+    # report engine refusals with an ``ERR:`` prefix (e.g.
+    # ``ERR:CANNOT_RECRUIT|Not enough GP points``) -- a valid call that
+    # reached game rules and was rejected, exactly the frozen definition of
+    # a domain rejection. Only the ``err:`` PREFIX qualifies.
+    if normalized.startswith("error") or normalized.startswith("err:") or "|blocked" in normalized:
         return "domain_rejection"
     return "success"
 
@@ -282,6 +287,41 @@ def evaluate_predicate(
     raise PredicateError(f"unknown predicate kind: {kind!r}")
 
 
+def _advances_objective(predicate: Mapping[str, object], step: Mapping[str, object]) -> bool:
+    """Whether THIS step's mutation advanced the objective: at least one
+    progress (sub-)predicate is unsatisfied in ``state_before`` and
+    satisfied in ``state_after``.
+
+    2026-09-26 (counted campaign audit, Qwen trial 2): the previous check
+    evaluated the progress predicate on the resulting state alone, so once
+    any absolute sub-predicate (e.g. ``unit_at``) held, EVERY later
+    mutation was credited as useful -- including an unrelated builder's
+    off-target move. The frozen definition is "the action advances a
+    position-declared objective; success alone is insufficient", which is
+    a delta. ``any``/``all`` combinators are checked per sub-predicate so a
+    second progress step (repair after arriving) still counts even though
+    the whole ``any`` was already satisfied by the first."""
+    before = step.get("state_before")
+    after = step.get("state_after")
+    kind = predicate.get("kind")
+    candidates: Sequence[Mapping[str, object]]
+    if kind in ("all", "any"):
+        subs = predicate.get("predicates")
+        if not isinstance(subs, Sequence) or isinstance(subs, (str, bytes)):
+            raise PredicateError(f"'{kind}' predicate requires a 'predicates' list")
+        candidates = [sub for sub in subs if isinstance(sub, Mapping)]
+    else:
+        candidates = [predicate]
+
+    def _holds(sub: Mapping[str, object], state: object) -> bool:
+        # Evaluate against ``state`` as the final state; initial stays
+        # ``before`` so unit-existence contracts are checked against the
+        # step's own starting state.
+        return evaluate_predicate(sub, initial_state=before, final_state=state, steps=[step])
+
+    return any(not _holds(sub, before) and _holds(sub, after) for sub in candidates)
+
+
 def _call_key(step: Mapping[str, object]) -> str:
     """Identity of a tool call for repetition detection: tool + args + result."""
     payload = {
@@ -338,12 +378,7 @@ def classify_action_quality(
             tool_name = step.get("tool_name")
             made_progress = any(
                 tool_name in objective.get("tools", ())
-                and evaluate_predicate(
-                    objective["progress_predicate"],
-                    initial_state=step.get("state_before"),
-                    final_state=step.get("state_after"),
-                    steps=[step],
-                )
+                and _advances_objective(objective["progress_predicate"], step)
                 for objective in objectives
             )
             useful_actions += made_progress

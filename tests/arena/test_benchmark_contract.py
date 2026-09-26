@@ -522,7 +522,7 @@ import re as _re
 from pathlib import Path as _Path
 
 _REPO = _Path(__file__).resolve().parents[2]
-_CAMPAIGN = _REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v1.yaml"
+_CAMPAIGN = _REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v2.yaml"
 _POSITION = _REPO / "benchmarks" / "positions" / "builder-economy-cal-v1.yaml"
 
 
@@ -605,3 +605,20 @@ def test_frozen_campaign_effect_threshold_is_four_over_the_rubric_maximum(frozen
     assert frozen_campaign.rules.minimum_decided_pairs == 10
     assert frozen_campaign.rules.minimum_standard_wins == 10
     assert frozen_campaign.rules.required_audits_per_arm == 3
+
+
+def test_campaign_v2_differs_from_v1_only_by_campaign_id_and_pins_the_corrected_scorer():
+    """v2 re-freezes the identical preregistration after the 2026-09-26
+    scorer implementation correction (ERR: prefix = domain rejection; a
+    useful action must itself flip a progress predicate). Only the id may
+    differ; the contract file must carry the live scorer's fingerprint."""
+    import yaml
+    from civ_mcp.arena.benchmark_contract import scorer_source_fingerprint
+
+    v1 = yaml.safe_load((_REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v1.yaml").read_text())
+    v2 = yaml.safe_load(_CAMPAIGN.read_text())
+    assert v1.pop("campaign_id") == "builder-economy-cal-v1"
+    assert v2.pop("campaign_id") == "builder-economy-cal-v2"
+    assert v1 == v2
+    contract = yaml.safe_load((_REPO / "benchmarks" / "contracts" / "instrument-v1-candidate.yaml").read_text())
+    assert contract["scorer_fingerprint"] == scorer_source_fingerprint(_REPO)
