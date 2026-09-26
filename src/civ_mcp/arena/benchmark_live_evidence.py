@@ -191,7 +191,11 @@ def _find_port_holder_pid(run_local: RunLocal, port: int) -> int | None:
     clear port, and is raised as `GateFailure` rather than silently
     returned as `None` (which downstream would read as "no holder, ok").
     """
-    listen_argv = ("ss", "-H", "-tlnp", f"sport = :{port}")
+    # Filter words are separate argv elements: iproute2 6.1 parses a
+    # single token like "state established dport = :4318" as an address
+    # ("an inet prefix is expected rather than 'state'") -- observed live
+    # 2026-09-26, failing the tuner-holder gate on a clear port.
+    listen_argv = ("ss", "-H", "-tlnp", "sport", "=", f":{port}")
     listen_result = run_local(listen_argv)
     if listen_result.returncode != 0:
         raise GateFailure(
@@ -212,7 +216,7 @@ def _find_port_holder_pid(run_local: RunLocal, port: int) -> int | None:
     if pid is not None:
         return pid
 
-    established_argv = ("ss", "-H", "-tnp", f"state established dport = :{port}")
+    established_argv = ("ss", "-H", "-tnp", "state", "established", "dport", "=", f":{port}")
     established_result = run_local(established_argv)
     if established_result.returncode != 0:
         raise GateFailure(

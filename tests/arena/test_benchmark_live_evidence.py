@@ -169,8 +169,8 @@ def test_checkout_evidence_treats_failed_status_query_as_dirty():
 # FireTuner-holder classification
 # ---------------------------------------------------------------------------
 
-_SS_ARGV = ("ss", "-H", "-tlnp", "sport = :4318")
-_SS_ESTABLISHED_ARGV = ("ss", "-H", "-tnp", "state established dport = :4318")
+_SS_ARGV = ("ss", "-H", "-tlnp", "sport", "=", ":4318")
+_SS_ESTABLISHED_ARGV = ("ss", "-H", "-tnp", "state", "established", "dport", "=", ":4318")
 
 
 def _proc_fixtures(pid: int, *, start_ticks: int, cmdline: str, cwd: str) -> dict:
@@ -1103,3 +1103,21 @@ def test_unmapped_gpu_uuid_row_raises_gate_failure_instead_of_silent_skip():
         collect_gpu_evidence(run_ssh=run_ssh, registry=_gpu_endpoint_registry(), endpoint_id="home-gpu0")
     assert exc_info.value.code == "gpu_snapshot_parse_error"
     assert exc_info.value.details["line"] == orphan_row
+
+
+def test_ss_filter_words_are_separate_argv_elements():
+    """Live 2026-09-26: iproute2 6.1 rejects a single-token filter
+    ("state established dport = :4318") with "an inet prefix is expected
+    rather than 'state'", which failed the tuner-holder gate on a clear
+    port. Every filter word must be its own argv element."""
+    seen: list[tuple[str, ...]] = []
+
+    def run_local(argv):
+        seen.append(tuple(argv))
+        return CommandResult(argv=tuple(argv), returncode=0, stdout="", stderr="")
+
+    from civ_mcp.arena.benchmark_live_evidence import _find_port_holder_pid
+
+    assert _find_port_holder_pid(run_local, 4318) is None
+    for argv in seen:
+        assert all(" " not in word for word in argv), argv
