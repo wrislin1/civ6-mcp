@@ -446,6 +446,15 @@ async def load_save(conn: GameConnection, save_index: int) -> str:
     return "Load command sent. Wait for game to reload."
 
 
+# How long the Lua tiers wait for UI.QuerySaveGameList to answer, in
+# 0.25s polls. Observed live 2026-09-26: a COLD query over a 283-save
+# OneDrive library took longer than the old 20-poll (5s) window; the loader
+# reported "not found" while the still-registered handler fired
+# Network.LoadGame ~1 minute later. A warm re-query took ~1s. 120 polls =
+# 30s, and an expired window now disarms the handler (see the cancel flags).
+_FILE_LIST_POLLS = 120
+
+
 async def load_game_save(conn: GameConnection, save_name: str) -> str:
     """Load a save by name — no list_saves() prerequisite.
 
@@ -474,10 +483,11 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
             try:
                 await conn.execute_in_state(
                     menu_idx,
-                    f"MCP_FE_RESULT = nil; MCP_FE_DONE = false; "
+                    f"MCP_FE_RESULT = nil; MCP_FE_DONE = false; MCP_FE_CANCELLED = false; "
                     f"local function OnResults(fileList, qid) "
                     f"  UI.CloseFileListQuery(qid); "
                     f"  LuaEvents.FileListQueryResults.Remove(OnResults); "
+                    f"  if MCP_FE_CANCELLED then return end; "
                     f"  for i, s in ipairs(fileList) do "
                     f'    if s.Name == "{save_name}" or s.Name == "{save_name}.Civ6Save" then '
                     f'      MCP_FE_RESULT = "FOUND"; '
@@ -497,7 +507,8 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
                     f'print("QUERY_SENT"); '
                     f'print("{lq.SENTINEL}")',
                 )
-                for _ in range(20):
+                fe_resolved = False
+                for _ in range(_FILE_LIST_POLLS):
                     await asyncio.sleep(0.25)
                     check = await conn.execute_in_state(
                         menu_idx,
@@ -518,7 +529,21 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
                             save_name
                         )
                     if any(line == "RESULT|NOT_FOUND" for line in check):
+                        fe_resolved = True
                         break
+                if not fe_resolved:
+                    # Window expired with no answer: disarm the handler so a
+                    # late result cannot fire Network.LoadGame after we have
+                    # told the caller the save was not found.
+                    log.warning(
+                        "Frontend file-list query for '%s' did not answer "
+                        "within %ds; cancelling handler",
+                        save_name, _FILE_LIST_POLLS // 4,
+                    )
+                    await conn.execute_in_state(
+                        menu_idx,
+                        f'MCP_FE_CANCELLED = true; print("{lq.SENTINEL}")',
+                    )
             except Exception:
                 log.debug("frontend load_game_save tier failed", exc_info=True)
 
@@ -537,9 +562,11 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
             f"if not ExposedMembers then ExposedMembers = {{}} end; "
             f"ExposedMembers.MCPLoadResult = nil; "
             f"ExposedMembers.MCPLoadDone = false; "
+            f"ExposedMembers.MCPLoadCancelled = false; "
             f"local function OnResults(fileList, qid) "
             f"  UI.CloseFileListQuery(qid); "
             f"  LuaEvents.FileListQueryResults.Remove(OnResults); "
+            f"  if ExposedMembers.MCPLoadCancelled then return end; "
             f"  for i, s in ipairs(fileList) do "
             f'    if s.Name == "{save_name}" or s.Name == "{save_name}.Civ6Save" then '
             f'      ExposedMembers.MCPLoadResult = "FOUND"; '
@@ -561,7 +588,8 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
         )
 
         found = False
-        for _ in range(20):
+        resolved = False
+        for _ in range(_FILE_LIST_POLLS):
             await asyncio.sleep(0.25)
             check = await conn.execute_write(
                 f"if ExposedMembers.MCPLoadDone then "
@@ -571,9 +599,22 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
             )
             if any(line == "RESULT|FOUND" for line in check):
                 found = True
+                resolved = True
                 break
             if any(line == "RESULT|NOT_FOUND" for line in check):
+                resolved = True
                 break  # fall through to Tier 2
+        if not resolved:
+            # Window expired with no answer: disarm the handler so a late
+            # result cannot fire Network.LoadGame behind the caller's back.
+            log.warning(
+                "In-game file-list query for '%s' did not answer within "
+                "%ds; cancelling handler",
+                save_name, _FILE_LIST_POLLS // 4,
+            )
+            await conn.execute_write(
+                f'ExposedMembers.MCPLoadCancelled = true; print("{lq.SENTINEL}")'
+            )
 
         if found:
             # Verify the load actually engaged. A real load wipes Lua

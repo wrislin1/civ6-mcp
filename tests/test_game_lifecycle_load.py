@@ -223,3 +223,96 @@ async def test_frontend_tier_not_found_falls_through(monkeypatch):
 
     assert continues == []
     assert "not found" in result
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-26 live authoring session (BUILDER_ECONOMY_CAL_V1): a cold
+# UI.QuerySaveGameList over a 283-save OneDrive library took longer than the
+# 5s poll window. load_game_save reported "not found", but the Lua handler
+# stayed registered and fired Network.LoadGame ~1 minute later -- a stray
+# reload the caller never learned about. A warm re-query took ~1s.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ingame_lua_tier_waits_through_a_slow_file_list_query(monkeypatch):
+    """A file-list result that lands after the old 20-poll window (5s) but
+    within 30s must still be honoured as FOUND."""
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+    continued: list[str] = []
+
+    async def fake_continue(name):
+        continued.append(name)
+        return f"Loaded {name}: world ready, FireTuner port is open."
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(game_launcher, "continue_after_lua_load", fake_continue)
+    conn = LoadConn(
+        [["QUERY_SENT"]] + [["PENDING"]] * 60 + [["RESULT|FOUND"], ["WIPED"]]
+    )
+
+    result = await load_game_save(conn, "BUILDER_ECONOMY_CAL_V1")
+
+    assert continued == ["BUILDER_ECONOMY_CAL_V1"]
+    assert "world ready" in result
+
+
+@pytest.mark.asyncio
+async def test_ingame_lua_tier_cancels_the_handler_when_the_window_expires(
+    monkeypatch,
+):
+    """If no result arrives inside the window, the loader must disarm the Lua
+    handler before falling through, so a late result cannot fire
+    Network.LoadGame behind the caller's back."""
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+
+    async def fake_continue(name):
+        raise AssertionError("continue helper must not run on a timed-out query")
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(game_launcher, "continue_after_lua_load", fake_continue)
+    import os.path
+    monkeypatch.setattr(os.path, "exists", lambda _p: False)
+    conn = LoadConn([["QUERY_SENT"]] + [["PENDING"]] * 500)
+
+    result = await load_game_save(conn, "BUILDER_ECONOMY_CAL_V1")
+
+    assert "not found" in result
+    registration = conn.writes[0]
+    # The handler must consult a cancel flag before acting on a late result.
+    assert "ExposedMembers.MCPLoadCancelled" in registration
+    assert "MCPLoadCancelled = false" in registration
+    # And the loader must raise that flag once it gives up waiting.
+    assert any("MCPLoadCancelled = true" in w for w in conn.writes[1:])
+    # Bounded: 120 polls (30s at 0.25s) + registration + cancel, not unbounded.
+    assert len(conn.writes) <= 123
+
+
+@pytest.mark.asyncio
+async def test_frontend_tier_cancels_the_handler_when_the_window_expires(
+    monkeypatch,
+):
+    """Same disarm rule for the main-menu (LoadGameMenu) tier."""
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+
+    async def fake_continue(save_name):
+        raise AssertionError("continue helper must not run on a timed-out query")
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(
+        game_launcher, "continue_after_lua_load", fake_continue, raising=False
+    )
+    import os.path
+    monkeypatch.setattr(os.path, "exists", lambda _p: False)
+    conn = MenuConn(state_results=[["QUERY_SENT"]] + [["PENDING"]] * 500)
+
+    result = await load_game_save(conn, "BUILDER_ECONOMY_CAL_V1")
+
+    assert "not found" in result
+    registration = conn.state_calls[0][1]
+    assert "MCP_FE_CANCELLED" in registration
+    assert any("MCP_FE_CANCELLED = true" in lua for _, lua in conn.state_calls[1:])
+    assert len(conn.state_calls) <= 123
