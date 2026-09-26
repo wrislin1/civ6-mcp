@@ -627,11 +627,17 @@ async def test_continue_after_lua_load_presses_escape_until_world_ready(monkeypa
     )
     # Positive evidence of the leader/continue screen is what now gates a
     # press -- without it (e.g. UNKNOWN under WSL with no OCR access) the
-    # waiter must never press blind on a poll-count cadence alone.
+    # waiter must never press blind on a poll-count cadence alone. Once the
+    # port reopens the screen is the world (2026-09-26: an open port alone
+    # no longer counts, the classifier must agree).
     monkeypatch.setattr(
         game_launcher,
         "_classify_frontend_load_state",
-        lambda *_a: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+        lambda *_a: (
+            game_launcher.FrontendLoadState.IN_WORLD
+            if seen and seen[-1]
+            else game_launcher.FrontendLoadState.CONTINUE_SCREEN
+        ),
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
@@ -657,6 +663,10 @@ async def test_continue_after_lua_load_treats_a_stable_open_port_as_world_ready(
     check) must be treated as world-ready success rather than a false
     "port never dropped" warning."""
     monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: True)
+    monkeypatch.setattr(
+        game_launcher, "_classify_frontend_load_state",
+        lambda *_a: game_launcher.FrontendLoadState.UNKNOWN,
+    )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
     monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
@@ -711,10 +721,15 @@ async def test_continue_after_lua_load_presses_escape_only_on_recognized_continu
     now press only when an injected classifier gives positive evidence of
     the continue/leader screen."""
     port_states = iter([True, False, False, False, True])
+    last_port: list[bool] = []
+
+    def fake_port():
+        state = next(port_states, True)
+        last_port.append(state)
+        return state
+
     presses: list[bool] = []
-    monkeypatch.setattr(
-        game_launcher, "_is_tuner_port_open", lambda: next(port_states, True)
-    )
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", fake_port)
     monkeypatch.setattr(
         game_launcher, "_press_escape", lambda: presses.append(True) or True,
         raising=False,
@@ -722,7 +737,11 @@ async def test_continue_after_lua_load_presses_escape_only_on_recognized_continu
     monkeypatch.setattr(
         game_launcher,
         "_classify_frontend_load_state",
-        lambda *_a: game_launcher.FrontendLoadState.CONTINUE_SCREEN,
+        lambda *_a: (
+            game_launcher.FrontendLoadState.IN_WORLD
+            if last_port and last_port[-1]
+            else game_launcher.FrontendLoadState.CONTINUE_SCREEN
+        ),
     )
     import asyncio as _asyncio
     real_sleep = _asyncio.sleep
@@ -765,18 +784,16 @@ async def test_continue_after_lua_load_never_presses_escape_in_world(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_continue_after_lua_load_never_presses_escape_when_tuner_is_open(
+async def test_continue_after_lua_load_does_not_press_on_a_live_world_with_port_open(
     monkeypatch,
 ):
-    """An open FireTuner port must win over a stale/wrong classifier
-    answer -- it is checked, and can return success, before the
-    classifier is ever consulted."""
-    import itertools
-
-    port_states = itertools.chain([True, False], itertools.repeat(True))
+    """Superseded rule (2026-09-26): an open port used to win over the
+    classifier outright, but the port is open on the continue screen too.
+    Now the classifier is consulted while the port is open, and a positive
+    IN_WORLD answer returns success with no press."""
     presses: list[bool] = []
     classify_calls: list[None] = []
-    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: next(port_states))
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: True)
     monkeypatch.setattr(
         game_launcher, "_press_escape", lambda: presses.append(True) or True,
         raising=False,
@@ -784,7 +801,7 @@ async def test_continue_after_lua_load_never_presses_escape_when_tuner_is_open(
 
     def fake_classify(*_a):
         classify_calls.append(None)
-        return game_launcher.FrontendLoadState.CONTINUE_SCREEN
+        return game_launcher.FrontendLoadState.IN_WORLD
 
     monkeypatch.setattr(game_launcher, "_classify_frontend_load_state", fake_classify)
     import asyncio as _asyncio
@@ -792,11 +809,11 @@ async def test_continue_after_lua_load_never_presses_escape_when_tuner_is_open(
     monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
 
     result = await game_launcher.continue_after_lua_load(
-        "CHANNELS_GATE_V1_T157", press_every=1
+        "CHANNELS_GATE_V1_T157", engage_polls=1, press_every=1
     )
 
     assert presses == []
-    assert classify_calls == []
+    assert classify_calls           # consulted, because an open port alone proves nothing
     assert "world ready" in result
     assert "WARNING" not in result
 
@@ -1090,8 +1107,15 @@ async def test_continue_after_lua_load_bridged_continue_screen_presses_escape_ex
     subprocess only): a bridged CONTINUE_SCREEN answer must lead to
     exactly one Escape press before the port reopens."""
     port_states = iter([True, False, False, True])
+    last_port: list[bool] = []
+
+    def fake_port():
+        state = next(port_states, True)
+        last_port.append(state)
+        return state
+
     presses: list[bool] = []
-    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: next(port_states, True))
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", fake_port)
     monkeypatch.setattr(
         game_launcher, "_press_escape", lambda: presses.append(True) or True,
         raising=False,
@@ -1100,9 +1124,12 @@ async def test_continue_after_lua_load_bridged_continue_screen_presses_escape_ex
     monkeypatch.setattr(game_launcher.os.path, "exists", lambda _p: True)
 
     def fake_run(cmd, **kwargs):
+        # The bridge reports the continue screen while the port is closed
+        # and the world once it has reopened (2026-09-26 rule).
+        state = "in_world" if last_port and last_port[-1] else "continue_screen"
         return SimpleNamespace(
             returncode=0,
-            stdout=(json.dumps({"state": "continue_screen"}) + "\n").encode("utf-8"),
+            stdout=(json.dumps({"state": state}) + "\n").encode("utf-8"),
             stderr=b"",
         )
 
@@ -1872,3 +1899,80 @@ def test_navigate_to_save_sync_uses_the_button_helper(monkeypatch):
 
     assert result.startswith("Save selected (")
     assert "by position" in result
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-26 live (Step 6 attempt 4 + manual drives): after a menu-path
+# load of BUILDER_ECONOMY_CAL_V1 the FireTuner port is OPEN on the
+# continue/leader screen (frontend Lua states only, no GameCore/InGame), and
+# it is also open on the Load Game menu before the load engages. "Port open
+# means in-world" is therefore false on this path: the classifier reported
+# in_world on the continue screen, and the waiter returned success before
+# anything pressed past it. Screen evidence must win over the port.
+# ---------------------------------------------------------------------------
+
+
+def _native_classifier_env(monkeypatch, *, port_open, ocr_rows):
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: port_open)
+    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", lambda: True)
+    monkeypatch.setattr(game_launcher, "_find_game_window_win32", _win)
+    monkeypatch.setattr(game_launcher, "_ocr_game_window", lambda win: ocr_rows)
+
+
+def test_native_classifier_reports_continue_screen_even_when_port_is_open(monkeypatch):
+    _native_classifier_env(
+        monkeypatch, port_open=True,
+        ocr_rows=[("KOREAN EMPIRE", 1700, 691, 100, 20), ("CONTINUE (GANNE", 1700, 1412, 120, 20)],
+    )
+    assert game_launcher._classify_frontend_load_state_native() is game_launcher.FrontendLoadState.CONTINUE_SCREEN
+
+
+def test_native_classifier_reports_frontend_menu_when_load_game_screen_is_visible(monkeypatch):
+    _native_classifier_env(
+        monkeypatch, port_open=True,
+        ocr_rows=[("LOAD GAME", 1920, 662, 100, 20), ("Autosaves", 1740, 717, 80, 14), ("BUILDER ECONOMY CAL VI", 1742, 829, 200, 14)],
+    )
+    assert game_launcher._classify_frontend_load_state_native() is game_launcher.FrontendLoadState.FRONTEND_MENU
+
+
+def test_native_classifier_reports_in_world_for_open_port_without_frontend_anchors(monkeypatch):
+    _native_classifier_env(monkeypatch, port_open=True, ocr_rows=[("Gyeongju", 1500, 900, 80, 14)])
+    assert game_launcher._classify_frontend_load_state_native() is game_launcher.FrontendLoadState.IN_WORLD
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_presses_escape_on_continue_screen_with_port_open(monkeypatch):
+    import itertools
+    states = itertools.chain(
+        [game_launcher.FrontendLoadState.CONTINUE_SCREEN] * 3,
+        itertools.repeat(game_launcher.FrontendLoadState.IN_WORLD),
+    )
+    presses: list[bool] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: True)
+    monkeypatch.setattr(game_launcher, "_press_escape", lambda: presses.append(True) or True, raising=False)
+    monkeypatch.setattr(game_launcher, "_classify_frontend_load_state", lambda *_a: next(states))
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load("BUILDER_ECONOMY_CAL_V1", engage_polls=1, press_every=1)
+
+    assert presses == [True]            # once per positive classification, not per poll
+    assert "world ready" in result and "UNVERIFIED" not in result and "WARNING" not in result
+
+
+@pytest.mark.asyncio
+async def test_continue_after_lua_load_keeps_waiting_on_frontend_menu_with_port_open(monkeypatch):
+    presses: list[bool] = []
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: True)
+    monkeypatch.setattr(game_launcher, "_press_escape", lambda: presses.append(True) or True, raising=False)
+    monkeypatch.setattr(game_launcher, "_classify_frontend_load_state", lambda *_a: game_launcher.FrontendLoadState.FRONTEND_MENU)
+    import asyncio as _asyncio
+    real_sleep = _asyncio.sleep
+    monkeypatch.setattr(_asyncio, "sleep", lambda _t: real_sleep(0))
+
+    result = await game_launcher.continue_after_lua_load("BUILDER_ECONOMY_CAL_V1", engage_polls=1, world_polls=4, press_every=1)
+
+    assert presses == []
+    assert result.startswith("WARNING") and "frontend_menu" in result

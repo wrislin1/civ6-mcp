@@ -2063,7 +2063,19 @@ class FrontendLoadState(str, Enum):
     CONTINUE_SCREEN = "continue_screen"
     LEADER_SCREEN = "leader_screen"
     IN_WORLD = "in_world"
+    # 2026-09-26: a frontend MENU (main menu / Load Game list) -- the tuner
+    # port is open here too, so it must never read as IN_WORLD.
+    FRONTEND_MENU = "frontend_menu"
     UNKNOWN = "unknown"
+
+
+# Screens on which the tuner port can be open WITHOUT a playable world:
+# the waiter must never report success while one of these is showing.
+_FRONTEND_HOLD_STATES = (
+    FrontendLoadState.CONTINUE_SCREEN,
+    FrontendLoadState.LEADER_SCREEN,
+    FrontendLoadState.FRONTEND_MENU,
+)
 
 
 class _FrontendBridgeFailureTracker:
@@ -2119,35 +2131,51 @@ async def continue_after_lua_load(
     (confirmed by one more spaced re-check) open port is treated as
     world-ready success instead; the WARNING fires only when the port is
     not actually settled open (still not ready)."""
+    failures = _FrontendBridgeFailureTracker()
     engaged = False
     for _ in range(engage_polls):
         if not _is_tuner_port_open():
             engaged = True
+            log.info("Load of '%s' engaged: FireTuner port dropped", save_name)
             break
         await asyncio.sleep(2.0)
     if not engaged:
+        settled_open = False
         if _is_tuner_port_open():
             await asyncio.sleep(2.0)
-            if _is_tuner_port_open():
-                # G3 (benchmark runner fix brief): this stable-open-port
-                # fallback is exactly what an inert Network.LoadGame also
-                # looks like from here -- this function has no game
-                # connection of its own and structurally cannot tell the
-                # two apart. Carry an UNVERIFIED marker so a caller with
-                # more evidence (e.g. the benchmark runner's checksum
-                # step) can tell this apart from the observed-drop success
-                # path instead of treating both as equally confirmed.
-                return (
-                    f"Loaded {save_name} (UNVERIFIED: port drop not observed -- "
-                    f"likely faster than the poll interval): world ready, "
-                    f"FireTuner port is open. Reconnect and verify with "
-                    f"get_game_overview."
-                )
-        return (
-            f"WARNING: FireTuner port never dropped after the Lua load of "
-            f"'{save_name}' -- the load may not have engaged; no Escape "
-            f"was sent."
-        )
+            settled_open = _is_tuner_port_open()
+        if not settled_open:
+            return (
+                f"WARNING: FireTuner port never dropped after the Lua load of "
+                f"'{save_name}' -- the load may not have engaged; no Escape "
+                f"was sent."
+            )
+        # 2026-09-26: a stable open port is also what the Load Game menu
+        # (load not yet engaged) and the continue screen (load finished,
+        # frontend states only) look like from here. Ask the screen before
+        # calling it a fast, unobserved load.
+        state = await asyncio.to_thread(_classify_frontend_load_state, failures)
+        if state in _FRONTEND_HOLD_STATES:
+            log.info(
+                "Port stayed open after the load of '%s' but the screen is %s; "
+                "waiting through it",
+                save_name, state.value,
+            )
+        else:
+            # G3 (benchmark runner fix brief): this stable-open-port
+            # fallback is exactly what an inert Network.LoadGame also
+            # looks like from here -- this function has no game
+            # connection of its own and structurally cannot tell the
+            # two apart. Carry an UNVERIFIED marker so a caller with
+            # more evidence (e.g. the benchmark runner's checksum
+            # step) can tell this apart from the observed-drop success
+            # path instead of treating both as equally confirmed.
+            return (
+                f"Loaded {save_name} (UNVERIFIED: port drop not observed -- "
+                f"likely faster than the poll interval): world ready, "
+                f"FireTuner port is open. Reconnect and verify with "
+                f"get_game_overview."
+            )
     polls = 0
     disarmed = False
     final_state = FrontendLoadState.UNKNOWN
@@ -2160,27 +2188,22 @@ async def continue_after_lua_load(
     # UNKNOWN polls (never on an identical consecutive read).
     last_pressed_state: FrontendLoadState | None = None
     unknown_streak = 0
-    failures = _FrontendBridgeFailureTracker()
     while polls < world_polls:
-        if _is_tuner_port_open():
-            return (
-                f"Loaded {save_name}: world ready, FireTuner port is open. "
-                f"Reconnect and verify with get_game_overview."
-            )
-        if polls % press_every == 0:
-            # Wave F F1: classification is blocking work -- the WSL bridge
-            # is a subprocess.run(timeout=30) and the native win32 path
-            # does blocking OCR/PrintWindow calls. Run it off-loop so a
-            # wedged bridge cannot freeze the event loop (auto-reconnect
-            # included) for up to 30s per poll. `asyncio.to_thread` is the
-            # minimal correct change: it keeps the shared sync entry point
-            # (the launcher CLI calls the classifier synchronously) and
-            # preserves the subprocess timeout/failure classification
-            # exactly, where create_subprocess_exec would cover only the
-            # bridge subprocess and duplicate its timeout handling.
+        port_open = _is_tuner_port_open()
+        if port_open or polls % press_every == 0:
+            # Classification is blocking work (WSL bridge subprocess or
+            # native OCR) -- run it off-loop (wave F F1). With the port
+            # open it runs every poll: that is the only way to tell a live
+            # world from the continue screen / a frontend menu, both of
+            # which also hold the port open (2026-09-26).
             final_state = await asyncio.to_thread(
                 _classify_frontend_load_state, failures
             )
+            if port_open and final_state not in _FRONTEND_HOLD_STATES:
+                return (
+                    f"Loaded {save_name}: world ready, FireTuner port is open. "
+                    f"Reconnect and verify with get_game_overview."
+                )
             if final_state is FrontendLoadState.IN_WORLD:
                 # Independent positive evidence the world is ready even
                 # though the tuner port hasn't reopened yet -- disarm for
@@ -2190,16 +2213,16 @@ async def continue_after_lua_load(
                 unknown_streak = 0
             elif final_state is FrontendLoadState.UNKNOWN:
                 unknown_streak += 1
+            elif final_state is FrontendLoadState.FRONTEND_MENU:
+                # Load not engaged yet (or bounced back to a menu): hold.
+                unknown_streak = 0
             elif not disarmed and final_state in (
                 FrontendLoadState.CONTINUE_SCREEN,
                 FrontendLoadState.LEADER_SCREEN,
             ):
                 if final_state != last_pressed_state or unknown_streak >= 2:
-                    # J10(a) (external review wave J): the Escape press is
-                    # blocking work too -- a subprocess.run(timeout=30)
-                    # bridge under WSL, a time.sleep(0.5) key hold on
-                    # native win32 -- so run it off-loop exactly like the
-                    # F1 classification call above.
+                    # J10(a): the Escape press is blocking work too -- run
+                    # it off-loop exactly like the classification above.
                     await asyncio.to_thread(_press_escape)
                     last_pressed_state = final_state
                 unknown_streak = 0
@@ -2268,11 +2291,16 @@ def _classify_frontend_load_state_native(
     UNKNOWN, not a failure."""
     if failures is None:
         failures = _FrontendBridgeFailureTracker()
-    if _is_tuner_port_open():
-        return FrontendLoadState.IN_WORLD
+    # 2026-09-26 live (BUILDER_ECONOMY_CAL_V1 menu-path loads): the tuner
+    # port is OPEN on the continue/leader screen (frontend Lua states only)
+    # and on the Load Game menu, so an open port alone proves nothing about
+    # being in-world. Screen evidence is consulted first; the port only
+    # decides between IN_WORLD and UNKNOWN when no frontend anchor is seen.
+    port_open = _is_tuner_port_open()
+    port_verdict = FrontendLoadState.IN_WORLD if port_open else FrontendLoadState.UNKNOWN
 
     if sys.platform != "win32":
-        return FrontendLoadState.UNKNOWN
+        return port_verdict
 
     try:
         # C2(a): `_winrt_ocr_available()` imports `winrt.windows.media.ocr`
@@ -2286,26 +2314,30 @@ def _classify_frontend_load_state_native(
     except Exception:
         failures.count += 1
         log.debug("winrt OCR availability check failed", exc_info=True)
-        return FrontendLoadState.UNKNOWN
+        return port_verdict
     if not ocr_available:
         failures.count += 1
-        return FrontendLoadState.UNKNOWN
+        return port_verdict
 
     try:
         win = _find_game_window_win32()
         if win is None:
-            return FrontendLoadState.UNKNOWN
+            return port_verdict
         results = _ocr_game_window(win)
     except Exception:
         failures.count += 1
         log.debug("Frontend load-state classification OCR failed", exc_info=True)
-        return FrontendLoadState.UNKNOWN
+        return port_verdict
 
     if _find_text(results, "CONTINUE"):
         return FrontendLoadState.CONTINUE_SCREEN
     if _find_text(results, "LEADER"):
         return FrontendLoadState.LEADER_SCREEN
-    return FrontendLoadState.UNKNOWN
+    if _find_text(results, "Single Player", exact=True) or _find_text(
+        results, "Autosaves", exact=True
+    ):
+        return FrontendLoadState.FRONTEND_MENU
+    return port_verdict
 
 
 def _classify_frontend_load_state_windows_bridge(
