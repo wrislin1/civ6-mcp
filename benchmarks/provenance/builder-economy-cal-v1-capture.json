@@ -1,0 +1,809 @@
+{
+  "captured_state": {
+    "active_player": 0,
+    "cities": [
+      {
+        "id": 65536,
+        "name": "Gyeongju",
+        "population": 12,
+        "x": 72,
+        "y": 26
+      },
+      {
+        "id": 131073,
+        "name": "Jeonju",
+        "population": 7,
+        "x": 67,
+        "y": 24
+      },
+      {
+        "id": 196610,
+        "name": "Gwangju",
+        "population": 4,
+        "x": 70,
+        "y": 22
+      },
+      {
+        "id": 262147,
+        "name": "Gongju",
+        "population": 5,
+        "x": 73,
+        "y": 19
+      },
+      {
+        "id": 327684,
+        "name": "Jinju",
+        "population": 1,
+        "x": 73,
+        "y": 30
+      }
+    ],
+    "civ_type": "CIVILIZATION_KOREA",
+    "faith": 119.8,
+    "gold": 95.6,
+    "player_id": 0,
+    "seed": 1881300077,
+    "tiles": [
+      {
+        "feature": null,
+        "improvement": "IMPROVEMENT_MINE",
+        "pillaged": true,
+        "resource": "RESOURCE_IRON",
+        "x": 68,
+        "y": 23
+      },
+      {
+        "feature": null,
+        "improvement": null,
+        "pillaged": false,
+        "resource": null,
+        "x": 69,
+        "y": 22
+      },
+      {
+        "feature": null,
+        "improvement": null,
+        "pillaged": false,
+        "resource": "RESOURCE_IVORY",
+        "x": 70,
+        "y": 20
+      },
+      {
+        "feature": "FEATURE_FOREST",
+        "improvement": null,
+        "pillaged": false,
+        "resource": "RESOURCE_STONE",
+        "x": 71,
+        "y": 21
+      },
+      {
+        "feature": null,
+        "improvement": null,
+        "pillaged": false,
+        "resource": null,
+        "x": 72,
+        "y": 21
+      },
+      {
+        "feature": null,
+        "improvement": null,
+        "pillaged": false,
+        "resource": null,
+        "x": 74,
+        "y": 29
+      },
+      {
+        "feature": null,
+        "improvement": null,
+        "pillaged": false,
+        "resource": "RESOURCE_HORSES",
+        "x": 74,
+        "y": 30
+      }
+    ],
+    "turn": 100,
+    "units": [
+      {
+        "charges": 0,
+        "id": 196608,
+        "type": "UNIT_SCOUT",
+        "x": 103,
+        "y": 37
+      },
+      {
+        "charges": 0,
+        "id": 262146,
+        "type": "UNIT_SCOUT",
+        "x": 59,
+        "y": 36
+      },
+      {
+        "charges": 0,
+        "id": 393220,
+        "type": "UNIT_SCOUT",
+        "x": 88,
+        "y": 61
+      },
+      {
+        "charges": 0,
+        "id": 720901,
+        "type": "UNIT_ARCHER",
+        "x": 70,
+        "y": 22
+      },
+      {
+        "charges": 0,
+        "id": 851976,
+        "type": "UNIT_ARCHER",
+        "x": 73,
+        "y": 19
+      },
+      {
+        "charges": 0,
+        "id": 1179654,
+        "type": "UNIT_TRADER",
+        "x": 70,
+        "y": 17
+      },
+      {
+        "charges": 0,
+        "id": 1376259,
+        "type": "UNIT_SWORDSMAN",
+        "x": 73,
+        "y": 30
+      },
+      {
+        "charges": 0,
+        "id": 1441799,
+        "type": "UNIT_SWORDSMAN",
+        "x": 67,
+        "y": 24
+      },
+      {
+        "charges": 2,
+        "id": 1507329,
+        "type": "UNIT_BUILDER",
+        "x": 74,
+        "y": 29
+      },
+      {
+        "charges": 3,
+        "id": 1572874,
+        "type": "UNIT_BUILDER",
+        "x": 72,
+        "y": 21
+      },
+      {
+        "charges": 0,
+        "id": 1638409,
+        "type": "UNIT_APOSTLE",
+        "x": 75,
+        "y": 26
+      },
+      {
+        "charges": 0,
+        "id": 1703947,
+        "type": "UNIT_APOSTLE",
+        "x": 72,
+        "y": 26
+      },
+      {
+        "charges": 3,
+        "id": 1769484,
+        "type": "UNIT_BUILDER",
+        "x": 69,
+        "y": 22
+      }
+    ]
+  },
+  "captured_state_sha256": "1acfff788dff6fa126f452c57e66addab61f1a536ff492d9ee819ab8343c0c21",
+  "deployment": {
+    "archive_sha256": "a0d3ee9b019672b17c12f4569a27fdc1610d95b929d3d600002ac375823e38ec",
+    "deployed_sha256": "a0d3ee9b019672b17c12f4569a27fdc1610d95b929d3d600002ac375823e38ec",
+    "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\BUILDER_ECONOMY_CAL_V1.Civ6Save",
+    "expected_sha256": "a0d3ee9b019672b17c12f4569a27fdc1610d95b929d3d600002ac375823e38ec",
+    "ok": true,
+    "raw": {
+      "archive_sha256": "a0d3ee9b019672b17c12f4569a27fdc1610d95b929d3d600002ac375823e38ec",
+      "deployed_sha256": "a0d3ee9b019672b17c12f4569a27fdc1610d95b929d3d600002ac375823e38ec",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\BUILDER_ECONOMY_CAL_V1.Civ6Save",
+      "expected_sha256": "a0d3ee9b019672b17c12f4569a27fdc1610d95b929d3d600002ac375823e38ec",
+      "ok": true,
+      "save_name": "BUILDER_ECONOMY_CAL_V1",
+      "source": "benchmarks/saves/BUILDER_ECONOMY_CAL_V1.Civ6Save"
+    },
+    "save_name": "BUILDER_ECONOMY_CAL_V1"
+  },
+  "popup_hygiene": {
+    "status": "POPUPS|none"
+  },
+  "provenance": {
+    "archive": "benchmarks/saves/BUILDER_ECONOMY_CAL_V1.Civ6Save",
+    "archive_candidate_first_save": {
+      "bytes": 3146318,
+      "local_time": "13:17",
+      "name": "BUILDER_ECONOMY_CAL_V1",
+      "note": "superseded: task-3 builder start (71,22) crosses a river into (71,21); re-save required with builder at (72,21)",
+      "saved_via": "InGame Lua Network.SaveGame (LOCAL_STORAGE, SINGLE_PLAYER)",
+      "sha256": "0d34cea9e9238dea0e94ed5639a9d194d030a8c04a044ec99af6b9baf8533212"
+    },
+    "archive_saved_local_time": "13:33",
+    "archive_sha256": "a0d3ee9b019672b17c12f4569a27fdc1610d95b929d3d600002ac375823e38ec",
+    "base_save_identity": {
+      "file_bytes": 3145591,
+      "file_mtime": "2026-07-19 01:40 (local)",
+      "header_parse": {
+        "map_size": "MAPSIZE_HUGE",
+        "player_0": "Korea",
+        "players": 12,
+        "speed": "GAMESPEED_STANDARD",
+        "turn": 100
+      },
+      "name": "SEONDEOK 100 400 BC",
+      "path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save",
+      "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29"
+    },
+    "dlc": [
+      {
+        "id": "E3F53C61-371C-440B-96CE-077D318B36C0",
+        "name": "LOC_AUSTRALIA_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "02A8BDDE-67EA-4D38-9540-26E685E3156E",
+        "name": "LOC_AZTEC_MONTEZUMA_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "8424840C-92EF-4426-A9B4-B4E0CB818049",
+        "name": "Babylon Pack",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "19ED1A36-D744-4A58-8F8B-0376C2BA86E5",
+        "name": "Barbarian Clans Game Mode",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "A1100FC4-70F2-4129-AC27-2A65A685ED08",
+        "name": "Byzantium and Gaul Pack",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "CE5876CD-6900-46D1-9C9C-8DBA1F28872E",
+        "name": "Catherine de Medici Persona Pack",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "1B394FE9-23DC-4868-8F0A-5220CB8FB427",
+        "name": "Ethiopia Pack",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "1B28771A-C749-434B-9053-D1380C553DE9",
+        "name": "LOC_EXPANSION1_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "4873eb62-8ccc-4574-b784-dda455e74e68",
+        "name": "LOC_EXPANSION2_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "9DE86512-DE1A-400D-8C0A-AB46EBBF76B9",
+        "name": "Maya and Gran Colombia Pack",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "249D9276-0832-48E4-B370-14531FA4E33C",
+        "name": "LOC_GREAT_BUILDERS_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "7A66DB58-B354-4061-8C80-95B638DD6F6C",
+        "name": "LOC_GREAT_NEGOTIATORS_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "F48213B4-56F5-45DD-92F7-AC78E49BDA49",
+        "name": "LOC_GREAT_WARLORDS_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "1F367231-A040-4793-BDBB-088816853683",
+        "name": "LOC_INDONESIA_KHMER_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "A3F42CD4-6C3E-4F5A-BC81-BE29E0C0B87C",
+        "name": "Vietnam and Kublai Khan Pack",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "E2749E9A-8056-45CD-901B-C368C8E83DEB",
+        "name": "LOC_MACEDONIA_PERSIA_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "643EA320-8E1A-4CF1-A01C-00D88DDD131A",
+        "name": "LOC_NUBIA_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "3809975F-263F-40A2-A747-8BFB171D821A",
+        "name": "LOC_POLAND_JADWIGA_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "FFDF4E79-DEE2-47BB-919B-F5739106627A",
+        "name": "Portugal Pack",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "7D27831B-BAA6-4A8B-A39C-94243BAD3F47",
+        "name": "LOC_RULERS_OF_CHINA_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "258EF3CA-890B-4863-8A52-982822EFF7BD",
+        "name": "LOC_RULERS_OF_ENGLAND_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "82AE6F24-930F-4640-833C-FCDFD4845757",
+        "name": "LOC_RULERS_OF_THE_SAHARA_MOD_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "113D9459-0A3B-4FCB-A49C-483F40303575",
+        "name": "Teddy Roosevelt Persona Pack",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      },
+      {
+        "id": "2F6E858A-28EF-46B3-BEAC-B985E52E9BC1",
+        "name": "LOC_MOD_VIKINGSLANDMARKS_TITLE",
+        "official": true,
+        "version": "bundled with game build 1.0.12.68 (1023995)"
+      }
+    ],
+    "game_build": "1.0.12.68 (1023995)",
+    "game_identity": {
+      "active_player": 0,
+      "civilization": "CIVILIZATION_KOREA",
+      "difficulty": "DIFFICULTY_PRINCE",
+      "game_name": "wrislin1's Game",
+      "game_speed": "GAMESPEED_STANDARD",
+      "game_sync_random_seed": 1881300077,
+      "leader": "LEADER_SEONDEOK",
+      "map_grid": "130x66",
+      "map_seed": {
+        "detail": "GameConfiguration.GetValue returned nil for RANDOM_SEED/MAP_SEED/GAME_SEED in both InGame and GameCore contexts; the save header stores it as a hashed 4-byte marker, not a string tag. The map is pinned by the archive sha256 instead.",
+        "status": "not_queryable"
+      },
+      "map_size": "MAPSIZE_HUGE",
+      "rng_state_Game_GetRandomSeed": 209904096,
+      "start_era": "ERA_ANCIENT",
+      "turn": 100
+    },
+    "game_save_name": "BUILDER_ECONOMY_CAL_V1",
+    "load_attempts": [
+      {
+        "method": "load_game_save (frontend Lua tier)",
+        "note": "first attempt: connection state list cached during intro; second attempt after forced reconnect at main menu: same result",
+        "result": "not found in Lua query or on filesystem"
+      },
+      {
+        "method": "load_save_from_menu via WSL MCP",
+        "result": "refused before OCR: WSL side cannot see the Windows save dir ('Available: none')"
+      },
+      {
+        "local_time": "13:01",
+        "method": "Windows companion bridge: civ6_launcher_bootstrap.py load (native OCR)",
+        "observation": "Clicked Single Player -> Load Game OK. List showed 0_MCP_0186..0_MCP_0175 (12 rows). Each _scroll_save_list_down_win32 at window-relative (45%,62%) = abs (1824,1183) logged success but OCR saw the IDENTICAL 12 rows every pass -- the wheel event did not scroll the list. Base save ~35 rows down was never reached. Window rect pos=(960,514) size=1920x1080 pid=4612.",
+        "result": "FAILED: not found",
+        "smoke_finding_3_refinement": "root cause is not scroll-limit exhaustion; the wheel scroll is a no-op at that pointer position on this display"
+      },
+      {
+        "method": "load_game_save (frontend Lua tier) after forced reconnect with Load Game menu open on screen",
+        "result": "FOUND; world loaded (verified in-game T100). Waiter returned 'WARNING: FireTuner port did not reopen within the wait window ... Last frontend classification: unknown' although the world was up -- false negative; no Escape was pressed (unknown -> wait). Operator reported the load finished well before the waiter timed out."
+      },
+      {
+        "method": "load_game_save('BUILDER_ECONOMY_CAL_V1') in-game (Tier 1) to revert probes",
+        "result": "reported 'not found in Lua query or on filesystem' after its 5s poll window; ~1 min later the InGame context stopped answering and get_game_overview returned 'Empty overview response' -- consistent with the late-arriving file-list result firing Network.LoadGame after the tool had already given up (see runner risk note)"
+      },
+      {
+        "method": "stray in-game Lua load of BUILDER_ECONOMY_CAL_V1 (late file-list result)",
+        "observations": [
+          "Lua.log: 'LoadScreen: OnLoadGameViewStateDone' ~13:20; game sat on the continue screen; tuner port closed to new clients",
+          "bridge classify-frontend -> continue_screen (13:28); bridge press-escape sent 13:28:54; classify -> unknown (13:31) while InGame Lua was already answering the MCP server",
+          "boot-health with 20s window reported no frames at the continue screen (Profile.csv only logs slow frames) -- not a wedge signal on its own",
+          "port probes from WSL timed out (SYN-SENT) even after the world was up: FireTuner's single slot was held by the MCP server, so an external connect is NOT a valid 'world ready' probe while a client is attached"
+        ]
+      }
+    ],
+    "mods": [
+      {
+        "id": "67B4DBCB-82AD-3F90-1595-43C677C1301E",
+        "modinfo_sha256": "5b6433fa264628c4dfa498203711d9815a23ce2690703904c6ede1ddc5cdb7cc",
+        "modinfo_version": "1.0",
+        "name": "Better Religion Window (UI)",
+        "official": false,
+        "steam_workshop_item": "2145663327"
+      },
+      {
+        "id": "13E8BCDF-98EC-4C03-3641-72D519B0047C",
+        "modinfo_sha256": "761289e38b91dde57b3cefc7384e2f3b6ef3493513c60c063271d5c1558f6ef9",
+        "modinfo_version": "1.0",
+        "name": "Better City States (UI)",
+        "official": false,
+        "steam_workshop_item": "2495851756"
+      },
+      {
+        "id": "c6477d9f-6bad-4d24-9e76-49cda4f0a966",
+        "modinfo_sha256": "40fc0b66b274456d9620963030c7d24f23ae6c4735dd5b474eafb1887318dee4",
+        "modinfo_version": "1.0",
+        "name": "Better Builder Charges Tracking",
+        "official": false,
+        "steam_workshop_item": "2409116842"
+      },
+      {
+        "id": "11B9FBBE-25BD-7E24-3909-67A060B2456C",
+        "modinfo_sha256": "d687fac7455a1474640db8f3256e2d2861a4f07633eca49f068bd2e2920186b6",
+        "modinfo_version": "1.0",
+        "name": "Real Era Tracker",
+        "official": false,
+        "steam_workshop_item": "1699006932"
+      },
+      {
+        "id": "bcdbbbea-984f-474c-b921-6ea0be143600",
+        "modinfo_sha256": "3daafc82124a41f3638b102fc4560e7baa642cbbadc2c7cf79481897208fa488",
+        "modinfo_version": "1.0",
+        "name": "Great Works Viewer",
+        "official": false,
+        "steam_workshop_item": "1652106496"
+      },
+      {
+        "id": "ebdf2824-352e-49c3-90c1-743a89180da8",
+        "modinfo_sha256": "72a68c767579d55c7043357ecef021b04868d91fa0d545557faa6a9fad496fc2",
+        "modinfo_version": "1.0",
+        "name": "Better Espionage Screen",
+        "official": false,
+        "steam_workshop_item": "872296228"
+      },
+      {
+        "id": "382a187f-c8ba-4094-a6a7-0d5315661f33",
+        "modinfo_sha256": "df2fc2a1f5f828ff47d5a34f13551ea3446046b229f844b0bbcba13a0fccd707",
+        "modinfo_version": "1.0",
+        "name": "Extended Policy Cards",
+        "official": false,
+        "steam_workshop_item": "2266952591"
+      },
+      {
+        "id": "6a18ae19-df93-4322-a3d5-33c5a5087b36",
+        "modinfo_sha256": "038d58c4abdf74eca10df4ce6ca91e84f2e390c9f66220b86e83d1edba194e42",
+        "modinfo_version": "1.0",
+        "name": "Real Great People",
+        "official": false,
+        "steam_workshop_item": "900089445"
+      },
+      {
+        "id": "5aceed03-8639-4a81-8cbf-03f54d543502",
+        "modinfo_sha256": "5cfae93147317b566885b044e015d6976c6e16a80e37f326a2e5fea3992748f8",
+        "modinfo_version": "1.0",
+        "name": "Quick Deals",
+        "official": false,
+        "steam_workshop_item": "2460661464"
+      },
+      {
+        "id": "6f2888d4-79dc-415f-a8ff-f9d81d7afb53",
+        "modinfo_sha256": "4134976c36c62eda51a2bc7307fa81cdc1fb3745d47825e1b006bb01fb14f7cb",
+        "modinfo_version": "1.0",
+        "name": "Better Report Screen (UI)",
+        "official": false,
+        "steam_workshop_item": "1312585482"
+      },
+      {
+        "id": "8d4fa23a-ef43-440c-8422-2bec11f8f5d7",
+        "modinfo_sha256": "795b8ed6fcee97f02a08ac702b20569257acbac8a7bc43a1f93f7270364f96b3",
+        "modinfo_version": "1.0",
+        "name": "Better Trade Screen",
+        "official": false,
+        "steam_workshop_item": "873246701"
+      },
+      {
+        "id": "4ecfcc62-5471-4435-b295-590df213e8d8",
+        "modinfo_sha256": "655e624f1f17d5d8cd3cb467f0e3c8431b21a45f8265330022932974edb6dce3",
+        "modinfo_version": "1.0",
+        "name": "Detailed Map Tacks",
+        "official": false,
+        "steam_workshop_item": "2428969051"
+      }
+    ],
+    "mods_note": "Modding.GetActiveMods() returned 36 entries in-game (24 official DLC/expansion packs listed under dlc, 12 Steam Workshop UI mods listed under mods). Version attribute is not exposed via the in-game Modding API; versions taken from each .modinfo on disk and pinned by modinfo sha256 + workshop item id.",
+    "mutation_journal": [
+      {
+        "after": {
+          "feature": null,
+          "improvement": "IMPROVEMENT_MINE",
+          "pillaged": true
+        },
+        "api": "ImprovementBuilder.SetImprovementPillaged(Map.GetPlot(68,23), true)",
+        "before": {
+          "feature": null,
+          "improvement": "IMPROVEMENT_MINE",
+          "pillaged": false
+        },
+        "context": "gamecore",
+        "purpose": "task 1: repair target (owned IRON mine, Jeonju)",
+        "seq": 1,
+        "tile": [
+          68,
+          23
+        ]
+      },
+      {
+        "after": {
+          "feature": "FEATURE_FOREST",
+          "improvement": null,
+          "resource": "RESOURCE_STONE"
+        },
+        "api": "TerrainBuilder.SetFeatureType(Map.GetPlot(71,21), FEATURE_FOREST)",
+        "before": {
+          "feature": null,
+          "improvement": null,
+          "resource": "RESOURCE_STONE"
+        },
+        "context": "gamecore",
+        "purpose": "task 3: feature-blocked target (owned STONE, flat grass river, Gwangju) -> remove forest then QUARRY",
+        "seq": 2,
+        "tile": [
+          71,
+          21
+        ]
+      },
+      {
+        "after": {
+          "charges": 3,
+          "moves": "4/4",
+          "x": 71,
+          "y": 22
+        },
+        "api": "UnitManager.PlaceUnit(u, 71, 22); UnitManager.RestoreMovement(u)",
+        "before": {
+          "charges": 3,
+          "moves": "4/4",
+          "x": 73,
+          "y": 20
+        },
+        "context": "gamecore",
+        "purpose": "task 3 builder adjacent to (71,21)",
+        "seq": 3,
+        "unit_id": 1572874
+      },
+      {
+        "after": {
+          "charges": 2,
+          "moves": "4/4",
+          "x": 74,
+          "y": 29
+        },
+        "api": "UnitManager.PlaceUnit(u, 74, 29); UnitManager.RestoreMovement(u)",
+        "before": {
+          "charges": 2,
+          "moves": "4/4",
+          "x": 72,
+          "y": 30
+        },
+        "context": "gamecore",
+        "purpose": "task 2 builder adjacent to (74,30) HORSES (owned, flat grass, Jinju) -> PASTURE",
+        "seq": 4,
+        "unit_id": 1507329
+      },
+      {
+        "after": {
+          "charges": 3,
+          "moves": "4/4",
+          "type": "UNIT_BUILDER",
+          "x": 69,
+          "y": 22
+        },
+        "api": "UnitManager.InitUnit(0, 'UNIT_BUILDER', 69, 22); UnitManager.RestoreMovement(u)",
+        "before": null,
+        "context": "gamecore",
+        "purpose": "task 1 builder adjacent to (68,23)",
+        "seq": 5,
+        "unit_id": 1769484
+      },
+      {
+        "after": {
+          "charges": 3,
+          "moves": "4/4",
+          "x": 72,
+          "y": 21
+        },
+        "api": "UnitManager.PlaceUnit(u, 72, 21); UnitManager.RestoreMovement(u)",
+        "applied_on": "clean reload of first BUILDER_ECONOMY_CAL_V1 save (probes reverted; verified pill=true@68,23, im=-@74,30, FOREST@71,21, builders at 69,22 / 74,29 / 71,22 with 4/4 moves)",
+        "before": {
+          "charges": 3,
+          "moves": "4/4",
+          "x": 71,
+          "y": 22
+        },
+        "context": "gamecore",
+        "purpose": "task 3 builder relocated to a neighbor of (71,21) with no river crossing (Step 4 finding)",
+        "seq": 6,
+        "unit_id": 1572874
+      }
+    ],
+    "player_id": 0,
+    "position_id": "builder-economy-cal-v1",
+    "preflight": {
+      "boot_health": {
+        "baseline_offset": 605,
+        "elapsed_s": 18.016,
+        "last_frame": 1523,
+        "ok": true,
+        "profile_path": "C:\\Users\\wrisl\\AppData\\Local\\Firaxis Games\\Sid Meier's Civilization VI\\Logs\\Profile.csv"
+      },
+      "launch": {
+        "issued_local_time": "12:51:10",
+        "method": "WSL interop: cmd.exe /c start steam://run/289070 (MCP launch_game unsupported under WSL: 'steam' binary absent)",
+        "process": "CivilizationVI_DX12.exe pid 4612"
+      },
+      "tests": "uv run pytest -q tests/arena/test_benchmark_*.py tests/arena/test_action_metrics.py tests/test_game_launcher.py tests/test_launcher_cli.py -> 899 passed",
+      "tuner_port_holder_before_connect": "none foreign; only this session's civ-mcp (pid 3779160) in SYN-SENT (game not running)"
+    },
+    "relevant_tiles": [
+      [
+        68,
+        23
+      ],
+      [
+        69,
+        22
+      ],
+      [
+        74,
+        30
+      ],
+      [
+        74,
+        29
+      ],
+      [
+        71,
+        21
+      ],
+      [
+        72,
+        21
+      ],
+      [
+        70,
+        20
+      ]
+    ],
+    "ruleset": "RULESET_EXPANSION_2",
+    "save_list_query_evidence": {
+      "in_game_probe_after_warm_cache": "UI.QuerySaveGameList(LOCAL_STORAGE, SINGLE_PLAYER, NORMAL+AUTOSAVE+QUICKSAVE+LOAD_METADATA) returned 283 entries, BUILDER_ECONOMY_CAL_V1.Civ6Save FOUND, ~1s (os.clock 2543->2544)",
+      "inference": "the earlier in-game load_game_save NOT_FOUND + later stray load is consistent with a cold first query (new file, 283-entry library on OneDrive) exceeding load_game_save's 5s poll window, after which the still-registered Lua handler fired Network.LoadGame late"
+    },
+    "session": {
+      "date": "2026-09-26",
+      "driver": "claude-fable-5-1 via civ6 MCP (WSL)",
+      "operator": "riz at gaming PC, display active",
+      "repo_commit_windows_companion": "b15c51081c865676dd0279abaa4c16c50fc5c2d0",
+      "repo_commit_wsl": "b15c51081c865676dd0279abaa4c16c50fc5c2d0",
+      "windows_companion_path": "C:\\Users\\wrisl\\dev\\civ6-mcp"
+    },
+    "step4_probes": {
+      "river_crossing_scan_71_21": {
+        "70,21": false,
+        "71,20": false,
+        "71,22": true,
+        "72,20": false,
+        "72,21": false,
+        "72,22": false
+      },
+      "task1": {
+        "action": "repair -> REPAIRING IMPROVEMENT_MINE; readback pill=false; charges 3->3 (repair costs no charge)",
+        "builder": 1769484,
+        "level4": true,
+        "move": "(69,22)->(68,23) OK (hills, 4->2 moves)"
+      },
+      "task2": {
+        "action": "improve IMPROVEMENT_PASTURE -> readback im=IMPROVEMENT_PASTURE; charges 2->1, builder survives",
+        "builder": 1507329,
+        "level4": true,
+        "move": "(74,29)->(74,30) OK"
+      },
+      "task3_first_attempt": {
+        "action": "remove_feature -> NO_MOVES (river crossing from (71,22) into (71,21) ends movement)",
+        "builder": 1572874,
+        "level4": false,
+        "move": "(71,22)->(71,21) OK"
+      },
+      "task3_fixed": {
+        "action": "remove_feature -> REMOVING_FEATURE; readback f=- ; charges 3->2; follow-up improve QUARRY -> CANNOT_IMPROVE no moves (expected: feature removal ends movement; rubric level 4 for task 3 = blocking feature absent)",
+        "builder": 1572874,
+        "level4": true,
+        "move": "(72,21)->(71,21) OK (no river crossing)",
+        "relocated_by_lua": "PlaceUnit (72,21) + RestoreMovement"
+      },
+      "tool_surface_equivalence": "MCP unit_action move/repair/improve/remove_feature dispatch to GameState.move_unit/repair_improvement/improve_tile/remove_feature (server.py:1791-1811), the same methods arena registry tools move_unit/repair_improvement/improve_tile/remove_feature call (registry.py:532-653)."
+    },
+    "tasks": {
+      "task1_repair": {
+        "builder_id": 1769484,
+        "builder_start": [
+          69,
+          22
+        ],
+        "city": "Jeonju",
+        "improvement": "IMPROVEMENT_MINE",
+        "resource": "RESOURCE_IRON",
+        "target": [
+          68,
+          23
+        ]
+      },
+      "task2_improve": {
+        "builder_id": 1507329,
+        "builder_start": [
+          74,
+          29
+        ],
+        "city": "Jinju",
+        "improvement": "IMPROVEMENT_PASTURE",
+        "resource": "RESOURCE_HORSES",
+        "target": [
+          74,
+          30
+        ]
+      },
+      "task3_remove_then_improve": {
+        "blocking_feature": "FEATURE_FOREST",
+        "builder_id": 1572874,
+        "builder_start": [
+          72,
+          21
+        ],
+        "city": "Gwangju",
+        "improvement": "IMPROVEMENT_QUARRY",
+        "resource": "RESOURCE_STONE",
+        "target": [
+          71,
+          21
+        ]
+      }
+    },
+    "threats_note": "No wars (get_diplomacy). Units adjacent to task tiles are Valletta/Jerusalem city-state units (Valletta archers at (70,30),(75,31); Jerusalem warrior (72,22), horseman (71,20)). Not removed: no contamination of a single-turn builder decision under peace.",
+    "windows_save_destination": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\BUILDER_ECONOMY_CAL_V1.Civ6Save"
+  },
+  "reload": {
+    "verified": true
+  }
+}

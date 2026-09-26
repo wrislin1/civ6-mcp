@@ -1050,7 +1050,7 @@ git commit -m "feat(benchmark): derive calibrated campaign verdicts"
 - Consumes: Task 9 position CLI/validators and the live `civ6-arena-live` operating procedure.
 - Produces: the archived save, canonical position manifest, environment/mutation provenance, post-reload capture, and twelve-cycle reload evidence consumed by campaign locking/admission.
 
-- [ ] **Step 1: Establish a green pre-live checkpoint**
+- [x] **Step 1: Establish a green pre-live checkpoint**
 
 Run:
 
@@ -1061,7 +1061,7 @@ git status --short
 
 Expected: all tests pass and only intentional plan-implementation changes are present. Do not start authoring from an uncommitted implementation state.
 
-- [ ] **Step 2: Preflight the game and capture environment identity**
+- [x] **Step 2: Preflight the game and capture environment identity**
 
 Use the live skill to verify: native Windows launcher checkout at the same commit; boot-health green; tuner port unowned before connection; stable real display; no modal popup. Load a stable organic base save and record, before mutation:
 
@@ -1074,7 +1074,7 @@ Use the live skill to verify: native Windows launcher checkout at the same commi
 
 Write these as canonical JSON fields in `builder-economy-cal-v1-authoring.json`. If any identity cannot be queried, stop this task rather than writing `unknown` into the provenance.
 
-- [ ] **Step 3: Create exactly three isolated builder tasks with minimal mutations**
+- [x] **Step 3: Create exactly three isolated builder tasks with minimal mutations**
 
 Through FireTuner, make only the changes necessary to produce:
 
@@ -1084,7 +1084,7 @@ Through FireTuner, make only the changes necessary to produce:
 
 Give each builder at least two charges so intended success does not consume it. Remove nearby military threats, empty production/research blockers, and irrelevant idle units only when they would contaminate the single-turn decision. Do not change unrelated cities, yields, diplomacy, or map areas. Journal every executed mutation with before/after values and the exact unit/tile IDs.
 
-- [ ] **Step 4: Prove both arms can reach their intended rubric levels**
+- [x] **Step 4: Prove both arms can reach their intended rubric levels**
 
 Query through the benchmark-safe tool surfaces, not an unrestricted debug view:
 
@@ -1094,7 +1094,7 @@ Query through the benchmark-safe tool surfaces, not an unrestricted debug view:
 
 Use test/probe calls that do not mutate the would-be frozen state, or reload the authoring state before saving if a legality probe mutates it.
 
-- [ ] **Step 5: Save, archive, deploy, reload, then capture canonical state**
+- [x] **Step 5: Save, archive, deploy, reload, then capture canonical state**
 
 Save as exactly `BUILDER_ECONOMY_CAL_V1`. Copy the resulting Windows save into `benchmarks/saves/`, compute SHA-256, and append the archive/source/deployment evidence to the provenance journal.
 
@@ -1108,7 +1108,7 @@ uv run civ-arena-benchmark-position capture \
 
 The provenance file already contains the actual three recorded coordinates; no guessed, shell-substituted, or provisional coordinate may enter the manifest.
 
-- [ ] **Step 6: Prove the deployed save is reachable through the menu fallback**
+- [x] **Step 6: Prove the deployed save is reachable through the menu fallback**
 
 **Required skill:** `civ6-arena-live`. Keep the display/AVR path active and do not touch mouse/keyboard while the OCR loader runs.
 
@@ -1128,7 +1128,7 @@ Append to `benchmarks/provenance/builder-economy-cal-v1-authoring.json` one `men
 Expected: exact selection on the first page (zero scrolls), digest match, no pause-menu toggle. If selection fails or needs scrolling, stop: that is the spec's trigger for deepening exact-save menu navigation. Fix the loader, redeploy via Step 5, and repeat this step before continuing to Step 7. Do not proceed to counted blocks with an unproven crash-recovery path.
 
 
-- [ ] **Step 7: Author the position manifest and frozen 0/1/2/4 rubric**
+- [x] **Step 7: Author the position manifest and frozen 0/1/2/4 rubric**
 
 Use the capture's exact state/digest, archive digest, three builder IDs, and target coordinates. Declare all three builders persistent. For each equal-weight task:
 
@@ -1139,7 +1139,7 @@ Use the capture's exact state/digest, archive digest, three builder IDs, and tar
 
 Do not add level 3 unless live state contains a separate observable intermediate. Use coordinate-based tile predicates, not brittle list indices. Add tests that load the real manifest, validate all lifecycle/predicate references, prove minimal can reach levels 1–2, and standard can reach level 4 in counterfactual state fixtures.
 
-- [ ] **Step 8: Run all twelve fresh deployment/reload checks through the production path**
+- [x] **Step 8: Run all twelve fresh deployment/reload checks through the production path**
 
 Run:
 
@@ -1152,7 +1152,7 @@ uv run civ-arena-benchmark-position verify \
 
 Expected: twelve records, each with a fresh deployment hash match, verified production reload, popup hygiene success, and the exact frozen state digest. A single mismatch invalidates the freeze; diagnose and repeat the complete twelve-cycle check after fixing the artifact.
 
-- [ ] **Step 9: Verify repository artifacts and commit**
+- [x] **Step 9: Verify repository artifacts and commit**
 
 Run:
 
