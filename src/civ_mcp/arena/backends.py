@@ -67,9 +67,18 @@ class OpenAICompatBackend:
         sampling: SamplingConfig | None = None,
         retry_policy: RetryPolicy | None = None,
         chat_template_kwargs: Mapping[str, object] | None = None,
+        cache_prompt: bool | None = None,
     ):
         self.model = model
         self.base_url = base_url
+        # 2026-09-26 live (Task 12 validation): llama.cpp's prompt cache
+        # changes the numerics of an otherwise identical request -- a cold
+        # call (0 cached tokens) sampled differently from the warm calls
+        # that followed it at the same seed, while `cache_prompt: false`
+        # reproduced the cold result exactly every time. Benchmark callers
+        # pin this to False so every trial evaluates the prompt the same
+        # way; `None` (ordinary arena callers) sends nothing, as before.
+        self.cache_prompt = cache_prompt
         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         # Defaulting to the frozen configs' own defaults (rather than leaving
         # None) reproduces the pre-Task-4 wire behavior exactly: no sampling
@@ -105,6 +114,8 @@ class OpenAICompatBackend:
             # reference into `self.chat_template_kwargs`.
             extra_body={"chat_template_kwargs": dict(self.chat_template_kwargs)},
         )
+        if getattr(self, "cache_prompt", None) is not None:
+            kw["extra_body"]["cache_prompt"] = self.cache_prompt
         if self.sampling.temperature is not None:
             kw["temperature"] = self.sampling.temperature
         if self.sampling.top_p is not None:

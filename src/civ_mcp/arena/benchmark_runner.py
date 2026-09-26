@@ -881,6 +881,7 @@ def _build_live_dependencies(
                 sampling=dataclasses.replace(suite.sampling, seed=seed),
                 retry_policy=RetryPolicy(max_attempts=1),
                 chat_template_kwargs=resolved_chat_template_kwargs,
+                cache_prompt=False,
             )
             backend_cache[key] = backend
         return backend_cache[key]
@@ -1458,6 +1459,7 @@ def _build_live_admission_dependencies(
             sampling=sampling,
             retry_policy=RetryPolicy(max_attempts=1),
             chat_template_kwargs=chat_template_kwargs,
+            cache_prompt=False,
         )
         probe_messages = [
             {"role": "system", "content": BENCHMARK_SYSTEM},
@@ -1544,6 +1546,7 @@ def _build_live_admission_dependencies(
             sampling=sampling,
             retry_policy=RetryPolicy(max_attempts=1),
             chat_template_kwargs=chat_template_kwargs,
+            cache_prompt=False,
         )
         try:
             return await _probe_tool_capability_impl(

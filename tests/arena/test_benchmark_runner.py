@@ -3939,3 +3939,28 @@ async def test_remediation_refuses_when_campaign_journal_target_unavailable(
     assert exit_code == 1
     err = capsys.readouterr().err
     assert "journal" in err
+
+
+@pytest.mark.asyncio
+async def test_live_admission_probe_backend_pins_prompt_cache_off(monkeypatch):
+    """The admission probe must exercise the SAME request config the counted
+    trials use -- including cache_prompt=False (2026-09-26: llama.cpp's
+    prompt cache made a cold seeded call differ from warm ones, which the
+    repeated-consistency check read as 'seed not honored')."""
+    seen: list = []
+
+    async def _fake_probe_backend_impl(backend, messages, tools):
+        seen.append(backend)
+        return benchmark_backend_module.BackendProbe(
+            samples=1, model=backend.model, model_confirmed=True, seed_honored=True
+        )
+
+    monkeypatch.setattr(benchmark_backend_module, "probe_backend", _fake_probe_backend_impl)
+    deps = benchmark_runner._build_live_admission_dependencies(
+        args=_admission_args(), api_key="x", user_prompt="Assess the current turn and call finish_trial."
+    )
+    await deps.probe_backend(
+        model="gemma4-26b", endpoint="http://example.invalid/v1", sampling=SamplingConfig(),
+        chat_template_kwargs={"enable_thinking": False}, tools=[],
+    )
+    assert seen and seen[0].cache_prompt is False

@@ -287,3 +287,24 @@ async def test_list_model_ids_propagates_failure_for_caller_classification(monke
 
     with pytest.raises(RuntimeError, match="does not support"):
         await b.list_model_ids()
+
+
+def test_backend_sends_cache_prompt_only_when_pinned():
+    """2026-09-26 live: llama.cpp's prompt cache changed the numerics of an
+    identical seeded request (cold call differed from warm calls; with
+    cache_prompt=false every call reproduced the cold result). Benchmark
+    callers pin it off; ordinary callers send nothing new."""
+    b, cap = _backend_with_capture()
+    asyncio.run(b.chat([{"role": "user", "content": "hi"}], tools=[]))
+    assert "cache_prompt" not in cap.kwargs["extra_body"]
+
+    b, cap = _backend_with_capture()
+    b.cache_prompt = False
+    asyncio.run(b.chat([{"role": "user", "content": "hi"}], tools=[]))
+    assert cap.kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}, "cache_prompt": False}
+
+
+def test_backend_constructor_accepts_cache_prompt():
+    b = OpenAICompatBackend("http://x/v1", "k", "m", cache_prompt=False)
+    assert b.cache_prompt is False
+    assert OpenAICompatBackend("http://x/v1", "k", "m").cache_prompt is None
