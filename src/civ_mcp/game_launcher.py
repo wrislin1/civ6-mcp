@@ -1624,11 +1624,15 @@ def _normalize(s: str) -> str:
     Handles common OCR confusions:
     - Underscores ↔ spaces (game UI shows underscores, OCR reads spaces)
     - 0 ↔ O (OCR confuses zero and capital O, especially in save names like 0A_...)
+    - 1 ↔ I ↔ l (observed live 2026-09-26: WinRT OCR read the deployed
+      'BUILDER_ECONOMY_CAL_V1' row as 'BUILDER ECONOMY CAL VI'; the exact
+      matcher rejected it and the menu loader scrolled a no-op 12 times)
     - Leading/trailing punctuation noise from tesseract (e.g. ": Load Game =:")
     """
     import re
 
     s = s.lower().strip().replace("_", " ").replace("0", "o")
+    s = s.replace("1", "i").replace("l", "i")
     # Strip leading/trailing non-alphanumeric chars (OCR artifacts)
     s = re.sub(r"^[^a-z0-9]+", "", s)
     s = re.sub(r"[^a-z0-9]+$", "", s)

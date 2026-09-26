@@ -1689,3 +1689,22 @@ def test_profile_csv_path_uses_local_appdata_firaxis_logs(monkeypatch):
         "Logs",
         "Profile.csv",
     )
+
+
+def test_find_text_matches_ocr_reading_of_deployed_benchmark_save_name():
+    """Live 2026-09-26 (Task 11 Step 6): the deployed BUILDER_ECONOMY_CAL_V1
+    save sorted to the top of the Load Game list, but WinRT OCR read the row
+    as 'BUILDER ECONOMY CAL VI' (underscores as spaces, '1' as 'I'), so the
+    exact matcher rejected it and the loader scrolled a no-op 12 times. The
+    normalizer already folds 0/O; it must fold 1/I/l the same way."""
+    from civ_mcp.game_launcher import _find_text
+
+    ocr = [
+        ("BUILDER ECONOMY CAL VI", 400, 300, 200, 20),
+        ("O MCP 0186", 400, 330, 200, 20),
+    ]
+    match = _find_text(ocr, "BUILDER_ECONOMY_CAL_V1", exact=True)
+    assert match is not None and match[0] == "BUILDER ECONOMY CAL VI"
+    # The 0/O fold keeps working and the two rows stay distinct.
+    assert _find_text(ocr, "0_MCP_0186", exact=True)[0] == "O MCP 0186"
+    assert _find_text(ocr, "0_MCP_0181", exact=True) is None
