@@ -115,3 +115,32 @@ async def test_wrong_save_recovery_still_clicks_when_reload_does_not_report_worl
     await server._auto_boot(conn, "scenario")
 
     click_positional.assert_called_once()
+
+
+async def test_kill_and_ocr_fallback_uses_the_complete_menu_load_path(monkeypatch):
+    """Review of the 2026-09-26 loader commits: _navigate_to_save_sync now
+    returns right after selecting the save, so the kill-and-OCR fallback
+    must go through load_save_from_menu (navigation + load waiter) rather
+    than call the sync navigator directly and hope the world appears
+    within its 30 reconnect attempts."""
+    _patch_common(monkeypatch, load_result="Loaded scenario: world ready, FireTuner port is open.")
+    monkeypatch.setattr(game_launcher, "kill_game", AsyncMock(return_value="killed"))
+
+    def boom(*_a, **_k):
+        raise AssertionError("fallback must not call _navigate_to_save_sync directly")
+
+    monkeypatch.setattr(game_launcher, "_navigate_to_save_sync", boom)
+    menu_loads: list[tuple] = []
+
+    async def fake_menu_load(save_name, *, launched_now=False):
+        menu_loads.append((save_name, launched_now))
+        return f"Loaded {save_name}: world ready, FireTuner port is open. Steps: ..."
+
+    monkeypatch.setattr(game_launcher, "load_save_from_menu", fake_menu_load)
+    # Wrong turn on first verify, wrong turn again after the Lua reload ->
+    # the kill-and-OCR fallback fires.
+    conn = _FakeConn(verify_turns=[157, 157])
+
+    await server._auto_boot(conn, "scenario")
+
+    assert menu_loads == [("scenario", True)]

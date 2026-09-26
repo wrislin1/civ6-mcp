@@ -1976,3 +1976,70 @@ async def test_continue_after_lua_load_keeps_waiting_on_frontend_menu_with_port_
 
     assert presses == []
     assert result.startswith("WARNING") and "frontend_menu" in result
+
+
+# ---------------------------------------------------------------------------
+# Review of the 2026-09-26 loader commits (P1/P2).
+# ---------------------------------------------------------------------------
+
+
+def test_native_classifier_menu_anchors_win_over_leader_pack_and_continue_text(monkeypatch):
+    """Load Game details panel rows like 'Rulers of China Leader Pack' and the
+    main menu's own 'CONTINUE' button must not read as pressable screens."""
+    _native_classifier_env(
+        monkeypatch, port_open=True,
+        ocr_rows=[("Autosaves", 1740, 717, 80, 14), ("Rulers of China Leader Pack", 2041, 1521, 179, 10)],
+    )
+    assert game_launcher._classify_frontend_load_state_native() is game_launcher.FrontendLoadState.FRONTEND_MENU
+    _native_classifier_env(
+        monkeypatch, port_open=True,
+        ocr_rows=[("SINGLE PLAYER", 1900, 700, 120, 20), ("CONTINUE", 1900, 650, 100, 20)],
+    )
+    assert game_launcher._classify_frontend_load_state_native() is game_launcher.FrontendLoadState.FRONTEND_MENU
+
+
+@pytest.mark.asyncio
+async def test_load_save_from_menu_keeps_ocr_continuation_where_no_waiter_exists(monkeypatch, tmp_path):
+    """macOS (and native Linux without the Windows bridge) cannot classify
+    the screen or press Escape, so the pre-change OCR continuation must
+    still run there instead of the waiter."""
+    from civ_mcp import game_launcher as g
+
+    (tmp_path / "auto").mkdir()
+    (tmp_path / "BUILDER_ECONOMY_CAL_V1.Civ6Save").write_bytes(b"x")
+    monkeypatch.setattr(g, "SINGLE_SAVE_DIR", str(tmp_path))
+    monkeypatch.setattr(g, "SAVE_DIR", str(tmp_path / "auto"))
+    monkeypatch.setattr(g.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        g, "_navigate_to_save_sync",
+        lambda name, tab, launched_now=False: "Save selected (40s). Steps: Clicked Single Player, Selected save X, Clicked Load Game button.",
+    )
+    legacy_calls: list[tuple] = []
+    monkeypatch.setattr(
+        g, "_continue_via_ocr_sync",
+        lambda name, steps, nav_start: legacy_calls.append((name, steps)) or "Save loading (60s). Steps: ...",
+    )
+
+    async def fake_waiter(name):
+        raise AssertionError("waiter must not run without a classifier/Escape for this platform")
+
+    monkeypatch.setattr(g, "continue_after_lua_load", fake_waiter)
+
+    result = await g.load_save_from_menu("BUILDER_ECONOMY_CAL_V1")
+
+    assert legacy_calls == [("BUILDER_ECONOMY_CAL_V1", ["Clicked Single Player", "Selected save X", "Clicked Load Game button"])]
+    assert result.startswith("Save loading (")
+
+
+def test_load_waiter_supported_by_platform(monkeypatch):
+    from civ_mcp import game_launcher as g
+
+    monkeypatch.setattr(g.sys, "platform", "win32")
+    assert g._load_waiter_supported() is True
+    monkeypatch.setattr(g.sys, "platform", "darwin")
+    assert g._load_waiter_supported() is False
+    monkeypatch.setattr(g.sys, "platform", "linux")
+    monkeypatch.setattr(g.os.path, "exists", lambda _p: False)
+    assert g._load_waiter_supported() is False
+    monkeypatch.setattr(g.os.path, "exists", lambda _p: True)
+    assert g._load_waiter_supported() is True

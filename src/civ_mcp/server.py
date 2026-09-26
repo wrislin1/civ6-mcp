@@ -270,12 +270,14 @@ async def _auto_boot(conn: GameConnection, save_name: str) -> None:
                                         game_launcher._launch_game_sync
                                     )
                                     log.info("Auto-boot: relaunch: %s", r)
-                                    r = await asyncio.to_thread(
-                                        game_launcher._navigate_to_save_sync,
-                                        save_name,
-                                        None,
+                                    # The complete menu-load path: OCR
+                                    # navigation, then the load waiter that
+                                    # dismisses the continue screen and
+                                    # returns only once the world is up.
+                                    r = await game_launcher.load_save_from_menu(
+                                        save_name, launched_now=True
                                     )
-                                    log.info("Auto-boot: OCR nav: %s", r)
+                                    log.info("Auto-boot: OCR load: %s", r)
                                     for a in range(30):
                                         try:
                                             await conn.reconnect()

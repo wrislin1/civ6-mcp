@@ -2329,14 +2329,17 @@ def _classify_frontend_load_state_native(
         log.debug("Frontend load-state classification OCR failed", exc_info=True)
         return port_verdict
 
-    if _find_text(results, "CONTINUE"):
-        return FrontendLoadState.CONTINUE_SCREEN
-    if _find_text(results, "LEADER"):
-        return FrontendLoadState.LEADER_SCREEN
+    # Menu anchors first: the main menu's own "Continue" button and the
+    # Load Game details panel's "... Leader Pack" rows would otherwise be
+    # shadowed into the pressable states below and draw an Escape on a menu.
     if _find_text(results, "Single Player", exact=True) or _find_text(
         results, "Autosaves", exact=True
     ):
         return FrontendLoadState.FRONTEND_MENU
+    if _find_text(results, "CONTINUE"):
+        return FrontendLoadState.CONTINUE_SCREEN
+    if _find_text(results, "LEADER"):
+        return FrontendLoadState.LEADER_SCREEN
     return port_verdict
 
 
@@ -2838,6 +2841,145 @@ def _click_load_game_button() -> str:
     return "Clicked Load Game button by position (OCR could not read it)"
 
 
+def _load_waiter_supported() -> bool:
+    """Whether `continue_after_lua_load` can actually classify the screen
+    and press Escape from this process: native win32, or WSL with the
+    Windows companion bridge present. macOS and native Linux have neither
+    (their classifier answers UNKNOWN and their Escape press is a no-op),
+    so they keep the OCR continuation below."""
+    if sys.platform == "win32":
+        return True
+    if sys.platform == "linux":
+        return os.path.exists(_WSL_WINDOWS_PYTHON) and os.path.exists(_WSL_WINDOWS_BOOTSTRAP)
+    return False
+
+
+def _continue_via_ocr_sync(save_name: str, steps: list[str], nav_start: float) -> str:
+    """Cross-platform OCR continuation after a save was selected and Load
+    Game clicked: wait, look for CONTINUE, click it (positionally as a last
+    resort), then report. Only used where `_load_waiter_supported()` is
+    False; the win32/WSL path hands off to `continue_after_lua_load`
+    instead (see `load_save_from_menu`)."""
+    # Wait for save to load, then click through the leader intro screen.
+    #
+    # NOTE (Windows): PrintWindow + SetForegroundWindow during the DX12
+    # loading phase can crash the renderer.  macOS (Quartz) and Linux (mss)
+    # are safe to poll during loading since they don't inject window messages.
+
+    log.info("[6/6] Waiting 15s for save to load, then looking for CONTINUE GAME...")
+    time.sleep(15)
+
+    # Screen-aware CONTINUE detection: poll OCR and check WHAT we see.
+    # If we see "Single Player" / "Multiplayer", we're on the main menu
+    # (save load failed) — redo the navigation instead of blindly clicking.
+    continue_found = False
+    main_menu_detected = False
+    poll_start = time.time()
+    poll_timeout = 105
+    last_status_log = 0
+
+    while time.time() - poll_start < poll_timeout:
+        elapsed = time.time() - poll_start
+        win = _find_game_window()
+        try:
+            results = _ocr_game_window(win) if win else _ocr_fullscreen()
+        except Exception:
+            results = _ocr_fullscreen()
+
+        # Check for CONTINUE (leader screen — good)
+        match = _find_text(results, "CONTINUE")
+        if match:
+            text, x, y, w, h = match
+            log.info(
+                "CONTINUE wait: found '%s' at (%d,%d) after %.0fs — clicking",
+                text,
+                x,
+                y,
+                elapsed,
+            )
+            _bring_to_front()
+            _click(x, y)
+            time.sleep(3)
+            continue_found = True
+            steps.append("Clicked CONTINUE")
+            break
+
+        # Check for main menu (wrong screen — save load failed)
+        menu_match = _find_text(results, "Single Player")
+        if menu_match and elapsed > 20:  # give 20s grace for loading transition
+            log.warning(
+                "CONTINUE wait: ABORT — detected main menu ('Single Player' visible) "
+                "after %.0fs. Save load likely failed. Will retry navigation.",
+                elapsed,
+            )
+            main_menu_detected = True
+            steps.append("ABORT: main menu detected during CONTINUE wait")
+            break
+
+        # Periodic status log (every 15s)
+        if int(elapsed) // 15 > last_status_log:
+            last_status_log = int(elapsed) // 15
+            seen = [t for t, *_ in (results or [])[:8]]
+            log.info("CONTINUE wait: %.0fs elapsed, OCR sees: %s", elapsed, seen)
+
+        time.sleep(2.5)
+
+    if main_menu_detected:
+        # Save load failed — we're back at main menu. Redo from step 1.
+        log.warning("Restarting save navigation from main menu")
+        if _click_text("Single Player", timeout=15, post_delay=2):
+            _click_text("Load Game", timeout=10, post_delay=1, prefer_bottom=False)
+            time.sleep(1)
+            if _click_text(save_name, timeout=15, post_delay=0.5):
+                _click_text(
+                    "Load Game",
+                    timeout=10,
+                    post_delay=1,
+                    prefer_bottom=True,
+                    min_y_fraction=0.7,
+                )
+                time.sleep(15)
+                # One more attempt at CONTINUE
+                retry_match = _wait_for_text("CONTINUE", timeout=60, interval=2.5)
+                if retry_match:
+                    text, x, y, w, h = retry_match
+                    log.info("Retry: found CONTINUE at (%d,%d) — clicking", x, y)
+                    _bring_to_front()
+                    _click(x, y)
+                    time.sleep(3)
+                    steps.append("Retry: clicked CONTINUE after re-navigation")
+                else:
+                    log.warning(
+                        "Retry: CONTINUE still not found — using positional click"
+                    )
+                    _click_continue_positional()
+                    time.sleep(3)
+                    steps.append("Retry: CONTINUE not found — positional click")
+            else:
+                steps.append("Retry: could not find save name in list")
+        else:
+            steps.append("Retry: could not find Single Player menu item")
+    elif not continue_found:
+        # OCR timeout — neither CONTINUE nor main menu detected.
+        # Use positional click grid as last resort.
+        log.warning(
+            "OCR: CONTINUE not found after %ds — using positional click grid",
+            poll_timeout,
+        )
+        _click_continue_positional()
+        time.sleep(3)
+        steps.append("CONTINUE not found via OCR — used positional click fallback")
+
+    # Verify game loaded by checking FireTuner port
+    if _is_tuner_port_open():
+        steps.append("FireTuner port confirmed open")
+    else:
+        steps.append("WARNING: FireTuner port not open after load")
+
+    nav_elapsed = time.time() - nav_start
+    return f"Save loading ({nav_elapsed:.0f}s). Steps: {', '.join(steps)}. Wait ~10s then use get_game_overview to verify."
+
+
 def _navigate_to_save_sync(
     save_name: str,
     tab: str | None = "Autosaves",
@@ -3000,10 +3142,19 @@ async def load_save_from_menu(
     )
     if not navigation.startswith("Save selected ("):
         return navigation
+    steps_text = navigation[navigation.index("Steps:"):]
+    if not _load_waiter_supported():
+        # macOS / native Linux: no screen classifier or Escape injection
+        # here, so keep the pre-2026-09-26 OCR continuation for them.
+        steps = [
+            item.strip()
+            for item in steps_text[len("Steps:"):].strip().rstrip(".").split(",")
+            if item.strip()
+        ]
+        return await asyncio.to_thread(_continue_via_ocr_sync, save_name, steps, time.time())
     # Selection succeeded: wait through the load with the same
     # classification-gated waiter the Lua tiers use (port drop -> Escape
     # only on a recognized continue/leader screen -> port reopen).
-    steps_text = navigation[navigation.index("Steps:"):]
     waited = await continue_after_lua_load(save_name)
     return f"{waited} {steps_text}"
 
