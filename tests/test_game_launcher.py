@@ -1805,3 +1805,70 @@ async def test_load_save_from_menu_returns_navigation_failure_without_waiting(mo
     result = await g.load_save_from_menu("NOPE")
 
     assert result.startswith("FAILED:")
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-26 live (Step 6 attempts 2-3): the Load Game screen's bottom
+# "Load Game" button is teal-on-teal; WinRT OCR read it only as the fragment
+# 'ame' at the bottom-left of the window, so the exact matcher never clicked
+# it and the load never engaged. A native click at (41%, 97.5%) of the
+# window engaged the load (FireTuner port dropped after 4s).
+# ---------------------------------------------------------------------------
+
+
+def _win():
+    from civ_mcp.game_launcher import WindowInfo
+    return WindowInfo(window_id=1, x=960, y=514, w=1920, h=1080, pid=7)
+
+
+def test_find_load_game_fragment_picks_bottom_left_fragment_only():
+    from civ_mcp.game_launcher import _find_load_game_fragment
+
+    ocr = [
+        ("LOAD GAME", 1920, 662, 100, 20),        # page title (top) -- not it
+        ("Rulers of China Leader Pack", 2041, 1521, 179, 10),  # details panel (right)
+        ("ame", 1776, 1563, 30, 8),               # the button's readable tail
+        ("e ee", 2096, 1562, 39, 9),              # some other bottom button
+    ]
+    frag = _find_load_game_fragment(ocr, _win())
+    assert frag is not None and frag[0] == "ame"
+    assert _find_load_game_fragment([("LOAD GAME", 1920, 662, 100, 20)], _win()) is None
+
+
+def test_click_load_game_button_uses_fragment_then_position(monkeypatch):
+    from civ_mcp import game_launcher as g
+
+    clicks: list[tuple[int, int]] = []
+    monkeypatch.setattr(g, "_click_text", lambda *a, **k: False)
+    monkeypatch.setattr(g, "_find_game_window", _win)
+    monkeypatch.setattr(g, "_bring_to_front", lambda pid=None: None)
+    monkeypatch.setattr(g.time, "sleep", lambda _t: None)
+    monkeypatch.setattr(g, "_click", lambda x, y: clicks.append((x, y)))
+
+    monkeypatch.setattr(g, "_ocr_game_window", lambda win: [("ame", 1776, 1563, 30, 8)])
+    step = g._click_load_game_button()
+    assert "fragment" in step and clicks[-1] == (1776, 1563)
+
+    monkeypatch.setattr(g, "_ocr_game_window", lambda win: [])
+    step = g._click_load_game_button()
+    assert "position" in step
+    x, y = clicks[-1]
+    assert abs(x - (960 + 0.41 * 1920)) <= 2 and abs(y - (514 + 0.975 * 1080)) <= 2
+
+
+def test_navigate_to_save_sync_uses_the_button_helper(monkeypatch):
+    from civ_mcp import game_launcher as g
+
+    monkeypatch.setattr(g, "_require_gui_deps", lambda: None)
+    monkeypatch.setattr(g, "is_game_running", lambda: True)
+    monkeypatch.setattr(g, "_dismiss_crash_dialog", lambda: None)
+    monkeypatch.setattr(g, "_click_aspyr_launcher_sync", lambda: None)
+    monkeypatch.setattr(g, "_click_text", lambda *a, **k: True)
+    monkeypatch.setattr(g, "_wait_for_text", lambda *a, **k: ("Autosaves", 1, 1, 1, 1))
+    monkeypatch.setattr(g, "_click_save_in_scrollable_list", lambda name: True)
+    monkeypatch.setattr(g, "_click_load_game_button", lambda: "Clicked Load Game button by position (OCR could not read it)")
+
+    result = g._navigate_to_save_sync("BUILDER_ECONOMY_CAL_V1", None)
+
+    assert result.startswith("Save selected (")
+    assert "by position" in result

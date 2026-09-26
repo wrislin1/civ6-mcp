@@ -2743,6 +2743,69 @@ def list_autosaves(limit: int = 10) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+# The Load Game screen's bottom "Load Game" button, as a fraction of the game
+# window. Observed live 2026-09-26 (1920x1080 window at 3840x2160): WinRT
+# OCR read the teal-on-teal button only as the fragment 'ame' at the
+# bottom-left, and a click at this position engaged the load (FireTuner
+# port dropped 4s later).
+_LOAD_GAME_BUTTON_REL = (0.41, 0.975)
+
+
+def _find_load_game_fragment(
+    ocr_results: list[tuple[str, int, int, int, int]],
+    win: WindowInfo,
+) -> tuple[str, int, int, int, int] | None:
+    """Return the bottom-left OCR row that reads as a fragment of 'Load Game'.
+
+    Restricted to the bottom 10% and left 55% of the window so the page
+    title at the top and the save-details panel on the right never match.
+    Prefers the widest fragment when several qualify."""
+    target = _normalize("Load Game")
+    best: tuple[str, int, int, int, int] | None = None
+    for text, x, y, w, h in ocr_results:
+        if y < win.y + 0.9 * win.h or x > win.x + 0.55 * win.w:
+            continue
+        token = _normalize(text)
+        if len(token) >= 3 and token in target and (best is None or w > best[3]):
+            best = (text, x, y, w, h)
+    return best
+
+
+def _click_load_game_button() -> str:
+    """Click the Load Game screen's bottom 'Load Game' button; return the step.
+
+    Order: exact OCR match (prefer_bottom, excluding the page title) ->
+    bottom-left OCR fragment of the button text -> positional click at
+    `_LOAD_GAME_BUTTON_REL`. Whether the load actually engaged is judged by
+    the caller's waiter (FireTuner port drop), never assumed here."""
+    if _click_text(
+        "Load Game", timeout=10, post_delay=1, prefer_bottom=True, min_y_fraction=0.7
+    ):
+        return "Clicked Load Game button"
+    win = _find_game_window()
+    if win is None:
+        return "Load Game button not found (no game window)"
+    try:
+        results = _ocr_game_window(win)
+    except Exception:
+        results = []
+    fragment = _find_load_game_fragment(results, win)
+    _bring_to_front(pid=win.pid)
+    time.sleep(0.3)
+    if fragment is not None:
+        text, x, y, _w, _h = fragment
+        log.info("Load Game button: OCR fragment %r at (%d,%d) -- clicking", text, x, y)
+        _click(x, y)
+        time.sleep(1)
+        return f"Clicked Load Game button via OCR fragment {text!r}"
+    x = int(win.x + _LOAD_GAME_BUTTON_REL[0] * win.w)
+    y = int(win.y + _LOAD_GAME_BUTTON_REL[1] * win.h)
+    log.info("Load Game button: OCR could not read it -- positional click at (%d,%d)", x, y)
+    _click(x, y)
+    time.sleep(1)
+    return "Clicked Load Game button by position (OCR could not read it)"
+
+
 def _navigate_to_save_sync(
     save_name: str,
     tab: str | None = "Autosaves",
@@ -2824,14 +2887,7 @@ def _navigate_to_save_sync(
     steps.append(f"Selected save {save_name}")
 
     log.info("[5/6] Clicking 'Load Game' button (bottom, not title)...")
-    # prefer_bottom picks the button over the page title. If the only match
-    # is the title (y < 50% of screen), skip it — the button wasn't detected.
-    if not _click_text(
-        "Load Game", timeout=10, post_delay=1, prefer_bottom=True, min_y_fraction=0.7
-    ):
-        steps.append("Load Game button not found (may have loaded from double-click)")
-    else:
-        steps.append("Clicked Load Game button")
+    steps.append(_click_load_game_button())
 
     # Selection is done. The load itself is NOT waited on here: the async
     # caller (`load_save_from_menu`) hands off to `continue_after_lua_load`,
