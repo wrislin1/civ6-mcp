@@ -512,3 +512,96 @@ def test_freeze_cli_writes_candidate_with_the_computed_scorer_fingerprint(tmp_pa
     payload = yaml.safe_load(out_path.read_text())
     assert payload["evidence_schema_version"] == "1.0.0"
     assert payload["scorer_fingerprint"] == scorer_source_fingerprint(repo_root)
+
+
+# ---------------------------------------------------------------------------
+# Task 12 preregistration: every frozen choice in the real campaign file.
+# ---------------------------------------------------------------------------
+
+import re as _re
+from pathlib import Path as _Path
+
+_REPO = _Path(__file__).resolve().parents[2]
+_CAMPAIGN = _REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v1.yaml"
+_POSITION = _REPO / "benchmarks" / "positions" / "builder-economy-cal-v1.yaml"
+
+
+@pytest.fixture(scope="module")
+def frozen_campaign():
+    return load_campaign_manifest(_CAMPAIGN)
+
+
+def test_frozen_campaign_block_order_and_seeds(frozen_campaign):
+    assert [m.block_id for m in frozen_campaign.models] == ["gemma4-26b", "qwen3.6-27b"]
+    assert [m.model for m in frozen_campaign.models] == ["gemma4-26b", "qwen3.6-27b"]
+    assert {m.endpoint_id for m in frozen_campaign.models} == {"home-gpu0-cpp"}
+    assert list(frozen_campaign.seeds) == [101, 211, 307, 401, 503, 601, 701, 809, 907, 1009, 1103, 1201]
+    assert frozen_campaign.order == "abba"
+    assert frozen_campaign.driver == "single_turn"
+    assert frozen_campaign.fresh_conversation_per_trial is True
+    assert frozen_campaign.retry_policy.max_attempts == 1
+
+
+def test_frozen_campaign_arms_differ_only_by_tool_tier(frozen_campaign):
+    arms = list(frozen_campaign.arms)
+    assert [a.arm_id for a in arms] == ["minimal", "standard"]
+    assert [a.tools for a in arms] == ["minimal", "standard"]
+    assert all(dict(a.options) == {} for a in arms)
+    for block in frozen_campaign.models:
+        assert block.briefing_required is False
+        assert dict(block.chat_template_kwargs) == {"enable_thinking": False}
+
+
+def test_frozen_campaign_prompt_leaks_nothing_about_the_position(frozen_campaign):
+    prompt = frozen_campaign.prompt.lower()
+    forbidden = [
+        "builder", "repair", "pillag", "pasture", "quarry", "forest", "horses", "iron", "stone",
+        "korea", "seondeok", "jeonju", "jinju", "gwangju", "gyeongju",
+        "briefing", "tracker", "playbook", "memory", "channel", "attention", "rubric",
+    ]
+    assert not [w for w in forbidden if w in prompt]
+    assert not _re.search(r"\b\d{1,3}\s*,\s*\d{1,3}\b", prompt)   # no coordinates
+    assert not _re.search(r"\b\d{6,}\b", prompt)                    # no unit/city ids
+    assert "finish_trial" in prompt
+
+
+def test_frozen_campaign_schedule_is_24_trials_per_block_with_balanced_audits(frozen_campaign):
+    from civ_mcp.arena.benchmark_schedule import compile_schedule
+
+    for block in frozen_campaign.models:
+        suite = suite_for_block(frozen_campaign, block)
+        schedule = compile_schedule(suite)
+        trials = schedule["trials"] if isinstance(schedule, dict) else schedule
+        assert len(trials) == 24
+        indices = [t.index for t in trials]
+        assert indices == list(range(1, 25))
+        arms = [t.arm_id for t in trials]
+        assert arms[:4] == ["minimal", "standard", "standard", "minimal"]      # ABBA
+        audited = [t for t in trials if t.index in (1, 2, 11, 12, 23, 24)]
+        assert [t.arm_id for t in audited].count("minimal") == 3
+        assert [t.arm_id for t in audited].count("standard") == 3
+        # early / middle / late coverage
+        assert {t.index for t in audited} == {1, 2, 11, 12, 23, 24}
+
+
+def test_frozen_campaign_tools_expose_finish_trial_and_never_end_turn(frozen_campaign):
+    from civ_mcp.arena.benchmark_agent import resolved_benchmark_tools
+
+    for arm in frozen_campaign.arms:
+        names = {schema["function"]["name"] if "function" in schema else schema["name"]
+                 for schema in resolved_benchmark_tools(arm.tools)}
+        assert "finish_trial" in names
+        assert "end_turn" not in names
+
+
+def test_frozen_campaign_effect_threshold_is_four_over_the_rubric_maximum(frozen_campaign):
+    from civ_mcp.arena.benchmark_manifest import load_position_manifest
+
+    position = load_position_manifest(_POSITION)
+    rubric_max = sum(max(level["score"] for level in task["levels"]) for task in position.rubric)
+    assert rubric_max == 12
+    assert frozen_campaign.rules.minimum_median_normalized_delta == pytest.approx(4 / rubric_max)
+    assert frozen_campaign.rules.pairs_per_model == 12
+    assert frozen_campaign.rules.minimum_decided_pairs == 10
+    assert frozen_campaign.rules.minimum_standard_wins == 10
+    assert frozen_campaign.rules.required_audits_per_arm == 3

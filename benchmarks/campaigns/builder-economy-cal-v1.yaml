@@ -1,0 +1,38 @@
+campaign_id: builder-economy-cal-v1
+campaign_schema_version: 1.0.0
+position: builder-economy-cal-v1
+position_provenance: ../provenance/builder-economy-cal-v1-authoring.json
+contracts: ../contracts/instrument-v1-candidate.yaml
+prompt: >-
+  Assess the current game situation, issue the best available orders for this
+  turn, and call finish_trial when you are done.
+models:
+  - block_id: gemma4-26b
+    model: gemma4-26b
+    endpoint_id: home-gpu0-cpp
+    sampling: {temperature: 0.2, top_p: 0.95, seed: 101, max_tokens: 3072}
+    chat_template_kwargs: {enable_thinking: false}
+    briefing_required: false
+  - block_id: qwen3.6-27b
+    model: qwen3.6-27b
+    endpoint_id: home-gpu0-cpp
+    sampling: {temperature: 0.2, top_p: 0.95, seed: 101, max_tokens: 6144}
+    chat_template_kwargs: {enable_thinking: false}
+    briefing_required: false
+arms:
+  - {arm_id: minimal, tools: minimal, options: {}}
+  - {arm_id: standard, tools: standard, options: {}}
+seeds: [101, 211, 307, 401, 503, 601, 701, 809, 907, 1009, 1103, 1201]
+order: abba
+driver: single_turn
+fresh_conversation_per_trial: true
+retry_policy: {max_attempts: 1, backoff_s: 0.0}
+max_steps: 8
+result_char_cap: 4000
+audit_indices: [1, 2, 11, 12, 23, 24]
+rules:
+  pairs_per_model: 12
+  minimum_decided_pairs: 10
+  minimum_standard_wins: 10
+  minimum_median_normalized_delta: 0.3333333333333333
+  required_audits_per_arm: 3
