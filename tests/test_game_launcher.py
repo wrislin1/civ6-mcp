@@ -1708,3 +1708,100 @@ def test_find_text_matches_ocr_reading_of_deployed_benchmark_save_name():
     # The 0/O fold keeps working and the two rows stay distinct.
     assert _find_text(ocr, "0_MCP_0186", exact=True)[0] == "O MCP 0186"
     assert _find_text(ocr, "0_MCP_0181", exact=True) is None
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-26 live (Task 11 Step 6, menu-reachability attempt 2): the OCR
+# loader selected the deployed save correctly, then its legacy continuation
+# (fixed 15s wait, OCR polling with PrintWindow/SetForegroundWindow during the
+# DX12 load, then a blind 9-point positional click grid) fired while the huge
+# map was still loading. The frame loop stopped at the exact second of the
+# last grid click. After selection the loader must hand off to
+# continue_after_lua_load (classification-gated Escape, port-drop
+# verification) and never sleep, OCR-poll, or grid-click on its own.
+# ---------------------------------------------------------------------------
+
+
+def _boom(*_a, **_k):
+    raise AssertionError("legacy post-select continuation must not run")
+
+
+def test_navigate_to_save_sync_stops_after_selecting_and_clicking_load(monkeypatch):
+    from civ_mcp import game_launcher as g
+
+    monkeypatch.setattr(g, "_require_gui_deps", lambda: None)
+    monkeypatch.setattr(g, "is_game_running", lambda: True)
+    monkeypatch.setattr(g, "_dismiss_crash_dialog", lambda: None)
+    monkeypatch.setattr(g, "_click_aspyr_launcher_sync", lambda: None)
+    monkeypatch.setattr(g, "_click_text", lambda *a, **k: True)
+    monkeypatch.setattr(g, "_wait_for_text", lambda *a, **k: ("Autosaves", 1, 1, 1, 1))
+    monkeypatch.setattr(g, "_click_save_in_scrollable_list", lambda name: True)
+    monkeypatch.setattr(g.time, "sleep", _boom)
+    monkeypatch.setattr(g, "_click_continue_positional", _boom)
+    monkeypatch.setattr(g, "_ocr_game_window", _boom)
+    monkeypatch.setattr(g, "_ocr_fullscreen", _boom)
+    monkeypatch.setattr(g, "_is_tuner_port_open", _boom)
+
+    result = g._navigate_to_save_sync("BUILDER_ECONOMY_CAL_V1", None)
+
+    assert result.startswith("Save selected (")
+    assert "Selected save BUILDER_ECONOMY_CAL_V1" in result
+    assert "Clicked Load Game button" in result
+
+
+@pytest.mark.asyncio
+async def test_load_save_from_menu_hands_selected_save_to_the_classify_gated_waiter(
+    monkeypatch, tmp_path
+):
+    from civ_mcp import game_launcher as g
+
+    (tmp_path / "auto").mkdir()
+    (tmp_path / "BUILDER_ECONOMY_CAL_V1.Civ6Save").write_bytes(b"x")
+    monkeypatch.setattr(g, "SINGLE_SAVE_DIR", str(tmp_path))
+    monkeypatch.setattr(g, "SAVE_DIR", str(tmp_path / "auto"))
+    monkeypatch.setattr(
+        g,
+        "_navigate_to_save_sync",
+        lambda name, tab, launched_now=False: (
+            "Save selected (40s). Steps: Clicked Single Player, Clicked Load Game, "
+            f"Default save list (regular saves), Selected save {name}, Clicked Load Game button."
+        ),
+    )
+    continued: list[str] = []
+
+    async def fake_continue(name):
+        continued.append(name)
+        return f"Loaded {name}: world ready, FireTuner port is open."
+
+    monkeypatch.setattr(g, "continue_after_lua_load", fake_continue)
+    monkeypatch.setattr(g, "_click_continue_positional", _boom)
+    monkeypatch.setattr(g.time, "sleep", _boom)
+
+    result = await g.load_save_from_menu("BUILDER_ECONOMY_CAL_V1")
+
+    assert continued == ["BUILDER_ECONOMY_CAL_V1"]
+    assert result.startswith("Loaded BUILDER_ECONOMY_CAL_V1") and "world ready" in result
+    assert "Selected save BUILDER_ECONOMY_CAL_V1" in result
+
+
+@pytest.mark.asyncio
+async def test_load_save_from_menu_returns_navigation_failure_without_waiting(monkeypatch, tmp_path):
+    from civ_mcp import game_launcher as g
+
+    (tmp_path / "auto").mkdir()
+    (tmp_path / "NOPE.Civ6Save").write_bytes(b"x")
+    monkeypatch.setattr(g, "SINGLE_SAVE_DIR", str(tmp_path))
+    monkeypatch.setattr(g, "SAVE_DIR", str(tmp_path / "auto"))
+    monkeypatch.setattr(
+        g, "_navigate_to_save_sync",
+        lambda name, tab, launched_now=False: "FAILED: Save 'NOPE' not found. Steps completed: Clicked Single Player",
+    )
+
+    async def fake_continue(name):
+        raise AssertionError("waiter must not run when selection failed")
+
+    monkeypatch.setattr(g, "continue_after_lua_load", fake_continue)
+
+    result = await g.load_save_from_menu("NOPE")
+
+    assert result.startswith("FAILED:")
