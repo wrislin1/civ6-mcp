@@ -197,6 +197,12 @@ class BackendProbe:
     # tests) or when the live probe's best-effort listing call failed/was
     # unsupported.
     served_model_ids: tuple[str, ...] = ()
+    # 2026-09-26: which input proved seed sensitivity -- "locked_prompt"
+    # (the seed+1 call on the benchmark prompt differed) or
+    # "entropy_canary" (the locked prompt's output had peaked, so seed
+    # sensitivity was measured on a high-entropy canary prompt). `None`
+    # when no sensitivity test ran (no seed / greedy / inconsistent).
+    seed_sensitivity_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -217,6 +223,42 @@ def _reply_signature(reply) -> str:
         for tc in (getattr(reply, "tool_calls", None) or [])
     )
     return repr((getattr(reply, "text", None), tool_sig))
+
+
+_SEED_CANARY_MESSAGES = [
+    {
+        "role": "user",
+        "content": (
+            "Write one random sentence of about twelve words about anything at all. "
+            "Reply with the sentence only."
+        ),
+    }
+]
+_SEED_CANARY_MAX_TOKENS = 48
+
+
+async def _entropy_canary_seed_check(backend, sampling, locked_seed: int, record_error) -> tuple[bool, str | None]:
+    """Seed sensitivity on a high-entropy input: two calls at the locked seed
+    must agree and one call at seed+1 must differ, all at temperature 1.0 /
+    top_p 1.0 so the seed actually has something to select. Restores
+    `backend.sampling` on every path. Returns (honored, verdict_override)
+    where verdict_override is "probe_error" when a call failed."""
+    canary_base = replace(
+        sampling, temperature=1.0, top_p=1.0, max_tokens=_SEED_CANARY_MAX_TOKENS
+    )
+    try:
+        signatures: list[str] = []
+        for seed in (locked_seed, locked_seed, locked_seed + 1):
+            backend.sampling = replace(canary_base, seed=seed)
+            reply = await backend.chat(_SEED_CANARY_MESSAGES, [])
+            signatures.append(_reply_signature(reply))
+    except Exception as exc:
+        record_error(exc, str(exc))
+        return False, "probe_error"
+    finally:
+        backend.sampling = sampling
+    honored = signatures[0] == signatures[1] and signatures[2] != signatures[0]
+    return honored, None
 
 
 async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendProbe:
@@ -274,6 +316,7 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
 
     seed_honored = False
     seed_verdict: str | None = None
+    seed_sensitivity_source: str | None = None
     if sampling is None or locked_seed is None:
         seed_verdict = "no_seed_configured"
     elif temperature == 0:
@@ -294,13 +337,26 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
         try:
             varied_reply = await backend.chat(messages, tools)
             seed_honored = _reply_signature(varied_reply) != outputs[0]
-            seed_verdict = "honored" if seed_honored else "not_honored"
+            seed_sensitivity_source = "locked_prompt"
         except Exception as exc:
             _record_error(exc, str(exc))
             seed_honored = False
             seed_verdict = "probe_error"
         finally:
             backend.sampling = sampling
+        if seed_verdict is None and not seed_honored:
+            # 2026-09-26 live: the frozen benchmark prompt yields one
+            # deterministic tool call identical at every seed, so the
+            # locked-prompt seed+1 call can never differ on a healthy
+            # backend whose output has peaked. Measure seed plumbing where
+            # it is observable: a high-entropy canary must be repeatable
+            # at the locked seed and different at seed+1.
+            seed_honored, seed_verdict = await _entropy_canary_seed_check(
+                backend, sampling, locked_seed, _record_error
+            )
+            seed_sensitivity_source = "entropy_canary"
+        if seed_verdict is None:
+            seed_verdict = "honored" if seed_honored else "not_honored"
     else:
         seed_verdict = "not_honored"
 
@@ -314,6 +370,7 @@ async def probe_backend(backend, messages, tools, samples: int = 10) -> BackendP
         error_kinds=tuple(error_kinds),
         seed_verdict=seed_verdict,
         repeated_consistent=repeated_consistent,
+        seed_sensitivity_source=seed_sensitivity_source,
     )
 
 

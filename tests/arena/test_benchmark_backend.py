@@ -772,3 +772,57 @@ async def test_tool_canary_omits_system_prompt_by_default():
 
     for call in backend.calls:
         assert call["messages"][0]["role"] == "user"
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-26 live (Task 12 validation): the frozen prompt yields one
+# deterministic tool call (get_overview) identical at seeds 101/102/103, so
+# "seed+1 must differ" could never hold on a healthy backend whose output
+# has peaked. A plain-text probe at the same endpoint DID differ across
+# seeds. Seed sensitivity is now measured on a high-entropy canary when the
+# locked prompt shows no difference.
+# ---------------------------------------------------------------------------
+
+
+class _FakePeakedBackend(_FakeExactBackend):
+    """Honors the seed, but the locked (tool) prompt has one overwhelmingly
+    likely answer, so the seed never shows through on it."""
+
+    async def chat(self, messages, tools):
+        self.calls += 1
+        if any("random" in str(m.get("content", "")) for m in messages):
+            return Reply(text=f"seed={self.sampling.seed}", tool_calls=[], prompt_tokens=1,
+                         completion_tokens=1, model=self.model)
+        return Reply(text="", tool_calls=[{"name": "get_overview", "arguments": "{}"}],
+                     prompt_tokens=1, completion_tokens=1, model=self.model)
+
+
+@pytest.mark.asyncio
+async def test_probe_backend_proves_seed_on_an_entropy_canary_when_the_locked_prompt_has_peaked():
+    backend = _FakePeakedBackend(
+        sampling=SamplingConfig(temperature=0.2, top_p=0.95, seed=101, max_tokens=3072)
+    )
+    probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [{"name": "get_overview"}], samples=4)
+    assert probe.repeated_consistent is True
+    assert probe.seed_honored is True
+    assert probe.seed_verdict == "honored"
+    assert probe.seed_sensitivity_source == "entropy_canary"
+    assert backend.sampling == SamplingConfig(temperature=0.2, top_p=0.95, seed=101, max_tokens=3072)
+
+
+@pytest.mark.asyncio
+async def test_probe_backend_locked_prompt_sensitivity_is_still_preferred():
+    backend = _FakeExactBackend(sampling=SamplingConfig(temperature=0.2, top_p=1.0, seed=41, max_tokens=64))
+    probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=3)
+    assert probe.seed_verdict == "honored"
+    assert probe.seed_sensitivity_source == "locked_prompt"
+    assert backend.calls == 4   # 3 samples + 1 seed+1 call, no canary needed
+
+
+@pytest.mark.asyncio
+async def test_probe_backend_canary_does_not_rescue_a_seed_ignoring_backend():
+    backend = _FakeIgnoresSeedBackend(sampling=SamplingConfig(temperature=0.2, top_p=1.0, seed=41, max_tokens=64))
+    probe = await probe_backend(backend, [{"role": "user", "content": "act"}], [], samples=3)
+    assert probe.seed_honored is False
+    assert probe.seed_verdict == "not_honored"
+    assert probe.seed_sensitivity_source == "entropy_canary"
