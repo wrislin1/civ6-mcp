@@ -2043,3 +2043,65 @@ def test_load_waiter_supported_by_platform(monkeypatch):
     assert g._load_waiter_supported() is False
     monkeypatch.setattr(g.os.path, "exists", lambda _p: True)
     assert g._load_waiter_supported() is True
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-26 live (Task 12 validation): Profile.csv logs a FRAME row only on
+# slow frames, so a healthy game idling in-world writes nothing for many
+# minutes and the fresh-offset boot-health gate timed out on a live, queryable
+# game. On a clean timeout (no rotation/truncation/missing file) the poll now
+# consults one native signal the wedge memory says a hung game fails:
+# user32.IsHungAppWindow on the game window, re-checked once.
+# ---------------------------------------------------------------------------
+
+
+def test_wait_for_boot_health_timeout_passes_on_a_responsive_game_window(monkeypatch, tmp_path):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    clock = _install_fake_clock(monkeypatch)
+    monkeypatch.setattr(game_launcher.time, "sleep", lambda _s: clock.advance(_s))
+    probes: list[None] = []
+    monkeypatch.setattr(
+        game_launcher, "_game_window_responsive",
+        lambda: probes.append(None) or {"hwnd": 396546, "pid": 30748, "hung": False},
+    )
+
+    result = game_launcher.wait_for_boot_health(str(profile), start_offset=0, min_frame=100, timeout_s=30)
+
+    assert result["ok"] is True
+    assert result["reason"] == "responsive_window_no_slow_frames"
+    assert result["last_frame"] is None
+    assert result["baseline_offset"] == 0
+    assert result["window_probe"] == {"hwnd": 396546, "pid": 30748, "hung": False}
+    assert len(probes) == 2   # confirmed by a spaced re-check
+
+
+def test_wait_for_boot_health_timeout_still_fails_on_a_hung_or_absent_window(monkeypatch, tmp_path):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    clock = _install_fake_clock(monkeypatch)
+    monkeypatch.setattr(game_launcher.time, "sleep", lambda _s: clock.advance(_s))
+
+    monkeypatch.setattr(game_launcher, "_game_window_responsive", lambda: {"hwnd": 1, "pid": 2, "hung": True})
+    result = game_launcher.wait_for_boot_health(str(profile), start_offset=0, min_frame=100, timeout_s=30)
+    assert result["ok"] is False and result["reason"] == "timeout"
+    assert result["window_probe"] == {"hwnd": 1, "pid": 2, "hung": True}
+
+    monkeypatch.setattr(game_launcher, "_game_window_responsive", lambda: None)
+    result = game_launcher.wait_for_boot_health(str(profile), start_offset=0, min_frame=100, timeout_s=30)
+    assert result["ok"] is False and result["reason"] == "timeout"
+    assert result["window_probe"] is None
+
+
+def test_wait_for_boot_health_never_consults_the_window_on_rotation(monkeypatch, tmp_path):
+    profile = tmp_path / "Profile.csv"
+    profile.write_text("")
+    clock = _install_fake_clock(monkeypatch)
+
+    identities = iter([("dev", 1), ("dev", 1), ("dev", 2)])   # third poll: new inode
+    monkeypatch.setattr(game_launcher, "_file_identity", lambda _p: next(identities, ("dev", 2)))
+    monkeypatch.setattr(game_launcher.time, "sleep", lambda _s: clock.advance(_s))
+    monkeypatch.setattr(game_launcher, "_game_window_responsive", _boom)
+
+    result = game_launcher.wait_for_boot_health(str(profile), start_offset=0, min_frame=100, timeout_s=30)
+    assert result["ok"] is False and result["reason"] == "log_rotated"

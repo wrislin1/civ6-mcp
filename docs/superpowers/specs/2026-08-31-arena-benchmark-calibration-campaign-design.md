@@ -236,6 +236,15 @@ Admission runs in this order for every model block.
 - Rotation, truncation, malformed evidence, or timeout fails admission.
 - FireTuner availability is not a substitute because it does not prove native
   render/frame-loop health.
+- Amendment (2026-09-26, live Task 12 validation): `Profile.csv` logs a frame
+  row only on slow frames, so a healthy game idling in-world produces no fresh
+  row for many minutes and the timeout alone rejected a live, queryable game.
+  On a clean timeout only (never on a missing, rotated, or truncated profile)
+  the poll may pass on one additional native signal: the game window is
+  present and `user32.IsHungAppWindow` is false, re-confirmed after a spaced
+  re-check of the same process. The evidence records `reason:
+  responsive_window_no_slow_frames` and the window probe, so a report can
+  distinguish it from fresh-frame evidence. FireTuner is still never consulted.
 
 ### 3. FireTuner ownership
 

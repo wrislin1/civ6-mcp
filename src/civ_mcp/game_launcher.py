@@ -3288,6 +3288,30 @@ def deploy_benchmark_save(source, save_name: str, expected_sha256: str) -> dict:
 _BOOT_HEALTH_MIN_FRAME = 100
 _BOOT_HEALTH_TIMEOUT_S = 240.0
 _BOOT_HEALTH_POLL_INTERVAL_S = 2.0
+_BOOT_HEALTH_RESPONSIVE_RECHECK_S = 5.0
+
+
+def _game_window_responsive() -> dict | None:
+    """Native (win32-only) message-loop liveness of the game window.
+
+    Returns ``{"hwnd", "pid", "hung"}`` when a game window exists, using
+    ``user32.IsHungAppWindow`` (true when the window has not processed
+    input for 5s -- the "Not Responding" ghost the display-detach wedge
+    produced). ``None`` when there is no game window or this is not native
+    Windows; callers treat ``None`` as no evidence, never as healthy."""
+    if sys.platform != "win32":
+        return None
+    try:
+        win = _find_game_window_win32()
+        if win is None:
+            return None
+        import ctypes
+
+        hung = bool(ctypes.windll.user32.IsHungAppWindow(int(win.window_id)))
+        return {"hwnd": int(win.window_id), "pid": int(win.pid), "hung": hung}
+    except Exception:
+        log.debug("game window responsiveness probe failed", exc_info=True)
+        return None
 
 # Native Profile.csv rows look like:
 #   [2026-08-30 10:00:57]\t,            UIManager_Update, 144.91 ms
@@ -3456,6 +3480,31 @@ def wait_for_boot_health(
                 offset += len(consumed)
 
         if time.monotonic() >= deadline:
+            # 2026-09-26 live: Profile.csv logs a FRAME row only on slow
+            # frames, so a healthy game idling in-world writes nothing for
+            # many minutes and this fresh-offset wait timed out on a live,
+            # queryable game (Task 12 validation). On a clean timeout only
+            # -- never on rotation/truncation/missing, which return above
+            # -- consult one native signal a wedged game fails (the
+            # observed wedge showed "Not Responding"): user32's
+            # IsHungAppWindow on the game window, confirmed by a spaced
+            # re-check of the same process. FireTuner is still never
+            # consulted here.
+            probe = _game_window_responsive()
+            if probe and not probe["hung"]:
+                time.sleep(_BOOT_HEALTH_RESPONSIVE_RECHECK_S)
+                recheck = _game_window_responsive()
+                if recheck and not recheck["hung"] and recheck["pid"] == probe["pid"]:
+                    return {
+                        "ok": True,
+                        "reason": "responsive_window_no_slow_frames",
+                        "baseline_offset": start_offset,
+                        "last_frame": last_frame,
+                        "elapsed_s": time.monotonic() - started,
+                        "file_identity": identity,
+                        "profile_path": str(profile_path),
+                        "window_probe": recheck,
+                    }
             return {
                 "ok": False,
                 "reason": "timeout",
@@ -3464,6 +3513,7 @@ def wait_for_boot_health(
                 "elapsed_s": time.monotonic() - started,
                 "file_identity": identity,
                 "profile_path": str(profile_path),
+                "window_probe": probe,
             }
 
         time.sleep(_BOOT_HEALTH_POLL_INTERVAL_S)
