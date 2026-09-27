@@ -61,3 +61,10 @@ and validated on at least one other position.
 - Source `~/.config/riz-llm/.env` into the runner's environment; `--gateway-url http://192.168.20.146:11440/v1`.
 - Both checkouts clean at the freeze commit; non-counting validation first, then `--one-block` for
   gemma4-26b, audit it, then Qwen.
+
+## Result (appended after the campaign, 2026-09-27)
+
+`BLOCKED`: gemma4-26b MODEL_FLOOR_NULL (0/12 decided); qwen3.6-27b MODEL_NULL (12/12 standard wins,
+median Δ 3.0/12 = 0.250 < 0.333). Metric fidelity and tie attribution passed. The stopping rule applies:
+this position is retired for calibration. Report: `benchmark_runs/builder-economy-cal-v3/campaign_report.md`;
+findings: `docs/research/arena-benchmark-builder-calibration-v1-findings.md` section 10.

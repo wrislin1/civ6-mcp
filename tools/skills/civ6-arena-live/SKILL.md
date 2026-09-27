@@ -269,3 +269,6 @@ computed from the live game turn — see "Resume budget accounting" above.
   slow frames); a fresh-frame pass needs the game to be loading or animating.
 - **Hand audits are semantic reads**, never a replay of the scorer's conventions. A scorer correction
   changes the fingerprint and forces a campaign re-freeze and full rerun (~2 h for two 24-trial blocks).
+- **A minimized game window** (`-32000,-32000`, 0x0) makes OCR fail and the screen classifier read
+  `unknown`; the classifier now restores it, but if a reload wait stalls on `unknown`, check window
+  state first (`ShowWindow SW_RESTORE`) before assuming the game is hung.

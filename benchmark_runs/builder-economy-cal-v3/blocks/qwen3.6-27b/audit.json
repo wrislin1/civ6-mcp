@@ -1,0 +1,116 @@
+{
+  "audit_indices": [
+    1,
+    2,
+    11,
+    12,
+    23,
+    24
+  ],
+  "reviewer": "claude-fable-5-1, 2026-09-27; independent semantic read (domain rejection = any call the game refused incl. Error:/ERR:/|BLOCKED; useful = a mutation that itself flips an objective progress sub-predicate; repetition = identical call+result on an unchanged digest)",
+  "session_fingerprint": "d34ff6f6bc8ef4fd2dcaf855317bf6d9e1db07f6e6d661316a3f4279ee9432af",
+  "trials": [
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed101: set_city_production HOLY_SITE MISSING_COORDS and SETTLER CANNOT_START (2 rejections); GRANARY accepted (no canonical change). Builders untouched.",
+      "index": 1,
+      "manual": {
+        "domain_rejections": 2,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "f8034cd6c9eacf815f6c3a551751e4362ecbdbf9f950006ef706cb76016f3625"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed101: recruit ERR:CANNOT_RECRUIT (rejection); FARM with 1769484 on its own tile (mutation, not useful -- repair builder never moves); 1507329->(74,30) [useful]; 1572874->(71,19) iron hill (not useful); pasture (74,30) [useful]; MINE with 1572874 CANNOT_IMPROVE no moves (rejection); attack NOT_AT_WAR (rejection). Pasture 4, repair 1, quarry 1.",
+      "index": 2,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 4,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 2
+      },
+      "seed": 101,
+      "trial_sha256": "82c6fb8a5ba21f51f421945304171eb1b5ef50a7426696e7e01feb498e740fe2"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed601: attack NOT_AT_WAR (rejection); 1769484->(68,23) [useful]; 1507329->(74,30) [useful]; 1572874->(71,19) (not useful); repair [useful]; pasture [useful]; MINE CANNOT_IMPROVE (rejection); two scout moves BLOCKED by foreign territory (2 rejections); one scout moved. Repair 4, pasture 4, quarry 1.",
+      "index": 11,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 4,
+          "quarry-stone": 1,
+          "repair-iron-mine": 4
+        },
+        "useful_actions": 4
+      },
+      "seed": 601,
+      "trial_sha256": "1f4b79695bbdcbb88d568a5318e94aad6995c6f3f0198b2a8acbfb92cd8c53b2"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed601: three off-target builder moves ((73,29),(70,21),(70,22)); 0 useful, 0 rejections.",
+      "index": 12,
+      "manual": {
+        "domain_rejections": 0,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 601,
+      "trial_sha256": "090c3aaf7892232caef85ce6d83ae65d01bfdb3b457569d168d213ac583d98a4"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed1201: recruit ERR:CANNOT_RECRUIT (rejection); 1769484->(68,23) [useful]; repair [useful]; 1572874->(71,19) (not useful). Repair 4.",
+      "index": 23,
+      "manual": {
+        "domain_rejections": 1,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 4
+        },
+        "useful_actions": 2
+      },
+      "seed": 1201,
+      "trial_sha256": "0462639dafc49af5fec084e6f5c8632f7e8a38e08904d139b10b06809e5b629d"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed1201: three off-target builder moves ((70,22),(70,21),(73,29)); 0 useful, 0 rejections.",
+      "index": 24,
+      "manual": {
+        "domain_rejections": 0,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "407433763055ce7c5bd202b1fb67162a7c972d7c3a832d8e566318336a570e12"
+    }
+  ]
+}

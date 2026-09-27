@@ -1,4 +1,4 @@
-# Arena benchmark: builder-economy calibration — findings (campaigns v1 and v2)
+# Arena benchmark: builder-economy calibration — findings (campaigns v1, v2 and v3)
 
 Date: 2026-09-26. Driver: Claude Fable 5.1 (Claude Code session on the gaming PC), operator present.
 Campaign v2 commit: `bf0f0b5`. Full repository suite at that tree: 3153 passed.
@@ -179,3 +179,40 @@ Re-run the preregistration once more as v3 without any change, to establish whet
 sits stably below or above the 4/12 bar; or, before Plan 3, revise the position so that the third
 task is one a mid-size model plausibly attempts, and re-freeze under a new position version. Either
 path keeps the thresholds fixed.
+
+## 10. Campaign v3 (outcome-scored task 3) — BLOCKED; position retired
+
+Preregistered 2026-09-27 (`docs/superpowers/plans/2026-09-27-builder-calibration-v3-preregistration.md`)
+after the uncredited-actions audit showed task 3's level 4 scored the route (forest removed) rather
+than the outcome (stone quarried). Position v2 changed task 3 only; campaign v3 was otherwise
+identical to v2. Run at commit `6872e2d` (full suite 3165 passed), non-counting validation first,
+both blocks admitted on the first counted attempt, no infrastructure retries.
+
+| block | decided | standard wins | median signed Δ (norm.) | outcome |
+|---|---|---|---|---|
+| gemma4-26b | 0 / 12 | 0 | 0.000 | MODEL_FLOOR_NULL |
+| qwen3.6-27b | 12 / 12 | 12 | 0.250 (3.0 / 12) | MODEL_NULL |
+
+Metric fidelity passed on both blocks (all twelve audited indices agree with the scorer); all twelve
+Gemma ties are attributed `model_floor`. Qwen scored standard 6 in seven pairs and 9 in five
+(repair + pasture), never quarrying: in every standard trial it walked the task 3 builder to the
+iron hill at (71,19), so the corrected task 3 predicate never came into play. **Verdict: BLOCKED.**
+
+By the preregistered stopping rule, `BUILDER_ECONOMY_CAL_V1`'s archive is retired for calibration
+under any rubric; the next calibration attempt uses a new position. The contract stays a candidate
+and Plan 3 stays blocked.
+
+Across campaigns Qwen's treatment effect on this position is stable in direction and size: 12/12,
+11/12 and 12/12 standard wins, medians 4.5 (v1, old scorer, not countable), 3.5 and 3.0 of 12. The
+median treatment arm completes a bit less than one full task more than the baseline, which the
+preregistered 4/12 bar does not accept. Read with the audit, the limiting factor is task 3: the model
+consistently prefers the iron hill its own `get_builder_tasks` list marks URGENT over the designated
+stone tile. A replacement position should make every designated task one the model's own tool
+output surfaces as a priority, or score the tool-listed priority rather than an authored one.
+
+Two further loader defects surfaced in v3 preparation and were fixed before counting (`adc64d8`,
+`6872e2d`): the save-list handler acted on results from the game's own menu queries (FileListQuery
+results are broadcast; the main menu fires its own query), and a minimized game window made the
+screen classifier read `unknown` indefinitely. The first v3 run directory, stopped at its
+production-reload gate by the first defect, is retained as
+`benchmark_runs/builder-economy-cal-v3.pre-queryid-fix-1dd405c`.

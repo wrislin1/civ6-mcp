@@ -1,0 +1,4 @@
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":0,"trial_index":1,"ts":"2026-09-27T18:30:21.320100+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":1,"trial_index":1,"ts":"2026-09-27T18:31:27.885921+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":2,"trial_index":2,"ts":"2026-09-27T18:31:27.888034+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":3,"trial_index":2,"ts":"2026-09-27T18:32:38.392930+00:00"}

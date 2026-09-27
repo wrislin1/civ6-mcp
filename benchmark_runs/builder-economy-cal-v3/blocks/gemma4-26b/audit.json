@@ -1,0 +1,116 @@
+{
+  "audit_indices": [
+    1,
+    2,
+    11,
+    12,
+    23,
+    24
+  ],
+  "reviewer": "claude-fable-5-1, 2026-09-27; independent semantic read (domain rejection = any call the game refused incl. Error:/ERR:/|BLOCKED; useful = a mutation that itself flips an objective progress sub-predicate; repetition = identical call+result on an unchanged digest)",
+  "session_fingerprint": "3e872bc7ec032a1fa358934d40926a63f7029b9103bb6bd366a10825380c018b",
+  "trials": [
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed101: three set_research ALREADY_COMPLETED (3 rejections); get_overview repeated identically on an unchanged digest (1 repetition); set_research MACHINERY accepted with no canonical change. Builders untouched.",
+      "index": 1,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 1,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "f13ffb67561986d9139fd570cab8ce29380efd910659d476138dfd6a1deb83e0"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed101: FARM with 1769484 on its own tile (69,22) (mutation, not objective progress); repair on 1572874 NO_IMPROVEMENT; move 1507329 STACKING_CONFLICT; get_map_area; attack NOT_AT_WAR. 3 rejections, 0 repetitions.",
+      "index": 2,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "bc7a9c34676dd4663c828540ec176e41cbf549eb3f29ef4ad2180a6476d8414c"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed601: FARM at (69,22); repair on 1572874 NO_IMPROVEMENT; get_map_area; attack NOT_AT_WAR; swordsman moved 1 tile (mutation, not a builder). 2 rejections, 0 repetitions.",
+      "index": 11,
+      "manual": {
+        "domain_rejections": 2,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 601,
+      "trial_sha256": "4f5fee8f0d774a1123d3d422c9ed0ae5984e2c631ca7468ce4dd0364f4e6e851"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed601: identical shape to trial 1: 3 ALREADY_COMPLETED, repeated get_overview (1 repetition), MACHINERY accepted.",
+      "index": 12,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 1,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 601,
+      "trial_sha256": "5e6e95a6a4ca6deb1f59326def70ae5df454e28dc2bf55aff2f2ef96af579fa8"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed1201: identical shape to trial 11: FARM, NO_IMPROVEMENT, get_map_area, NOT_AT_WAR, swordsman move. 2 rejections, 0 repetitions.",
+      "index": 23,
+      "manual": {
+        "domain_rejections": 2,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "a58d8e9cec43b7e8730f6f74f88c9f64b0f9b98dfc7e6914f121aee77c58fdde"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed1201: 3 ALREADY_COMPLETED, APPRENTICESHIP accepted, swordsman move BLOCKED -> 4 rejections, 0 repetitions, 0 mutations.",
+      "index": 24,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "02a9a37234dad37528e029789b25087ed84f5a7bc921f85e5d2cb9f572c42991"
+    }
+  ]
+}

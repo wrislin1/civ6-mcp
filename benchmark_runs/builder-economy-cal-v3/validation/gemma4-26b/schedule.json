@@ -1,0 +1,1 @@
+{"trials":[{"arm_id":"minimal","index":1,"model":"gemma4-26b","pair_id":"builder-economy-cal-v2:gemma4-26b:seed101:0","position_id":"builder-economy-cal-v2","seed":101},{"arm_id":"standard","index":2,"model":"gemma4-26b","pair_id":"builder-economy-cal-v2:gemma4-26b:seed101:0","position_id":"builder-economy-cal-v2","seed":101}]}

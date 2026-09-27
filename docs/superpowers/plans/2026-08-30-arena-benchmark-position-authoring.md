@@ -1529,6 +1529,10 @@ Expected: local and remote `main` match. Then fast-forward the native Windows ch
 > (11/12 decided, 11 standard wins, median Δ 3.5/12 = 0.292 < 0.333). Metric fidelity and tie
 > attribution passed on both v2 blocks. The contract stays a candidate; Plan 3 remains blocked. See
 > `docs/research/arena-benchmark-builder-calibration-v1-findings.md`.
+>
+> **Update (2026-09-27):** campaign v3 (task 3 scored on the quarry outcome) is also **BLOCKED**: gemma4-26b
+> MODEL_FLOOR_NULL, qwen3.6-27b MODEL_NULL (12/12 wins, median Δ 0.250). Per its stopping rule the
+> builder-economy position is retired for calibration; the next attempt needs a new position.
 
 Plan 2 is complete only when:
 
