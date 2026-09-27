@@ -2265,6 +2265,23 @@ def _classify_frontend_load_state(
     return FrontendLoadState.UNKNOWN
 
 
+def _restore_minimized_window_win32(win: WindowInfo) -> bool:
+    """Restore a minimized (iconic or zero-size) game window. True when a
+    restore was issued; never raises."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import win32con
+        import win32gui
+
+        win32gui.ShowWindow(int(win.window_id), win32con.SW_RESTORE)
+        log.info("Restored minimized game window %s", win.window_id)
+        return True
+    except Exception:
+        log.debug("could not restore minimized game window", exc_info=True)
+        return False
+
+
 def _classify_frontend_load_state_native(
     failures: _FrontendBridgeFailureTracker | None = None,
 ) -> FrontendLoadState:
@@ -2323,6 +2340,14 @@ def _classify_frontend_load_state_native(
         win = _find_game_window_win32()
         if win is None:
             return port_verdict
+        if win.w <= 0 or win.h <= 0:
+            # 2026-09-27 live: a minimized game window (-32000,-32000, 0x0)
+            # has no client area to OCR, so the classifier read UNKNOWN for
+            # minutes at the continue screen and the waiter never pressed.
+            # Restore it, then look it up again.
+            if _restore_minimized_window_win32(win):
+                time.sleep(1.0)
+                win = _find_game_window_win32() or win
         results = _ocr_game_window(win)
     except Exception:
         failures.count += 1

@@ -2105,3 +2105,32 @@ def test_wait_for_boot_health_never_consults_the_window_on_rotation(monkeypatch,
 
     result = game_launcher.wait_for_boot_health(str(profile), start_offset=0, min_frame=100, timeout_s=30)
     assert result["ok"] is False and result["reason"] == "log_rotated"
+
+
+def test_native_classifier_restores_a_minimized_game_window_before_ocr(monkeypatch):
+    """Live 2026-09-27: the game window was minimized (-32000,-32000, 0x0) at
+    the continue screen; OCR raised 'no client area', the classifier said
+    UNKNOWN for minutes, and the waiter never pressed past the screen. A
+    zero-size window must be restored before classifying it."""
+    from civ_mcp.game_launcher import WindowInfo
+
+    minimized = WindowInfo(window_id=396656, x=-32000, y=-32000, w=0, h=0, pid=31752)
+    restored = WindowInfo(window_id=396656, x=960, y=514, w=1920, h=1080, pid=31752)
+    windows = iter([minimized, restored])
+    restores: list[int] = []
+    monkeypatch.setattr(game_launcher.sys, "platform", "win32")
+    monkeypatch.setattr(game_launcher, "_is_tuner_port_open", lambda: True)
+    monkeypatch.setattr(game_launcher, "_winrt_ocr_available", lambda: True)
+    monkeypatch.setattr(game_launcher, "_find_game_window_win32", lambda: next(windows, restored))
+    monkeypatch.setattr(game_launcher, "_restore_minimized_window_win32", lambda win: restores.append(win.window_id) or True)
+    monkeypatch.setattr(game_launcher.time, "sleep", lambda _s: None)
+
+    def ocr(win):
+        if win.w == 0:
+            raise RuntimeError("Window 396656 has no client area (0x0)")
+        return [("KOREAN EMPIRE", 1700, 691, 100, 20), ("CONTINUE (GANNE", 1700, 1412, 120, 20)]
+
+    monkeypatch.setattr(game_launcher, "_ocr_game_window", ocr)
+
+    assert game_launcher._classify_frontend_load_state_native() is game_launcher.FrontendLoadState.CONTINUE_SCREEN
+    assert restores == [396656]
