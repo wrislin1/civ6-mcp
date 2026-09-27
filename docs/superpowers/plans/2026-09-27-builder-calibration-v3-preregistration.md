@@ -41,6 +41,14 @@ than the baseline arm in the median pair". Adding level 3 changes the granularit
 the scale. The decided-pair and standard-win minimums (10 of 12) are unchanged because the pair count
 and the direction question are unchanged.
 
+> **Correction (2026-09-27, after the campaign; original text above kept as frozen):** the phrase
+> "completes one full task more than the baseline arm" is misleading. The baseline arm reaches level 1
+> on every task by observation, so completing one task moves it from 1 to 4 and adds 3 points, not 4.
+> The threshold itself is unchanged and is as the calibration design specifies: one complete task's
+> maximum value (4) over the rubric maximum (12), which in practice asks for somewhat more than one
+> additional completed task in the median pair. v3's median of 3/12 is exactly one additional
+> completed task.
+
 ## Stopping rule
 
 One counted campaign under this freeze, both blocks, reported whatever the result. If the verdict is

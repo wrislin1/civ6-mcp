@@ -194,21 +194,52 @@ both blocks admitted on the first counted attempt, no infrastructure retries.
 | qwen3.6-27b | 12 / 12 | 12 | 0.250 (3.0 / 12) | MODEL_NULL |
 
 Metric fidelity passed on both blocks (all twelve audited indices agree with the scorer); all twelve
-Gemma ties are attributed `model_floor`. Qwen scored standard 6 in seven pairs and 9 in five
-(repair + pasture), never quarrying: in every standard trial it walked the task 3 builder to the
-iron hill at (71,19), so the corrected task 3 predicate never came into play. **Verdict: BLOCKED.**
+Gemma ties are attributed `model_floor`. **Verdict: BLOCKED.**
+
+What the twelve Qwen standard trials completed (final states, `blocks/qwen3.6-27b/trials/`):
+
+| outcome | trials |
+|---|---|
+| mine repaired (task 1) | 9 / 12 |
+| pasture built (task 2) | 8 / 12 |
+| both | 5 / 12 |
+| stone quarried (task 3) | 0 / 12 |
+| task 3 builder ended on the iron hill (71,19) | 8 / 12 |
+
+Five trials completed two tasks (standard 9) and seven completed one (standard 6). The seven one-task
+trials have two causes, neither of them task 3:
+
+- **Mine missed (trials 2, 6, 19):** the first builder action was a farm with the repair builder on
+  its own tile (69,22), which spent its moves; in trial 19 the model then sent a different builder
+  toward the mine.
+- **Pasture missed (trials 10, 15, 22, 23):** the episode reached its 8-turn cap. These trials spent
+  7–9 of their 12–13 calls on observation, finished the repair chain, and ended before acting with
+  the pasture builder.
+
+So the effect was limited by three things together: a farm-in-place attractor on the repair builder's
+own tile, the episode turn budget, and the iron-hill alternative drawing the task 3 builder.
+Consistently completing tasks 1 and 2 alone would give a 6/12 effect against the observed baseline,
+above the gate without any quarry. The corrected task 3 predicate never came into play because the
+quarry was never built.
 
 By the preregistered stopping rule, `BUILDER_ECONOMY_CAL_V1`'s archive is retired for calibration
 under any rubric; the next calibration attempt uses a new position. The contract stays a candidate
 and Plan 3 stays blocked.
 
-Across campaigns Qwen's treatment effect on this position is stable in direction and size: 12/12,
-11/12 and 12/12 standard wins, medians 4.5 (v1, old scorer, not countable), 3.5 and 3.0 of 12. The
-median treatment arm completes a bit less than one full task more than the baseline, which the
-preregistered 4/12 bar does not accept. Read with the audit, the limiting factor is task 3: the model
-consistently prefers the iron hill its own `get_builder_tasks` list marks URGENT over the designated
-stone tile. A replacement position should make every designated task one the model's own tool
-output surfaces as a priority, or score the tool-listed priority rather than an authored one.
+What the evidence supports: under v2 and v3 (each under its own frozen rubric version) the treatment
+arm won 23 of 24 pairs with one tie, a consistent direction on this position. v1 failed metric
+fidelity and does not count toward that. This is not evidence of the instrument's general validity.
+gemma4-26b is at floor on this position under this configuration; nothing here tests it elsewhere.
+
+Next calibration candidate (design direction, not a commitment to a campaign): a deliberately simple
+positive-control position — independently useful objectives, each verified achievable within the
+episode turn budget, outcome-based scoring, no task builder standing on an improvable tile, and few
+competing demands near the task builders. Its claim stays narrow: the instrument detects a known
+capability difference under favourable conditions. The builder-task tool's own priority labels are
+not a scoring authority (that would measure agreement with its heuristic); checking that each
+objective is visible in its output is a design check only. Crediting beneficial alternatives remains
+a separate scoring question that a positive-control position does not answer. Any pilot runs under a
+fixed development budget with failures retained, and counted trials are fresh after the final freeze.
 
 Two further loader defects surfaced in v3 preparation and were fixed before counting (`adc64d8`,
 `6872e2d`): the save-list handler acted on results from the game's own menu queries (FileListQuery
