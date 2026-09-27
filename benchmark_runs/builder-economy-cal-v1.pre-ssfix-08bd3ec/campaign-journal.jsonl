@@ -1,0 +1,4 @@
+{"block_id":"gemma4-26b","event":"admission_gate","gate":"clean_checkout","mode":"validation","ts":"2026-09-26T19:37:44.765825+00:00"}
+{"block_id":"gemma4-26b","event":"admission_gate","gate":"boot_health","mode":"validation","ts":"2026-09-26T19:41:50.173063+00:00"}
+{"block_id":"gemma4-26b","event":"admission_gate","gate":"treatment_can_fire","mode":"validation","ts":"2026-09-26T19:41:50.178311+00:00"}
+{"block_id":"gemma4-26b","code":"tuner_holder_query_failed","event":"admission_failed","mode":"validation","ts":"2026-09-26T19:41:50.307972+00:00"}

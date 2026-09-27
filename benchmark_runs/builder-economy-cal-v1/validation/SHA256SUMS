@@ -1,0 +1,9 @@
+a479e9ac555ceabfb7b0ad877b171d65b2d34308c78754cb384ba160854205ea  benchmark_runs/builder-economy-cal-v1/validation/gemma4-26b-validation-001.json
+0a80731b2b33a2f5a54af681c209061421b935e7ab13c3d7d0f995169d822f9a  benchmark_runs/builder-economy-cal-v1/validation/gemma4-26b/journal.jsonl
+b6e21fdeb7f7f880cf79f4e11517347ac22c317860a2f94d7acaf3474b735c89  benchmark_runs/builder-economy-cal-v1/validation/gemma4-26b/report.json
+4bd19690a4565efd1df10ebcb6ba93d2954017266311b55ffe799a87e4c3f278  benchmark_runs/builder-economy-cal-v1/validation/gemma4-26b/report.md
+3820a3691589bc104ce78ea258395f46da66cd13305ca86d1ad6c4f226803f87  benchmark_runs/builder-economy-cal-v1/validation/gemma4-26b/schedule.json
+99a33091821246ec2bd5aa5f7f917fd54aa2ba3922b3ff0f03b8aac15176004b  benchmark_runs/builder-economy-cal-v1/validation/gemma4-26b/session.json
+be9fabd949d9e0b9fd4d47610c401480d261b40921023b511dc1bcbf755bc52b  benchmark_runs/builder-economy-cal-v1/validation/gemma4-26b/trials/trial-001.json
+a766412abb103889efcc8dd2f2e601fc84ccad1986554521882478a1496a83f2  benchmark_runs/builder-economy-cal-v1/validation/gemma4-26b/trials/trial-002.json
+8870265e97b3c2cdfb40cf257a09a92fe8713422c894253077ea3ead0020f877  benchmark_runs/builder-economy-cal-v1/validation/validation-summary.json

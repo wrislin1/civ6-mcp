@@ -1,0 +1,137 @@
+{
+  "attributions": [
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed1009:9",
+      "transcript_finding": "minimal (trial 20): set_research{\"tech\": \"TECH_MINING\"}->Error: ALREADY_COMPLETED|TECH_MINING is  | set_research{\"tech\": \"TECH_IRON_WORKING\"}->Error: ALREADY_COMPLETED|TECH_IRON_WORKI | set_research{\"tech\": \"TECH_CURRENCY\"}->Error: ALREADY_COMPLETED|TECH_CURRENCY i | set_research{\"tech\": \"TECH_APPRENTICESHIP\"}->RESEARCHING|TECH_APPRENTICESHIP | move_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->CAPTURE_MOVE|70,30|from:73,30|now_at:73,. standard (trial 19): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | get_map_area{\"x\": 72, \"y\": 21}->25 tiles:\n  (70,19): PLAINS (Road) {F:0  | attack_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->Error: NOT_AT_WAR|Cannot attack UNIT_ARC | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->MOVING_TO|71,30|from:73,30|now_at:72,30|. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "19": "01c628158d98e5da9b3910b5cc29b6d36760b6a1d21007077365c641d890d680",
+        "20": "6a2f797c19935258c9a563c21d0b2af4739376c1cf7cf2b013aebe2847b3e81b"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed101:0",
+      "transcript_finding": "minimal (trial 1): move_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->CAPTURE_MOVE|70,30|from:73,30|now_at:73, | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->MOVING_TO|71,30|from:73,30|now_at:72,30| | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi. standard (trial 2): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 12}->Error: NO_MOVES|Builder has no moves rem | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 21}->Error: STACKING_CONFLICT|Friendly UNIT_B | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 22}->CAPTURE_MOVE|72,22|from:74,29|now_at:74,. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "1": "4fc38512566efa9f2c235c884dd051d93aa33a5a6e5092188a9f22f943f0646b",
+        "2": "66ef4297b4381c98dfc1da80839096d5779852fe903e03fd342ff45f7f3b3b63"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed1103:10",
+      "transcript_finding": "minimal (trial 21): move_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->CAPTURE_MOVE|70,30|from:73,30|now_at:73, | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->MOVING_TO|71,30|from:73,30|now_at:72,30| | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi. standard (trial 22): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 21}->Error: STACKING_CONFLICT|Friendly UNIT_B | get_map_area{\"x\": 72, \"y\": 21}->25 tiles:\n  (70,19): PLAINS (Road) {F:0  | attack_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->Error: NOT_AT_WAR|Cannot attack UNIT_ARC. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "21": "653614ee554e86cd96dab00c0a250c8f8b759c0b04e6724336044370be464320",
+        "22": "633376f942239a3841427d8a9e0e3ddb2b8c03749bb75e856a269ae375056159"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed1201:11",
+      "transcript_finding": "minimal (trial 24): set_research{\"tech\": \"TECH_MINING\"}->Error: ALREADY_COMPLETED|TECH_MINING is  | set_research{\"tech\": \"TECH_IRON_WORKING\"}->Error: ALREADY_COMPLETED|TECH_IRON_WORKI | set_research{\"tech\": \"TECH_CURRENCY\"}->Error: ALREADY_COMPLETED|TECH_CURRENCY i | get_overview{}->Turn 100 | Korea (Seondeok) | Score: 321 | set_research{\"tech\": \"TECH_MACHINERY\"}->RESEARCHING_GAMECORE|TECH_MACHINERY. standard (trial 23): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 21}->Error: STACKING_CONFLICT|Friendly UNIT_B | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 23}->MOVING_TO|72,23|from:74,29|now_at:74,27| | get_map_area{\"x\": 72, \"y\": 21}->25 tiles:\n  (70,19): PLAINS (Road) {F:0 . Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "23": "07aba9627863263e347f87fc634a20eba8d5306198d4b9611338503397e7c11d",
+        "24": "06b00ef4f864b2ff8b859259f82ba7ba03db48ae2551e59df490859bcb606267"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed211:1",
+      "transcript_finding": "minimal (trial 4): move_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->CAPTURE_MOVE|70,30|from:73,30|now_at:73, | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->MOVING_TO|71,30|from:73,30|now_at:72,30| | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi. standard (trial 3): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 12}->Error: NO_MOVES|Builder has no moves rem | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 21}->Error: STACKING_CONFLICT|Friendly UNIT_B | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 22}->CAPTURE_MOVE|72,22|from:74,29|now_at:74,. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "3": "dbb019bdd1251f1acd34be1a0cae6a2a0ddf423ca6d39a6c10d8a40d1b638f58",
+        "4": "c762b588ed8ed0f28c7a75271a02524e5944c34452342de244e2d7c647791a79"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed307:2",
+      "transcript_finding": "minimal (trial 5): set_research{\"tech\": \"TECH_MINING\"}->Error: ALREADY_COMPLETED|TECH_MINING is  | set_research{\"tech\": \"TECH_IRON_WORKING\"}->Error: ALREADY_COMPLETED|TECH_IRON_WORKI | set_research{\"tech\": \"TECH_CURRENCY\"}->Error: ALREADY_COMPLETED|TECH_CURRENCY i | get_overview{}->Turn 100 | Korea (Seondeok) | Score: 321 | set_research{\"tech\": \"TECH_MACHINERY\"}->RESEARCHING_GAMECORE|TECH_MACHINERY. standard (trial 6): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 12}->Error: NO_MOVES|Builder has no moves rem | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 21}->Error: STACKING_CONFLICT|Friendly UNIT_B | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 22}->CAPTURE_MOVE|72,22|from:74,29|now_at:74,. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "5": "c7b24d9157c5f397f5896d2be933b949ef880f619fa8d9a46f64705e3cdd0163",
+        "6": "e03cedc8571bd92ecfbfa4e97bc6cf04e25d7afae7b5dc9c5109f1e8dbd7b9ad"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed401:3",
+      "transcript_finding": "minimal (trial 8): set_research{\"tech\": \"TECH_MINING\"}->Error: ALREADY_COMPLETED|TECH_MINING is  | set_research{\"tech\": \"TECH_IRON_WORKING\"}->Error: ALREADY_COMPLETED|TECH_IRON_WORKI | get_overview{}->Turn 100 | Korea (Seondeok) | Score: 321 | set_research{\"tech\": \"TECH_CURRENCY\"}->Error: ALREADY_COMPLETED|TECH_CURRENCY i | set_research{\"tech\": \"TECH_MACHINERY\"}->RESEARCHING_GAMECORE|TECH_MACHINERY. standard (trial 7): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 21}->Error: STACKING_CONFLICT|Friendly UNIT_B | get_map_area{\"x\": 72, \"y\": 21}->25 tiles:\n  (70,19): PLAINS (Road) {F:0  | attack_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->Error: NOT_AT_WAR|Cannot attack UNIT_ARC. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "7": "1c4c2e1ad1a4771923aa3e5601e9cd7f87a2dd83fc411ecbca3d7cf054aa5d1b",
+        "8": "51edba17fb188d856a12b779a93a7f4d4a7e30d7f6d2db2d0303e8f56a322276"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed503:4",
+      "transcript_finding": "minimal (trial 9): move_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->CAPTURE_MOVE|70,30|from:73,30|now_at:73, | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->MOVING_TO|71,30|from:73,30|now_at:72,30| | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->Error: NO_MOVES|Unit has no movement poi. standard (trial 10): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 21}->Error: STACKING_CONFLICT|Friendly UNIT_B | get_map_area{\"x\": 72, \"y\": 21}->25 tiles:\n  (70,19): PLAINS (Road) {F:0  | attack_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->Error: NOT_AT_WAR|Cannot attack UNIT_ARC. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "10": "76ede66f32a5268bd6a1dfb2c855d8dde5fe83c846b9c3b7b84ae0241d9f7437",
+        "9": "9db677e2707b77bf72ee572b7611eef7978886a94121d4692bb0a1c6e9139aa0"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed601:5",
+      "transcript_finding": "minimal (trial 12): set_research{\"tech\": \"TECH_MINING\"}->Error: ALREADY_COMPLETED|TECH_MINING is  | set_research{\"tech\": \"TECH_IRON_WORKING\"}->Error: ALREADY_COMPLETED|TECH_IRON_WORKI | set_research{\"tech\": \"TECH_CURRENCY\"}->Error: ALREADY_COMPLETED|TECH_CURRENCY i | get_overview{}->Turn 100 | Korea (Seondeok) | Score: 321 | set_research{\"tech\": \"TECH_MACHINERY\"}->RESEARCHING_GAMECORE|TECH_MACHINERY. standard (trial 11): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "11": "b6c05b08e595ed608e893f87b5e28aa0c815ee212c97ec6ea568c8453bb5b422",
+        "12": "a2d219a455d7d6dc6c16732b5d46cfc7560b950494345e15b4b90d398777b4ad"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed701:6",
+      "transcript_finding": "minimal (trial 13): set_research{\"tech\": \"TECH_MINING\"}->Error: ALREADY_COMPLETED|TECH_MINING is  | set_research{\"tech\": \"TECH_IRON_WORKING\"}->Error: ALREADY_COMPLETED|TECH_IRON_WORKI | set_research{\"tech\": \"TECH_CURRENCY\"}->Error: ALREADY_COMPLETED|TECH_CURRENCY i | get_overview{}->Turn 100 | Korea (Seondeok) | Score: 321 | set_research{\"tech\": \"TECH_CONSTRUCTION\"}->Error: ALREADY_COMPLETED|TECH_CONSTRUCTI. standard (trial 14): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | get_map_area{\"x\": 72, \"y\": 21}->25 tiles:\n  (70,19): PLAINS (Road) {F:0  | attack_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->Error: NOT_AT_WAR|Cannot attack UNIT_ARC | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->MOVING_TO|71,30|from:73,30|now_at:72,30|. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "13": "08dafa9789e02dc61eb859b37bea23a3c3b8233d93fd49d154fdce15d37de221",
+        "14": "e9b7a3c259ee1f73ba9902b19c281a469f97fa39583b5d3b1890f4c8e329c052"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed809:7",
+      "transcript_finding": "minimal (trial 16): set_research{\"tech\": \"TECH_MINING\"}->Error: ALREADY_COMPLETED|TECH_MINING is  | set_research{\"tech\": \"TECH_IRON_WORKING\"}->Error: ALREADY_COMPLETED|TECH_IRON_WORKI | set_research{\"tech\": \"TECH_CURRENCY\"}->Error: ALREADY_COMPLETED|TECH_CURRENCY i | set_research{\"tech\": \"TECH_MACHINERY\"}->RESEARCHING_GAMECORE|TECH_MACHINERY | move_unit{\"unit_index\": 12, \"x\": 69, \"y\": 22}->Error: STACKING_CONFLICT|Friendly UNIT_B. standard (trial 15): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | move_unit{\"unit_index\": 1, \"x\": 72, \"y\": 21}->Error: STACKING_CONFLICT|Friendly UNIT_B | get_map_area{\"x\": 72, \"y\": 21}->25 tiles:\n  (70,19): PLAINS (Road) {F:0  | attack_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->Error: NOT_AT_WAR|Cannot attack UNIT_ARC. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "15": "7f4494c26dd26889b6a5de995c5b390b728f88fe9131bf4036a3b9558aa4d40c",
+        "16": "898070d50699261575459bb518cb4883c8962c5eb02f5c12070c847703a858ca"
+      }
+    },
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py: the same rubric scores 2 per task when each builder stands on its target and 4 per task after repair / pasture / forest removal (level 4 reached live in Task 11 Step 4 through the identical GameState methods). The rubric discriminates; the model did not attempt the tasks in either arm.",
+      "final_state_finding": "Both arms end with the iron mine at (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on any target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:gemma4-26b:seed907:8",
+      "transcript_finding": "minimal (trial 17): set_research{\"tech\": \"TECH_MINING\"}->Error: ALREADY_COMPLETED|TECH_MINING is  | set_research{\"tech\": \"TECH_IRON_WORKING\"}->Error: ALREADY_COMPLETED|TECH_IRON_WORKI | set_research{\"tech\": \"TECH_CURRENCY\"}->Error: ALREADY_COMPLETED|TECH_CURRENCY i | set_research{\"tech\": \"TECH_APPRENTICESHIP\"}->RESEARCHING|TECH_APPRENTICESHIP | move_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->CAPTURE_MOVE|70,30|from:73,30|now_at:73,. standard (trial 18): improve_tile{\"improvement_name\": \"IMPROVEMENT_FARM\", \"unit_index\": 12}->IMPROVING|IMPROVEMENT_FARM|69,22 | repair_improvement{\"unit_index\": 10}->Error: NO_IMPROVEMENT|No improvement on  | get_map_area{\"x\": 72, \"y\": 21}->25 tiles:\n  (70,19): PLAINS (Road) {F:0  | attack_unit{\"unit_index\": 3, \"x\": 70, \"y\": 30}->Error: NOT_AT_WAR|Cannot attack UNIT_ARC | move_unit{\"unit_index\": 3, \"x\": 71, \"y\": 30}->MOVING_TO|71,30|from:73,30|now_at:72,30|. Neither arm ever targeted (68,23) repair, (74,30) pasture or (71,21) forest removal; standard's only mutations were a FARM on the repair builder's own tile (69,22) and off-target unit moves.",
+      "trial_sha256": {
+        "17": "091975b5e1072ef2ff056127daba1e70b111281b4c5026cc1e35dc5aaea11d1f",
+        "18": "e99f71fdc52ea99f43e708401e97c756507ca50c54f29850aaa414626ea68512"
+      }
+    }
+  ],
+  "session_fingerprint": "c10108858600d22d8a01233cbc245595a6b55970b254161546799be15528eb78"
+}

@@ -1,0 +1,16 @@
+{
+  "attributions": [
+    {
+      "attribution": "model_floor",
+      "counterfactual_fixture_result": "tests/arena/test_builder_economy_position.py scores 2 per task with each builder on its target and 4 after the intended mutations; in this very block the same rubric awarded standard 6-10 in the other eleven pairs when the model moved the right builder and acted (e.g. trial 23: repair 4, pasture 4). The rubric discriminates; in this pair the standard arm never applied its extra tools to the intended tiles.",
+      "final_state_finding": "Both arms end with (68,23) still pillaged, (74,30) unimproved, forest still on (71,21); no builder on a target tile; standard's repair builder lost one charge to the off-target farm.",
+      "pair_id": "builder-economy-cal-v1:qwen3.6-27b:seed701:6",
+      "transcript_finding": "minimal (trial 13): eight moves -- swordsman toward (70,30) twice (BLOCKED, then 1 tile), builders 1507329->(73,29), 1572874->(70,21), 1769484->(71,22) all off-target, an archer move BLOCKED, two NO_MOVES errors; never a target tile. standard (trial 14): get_builder_tasks listed the (68,23) repair as URGENT with the nearest builder, but the model then spent five steps on tech/great-people/far map areas (Maya, Nan Madol, tundra), a recruit refused ERR:CANNOT_RECRUIT, an attack NOT_AT_WAR, then built a FARM with the repair builder on its own tile (69,22) and moved the WRONG builder (1572874) toward the mine, stopping at (70,21). No intended action was attempted with the right builder.",
+      "trial_sha256": {
+        "13": "99b1fadf3857ac82ac8274c1cb69410767de2cca06833eac7f152004040ad2a3",
+        "14": "3f21fc2ce492b69e28aff1e1f314f9ba519497969294ea06c97e48e1eb6a3bc9"
+      }
+    }
+  ],
+  "session_fingerprint": "d8edd9e1b112676c70628d5f0b263b9725a96ad08563ecc20649f6e9cc5add58"
+}

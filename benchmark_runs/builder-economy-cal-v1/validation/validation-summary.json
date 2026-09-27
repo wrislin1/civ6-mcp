@@ -1,0 +1,24 @@
+{
+  "block": "gemma4-26b",
+  "campaign_commit": "b1d35fb9db115c3b835f4a33883cae9d15f391e5",
+  "campaign_fingerprint": "f348942598a4894bb7c423947619b5d7cda8481c48468e3ad7e4f09ac8f49bba",
+  "campaign_id": "builder-economy-cal-v1",
+  "checks": {
+    "all_live_gates_passed": true,
+    "automated_metrics_match_transcripts": "minimal: 3 domain rejections, 1 repetition, 0 mutations; standard: 4 domain rejections, 1 mutation, 0 useful",
+    "both_arms_completed": "step_limit after 8 steps each (neither called finish_trial; canaries prove the tool works)",
+    "counted_report_refuses_validation_evidence": "refused: primary block 0/24 trials committed",
+    "minimal_reached_level_1_all_tasks": "rubric 3/12 via get_units observation",
+    "no_writes_under_counted_blocks": true,
+    "popup_hygiene": "POPUPS|none",
+    "production_reload_verified": true,
+    "report_regenerates_byte_identically": true,
+    "seed_honored": true,
+    "seed_sensitivity_source": "entropy_canary (locked prompt peaked: identical get_overview call at seeds 101/102/103)",
+    "standard_intended_actions_legal": "proven live in Task 11 Step 4 through the same GameState methods; validation transcript executed improve_tile successfully",
+    "starting_digest_exact": "1acfff788dff6fa126f452c57e66addab61f1a536ff492d9ee819ab8343c0c21",
+    "tool_canaries_both_arms_finish_trial_ok": true
+  },
+  "non_counting": true,
+  "validation_record": "gemma4-26b-validation-001.json"
+}

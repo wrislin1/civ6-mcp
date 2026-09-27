@@ -247,3 +247,25 @@ readback):
 
 Resume budgets: remaining rounds × configured seats (4 for channels v6-v9),
 computed from the live game turn — see "Resume budget accounting" above.
+
+## Benchmark runner sessions (learned 2026-09-26)
+
+- **Stop the Claude session's own `civ-mcp` before any benchmark CLI** (`civ-arena-benchmark`,
+  `civ-arena-benchmark-position`). Its background watchers auto-reconnect the moment the game is
+  up and hold the single FireTuner slot; native and WSL probes are both refused while it lives.
+  `kill -9` the `civ-mcp` python and its `uv run` parent; the session loses the civ6 MCP tools.
+- **Launch from WSL** when the MCP `launch_game` is unavailable:
+  `cd /mnt/c/Users/wrisl && cmd.exe /c start "" "steam://run/289070"`, then
+  `civ6_launcher_bootstrap.py boot-health --json`. `restart-and-load <save>` through the bootstrap is
+  the full kill → launch → OCR menu load → classify-gated Escape route.
+- **The tuner port is open on the continue screen and the load menu** (frontend Lua states only). A
+  connection that reports "GameCore_Tuner/InGame states not found" means a frontend screen, not a
+  dead game; drive it with `classify-frontend` + `press-escape`.
+- **Runner credentials:** `LITELLM_OPENAI_API_KEY` must be non-empty even for the unauthenticated
+  llama-swap endpoint; source `~/.config/riz-llm/.env` into the runner's environment only. The
+  registry host `home-llm` is 192.168.20.146 (ssh alias); the runner reaches it by that bare name for
+  GPU evidence.
+- **Boot health on an idle game** passes via the responsive-window fallback (Profile.csv logs only
+  slow frames); a fresh-frame pass needs the game to be loading or animating.
+- **Hand audits are semantic reads**, never a replay of the scorer's conventions. A scorer correction
+  changes the fingerprint and forces a campaign re-freeze and full rerun (~2 h for two 24-trial blocks).

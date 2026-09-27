@@ -1190,7 +1190,7 @@ git commit -m "test(benchmark): freeze builder economy calibration position"
 - Consumes: Tasks 2, 9, 10 contract freezer, frozen position/rubric, campaign scheduler/reporter, and Task 8 non-counting validation mode.
 - Produces: the committed campaign manifest/config commit, candidate instrument contract, runtime `campaign.json`, and structurally non-counting validation evidence.
 
-- [ ] **Step 1: Write the release-candidate contract and campaign manifest**
+- [x] **Step 1: Write the release-candidate contract and campaign manifest**
 
 First generate the candidate contract from the exact scorer source that now exists:
 
@@ -1247,11 +1247,11 @@ rules:
 
 `home-gpu0-cpp` is the exact vendored-registry endpoint on `home-llm`; the live identity/isolation gate must prove it serves each requested model before that block runs. If the endpoint cannot serve one model, revise and recommit the campaign before validation rather than substituting a floating “local” alias at runtime. The candidate contract pins the three schema versions, prompt/rubric/tool identities, scorer source fingerprint, predicate rules, audit schema, tie-attribution schema, and 4/12 effect-threshold derivation.
 
-- [ ] **Step 2: Add tests pinning every preregistered choice**
+- [x] **Step 2: Add tests pinning every preregistered choice**
 
 Assert: Gemma first/Qwen second; 12 exact seeds; 24 local trials per block; ABBA arm order; audits resolve to 3 minimal/3 standard across early/middle/late; identical arms except tool tier; treatment options empty; prompt contains no position name, coordinates, IDs, resource/builder/rubric language; no briefing/tracker/playbook/memory/channels/attention; no `end_turn`; both arms contain `finish_trial`; threshold equals 4 divided by the frozen rubric maximum.
 
-- [ ] **Step 3: Run static gates and commit the freeze before validation**
+- [x] **Step 3: Run static gates and commit the freeze before validation**
 
 Run:
 
@@ -1269,7 +1269,7 @@ git add benchmarks/campaigns/builder-economy-cal-v1.yaml benchmarks/contracts/in
 git commit -m "test(benchmark): preregister builder calibration campaign"
 ```
 
-- [ ] **Step 4: Run one non-counting episode per arm through full live admission**
+- [x] **Step 4: Run one non-counting episode per arm through full live admission**
 
 Fast-forward the native Windows checkout to the just-created campaign/config freeze commit and confirm it is clean. Then run:
 
@@ -1286,13 +1286,13 @@ uv run civ-arena-benchmark \
 
 Expected: full fresh gate evidence, one minimal and one standard episode, no campaign/session fingerprint pair on validation trials, no writes under counted `blocks/`, and deterministic validation reporting.
 
-- [ ] **Step 5: Inspect validation only for instrument defects**
+- [x] **Step 5: Inspect validation only for instrument defects**
 
 Confirm: both tool canaries pass; the starting digest is exact; popup hygiene succeeds; both arms can finish; minimal can reach rubric levels 1–2; standard's three intended actions are legal; automated metrics match the two transcripts; the validation report regenerates byte-identically; counted report refuses the validation evidence.
 
 If the prompt/rubric/predicate/report semantics need revision, increment the relevant contract/campaign version, delete no evidence, create a new campaign run directory, commit the new freeze, and repeat Steps 4–5. Do not begin Task 13 until validation is green under the exact frozen campaign that will count.
 
-- [ ] **Step 6: Seal the validation disposition without changing the campaign commit**
+- [x] **Step 6: Seal the validation disposition without changing the campaign commit**
 
 Add a deterministic validation summary under the validation directory containing artifact hashes and pass/fail checks; it is explicitly marked non-counting. `benchmark_runs/` is gitignored, so retain this evidence in place but do not force-add or commit it yet. The commit pinned by `campaign.json` must remain unchanged through both counted blocks.
 
@@ -1332,7 +1332,7 @@ Expected: all tests pass on the exact commit pinned by `campaign.json`.
 - Consumes: Task 12 frozen campaign commit/runtime lock and Task 8 integrated admission/one-block execution.
 - Produces: one complete immutable Gemma session, 24 dual-stamped trials, admission/attempt evidence, `audit.json`, optional `tie-attribution.json`, and a sealed block hash ledger.
 
-- [ ] **Step 1: Start from the committed clean tree and run fresh admission**
+- [x] **Step 1: Start from the committed clean tree and run fresh admission**
 
 Run `git status --porcelain=v1` in WSL and Windows; both must be empty and both commits identical. Run the campaign without any stale `--admit-only` authorization:
 
@@ -1347,11 +1347,11 @@ uv run civ-arena-benchmark \
 
 The campaign begins Gemma first. If a known repo tuner holder or named managed GPU service blocks, use only the exact remediation flag after reviewing its evidence. Unknown owners are hard blocks.
 
-- [ ] **Step 2: Let all 24 Gemma trials complete serially**
+- [x] **Step 2: Let all 24 Gemma trials complete serially**
 
 Expected: 12 minimal/standard pairs, fresh reload checksum before every trial, fresh conversation per trial, scheduled seed sent, no turn advance, no discarded scoreable failures, and every infrastructure retry retained under `attempts/`. A session interruption resumes only after new admission and skips only dual-fingerprint-matching complete trials.
 
-- [ ] **Step 3: Generate the provisional block report and audit six frozen indices**
+- [x] **Step 3: Generate the provisional block report and audit six frozen indices**
 
 Run:
 
@@ -1361,11 +1361,11 @@ uv run civ-arena-benchmark-report benchmark_runs/builder-economy-cal-v1/blocks/g
 
 For local indices `1, 2, 11, 12, 23, 24`, hand-check transcript, state deltas, rubric task scores, useful actions, domain rejections, and repetitions. Write `audit.json` using Task 10's schema and exact trial hashes. Any disagreement is an instrument failure; correct the semantics/version and rerun under a new campaign rather than retaining affected evidence. A sufficiently decided block that misses direction or effect is `MODEL_NULL`, not a rubric rewrite trigger.
 
-- [ ] **Step 4: Resolve ties before assigning a Gemma block result**
+- [x] **Step 4: Resolve ties before assigning a Gemma block result**
 
 If at least 10 pairs are decided, apply the direction/effect gates. If fewer, review every tied pair and write `tie-attribution.json`; mechanical 0–0/nonzero labels are only starting hypotheses. Any rubric-caused consequential tie makes the campaign `RUBRIC_NONDISCRIMINATIVE` and blocks reuse of this evidence after a rubric edit.
 
-- [ ] **Step 5: Seal the immutable Gemma evidence and audits without committing**
+- [x] **Step 5: Seal the immutable Gemma evidence and audits without committing**
 
 Verify no secrets, host tokens, or API keys appear. Write a sorted SHA-256 ledger inside the Gemma block, then confirm the tracked tree still matches the campaign commit. Do not force-add ignored evidence yet; a commit here would invalidate Qwen's checkout gate.
 
@@ -1394,15 +1394,15 @@ test "$(git rev-parse HEAD)" = "$(python3 -c 'import json; print(json.load(open(
 - Consumes: Task 13 Gemma disposition, the same campaign lock, and fresh Task 8 Qwen admission.
 - Produces: either a complete audited 24-trial Qwen block or the exact append-only evidence required for `REPLICATION_DEFERRED_ADMISSION`.
 
-- [ ] **Step 1: Reacquire every admission fact for Qwen**
+- [x] **Step 1: Reacquire every admission fact for Qwen**
 
 Resume the same campaign command. Confirm exact endpoint/model identity, `enable_thinking: false`, `max_tokens: 6144`, both canaries for both arms, exact-sampling seed/latency probe, and latency-derived episode wall in the new block lock. Do not infer Qwen health from Gemma evidence.
 
-- [ ] **Step 2: Handle admission failure without laundering it into a null**
+- [x] **Step 2: Handle admission failure without laundering it into a null**
 
 If Qwen admission fails, make one concrete remediation and retry, or make two confirming attempts only when the capability is demonstrated non-remediable. Journal each attempt. `REPLICATION_DEFERRED_ADMISSION` is allowed only when Gemma already passed; it creates no Qwen session/trials and is never a model null. If Gemma did not pass, inability to admit Qwen makes Plan 2 `BLOCKED`.
 
-- [ ] **Step 3: If admitted, run all 24 trials serially and generate the block report**
+- [x] **Step 3: If admitted, run all 24 trials serially and generate the block report**
 
 Run/resume:
 
@@ -1418,11 +1418,11 @@ uv run civ-arena-benchmark-report benchmark_runs/builder-economy-cal-v1/blocks/q
 
 Expected: identical position, arms, seed schedule, and prompt; only the locked model configuration differs.
 
-- [ ] **Step 4: Audit the same six local indices and attribute all ties**
+- [x] **Step 4: Audit the same six local indices and attribute all ties**
 
 Hand-check indices `1, 2, 11, 12, 23, 24`, write hash-bound `audit.json`, and write `tie-attribution.json` when fewer than 10 pairs are decided. A genuine model floor/same-progress null preserves Gemma evidence; rubric nondiscrimination invalidates the instrument campaign.
 
-- [ ] **Step 5: Seal Qwen evidence or its valid admission deferral**
+- [x] **Step 5: Seal Qwen evidence or its valid admission deferral**
 
 ```bash
 find benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b -type f ! -name SHA256SUMS -print0 \
@@ -1452,7 +1452,7 @@ If Qwen never admitted, omit the nonexistent block hash command and require the 
 - Consumes: Tasks 10, 13, and 14 deterministic reporting code, both audited blocks or valid Qwen deferral evidence, all frozen contracts, and the unchanged campaign commit identity.
 - Produces: final report JSON/Markdown, calibrated or blocked verdict, released `instrument-v1.yaml` only when eligible, research findings, plan/skill synchronization, and pushed evidence.
 
-- [ ] **Step 1: Run the complete automated verification suite before reporting**
+- [x] **Step 1: Run the complete automated verification suite before reporting**
 
 Run:
 
@@ -1463,7 +1463,7 @@ git diff --check
 
 Expected: full suite green. Record the exact pass count in the findings document only after this command completes.
 
-- [ ] **Step 2: Generate and independently regenerate the campaign report**
+- [x] **Step 2: Generate and independently regenerate the campaign report**
 
 Run twice:
 
@@ -1474,19 +1474,19 @@ sha256sum benchmark_runs/builder-economy-cal-v1/report.json benchmark_runs/build
 
 Expected: identical hashes on both generations; no generation timestamp; all model/arm groups separate; every schedule/trial/audit/fingerprint validation green; attempts visible operationally but absent from scoring.
 
-- [ ] **Step 3: Apply the preregistered verdict without post-hoc reinterpretation**
+- [x] **Step 3: Apply the preregistered verdict without post-hoc reinterpretation**
 
 Accept `CALIBRATED` only if at least one admitted model passes all three separation gates, every completed block passes metric fidelity, and every tie-heavy block is attributed to model floor/same-progress rather than rubric failure. Accept `CALIBRATED_REPLICATION_DEFERRED` only for a passing Gemma block plus the exact Qwen admission-remediation evidence. Otherwise publish the appropriate blocked/nondiscriminative result; do not modify thresholds or omit unfavorable trials.
 
-- [ ] **Step 4: Release the stable instrument contract only on a calibrated outcome**
+- [x] **Step 4: Release the stable instrument contract only on a calibrated outcome**
 
 For `CALIBRATED` or `CALIBRATED_REPLICATION_DEFERRED`, rename/finalize `instrument-v1.yaml` with the exact evidence, predicate, and report schema versions, scorer fingerprint, predicate vocabulary, authoring conventions, compatibility rules, prompt/rubric fingerprints, and campaign evidence digest. If the outcome is blocked/nondiscriminative, keep the candidate label and document why Plan 3 remains blocked.
 
-- [ ] **Step 5: Write findings and sync operational knowledge**
+- [x] **Step 5: Write findings and sync operational knowledge**
 
 The findings document states: position provenance; model configs/topology; admissions/retries; full per-model pair results; metric audit; tie review; decision-quality interpretation; limits; exact verdict; and whether Plan 3 (nine-position library and multi-model screen) is unlocked. Run the `skill-evolve` and `repo-plan-sync` skills; update the live skill only for genuinely reusable operational discoveries, not experiment results.
 
-- [ ] **Step 6: Final verification, commit, and push**
+- [x] **Step 6: Final verification, commit, and push**
 
 Run:
 
@@ -1521,6 +1521,14 @@ Expected: local and remote `main` match. Then fast-forward the native Windows ch
 ---
 
 ## Plan 2 exit gate
+
+> **Status (2026-09-26):** executed end to end; verdict **BLOCKED**. Campaign v1 (`builder-economy-cal-v1`)
+> completed both blocks but its Qwen audit exposed two scorer deviations from the frozen metric
+> definitions (METRIC_FIDELITY_FAILED); the scorer was corrected and the identical preregistration rerun
+> as `builder-economy-cal-v2`: gemma4-26b MODEL_FLOOR_NULL (1/12 decided), qwen3.6-27b MODEL_NULL
+> (11/12 decided, 11 standard wins, median Δ 3.5/12 = 0.292 < 0.333). Metric fidelity and tie
+> attribution passed on both v2 blocks. The contract stays a candidate; Plan 3 remains blocked. See
+> `docs/research/arena-benchmark-builder-calibration-v1-findings.md`.
 
 Plan 2 is complete only when:
 

@@ -1,0 +1,116 @@
+{
+  "audit_indices": [
+    1,
+    2,
+    11,
+    12,
+    23,
+    24
+  ],
+  "reviewer": "claude-fable-5-1 driving session 2026-09-26, transcripts read step by step against action_metrics conventions (Error:/|BLOCKED = domain rejection; identical call+result on an unchanged digest = repetition; objective progress_predicate = useful)",
+  "session_fingerprint": "c10108858600d22d8a01233cbc245595a6b55970b254161546799be15528eb78",
+  "trials": [
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed101: get_overview/get_cities/get_units observed all three builders (level 1 each); then moved the SWORDSMAN (idx 3) toward (71,30): step4 BLOCKED, step5 moved 1 tile (mutation, not a builder), steps6-8 identical NO_MOVES errors -> 4 rejections, 2 repetitions. No builder moved, no tile changed.",
+      "index": 1,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 2,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "4fc38512566efa9f2c235c884dd051d93aa33a5a6e5092188a9f22f943f0646b"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed101: observed; improve_tile FARM with builder idx12 (1769484) on its own tile (69,22) -- a real mutation but not objective progress (no unit_at target, mine still pillaged); repair NO_MOVES; repair on idx10 NO_IMPROVEMENT at (72,21); move idx1 STACKING_CONFLICT; move idx1 BLOCKED -> 4 rejections, 0 repetitions.",
+      "index": 2,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 0,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "66ef4297b4381c98dfc1da80839096d5779852fe903e03fd342ff45f7f3b3b63"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed601: observed; single improve_tile FARM at (69,22) with idx12 then implicit_finish after 4 steps -> 0 rejections, 0 repetitions, no objective progress.",
+      "index": 11,
+      "manual": {
+        "domain_rejections": 0,
+        "repetitions": 0,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 601,
+      "trial_sha256": "b6c05b08e595ed608e893f87b5e28aa0c815ee212c97ec6ea568c8453bb5b422"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed601: observed; three set_research ALREADY_COMPLETED errors, get_overview repeated identically (1 repetition, unchanged digest), set_research MACHINERY accepted (no canonical-state change). 3 rejections. Builders untouched.",
+      "index": 12,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 1,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 601,
+      "trial_sha256": "a2d219a455d7d6dc6c16732b5d46cfc7560b950494345e15b4b90d398777b4ad"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed1201: observed; FARM at (69,22) with idx12; repair idx10 NO_IMPROVEMENT; move idx1 STACKING_CONFLICT; move idx1 to (72,23) moved 2 tiles to (74,27) (mutation, not its target (74,30)); get_map_area. 2 rejections, 0 repetitions; pasture builder ends off-target.",
+      "index": 23,
+      "manual": {
+        "domain_rejections": 2,
+        "repetitions": 0,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "07aba9627863263e347f87fc634a20eba8d5306198d4b9611338503397e7c11d"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed1201: observed; three set_research ALREADY_COMPLETED errors, repeated get_overview (1 repetition), set_research MACHINERY accepted. 3 rejections. Builders untouched.",
+      "index": 24,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 1,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "06b00ef4f864b2ff8b859259f82ba7ba03db48ae2551e59df490859bcb606267"
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "audit_indices": [
+    1,
+    2,
+    11,
+    12,
+    23,
+    24
+  ],
+  "reviewer": "claude-fable-5-1 driving session 2026-09-26; independent semantic read (domain rejection = any call the game refused incl. Error:/ERR:/|BLOCKED; useful = a mutation that itself flips an objective progress (sub-)predicate; repetition = identical call+result on an unchanged digest)",
+  "session_fingerprint": "f14841652d264644609fff0519c804d4e956abfad90a260236181173627e1147",
+  "trials": [
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed101: observed; set_research MINING/IRON_WORKING ALREADY_COMPLETED (2 rejections); get_overview repeated identically on an unchanged digest (1 repetition); set_research CURRENCY ALREADY_COMPLETED (3rd rejection); set_research MACHINERY accepted (no canonical-state change). Builders untouched.",
+      "index": 1,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 1,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "8aba9ae930839b7edb46459cec6bc8c7ddadf4dd2e69bc3d9e8f44e5b3d6f640"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed101: observed; improve_tile FARM with 1769484 on its own tile (69,22) -- a mutation, not objective progress; implicit_finish after 4 steps. 0 rejections, 0 repetitions.",
+      "index": 2,
+      "manual": {
+        "domain_rejections": 0,
+        "repetitions": 0,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "7124826f2040f349380e57116c3f37d566dba716800a87a2feed5b67b37684cc"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed601: FARM at (69,22) (mutation, not useful); attack_unit NOT_AT_WAR (rejection); move 1507329 onto its own tile STACKING_CONFLICT (rejection); get_builder_tasks; move 1507329 -> (74,30) target: unit_at pasture predicate flips -> useful 1, pasture level 2. 2 rejections, 0 repetitions.",
+      "index": 11,
+      "manual": {
+        "domain_rejections": 2,
+        "repetitions": 0,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 2,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 1
+      },
+      "seed": 601,
+      "trial_sha256": "14e132cc1e1559bc4950c39bada3d4a7a289186094ba46a0e53f20294cdb8482"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed601: three set_research ALREADY_COMPLETED (3 rejections); set_research APPRENTICESHIP accepted; swordsman move BLOCKED (4th rejection). 0 mutations. Builders untouched.",
+      "index": 12,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 0,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 601,
+      "trial_sha256": "b5237eefcf99990b478cba7b530823509f857dc264ca77d103368f25cb0adcf6"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed1201: FARM at (69,22) (mutation, not useful); repair 1572874 NO_IMPROVEMENT at (72,21) (rejection); move 1507329 STACKING_CONFLICT (rejection); get_map_area; attack NOT_AT_WAR (rejection). 3 rejections, 0 repetitions.",
+      "index": 23,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 0,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "01ce952b0a04aef8eab8b872053c4bc069529a59a7c99059ecfad8b03fe1bc19"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed1201: identical shape to trial 12: 3 ALREADY_COMPLETED + APPRENTICESHIP accepted + swordsman BLOCKED -> 4 rejections, 0 repetitions, 0 mutations.",
+      "index": 24,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 0,
+        "task_scores": {
+          "clear-forest-stone": 1,
+          "pasture-horses": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "2142ff565656827eed00c7a6094e98cfd7257d04e7bdd6e78ae190d5038458c4"
+    }
+  ]
+}
