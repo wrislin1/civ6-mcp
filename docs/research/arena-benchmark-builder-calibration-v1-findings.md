@@ -105,9 +105,12 @@ What the transcripts show:
   moving the swordsman.
 - qwen3.6-27b, standard arm: reads `get_builder_tasks`, moves the repair builder onto (68,23) and
   repairs it in 11 of 12 trials; moves the pasture builder onto (74,30) and often builds the pasture;
-  never removes the forest at (71,21) (it moves that builder toward the iron hill at (71,19)
-  instead). The tied pair (seed 701) spent five steps surveying distant map areas and then acted with
-  the wrong builder. Minimal arm: moves builders toward city centres, never onto a target.
+  never removes the forest at (71,21) (it usually moves that builder toward the iron hill at (71,19)),
+  but in two trials (seeds 307 and 401) it built a quarry directly on the forested stone tile. The game
+  accepted that and the forest stayed, so the task 3 level 4 predicate ("feature absent") awarded only
+  level 2 for a real quarry on the intended tile; those pairs scored 10, not 12. The tied pair (seed
+  701) spent five steps surveying distant map areas and then acted with the wrong builder. Minimal arm:
+  moves builders toward city centres, never onto a target.
 - A "step" is one model turn and may carry several tool calls; qwen emitted up to 22 calls in 8 steps.
 
 ## 6. Campaign v1 (retained, BLOCKED)
@@ -160,8 +163,9 @@ background watchers and must be stopped before any benchmark CLI runs; the runne
 ## 8. Limits
 
 - One position, two local models, single turn, eight model turns. The effect size on qwen3.6-27b is
-  bounded by one task the model never attempts (forest removal), so the maximum achievable Δ on this
-  position for that model is about 8/12.
+  bounded by task 3: the model never removes the forest, and when it built the quarry directly (a legal
+  move the authoring did not anticipate) the level 4 predicate did not credit it. The maximum Δ the
+  model actually reached was 7/12; the predicate caps a direct-quarry play at 9/12.
 - gemma4-26b is at the task floor in both arms; its block cannot inform the treatment question.
 - qwen3.6-27b's v1 and v2 blocks differ (12/12 vs 11/12 wins; 4.5 vs 3.5 median) under identical
   seeds and sampling with prompt caching off: llama.cpp with four parallel slots is not bitwise
