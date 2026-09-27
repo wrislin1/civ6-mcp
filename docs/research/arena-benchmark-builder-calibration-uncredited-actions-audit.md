@@ -15,7 +15,11 @@ strategic-resource accumulation is not exposed by the API used.
 
 ## 1. What the uncredited mutations were
 
-117 uncredited mutations across 64 trials, 33 distinct action sequences.
+117 uncredited mutations across 64 trials, 33 distinct action sequences. This set is the mutations
+the corrected scorer did not count as useful. It does not include the two quarry builds discussed in
+section 2: the scorer counted those as useful (they flip the objective's "quarry present" progress
+predicate), but the rubric awarded the task only level 2. They are under-scored, not uncredited, and
+are reported separately.
 
 | class | count | what it is |
 |---|---|---|
@@ -25,8 +29,11 @@ strategic-resource accumulation is not exposed by the API used.
 | builder move away from all task tiles | 9 | repair builder to (67,23) or (70,22) |
 | builder move toward another improvable task tile | 13 | forest builder onto the iron hill (71,19), listed URGENT by `get_builder_tasks`; pasture builder to (74,27) diamonds |
 
-So 45 builder moves were waste in the position's own terms, 13 were constructive positioning toward
-a legitimate task the rubric does not score, and 28 were the farm.
+So 45 builder moves showed no measured progress toward any task tile, 13 moved a builder closer to a
+task tile the rubric does not score, and 28 were the farm. Hex distance is a straight-line measure:
+a sensible route around a river or an occupied tile can hold or increase it, so "no measured
+progress" does not establish that a move was wasted, and a shorter distance does not establish that
+the destination had strategic value.
 
 ## 2. Measured benefit of each distinct builder action
 
@@ -38,15 +45,17 @@ are shown; all other cities and yields were unchanged.
 | farm on (69,22), own tile (uncredited Gemma play) | no | prod 7.0 → 8.0 | — | — | builder 1769484 loses 1 of 3 charges, cannot repair this turn |
 | move to (68,23) + repair mine (task 1) | yes, level 4 | — | prod 17.1 → 18.0 | — | iron mine active again; iron per turn not measurable same turn |
 | move to (74,30) + pasture (task 2) | yes, level 4 | — | — | none same turn | horses access; Jinju is pop 1 and works one tile |
-| move to (71,21) + quarry on the forested stone (Qwen v2 seeds 307, 401) | level 2 only | prod 7.0 → 9.0 | — | — | forest retained; the largest immediate gain of the four |
+| move to (71,21) + quarry on the forested stone (Qwen v2 seeds 307, 401) | level 2 only | prod 7.0 → 9.0 | — | — | forest retained; the largest immediate measured production gain of the four |
 
 Two observations matter for rubric design:
 
 - **The position's task 3 predicate is mis-specified.** Level 4 is "feature absent", on the authoring
   assumption that a quarry needs the forest removed first. The game accepts a quarry on the forested
-  stone tile directly; Qwen did that twice and received level 2 for the economically best action
-  available. The intended objective was "the stone is quarried", and the predicate should have been
-  `improvement == IMPROVEMENT_QUARRY` (with `feature absent` as an alternative route), not the route.
+  stone tile directly; Qwen did that twice and received level 2 for the action with the largest
+  immediate measured production gain. Whether it was the best economic action is not established:
+  immediate city yields miss resource access, charge cost and future use, as the pasture row shows.
+  The intended objective was "the stone is quarried", so the level 4 predicate should score the
+  quarry, not the route to it.
 - **The farm is a real but poor use of the charge.** It yields +1 production at Gwangju this turn and
   consumes the charge and movement the repair needed; the repair is worth +0.9 production plus iron
   supply. "Model floor on the scored objectives" is the accurate description of Gemma's block, not
@@ -57,20 +66,25 @@ these numbers are indicative for classification, not a benefit model.
 
 ## 3. Classification summary
 
+Uncredited set (117):
+
 | verdict | count | basis |
 |---|---|---|
-| verified benefit, uncredited | 2 | quarry on forested stone: +2 production, intended tile |
-| small benefit at the cost of a scored objective | 28 | farm on own tile: +1 production, spends the repair charge |
-| constructive positioning toward an unscored legitimate task | 13 | forest builder onto iron hill (URGENT in the model's own task list); pasture builder to diamonds |
-| waste of moves | 45 | builder moves that do not reduce distance to any task tile |
-| neutral | 31 | non-builder unit moves |
+| small measured benefit at the cost of a scored objective | 28 | farm on own tile: +1 production same turn, spends the repair charge |
+| moved closer to an unscored task tile (value not established) | 13 | forest builder onto the iron hill (URGENT in the model's own task list); pasture builder toward diamonds |
+| no measured progress toward any task tile | 45 | straight-line distance unchanged or larger; route value not assessed |
+| no economic effect this turn | 31 | non-builder unit moves |
 | harmful | 0 | no destructive replacements or losses observed |
-| insufficient evidence | 0 | every mutation resolves to a unit and tile in the committed state |
+| insufficient evidence to place the action | 0 | every mutation resolves to a unit and tile in the committed state |
+
+Outside that set (2): quarry built on the forested stone tile, credited as useful by the scorer but
+awarded rubric level 2; +2 production same turn on the intended tile.
 
 ## 4. Implications for a two-dimension rubric (design input, not a proposal to score)
 
 1. Fix the task 3 objective so it scores the outcome (quarried stone) rather than the route. This is a
-   predicate change → new position version, new freeze.
+   predicate change → new position version, new freeze. Forest removal alone can take the unused
+   level 3 as prerequisite credit; it is not completion.
 2. A second reported dimension, "verified economic benefit", needs a preregistered benefit model:
    which yield deltas count, how a spent charge is priced, how a strategic-resource gain is valued
    when it is not observable same turn, and how "toward an unscored task" positioning is treated.

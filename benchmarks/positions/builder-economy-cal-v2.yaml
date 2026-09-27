@@ -1,0 +1,301 @@
+position_id: builder-economy-cal-v2
+version: 2
+archive: benchmarks/saves/BUILDER_ECONOMY_CAL_V1.Civ6Save
+archive_sha256: a0d3ee9b019672b17c12f4569a27fdc1610d95b929d3d600002ac375823e38ec
+game_save_name: BUILDER_ECONOMY_CAL_V1
+player_id: 0
+expected_state:
+  active_player: 0
+  cities:
+  - id: 65536
+    name: Gyeongju
+    population: 12
+    x: 72
+    y: 26
+  - id: 131073
+    name: Jeonju
+    population: 7
+    x: 67
+    y: 24
+  - id: 196610
+    name: Gwangju
+    population: 4
+    x: 70
+    y: 22
+  - id: 262147
+    name: Gongju
+    population: 5
+    x: 73
+    y: 19
+  - id: 327684
+    name: Jinju
+    population: 1
+    x: 73
+    y: 30
+  civ_type: CIVILIZATION_KOREA
+  faith: 119.8
+  gold: 95.6
+  player_id: 0
+  seed: 1881300077
+  tiles:
+  - feature: null
+    improvement: IMPROVEMENT_MINE
+    pillaged: true
+    resource: RESOURCE_IRON
+    x: 68
+    y: 23
+  - feature: null
+    improvement: null
+    pillaged: false
+    resource: null
+    x: 69
+    y: 22
+  - feature: null
+    improvement: null
+    pillaged: false
+    resource: RESOURCE_IVORY
+    x: 70
+    y: 20
+  - feature: FEATURE_FOREST
+    improvement: null
+    pillaged: false
+    resource: RESOURCE_STONE
+    x: 71
+    y: 21
+  - feature: null
+    improvement: null
+    pillaged: false
+    resource: null
+    x: 72
+    y: 21
+  - feature: null
+    improvement: null
+    pillaged: false
+    resource: null
+    x: 74
+    y: 29
+  - feature: null
+    improvement: null
+    pillaged: false
+    resource: RESOURCE_HORSES
+    x: 74
+    y: 30
+  turn: 100
+  units:
+  - charges: 0
+    id: 196608
+    type: UNIT_SCOUT
+    x: 103
+    y: 37
+  - charges: 0
+    id: 262146
+    type: UNIT_SCOUT
+    x: 59
+    y: 36
+  - charges: 0
+    id: 393220
+    type: UNIT_SCOUT
+    x: 88
+    y: 61
+  - charges: 0
+    id: 720901
+    type: UNIT_ARCHER
+    x: 70
+    y: 22
+  - charges: 0
+    id: 851976
+    type: UNIT_ARCHER
+    x: 73
+    y: 19
+  - charges: 0
+    id: 1179654
+    type: UNIT_TRADER
+    x: 70
+    y: 17
+  - charges: 0
+    id: 1376259
+    type: UNIT_SWORDSMAN
+    x: 73
+    y: 30
+  - charges: 0
+    id: 1441799
+    type: UNIT_SWORDSMAN
+    x: 67
+    y: 24
+  - charges: 2
+    id: 1507329
+    type: UNIT_BUILDER
+    x: 74
+    y: 29
+  - charges: 3
+    id: 1572874
+    type: UNIT_BUILDER
+    x: 72
+    y: 21
+  - charges: 0
+    id: 1638409
+    type: UNIT_APOSTLE
+    x: 75
+    y: 26
+  - charges: 0
+    id: 1703947
+    type: UNIT_APOSTLE
+    x: 72
+    y: 26
+  - charges: 3
+    id: 1769484
+    type: UNIT_BUILDER
+    x: 69
+    y: 22
+expected_state_sha256: 1acfff788dff6fa126f452c57e66addab61f1a536ff492d9ee819ab8343c0c21
+relevant_tiles:
+- - 68
+  - 23
+- - 69
+  - 22
+- - 74
+  - 30
+- - 74
+  - 29
+- - 71
+  - 21
+- - 72
+  - 21
+- - 70
+  - 20
+objectives:
+- task_id: repair-iron-mine
+  requires:
+  - repair_improvement
+  tools:
+  - move_unit
+  - repair_improvement
+  progress_predicate:
+    kind: any
+    predicates:
+    - kind: unit_at
+      unit_index: 1769484
+      x: 68
+      y: 23
+    - kind: tile_state_equals
+      x: 68
+      y: 23
+      field: pillaged
+      value: false
+- task_id: pasture-horses
+  requires:
+  - improve_tile
+  tools:
+  - move_unit
+  - improve_tile
+  progress_predicate:
+    kind: any
+    predicates:
+    - kind: unit_at
+      unit_index: 1507329
+      x: 74
+      y: 30
+    - kind: tile_state_equals
+      x: 74
+      y: 30
+      field: improvement
+      value: IMPROVEMENT_PASTURE
+- task_id: quarry-stone
+  requires:
+  - improve_tile
+  tools:
+  - move_unit
+  - remove_feature
+  - improve_tile
+  progress_predicate:
+    kind: any
+    predicates:
+    - kind: unit_at
+      unit_index: 1572874
+      x: 71
+      y: 21
+    - kind: tile_state_equals
+      x: 71
+      y: 21
+      field: feature
+      value: null
+    - kind: tile_state_equals
+      x: 71
+      y: 21
+      field: improvement
+      value: IMPROVEMENT_QUARRY
+rubric:
+- task_id: repair-iron-mine
+  levels:
+  - score: 1
+    predicate: &id001
+      kind: successful_tool_call
+      tool: get_units
+      args: {}
+  - score: 2
+    predicate:
+      kind: unit_at
+      unit_index: 1769484
+      x: 68
+      y: 23
+  - score: 4
+    predicate:
+      kind: tile_state_equals
+      x: 68
+      y: 23
+      field: pillaged
+      value: false
+- task_id: pasture-horses
+  levels:
+  - score: 1
+    predicate: *id001
+  - score: 2
+    predicate:
+      kind: unit_at
+      unit_index: 1507329
+      x: 74
+      y: 30
+  - score: 4
+    predicate:
+      kind: tile_state_equals
+      x: 74
+      y: 30
+      field: improvement
+      value: IMPROVEMENT_PASTURE
+- task_id: quarry-stone
+  levels:
+  - score: 1
+    predicate: *id001
+  - score: 2
+    predicate:
+      kind: unit_at
+      unit_index: 1572874
+      x: 71
+      y: 21
+  - score: 3
+    predicate:
+      kind: tile_state_equals
+      x: 71
+      y: 21
+      field: feature
+      value: null
+  - score: 4
+    predicate:
+      kind: all
+      predicates:
+      - kind: tile_state_equals
+        x: 71
+        y: 21
+        field: improvement
+        value: IMPROVEMENT_QUARRY
+      - kind: tile_state_equals
+        x: 71
+        y: 21
+        field: pillaged
+        value: false
+split: calibration
+persistent_unit_ids:
+- 1769484
+- 1507329
+- 1572874
+consumable_unit_ids: []

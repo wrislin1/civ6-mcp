@@ -522,8 +522,8 @@ import re as _re
 from pathlib import Path as _Path
 
 _REPO = _Path(__file__).resolve().parents[2]
-_CAMPAIGN = _REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v2.yaml"
-_POSITION = _REPO / "benchmarks" / "positions" / "builder-economy-cal-v1.yaml"
+_CAMPAIGN = _REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v3.yaml"
+_POSITION = _REPO / "benchmarks" / "positions" / "builder-economy-cal-v2.yaml"
 
 
 @pytest.fixture(scope="module")
@@ -616,9 +616,23 @@ def test_campaign_v2_differs_from_v1_only_by_campaign_id_and_pins_the_corrected_
     from civ_mcp.arena.benchmark_contract import scorer_source_fingerprint
 
     v1 = yaml.safe_load((_REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v1.yaml").read_text())
-    v2 = yaml.safe_load(_CAMPAIGN.read_text())
+    v2 = yaml.safe_load((_REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v2.yaml").read_text())
     assert v1.pop("campaign_id") == "builder-economy-cal-v1"
     assert v2.pop("campaign_id") == "builder-economy-cal-v2"
     assert v1 == v2
     contract = yaml.safe_load((_REPO / "benchmarks" / "contracts" / "instrument-v1-candidate.yaml").read_text())
     assert contract["scorer_fingerprint"] == scorer_source_fingerprint(_REPO)
+
+
+def test_campaign_v3_differs_from_v2_only_by_id_and_position_version():
+    """v3 (2026-09-27) re-freezes the v2 preregistration against position v2,
+    whose task 3 scores the quarried-stone outcome. Everything else -- models,
+    sampling, seeds, order, audits, rules, prompt, contract -- is identical,
+    and the 4/12 threshold rationale is unchanged (three tasks x 4 points)."""
+    import yaml
+
+    v2 = yaml.safe_load((_REPO / "benchmarks" / "campaigns" / "builder-economy-cal-v2.yaml").read_text())
+    v3 = yaml.safe_load(_CAMPAIGN.read_text())
+    assert v2.pop("campaign_id") == "builder-economy-cal-v2" and v3.pop("campaign_id") == "builder-economy-cal-v3"
+    assert v2.pop("position") == "builder-economy-cal-v1" and v3.pop("position") == "builder-economy-cal-v2"
+    assert v2 == v3
