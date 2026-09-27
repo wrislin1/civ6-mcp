@@ -340,7 +340,9 @@ async def _list_saves_lua(conn: GameConnection) -> str | None:
             f"if not ExposedMembers then ExposedMembers = {{}} end; "
             f"ExposedMembers.MCPSaveList = nil; "
             f"ExposedMembers.MCPSaveQueryDone = false; "
+            f"ExposedMembers.MCPSaveQueryId = nil; "
             f"local function OnResults(fileList, qid) "
+            f"  if ExposedMembers.MCPSaveQueryId == nil or qid ~= ExposedMembers.MCPSaveQueryId then return end; "
             f"  ExposedMembers.MCPSaveList = fileList; "
             f"  ExposedMembers.MCPSaveQueryDone = true; "
             f"  UI.CloseFileListQuery(qid); "
@@ -348,7 +350,7 @@ async def _list_saves_lua(conn: GameConnection) -> str | None:
             f"end; "
             f"LuaEvents.FileListQueryResults.Add(OnResults); "
             f"local opts = SaveLocationOptions.NORMAL + SaveLocationOptions.AUTOSAVE + SaveLocationOptions.QUICKSAVE + SaveLocationOptions.LOAD_METADATA; "
-            f"UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
+            f"ExposedMembers.MCPSaveQueryId = UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
             f'print("QUERY_SENT"); '
             f'print("{lq.SENTINEL}")'
         )
@@ -484,7 +486,9 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
                 await conn.execute_in_state(
                     menu_idx,
                     f"MCP_FE_RESULT = nil; MCP_FE_DONE = false; MCP_FE_CANCELLED = false; "
+                    f"MCP_FE_QUERY_ID = nil; "
                     f"local function OnResults(fileList, qid) "
+                    f"  if MCP_FE_QUERY_ID == nil or qid ~= MCP_FE_QUERY_ID then return end; "
                     f"  UI.CloseFileListQuery(qid); "
                     f"  LuaEvents.FileListQueryResults.Remove(OnResults); "
                     f"  if MCP_FE_CANCELLED then return end; "
@@ -503,7 +507,7 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
                     f"LuaEvents.FileListQueryResults.Add(OnResults); "
                     f"local opts = SaveLocationOptions.NORMAL + SaveLocationOptions.AUTOSAVE "
                     f"  + SaveLocationOptions.QUICKSAVE + SaveLocationOptions.LOAD_METADATA; "
-                    f"UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
+                    f"MCP_FE_QUERY_ID = UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
                     f'print("QUERY_SENT"); '
                     f'print("{lq.SENTINEL}")',
                 )
@@ -563,7 +567,9 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
             f"ExposedMembers.MCPLoadResult = nil; "
             f"ExposedMembers.MCPLoadDone = false; "
             f"ExposedMembers.MCPLoadCancelled = false; "
+            f"ExposedMembers.MCPLoadQueryId = nil; "
             f"local function OnResults(fileList, qid) "
+            f"  if ExposedMembers.MCPLoadQueryId == nil or qid ~= ExposedMembers.MCPLoadQueryId then return end; "
             f"  UI.CloseFileListQuery(qid); "
             f"  LuaEvents.FileListQueryResults.Remove(OnResults); "
             f"  if ExposedMembers.MCPLoadCancelled then return end; "
@@ -582,7 +588,7 @@ async def load_game_save(conn: GameConnection, save_name: str) -> str:
             f"LuaEvents.FileListQueryResults.Add(OnResults); "
             f"local opts = SaveLocationOptions.NORMAL + SaveLocationOptions.AUTOSAVE "
             f"  + SaveLocationOptions.QUICKSAVE + SaveLocationOptions.LOAD_METADATA; "
-            f"UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
+            f"ExposedMembers.MCPLoadQueryId = UI.QuerySaveGameList(SaveLocations.LOCAL_STORAGE, SaveTypes.SINGLE_PLAYER, opts); "
             f'print("QUERY_SENT"); '
             f'print("{lq.SENTINEL}")'
         )

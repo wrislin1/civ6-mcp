@@ -316,3 +316,75 @@ async def test_frontend_tier_cancels_the_handler_when_the_window_expires(
     assert "MCP_FE_CANCELLED" in registration
     assert any("MCP_FE_CANCELLED = true" in lua for _, lua in conn.state_calls[1:])
     assert len(conn.state_calls) <= 123
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-27 live (campaign v3 validation): after the game passed through the
+# main menu, the in-game tier answered NOT_FOUND for a save that was on disk.
+# The game's own menus fire UI.QuerySaveGameList too (MainMenu issues a
+# MOST_RECENT_ONLY query), and FileListQueryResults is broadcast to every
+# listener; our handler acted on the first results event it saw -- a foreign
+# one-entry list -- and closed it. The game's own LoadSaveMenu keeps the id
+# QuerySaveGameList returns and ignores results for any other query.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ingame_lua_tier_acts_only_on_its_own_query_results(monkeypatch):
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+
+    async def fake_continue(name):
+        return f"Loaded {name}: world ready, FireTuner port is open."
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(game_launcher, "continue_after_lua_load", fake_continue)
+    conn = LoadConn([["QUERY_SENT"], ["RESULT|FOUND"], ["WIPED"]])
+
+    await load_game_save(conn, "BUILDER_ECONOMY_CAL_V1")
+
+    registration = conn.writes[0]
+    assert "ExposedMembers.MCPLoadQueryId = UI.QuerySaveGameList(" in registration
+    assert "qid ~= ExposedMembers.MCPLoadQueryId" in registration
+    # the foreign-result guard runs before the handler closes or removes anything
+    assert registration.index("qid ~= ExposedMembers.MCPLoadQueryId") < registration.index("UI.CloseFileListQuery(qid)")
+
+
+@pytest.mark.asyncio
+async def test_frontend_tier_acts_only_on_its_own_query_results(monkeypatch):
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _t: real_sleep(0))
+
+    async def fake_continue(save_name):
+        return "Loaded X: world ready, FireTuner port open."
+
+    from civ_mcp import game_launcher
+    monkeypatch.setattr(game_launcher, "continue_after_lua_load", fake_continue, raising=False)
+    conn = MenuConn(state_results=[["QUERY_SENT"], ["RESULT|FOUND"]])
+
+    await load_game_save(conn, "BUILDER_ECONOMY_CAL_V1")
+
+    registration = conn.state_calls[0][1]
+    assert "MCP_FE_QUERY_ID = UI.QuerySaveGameList(" in registration
+    assert "qid ~= MCP_FE_QUERY_ID" in registration
+    assert registration.index("qid ~= MCP_FE_QUERY_ID") < registration.index("UI.CloseFileListQuery(qid)")
+
+
+@pytest.mark.asyncio
+async def test_list_saves_lua_acts_only_on_its_own_query_results():
+    from civ_mcp.game_lifecycle import _list_saves_lua
+
+    class Conn:
+        def __init__(self):
+            self.writes = []
+        async def execute_write(self, lua, timeout=5.0):
+            self.writes.append(lua)
+            return []
+        async def execute_read(self, lua, timeout=5.0):
+            return []
+
+    conn = Conn()
+    await _list_saves_lua(conn)
+    registration = conn.writes[0]
+    assert "ExposedMembers.MCPSaveQueryId = UI.QuerySaveGameList(" in registration
+    assert registration.index("qid ~= ExposedMembers.MCPSaveQueryId") < registration.index("UI.CloseFileListQuery(qid)")
