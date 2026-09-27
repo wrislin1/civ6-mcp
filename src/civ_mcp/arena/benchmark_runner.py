@@ -2425,7 +2425,7 @@ async def _run_async(args: argparse.Namespace) -> int:
         api_key=api_key,
         episode_wall_s=300,
         chat_template_kwargs={"enable_thinking": False},
-        user_prompt="",
+        user_prompt=suite.prompt or "",
     )
     return await run_resolved_block(block)
 

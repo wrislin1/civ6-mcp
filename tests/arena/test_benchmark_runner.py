@@ -3964,3 +3964,34 @@ async def test_live_admission_probe_backend_pins_prompt_cache_off(monkeypatch):
         chat_template_kwargs={"enable_thinking": False}, tools=[],
     )
     assert seen and seen[0].cache_prompt is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prompt", [None, "Assess the current game situation, issue the best available orders for this turn, and call finish_trial when you are done."])
+async def test_ungated_suite_threads_its_optional_frozen_prompt(tmp_path, monkeypatch, prompt):
+    """2026-09-27 (positive-control pilot): a pilot must use the counted
+    campaign's frozen prompt, but the ungated suite path always sent the
+    legacy per-turn prompt. A suite may now declare `prompt`; without it the
+    legacy behaviour (empty -> per-turn benchmark_prompt) is unchanged."""
+    from pathlib import Path
+
+    import yaml as _yaml
+
+    suite_path = _write_fixture_suite_and_position(tmp_path)
+    if prompt is not None:
+        data = _yaml.safe_load(Path(suite_path).read_text())
+        data["prompt"] = prompt
+        Path(suite_path).write_text(_yaml.safe_dump(data))
+    captured = []
+
+    async def fake_run_resolved_block(block):
+        captured.append(block)
+        return 0
+
+    monkeypatch.setattr(benchmark_runner, "run_resolved_block", fake_run_resolved_block)
+    args = benchmark_runner._build_arg_parser().parse_args(
+        ["--suite", str(suite_path), "--run-id", "pilot", "--run-dir", str(tmp_path / "runs"),
+         "--gateway-url", "http://example.invalid/v1", "--ungated-smoke"]
+    )
+    assert await benchmark_runner._run_async(args) == 0
+    assert captured and captured[0].user_prompt == (prompt or "")

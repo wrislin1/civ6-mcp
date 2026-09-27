@@ -77,6 +77,10 @@ class SuiteManifest:
     max_steps: int
     result_char_cap: int
     audit_indices: tuple[int, ...]
+    # Optional frozen user prompt for ungated suite runs (2026-09-27: a
+    # positive-control pilot must use the counted campaign's prompt). None
+    # keeps the legacy per-turn benchmark prompt.
+    prompt: str | None = None
 
 
 def fingerprint(value: object) -> str:
@@ -479,7 +483,11 @@ def _load_sampling(raw: object, context: str) -> SamplingConfig:
 
 def load_suite_manifest(path: str | Path) -> SuiteManifest:
     raw = _load_yaml_mapping(path, "suite manifest")
-    _require_keys(raw, _SUITE_FIELDS, "suite manifest")
+    optional = {"prompt"}
+    _require_keys({k: v for k, v in raw.items() if k not in optional}, _SUITE_FIELDS - optional, "suite manifest")
+    prompt = raw.get("prompt")
+    if prompt is not None:
+        prompt = _require_str(prompt, "suite manifest.prompt")
 
     positions = tuple(
         _require_str(p, f"suite manifest.positions[{i}]")
@@ -515,4 +523,5 @@ def load_suite_manifest(path: str | Path) -> SuiteManifest:
         max_steps=_require_int(raw["max_steps"], "suite manifest.max_steps"),
         result_char_cap=_require_int(raw["result_char_cap"], "suite manifest.result_char_cap"),
         audit_indices=audit_indices,
+        prompt=prompt,
     )

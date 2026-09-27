@@ -37,9 +37,17 @@ empire's current tech and none needs a feature removed:
 | pasture | (74,30) Jinju | horses, flat grass, unimproved | on the tile | `improve_tile PASTURE` | `improvement == PASTURE` and `pillaged == false` |
 | camp | (70,20) Gwangju | ivory, flat roaded plains, unimproved | on the tile | `improve_tile CAMP` | `improvement == CAMP` and `pillaged == false` |
 
-The stone at (71,21) is not used: in the base save it has no forest, and a quarry task would duplicate the
-camp's shape. All three are to be re-verified live during authoring (legal in one call, no river or
-stacking issue, builder charges ≥ 2 so the builder survives).
+All three are to be re-verified live during authoring (legal in one call, no river or stacking issue,
+builder charges ≥ 2 so the builder survives).
+
+**Authoring result (2026-09-27, before any pilot):** the camp on the ivory at (70,20) was refused through
+the standard arm's `improve_tile` on both an in-session placement and a clean reload
+(`UnitManager.CanStartOperation` false with no failure reasons), although the rules allow it
+(`CanHaveImprovement` true, Animal Husbandry researched); cause not identified. A task the standard tools
+cannot perform cannot serve a positive control, so it was replaced by the quarry on the bare stone at
+(71,21), which the probe accepted. Authored archive `BUILDER_POSCTRL_V1`
+(sha256 `265bb002…`), details in `benchmarks/provenance/builder-posctrl-v1-authoring.json`. Final tasks:
+repair the iron mine (68,23), pasture on the horses (74,30), quarry on the stone (71,21).
 
 Rubric per task: level 1 = observed via `get_units` (both arms reach it); level 4 = the outcome predicate,
 which requires the named improvement to exist and be intact. No level 2 (a builder standing on its target is
@@ -68,7 +76,9 @@ give a median of 4.5 and pass.
 - Mechanics: the ungated suite runner (non-counting by construction, stamped as such), qwen3.6-27b only,
   both arms, ABBA, **four pairs** on pilot seeds **2011, 2027, 2039, 2053** (disjoint from the counted
   seeds), same sampling, prompt and eight-step cap as the counted campaign. Suite file
-  `benchmarks/suites/builder-posctrl-pilot-r1.yaml`.
+  `benchmarks/suites/builder-posctrl-pilot-r1.yaml`, which carries the campaign prompt through the suite
+  manifest's optional `prompt` field (added for this pilot; the ungated path otherwise sends the legacy
+  per-turn prompt).
 - Freeze before viewing any transcript: the round's archive hash, position manifest (rubric and progress
   predicates), prompt, sampling, seeds and the pass criterion below are committed before the round runs.
 - Pass criterion (deliberately stricter than the counted gate): standard completes at least two tasks in at

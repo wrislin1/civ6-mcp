@@ -1,0 +1,30 @@
+suite_id: builder-posctrl-pilot-r1
+driver: single_turn
+positions:
+- builder-posctrl-v1
+models:
+- qwen3.6-27b
+arms:
+- arm_id: minimal
+  tools: minimal
+  options: {}
+- arm_id: standard
+  tools: standard
+  options: {}
+seeds:
+- 2011
+- 2027
+- 2039
+- 2053
+order: abba
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  seed: 2011
+  max_tokens: 6144
+max_steps: 8
+result_char_cap: 4000
+audit_indices: []
+prompt: >-
+  Assess the current game situation, issue the best available orders for this
+  turn, and call finish_trial when you are done.
