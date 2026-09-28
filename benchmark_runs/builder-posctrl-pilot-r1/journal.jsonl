@@ -1,0 +1,11 @@
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":0,"trial_index":1,"ts":"2026-09-27T22:34:30.640391+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":1,"trial_index":1,"ts":"2026-09-27T22:36:10.125642+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":2,"trial_index":2,"ts":"2026-09-27T22:36:10.127518+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":3,"trial_index":2,"ts":"2026-09-27T22:38:51.888730+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":4,"trial_index":3,"ts":"2026-09-27T22:38:51.890527+00:00"}
+{"attempt_ordinal":1,"event":"attempt","failure_class":"reload_or_reconnect_failure","seq":5,"trial_index":3,"ts":"2026-09-27T22:50:11.544048+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":6,"trial_index":3,"ts":"2026-09-27T22:50:11.545913+00:00"}
+{"attempt_ordinal":2,"event":"attempt","failure_class":"reload_or_reconnect_failure","seq":7,"trial_index":3,"ts":"2026-09-27T22:55:27.669450+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":8,"trial_index":3,"ts":"2026-09-27T22:55:27.671349+00:00"}
+{"attempt_ordinal":3,"event":"attempt","failure_class":"reload_or_reconnect_failure","seq":9,"trial_index":3,"ts":"2026-09-27T23:00:43.286421+00:00"}
+{"attempt_ordinal":null,"details":{"max_attempts":3},"event":"attempts_exhausted","failure_class":"attempts_exhausted","seq":10,"trial_index":3,"ts":"2026-09-27T23:00:43.288764+00:00"}

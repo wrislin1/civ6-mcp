@@ -112,3 +112,23 @@ instrument failure.
 
 Authoring about half a day live (mutations, legality probes, save, capture, twelve reload cycles, menu load
 check); pilot about 30 minutes per round; counted campaign about 2.5 hours.
+
+## 9. Pilot round 1 result (appended 2026-09-28, after the round)
+
+- First execution `benchmark_runs/builder-posctrl-pilot-r1` aborted on infrastructure before completing the
+  round: trial 3 exhausted its three reload attempts (the game was left on the continue screen while the
+  operator was using the mouse and the window was minimized; the game process then exited). Two trials
+  completed (minimal 3/12, standard 12/12). Retained; not evaluated as the round.
+- The frozen round was then executed in full, unchanged (same suite file, seeds, order, commit `6888647`),
+  as `benchmark_runs/builder-posctrl-pilot-r1-rerun1`, with no infrastructure attempts.
+
+| arm | seed 2011 | 2027 | 2039 | 2053 |
+|---|---|---|---|---|
+| minimal | 3/12 | 3/12 | 3/12 | 3/12 |
+| standard | 12/12 (3 tasks) | 12/12 (3) | 12/12 (3) | 12/12 (3) |
+
+Criterion met: standard completed at least two tasks in 4 of 4 episodes; minimal exactly 3/12 in all four.
+No authoring defect observed: every standard episode issued `repair_improvement`, `improve_tile PASTURE`
+and `improve_tile QUARRY` in place and each succeeded; minimal episodes moved builders off their tiles or
+hit a stacking rejection, neither of which touches a scored predicate. Pilot results do not count. Next,
+per §5: freeze the counted position and campaign and run fresh counted trials.

@@ -1,0 +1,16 @@
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":0,"trial_index":1,"ts":"2026-09-28T21:44:13.505996+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":1,"trial_index":1,"ts":"2026-09-28T21:45:52.003621+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":2,"trial_index":2,"ts":"2026-09-28T21:45:52.005604+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":3,"trial_index":2,"ts":"2026-09-28T21:48:24.312470+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":4,"trial_index":3,"ts":"2026-09-28T21:48:24.314348+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":5,"trial_index":3,"ts":"2026-09-28T21:50:59.752246+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":6,"trial_index":4,"ts":"2026-09-28T21:50:59.754256+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":7,"trial_index":4,"ts":"2026-09-28T21:52:33.101287+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":8,"trial_index":5,"ts":"2026-09-28T21:52:33.103236+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":9,"trial_index":5,"ts":"2026-09-28T21:54:06.084315+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":10,"trial_index":6,"ts":"2026-09-28T21:54:06.086289+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":11,"trial_index":6,"ts":"2026-09-28T21:56:36.048016+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":12,"trial_index":7,"ts":"2026-09-28T21:56:36.049967+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":13,"trial_index":7,"ts":"2026-09-28T21:59:13.427163+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":14,"trial_index":8,"ts":"2026-09-28T21:59:13.429337+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":15,"trial_index":8,"ts":"2026-09-28T22:00:49.242291+00:00"}

@@ -1,0 +1,1 @@
+{"error":"RuntimeError(\"reload_position('BUILDER_POSCTRL_V1') failed: WARNING: FireTuner port did not reopen within the wait window for 'BUILDER_POSCTRL_V1'. Last frontend classification: continue_screen. Check the game manually.\")","exception_type":"RuntimeError","failure_class":"reload_or_reconnect_failure","trial_index":3}
