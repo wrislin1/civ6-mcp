@@ -636,3 +636,27 @@ def test_campaign_v3_differs_from_v2_only_by_id_and_position_version():
     assert v2.pop("campaign_id") == "builder-economy-cal-v2" and v3.pop("campaign_id") == "builder-economy-cal-v3"
     assert v2.pop("position") == "builder-economy-cal-v1" and v3.pop("position") == "builder-economy-cal-v2"
     assert v2 == v3
+
+
+def test_posctrl_campaign_differs_from_v3_only_by_id_and_position():
+    """builder-posctrl-cal-v1 (2026-09-28) is the counted campaign for the
+    builder positive-control position (design note 2026-09-27 §6): same models,
+    sampling, seeds, order, audits, rules, prompt and contract as v3; only the
+    position (and its provenance) changes. The position's rubric maximum is
+    still 12 (three tasks x 4), so the 4/12 gate means the same thing."""
+    import yaml
+
+    from civ_mcp.arena.benchmark_manifest import load_position_manifest
+
+    v3 = yaml.safe_load(_CAMPAIGN.read_text())
+    pc = yaml.safe_load((_REPO / "benchmarks" / "campaigns" / "builder-posctrl-cal-v1.yaml").read_text())
+    assert v3.pop("campaign_id") == "builder-economy-cal-v3" and pc.pop("campaign_id") == "builder-posctrl-cal-v1"
+    assert v3.pop("position") == "builder-economy-cal-v2" and pc.pop("position") == "builder-posctrl-v1"
+    assert v3.pop("position_provenance") == "../provenance/builder-economy-cal-v1-authoring.json"
+    assert pc.pop("position_provenance") == "../provenance/builder-posctrl-v1-authoring.json"
+    assert v3 == pc
+    pos = load_position_manifest(_REPO / "benchmarks" / "positions" / "builder-posctrl-v1.yaml")
+    assert pos.split == "calibration"
+    assert sum(max(level["score"] for level in task["levels"]) for task in pos.rubric) == 12
+    loaded = load_campaign_manifest(_REPO / "benchmarks" / "campaigns" / "builder-posctrl-cal-v1.yaml")
+    assert not set(loaded.seeds) & {2011, 2027, 2039, 2053}  # disjoint from the pilot seeds
