@@ -1,0 +1,116 @@
+{
+  "audit_indices": [
+    1,
+    2,
+    11,
+    12,
+    23,
+    24
+  ],
+  "reviewer": "claude-opus-5-5, 2026-09-28; independent semantic read of every step (domain rejection = any call the game refused incl. Error:/ERR:/|BLOCKED; useful = a mutation that itself flips an objective progress sub-predicate; repetition = identical call+result on an unchanged digest); final tiles checked against the level 4 predicates",
+  "session_fingerprint": "e085f0d5342e92133e2a8708e88e94a931e5ebce506f95d30166d3f37207703c",
+  "trials": [
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed101: observation; archer capture-move BLOCKED; archer moved 1 tile (mutation, not objective); builder move onto occupied (68,23) STACKING_CONFLICT. 2 rejections, 0 repetitions.",
+      "index": 1,
+      "manual": {
+        "domain_rejections": 2,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "c1bb47ad9f28fbe715b13e32f417d68a80729f6aba195b3dfb4f079b39f8933a"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed101: observation incl. get_builder_tasks; repair, pasture, quarry in place, each accepted and completing its task; recruit ERR:CANNOT_RECRUIT; three distinct get_map_area; attack NOT_AT_WAR. 2 rejections, 0 repetitions, 3 useful.",
+      "index": 2,
+      "manual": {
+        "domain_rejections": 2,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 4,
+          "quarry-stone": 4,
+          "repair-iron-mine": 4
+        },
+        "useful_actions": 3
+      },
+      "seed": 101,
+      "trial_sha256": "46d6cbc1aaa7c76060bbd27c0e0acd6c609bd788f06bcba1e76f120985899adf"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed601: observation; attack NOT_AT_WAR; repair, pasture, quarry accepted and complete; recruit ERR; get_great_people again but after the digest changed (not a repetition); scout move BLOCKED by water; two military moves (mutations, not objective). 3 rejections, 0 repetitions, 3 useful.",
+      "index": 11,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 4,
+          "quarry-stone": 4,
+          "repair-iron-mine": 4
+        },
+        "useful_actions": 3
+      },
+      "seed": 601,
+      "trial_sha256": "77d09c62d614c7fc8d69a8e2a26778cfa0606845d4aac3d5ac5d6ce126a82076"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed601: six set_city_production calls: MISSING_COORDS, granary accepted, CANNOT_PRODUCE (already built), CANNOT_PRODUCE, CANNOT_START, settler accepted; production changes are not in canonical state. 4 rejections, 0 repetitions.",
+      "index": 12,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 601,
+      "trial_sha256": "30de5b6ceacc8b60041df2e68b29542e8162202419db99d2147a99deebc18dd8"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed1201: observation incl. get_builder_tasks; repair, pasture, quarry accepted and complete; recruit ERR; attack NOT_AT_WAR; archer moved (mutation, not objective). 2 rejections, 0 repetitions, 3 useful.",
+      "index": 23,
+      "manual": {
+        "domain_rejections": 2,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 4,
+          "quarry-stone": 4,
+          "repair-iron-mine": 4
+        },
+        "useful_actions": 3
+      },
+      "seed": 1201,
+      "trial_sha256": "560fa532dda6234f69e470be1e3ac010b1907ab89b33edc8fce61b52fbd9bd38"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed1201: set_city_production MISSING_COORDS, granary accepted, CANNOT_PRODUCE, MISSING_COORDS (different city, not a repetition), CANNOT_PRODUCE, settler accepted. 4 rejections, 0 repetitions.",
+      "index": 24,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "093d5fa1de72d0e3db2d6561209241da352fd79bfac86a90d538f444dafb56c4"
+    }
+  ]
+}

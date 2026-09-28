@@ -247,3 +247,29 @@ results are broadcast; the main menu fires its own query), and a minimized game 
 screen classifier read `unknown` indefinitely. The first v3 run directory, stopped at its
 production-reload gate by the first defect, is retained as
 `benchmark_runs/builder-economy-cal-v3.pre-queryid-fix-1dd405c`.
+
+## 11. Positive-control campaign `builder-posctrl-cal-v1` — CALIBRATED (2026-09-28)
+
+Position `builder-posctrl-v1` (design: `docs/superpowers/specs/2026-09-27-builder-positive-control-design.md`;
+preregistration: `docs/superpowers/plans/2026-09-28-builder-posctrl-campaign-preregistration.md`): each task
+builder starts on its target tile, so each task is one tool call; level 4 scores the intact improvement.
+
+| block | decided | standard wins | median normalized Δ | outcome |
+|---|---|---|---|---|
+| gemma4-26b | 12/12 | 12 | 0.750 (9/12) | PASS |
+| qwen3.6-27b | 12/12 | 12 | 0.750 (9/12) | PASS |
+
+- Minimal scored 3/12 in all 48 minimal trials (observation only; no improvement tool).
+- Standard scored 12/12 in 23 of 24 trials. The exception, Qwen seed 809 (trial 15), built the pasture
+  and quarry and exhausted its eight model turns before issuing the repair (9/12).
+- Gemma, at floor on the builder-economy position in v1–v3 (farm on its repair builder's own tile), completed
+  all three tasks in every standard trial here. That supports the v3 diagnosis that the earlier position's
+  shape, not a missing capability, limited the effect; it is not evidence about harder positions.
+- Metric fidelity: independent semantic reads of indices 1, 2, 11, 12, 23, 24 in both blocks agree with the
+  scorer on rejections, repetitions, useful actions and task scores. No tied pairs, so no tie attribution.
+- Pilot (non-counting): round 1 passed on a full rerun after an infrastructure abort; both runs retained.
+
+Scope (unchanged from the design note §1): this satisfies the calibration requirement only — the instrument
+detects a known capability difference under favourable conditions. It does not validate scoring of
+navigation, prioritisation, or beneficial alternative play; that concern stays open for Plan 3. Report:
+`benchmark_runs/builder-posctrl-cal-v1/campaign_report.md`.

@@ -1,0 +1,1 @@
+{"trials":[{"arm_id":"minimal","index":1,"model":"gemma4-26b","pair_id":"builder-posctrl-v1:gemma4-26b:seed101:0","position_id":"builder-posctrl-v1","seed":101},{"arm_id":"standard","index":2,"model":"gemma4-26b","pair_id":"builder-posctrl-v1:gemma4-26b:seed101:0","position_id":"builder-posctrl-v1","seed":101}]}

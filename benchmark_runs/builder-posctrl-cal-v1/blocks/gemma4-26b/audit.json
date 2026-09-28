@@ -1,0 +1,116 @@
+{
+  "audit_indices": [
+    1,
+    2,
+    11,
+    12,
+    23,
+    24
+  ],
+  "reviewer": "claude-opus-5-5, 2026-09-28; independent semantic read of every step (domain rejection = any call the game refused incl. Error:/ERR:/|BLOCKED; useful = a mutation that itself flips an objective progress sub-predicate; repetition = identical call+result on an unchanged digest); final tiles checked against the level 4 predicates",
+  "session_fingerprint": "b87145900791d174a2d257e7c5782a8da24467bc66346077a251802fa0b946ff",
+  "trials": [
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed101: move builder onto occupied (74,30) STACKING_CONFLICT; warrior capture-move BLOCKED; warrior moved 1 tile (mutation, not objective); two identical NO_MOVES calls on an unchanged digest. 4 rejections, 1 repetition.",
+      "index": 1,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 1,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 101,
+      "trial_sha256": "bfd6304c582737f333df3f241772313350f3a0781fe34f54c205cfe41c2ce220"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed101: pasture, quarry, repair each in place, each accepted and each flipping its task to complete; set_research accepted. 0 rejections, 0 repetitions, 3 useful.",
+      "index": 2,
+      "manual": {
+        "domain_rejections": 0,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 4,
+          "quarry-stone": 4,
+          "repair-iron-mine": 4
+        },
+        "useful_actions": 3
+      },
+      "seed": 101,
+      "trial_sha256": "6eca2b1bd2e97b4336005a19254a0edc86ee016e708ad3cfe118d322d9e90e20"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed601: pasture, quarry, repair accepted and complete; set_research MINING ALREADY_COMPLETED; get_tech_civics. 1 rejection, 0 repetitions, 3 useful.",
+      "index": 11,
+      "manual": {
+        "domain_rejections": 1,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 4,
+          "quarry-stone": 4,
+          "repair-iron-mine": 4
+        },
+        "useful_actions": 3
+      },
+      "seed": 601,
+      "trial_sha256": "d00cb78e1cc609458dfb304cf298fca5dd608bf807427bdd90028fe50e37cffa"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed601: three set_research ALREADY_COMPLETED; get_overview repeated identically on an unchanged digest; MACHINERY accepted with no canonical change. 3 rejections, 1 repetition.",
+      "index": 12,
+      "manual": {
+        "domain_rejections": 3,
+        "repetitions": 1,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 601,
+      "trial_sha256": "68e8aa36cc83f8fba701ea0abdeedf12c03d190783a0cf147a97b780b4607131"
+    },
+    {
+      "arm_id": "standard",
+      "finding": "standard seed1201: get_builder_tasks, then repair, pasture, quarry accepted and complete; move of the spent pasture builder NO_MOVES. 1 rejection, 0 repetitions, 3 useful.",
+      "index": 23,
+      "manual": {
+        "domain_rejections": 1,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 4,
+          "quarry-stone": 4,
+          "repair-iron-mine": 4
+        },
+        "useful_actions": 3
+      },
+      "seed": 1201,
+      "trial_sha256": "40d5379fb21d9800797ddb7ef20ae379e4deafc420cb300c2aa1983fecfd7ec2"
+    },
+    {
+      "arm_id": "minimal",
+      "finding": "minimal seed1201: three set_research ALREADY_COMPLETED; APPRENTICESHIP accepted; builder move STACKING_CONFLICT. 4 rejections, 0 repetitions.",
+      "index": 24,
+      "manual": {
+        "domain_rejections": 4,
+        "repetitions": 0,
+        "task_scores": {
+          "pasture-horses": 1,
+          "quarry-stone": 1,
+          "repair-iron-mine": 1
+        },
+        "useful_actions": 0
+      },
+      "seed": 1201,
+      "trial_sha256": "d2c43863a9634c0346c89af4a728cf434daec7c9c587452439f2d8c90df0bc0c"
+    }
+  ]
+}

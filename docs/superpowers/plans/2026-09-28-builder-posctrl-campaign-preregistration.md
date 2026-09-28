@@ -36,3 +36,9 @@ abort resumes the same run (the runner's attempt budget and resume rules apply).
 Session civ-mcp stopped (tuner slot free); `~/.config/riz-llm/.env` sourced into the runner only;
 `--gateway-url http://192.168.20.146:11440/v1`; both checkouts clean at the freeze commit; non-counting
 validation, then `--one-block` gemma4-26b, audit, then qwen3.6-27b, audit, campaign report.
+
+## Result (appended after the campaign, 2026-09-28)
+
+`CALIBRATED`: gemma4-26b PASS and qwen3.6-27b PASS, each 12/12 decided, 12 standard wins, median
+normalized Δ 0.750. Metric fidelity OK in both blocks; no ties. Report:
+`benchmark_runs/builder-posctrl-cal-v1/campaign_report.md`; findings section 11.
