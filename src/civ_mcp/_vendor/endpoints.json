@@ -102,6 +102,29 @@
       }
     },
     {
+      "acquisition": "direct",
+      "drain_by_hosts": [
+        "home-llm"
+      ],
+      "gpu_indexes": [
+        1
+      ],
+      "host_id": "home-llm",
+      "id": "home-gpu1-laya",
+      "kind": "systemone",
+      "modes": [
+        "decision"
+      ],
+      "port": 11450,
+      "units": [
+        "laya.service"
+      ],
+      "urls": {
+        "host_loopback": "http://127.0.0.1:11450/v1",
+        "lan": "http://192.168.20.146:11450/v1"
+      }
+    },
+    {
       "acquisition": "gpu-session-controller",
       "drain_by_hosts": [],
       "gpu_indexes": [
@@ -213,6 +236,29 @@
         "host_loopback": "http://127.0.0.1:11431",
         "lan": "http://192.168.20.196:11431",
         "litellm": "http://host.docker.internal:11431"
+      }
+    },
+    {
+      "acquisition": "direct",
+      "drain_by_hosts": [
+        "riz-llm"
+      ],
+      "gpu_indexes": [
+        1
+      ],
+      "host_id": "riz-llm",
+      "id": "riz-gpu1-clef",
+      "kind": "systemone",
+      "modes": [
+        "decision"
+      ],
+      "port": 11450,
+      "units": [
+        "clef.service"
+      ],
+      "urls": {
+        "host_loopback": "http://127.0.0.1:11450/v1",
+        "lan": "http://192.168.20.196:11450/v1"
       }
     },
     {
@@ -346,6 +392,6 @@
   "source": {
     "generator": "tools/scripts/gen-configs.py",
     "manifest": "models.yaml",
-    "models_yaml_sha256": "cacb444359fdc8660154a13dc2e4bd773c8703ce7b73a646abc60a24f304e7d2"
+    "models_yaml_sha256": "88a4d350cfe7023b4e57eee03e5c5c2d541fb8227454cbc8102ac1e8094c11c0"
   }
 }

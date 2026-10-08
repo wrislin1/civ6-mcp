@@ -18,6 +18,12 @@ GATEWAY_NETWORKS = {"lan", "host_loopback", "compose"}
 OPENAI_ENDPOINT_KINDS = frozenset(
     {"ollama", "llamacpp", "llamacpp-session"}
 )
+# Decision-model servers speaking the Jev/SystemOne wire protocol (POST
+# {base}/systemone). Not OpenAI-compatible and never gateway-routed.
+SYSTEMONE_ENDPOINT_KINDS = frozenset({"systemone"})
+ENDPOINT_KINDS = OPENAI_ENDPOINT_KINDS | SYSTEMONE_ENDPOINT_KINDS
+# Kinds LiteLLM proxies; only these carry a "litellm" URL context.
+GATEWAY_ROUTED_KINDS = frozenset({"ollama", "llamacpp"})
 
 
 class RegistryLoadError(RuntimeError):
@@ -94,6 +100,34 @@ class Registry:
         if endpoint.kind == "ollama":
             return f"{url.rstrip('/')}/v1"
         return url
+
+    def systemone_endpoint_ids(self) -> tuple[str, ...]:
+        """Return endpoint ids that serve the Jev/SystemOne decision protocol."""
+        return tuple(sorted(
+            endpoint_id
+            for endpoint_id, endpoint in self._endpoints.items()
+            if endpoint.kind in SYSTEMONE_ENDPOINT_KINDS
+        ))
+
+    def systemone_url(
+        self,
+        endpoint_id: str,
+        *,
+        network: str,
+        caller_host_id: str | None = None,
+    ) -> str:
+        """Return the full POST URL for a SystemOne decision endpoint."""
+        endpoint = self.endpoint(endpoint_id)
+        if endpoint.kind not in SYSTEMONE_ENDPOINT_KINDS:
+            raise ValueError(
+                f"endpoint {endpoint_id!r} does not speak SystemOne"
+            )
+        url = self.url(
+            endpoint_id,
+            network=network,
+            caller_host_id=caller_host_id,
+        )
+        return f"{url.rstrip('/')}/systemone"
 
     def gpu(self, host_id: str, index: int) -> Gpu:
         return self._gpus[(host_id, index)]
@@ -250,11 +284,11 @@ def _parse(payload: Any) -> Registry:
         if any((host_id, index) not in gpus for index in indexes):
             raise RegistryLoadError("endpoint references unknown host/GPU")
         kind = _string(row.get("kind"), "endpoint kind")
-        if kind not in OPENAI_ENDPOINT_KINDS:
+        if kind not in ENDPOINT_KINDS:
             raise RegistryLoadError("invalid endpoint kind")
         urls = _mapping(row.get("urls"), "endpoint urls")
         required_urls = {"lan", "host_loopback"}
-        if kind != "llamacpp-session":
+        if kind in GATEWAY_ROUTED_KINDS:
             required_urls.add("litellm")
         if not required_urls.issubset(urls):
             raise RegistryLoadError("endpoint has incomplete URL contexts")
