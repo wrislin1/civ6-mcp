@@ -392,3 +392,27 @@ def test_score_reads_only_trial_and_rubric():
     case["expected"]["ledger"] = ["x"]
     assert score_trial(case["trial"], case["rubric"]) == first
     assert case["trial"] == snapshot["trial"] and case["rubric"] == snapshot["rubric"]
+
+
+def test_event_timed_exposure_harm_is_rejected():
+    with pytest.raises(ValueError, match="event"):
+        validate_rubric_structure(rubric(harms=[harm("exposed", predicate=EXPOSED)]))
+
+
+def test_compensated_winner_suppresses_lower_priority_restatement():
+    replacement = {"kind": "unit_in_area", "unit_types": ["UNIT_BUILDER"],
+                   "tiles": [[12, 12]]}
+    harms = [harm(priority=2, compensation=[{"timing": "final", "predicate": replacement}]),
+             harm("builder-any", weight=2, weight_reason="restated loss", priority=1,
+                  predicate={"kind": "any", "predicates": [LOST]})]
+    s0 = state(units=[builder()])
+    s1 = state()
+    s2 = state(units=[builder(id=5, x=12, y=12)])
+    t = trial(s0, [step(0, s0, s1, "delete_unit", {"unit_id": 1}),
+                   step(1, s1, s2, "purchase_item", {"item_name": "UNIT_BUILDER"})])
+    result = score_trial(t, rubric(harms=harms))
+    assert only_harm(result)["status"] == "compensated"
+    restated = only_harm(result, "builder-any")
+    assert restated["status"] == "deduplicated" and restated["charged_harm"] == "builder-lost"
+    assert restated["deduction"] == 0
+    assert result["harm_total"] == 0

@@ -30,9 +30,10 @@ _HARM_KEYS = {"id", "loss_key", "objective_id", "weight", "weight_reason", "timi
               "predicate", "compensation", "priority"}
 _COMPENSATION_KEYS = {"timing", "predicate"}
 _TIMINGS = ("final", "event")
-# Kinds that need a recorded transition, and kinds meaningful on one.
+# Kinds that need a recorded transition; they are the only event-capable kinds.
+# Exposure is final-only: temporary exposure followed by recovery is no debit.
 _EVENT_ONLY_KINDS = frozenset({"unit_lost", "asset_displaced"})
-_EVENT_CAPABLE_KINDS = _EVENT_ONLY_KINDS | {"new_civilian_exposure"}
+_EVENT_CAPABLE_KINDS = _EVENT_ONLY_KINDS
 
 
 # ---------------------------------------------------------------------------
@@ -296,17 +297,19 @@ def score_trial(trial: dict[str, Any], rubric: dict[str, Any]) -> dict[str, Any]
     records = [_harm_record(h, trial) for h in rubric["harms"]]
     groups: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        if record["status"] == "fired":
+        if record["fired"]:
             groups.setdefault(record["loss_key"], []).append(record)
     for group in groups.values():
-        # Highest priority wins; equal-priority members share one weight
-        # (validated), so declaration order breaks the tie harmlessly.
-        charged = max(group, key=lambda r: r["priority"])
+        # Precedence is resolved over every fired member before compensation:
+        # the highest priority wins (equal-priority members share one weight,
+        # validated, so declaration order breaks the tie harmlessly) and is
+        # charged only when uncompensated; the rest point at the winner.
+        winner = max(group, key=lambda r: r["priority"])
         for record in group:
-            if record is charged:
+            if record is not winner:
+                record["status"], record["charged_harm"] = "deduplicated", winner["id"]
+            elif record["status"] == "fired":
                 record["status"], record["deduction"] = "charged", record["weight"]
-            else:
-                record["status"], record["charged_harm"] = "deduplicated", charged["id"]
 
     scales = _scales(rubric)
     totals = signed_totals([o["credit"] for o in objectives],
