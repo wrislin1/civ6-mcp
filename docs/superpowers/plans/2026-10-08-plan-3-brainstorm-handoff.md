@@ -130,8 +130,17 @@ code executes and verifies. The review's load-bearing points, all of which bind 
 - the experiment needs exactly the navigation / scarce-charge / threatened-route / competing-task positions
   Plan 3 defines, split by scenario rather than seed (open problem 4);
 - the calibrated positive control is a smoke test for it, not an evaluation (no score headroom).
-- Clef-flash weights ≈ 18 GB fp16 with a custom runtime for the decision head; a local deployment is real work,
-  the hosted API is the cheap first step. Laya is not worth including without a training corpus.
+- The original research treated local Clef deployment as outstanding and excluded Laya without a training
+  corpus. Those infrastructure/roster assumptions are superseded by the update below; the historical
+  research is not a current admission decision.
+
+**Infrastructure update (2026-10-08):** the [SystemOne server handoff](../../handoffs/2026-10-08-systemone-decision-servers.md)
+at `02f0176` records local Clef-Flash on riz-llm GPU1, Laya on home-llm GPU1, and a hosted Clef 27B reference.
+Registry resolution is already vendored; the arena decision backend and protocol-specific admission are
+still owed. The [Part 1 implementation plan](2026-10-08-arena-benchmark-plan-3-part-1.md) carries those
+requirements into a separate consumer handoff. Laya is now an available evaluation candidate; stronger
+27B probabilities and the small Flash parity sample are not evidence of benchmark quality. The
+same-menu control, objective-blind public observations, all-nine freeze and held-out restrictions remain.
 
 ## 6. Pointers
 
@@ -145,6 +154,7 @@ code executes and verifies. The review's load-bearing points, all of which bind 
 | findings | `docs/research/arena-benchmark-builder-calibration-v1-findings.md` (§11 posctrl, §12 closure) |
 | positive-control design + pilot rule | `docs/superpowers/specs/2026-09-27-builder-positive-control-design.md` |
 | preregistrations | `docs/superpowers/plans/2026-09-27-builder-calibration-v3-preregistration.md`, `2026-09-28-builder-posctrl-campaign-preregistration.md` |
+| decision-server protocol and operational handoff | `docs/handoffs/2026-10-08-systemone-decision-servers.md` (`02f0176`) |
 | tests pinning the frozen choices | `tests/arena/test_benchmark_contract.py`, `tests/arena/test_builder_posctrl_position.py` |
 
 ## 7. Suggested first brainstorm questions

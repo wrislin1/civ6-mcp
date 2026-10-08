@@ -601,6 +601,15 @@ interaction rules. Non-empty options remain rejected until they are actually imp
 decision-model experiment is separately designed, has a same-menu LLM control, and consumes the library
 through player-visible observations. Tracker evaluation remains deferred to multi-turn rollouts.
 
+The [SystemOne server handoff](../../handoffs/2026-10-08-systemone-decision-servers.md), committed as
+`02f0176`, records available local Clef-Flash/Laya services and a hosted Clef 27B reference. Their registry
+support exists; the arena decision adapter and health/protocol admission still belong to that separate
+experiment. They are not chat endpoints, additional screen models, or a Part 1 dependency. The implementation
+plan carries the consumer's protocol, timing, probability, menu and telemetry requirements forward. Part 1
+discoverability must cite facts visible in the tool results actually delivered under the locked character
+cap, not facts found only in private or untruncated scoring evidence. Infrastructure availability does not
+authorize any model warm-up or trial on library positions during Part 1.
+
 ## 13. Implementation handoff
 
 The written spec is reviewed before invoking `superpowers:writing-plans`. The implementation plan must
