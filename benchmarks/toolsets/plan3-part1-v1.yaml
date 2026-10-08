@@ -1,0 +1,37 @@
+toolset_id: plan3-part1-v1
+game_tools:
+  - get_overview
+  - get_units
+  - get_cities
+  - move_unit
+  - found_city
+  - set_city_production
+  - set_research
+  - fortify_unit
+  - skip_unit
+  - get_unit_promotions
+  - promote_unit
+  - get_map_area
+  - get_tech_civics
+  - attack_unit
+  - get_builder_tasks
+  - improve_tile
+  - remove_feature
+  - repair_improvement
+  - get_great_people
+  - recruit_great_person
+  - activate_great_person
+  - purchase_item
+  - heal_unit
+  - alert_unit
+  - set_civic
+  - get_pending_diplomacy
+  - respond_to_diplomacy
+  - get_pending_trades
+  - respond_to_trade
+  - get_city_production
+  - get_district_advisor
+  - get_purchasable_tiles
+  - purchase_tile
+  - get_pathing_estimate
+  - get_empire_resources
