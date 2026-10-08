@@ -376,8 +376,13 @@ def _eval(p: dict[str, Any], initial: dict[str, Any], final: dict[str, Any],
         ref = tuple(p["unit"])
         if not require_living_civilian(final, ref):
             return False
+        start = _unit(initial, ref)
+        if start is None:
+            raise BenchmarkStateError(f"civilian {list(ref)} has no initial position")
         unit = _unit(final, ref)
-        return _xy(unit) in _tile_set(p["tiles"]) and civilian_covered(final, ref)
+        # Rescue credit needs relocation: staying put on an accepted tile earns nothing.
+        return (_xy(unit) != _xy(start) and _xy(unit) in _tile_set(p["tiles"])
+                and civilian_covered(final, ref))
 
     if kind == "unit_in_area":
         pid, tiles = player_id(final), _tile_set(p["tiles"])

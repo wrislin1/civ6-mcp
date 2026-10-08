@@ -120,14 +120,47 @@ def test_remove_feature_and_repair_outcomes_are_consumption():
         before, after, "repair_improvement", {"unit_index": 1})))["status"] == "consumed"
 
 
+# Real `GameState.attack_unit` output: narrated estimate, then the Lua
+# `OK:MELEE_ATTACK|...` line with `OK:` stripped, then the follow-up.
+REAL_MELEE_RESULT = (
+    "Combat Estimate (Melee):\n"
+    "  UNIT_WARRIOR (CS:20, HP:100) vs UNIT_BARBARIAN_HORSEMAN (CS:36, HP:100)\n"
+    "  Modifiers: none\n"
+    "  Est damage to defender: ~12\n"
+    "  Est damage to attacker: ~110\n"
+    "  -> WARNING: attacker likely dies!\n"
+    "MELEE_ATTACK|target:UNIT_BARBARIAN_HORSEMAN at (13,10)"
+    "|enemy HP:100 -> 88/100|your HP:100 -> 100 CS:20|est damage dealt:~12\n"
+    "  Post-combat: ~88/100 (estimate — verify with get_units)"
+)
+
+
 def test_executed_melee_attack_with_absent_attacker_is_lost():
     before = state_v2(units=[warrior()])
     after = state_v2()
     rec = only(classify_lifecycle(step(
         before, after, "attack_unit", {"unit_index": 2, "x": 13, "y": 10},
-        result="MELEE_ATTACK|pre_hp:100/100")))
+        result=REAL_MELEE_RESULT)))
     assert rec["entity"] == [0, 2] and rec["status"] == "lost"
     assert rec["facts"]["tool_name"] == "attack_unit"
+    assert rec["facts"]["battle"].startswith("MELEE_ATTACK|target:")
+
+
+def test_estimate_alone_is_not_battle_evidence():
+    before = state_v2(units=[warrior()])
+    estimate_only = REAL_MELEE_RESULT.split("\nMELEE_ATTACK|")[0]
+    rec = only(classify_lifecycle(step(
+        before, state_v2(), "attack_unit", {"unit_index": 2, "x": 13, "y": 10},
+        result=estimate_only + "\nError: NO_ENEMY")))
+    assert rec["status"] == "unresolved"
+
+
+def test_ranged_attack_with_absent_attacker_is_unresolved():
+    before = state_v2(units=[warrior()])
+    rec = only(classify_lifecycle(step(
+        before, state_v2(), "attack_unit", {"unit_index": 2, "x": 13, "y": 10},
+        result="Combat Estimate (Ranged):\n  ...\nRANGE_ATTACK|target at (13,10)")))
+    assert rec["status"] == "unresolved"
 
 
 def test_rejected_attack_with_absent_attacker_is_unresolved():
@@ -135,7 +168,7 @@ def test_rejected_attack_with_absent_attacker_is_unresolved():
     after = state_v2()
     rec = only(classify_lifecycle(step(
         before, after, "attack_unit", {"unit_index": 2, "x": 13, "y": 10},
-        result="ERR:NO_ENEMY")))
+        result="Error: NO_ENEMY")))
     assert rec["status"] == "unresolved"
 
 

@@ -242,10 +242,27 @@ def test_absent_visibility_in_final_raises_rather_than_reading_as_safe():
 COVER = {"kind": "civilian_covered", "unit": [0, 1], "tiles": [[10, 11]]}
 
 
-def test_civilian_covered_requires_accepted_tile_and_cover():
-    assert ev(COVER, state_v2(units=[civ(x=10, y=11), mil(x=11, y=11)]))
-    assert not ev(COVER, state_v2(units=[civ(x=10, y=10), mil(x=10, y=10)]))
-    assert not ev(COVER, state_v2(units=[civ(x=10, y=11)]))
+def test_civilian_covered_requires_relocation_onto_accepted_covered_tile():
+    start = state_v2(units=[civ(x=10, y=14), mil(x=11, y=11)])
+    assert ev(COVER, start, state_v2(units=[civ(x=10, y=11), mil(x=11, y=11)]))
+    assert not ev(COVER, start, state_v2(units=[civ(x=10, y=10), mil(x=10, y=10)]))
+    assert not ev(COVER, start, state_v2(units=[civ(x=10, y=11)]))
+
+
+def test_civilian_already_covered_on_accepted_tile_without_moving_is_false():
+    s = state_v2(units=[civ(x=10, y=11), mil(x=11, y=11)])
+    assert civilian_covered(s, (0, 1))
+    assert not ev(COVER, s, deepcopy(s))
+
+
+def test_civilian_moving_onto_accepted_tile_without_cover_is_false():
+    start = state_v2(units=[civ(x=10, y=14), mil(x=13, y=11)])
+    assert not ev(COVER, start, state_v2(units=[civ(x=10, y=11), mil(x=13, y=11)]))
+
+
+def test_civilian_covered_without_initial_position_raises():
+    with pytest.raises(BenchmarkStateError):
+        ev(COVER, state_v2(), state_v2(units=[civ(x=10, y=11), mil(x=11, y=11)]))
 
 
 def test_no_positive_rung_for_moving_closer_to_cover():
@@ -255,7 +272,8 @@ def test_no_positive_rung_for_moving_closer_to_cover():
 
 
 def test_civilian_covered_on_missing_civilian_is_false():
-    assert not ev(COVER, state_v2(units=[mil(x=10, y=11)]))
+    start = state_v2(units=[civ(x=10, y=14), mil(x=10, y=11)])
+    assert not ev(COVER, start, state_v2(units=[mil(x=10, y=11)]))
 
 
 # ---------------------------------------------------------------------------

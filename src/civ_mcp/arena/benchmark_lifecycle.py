@@ -18,9 +18,19 @@ _COUNT_KEYS = {"units": "unit", "targets": "target", "cities": "city", "tiles": 
 
 # Tools whose successful final-charge use removes the builder.
 _IMPROVEMENT_TOOLS = frozenset({"improve_tile", "remove_feature", "repair_improvement"})
-# Result prefixes that show a melee battle executed (ranged attackers take no
-# damage, so only melee can kill the attacker).
-_MELEE_RESULT_PREFIXES = ("MELEE_ATTACK",)
+# `GameState.attack_unit` returns the narrated combat estimate followed by the
+# Lua `OK:MELEE_ATTACK|...` line with `OK:` stripped, so an executed melee
+# battle is a result line starting with this marker (rejections are
+# `Error: ...` and carry no such line). Ranged attackers take no damage, so
+# only melee can kill the attacker.
+_MELEE_BATTLE_MARKER = "MELEE_ATTACK|"
+
+
+def _melee_battle_line(result: str) -> str | None:
+    for line in result.splitlines():
+        if line.startswith(_MELEE_BATTLE_MARKER):
+            return line
+    return None
 
 
 def complete_rows(state: Any, family: str) -> list[dict[str, Any]]:
@@ -135,8 +145,8 @@ def classify_lifecycle(step: dict[str, Any]) -> list[dict[str, Any]]:
             records.append(_record(unit, "consumed", **base, charges_before=1))
             continue
         elif (tool == "attack_unit" and _targets_index(args, unit)
-              and result.startswith(_MELEE_RESULT_PREFIXES)):
-            records.append(_record(unit, "lost", **base, cause="combat"))
+              and (battle := _melee_battle_line(result)) is not None):
+            records.append(_record(unit, "lost", **base, cause="combat", battle=battle))
             continue
         elif tool == "delete_unit" and (_targets_index(args, unit) or _targets_id(args, unit)):
             records.append(_record(unit, "lost", **base, cause="disband"))
