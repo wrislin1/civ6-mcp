@@ -8,7 +8,9 @@ here is a decision; it is the state of the world and the questions a brainstorm 
 The [Part 1 authoring and scoring spec](../specs/2026-10-08-arena-benchmark-plan-3-part-1-design.md)
 records those decisions and the delta roadmap for Parts 2 and 3. The six written-review amendments
 were incorporated on 2026-10-08. The [Part 1 implementation plan](2026-10-08-arena-benchmark-plan-3-part-1.md)
-is the execution handoff; software implementation and live authoring have not started.
+is the execution handoff; its review revision separates the work into 22 tasks, pins tracked historical
+evidence, and adds cancellation-safe single-query capture and a positive-control timing gate. Software
+implementation and live authoring have not started.
 The handoff below retains the pre-brainstorm questions and evidence.
 
 ## 1. Where things stand
@@ -138,7 +140,7 @@ code executes and verifies. The review's load-bearing points, all of which bind 
 at `02f0176` records local Clef-Flash on riz-llm GPU1, Laya on home-llm GPU1, and a hosted Clef 27B reference.
 Registry resolution is already vendored; the arena decision backend and protocol-specific admission are
 still owed. The [Part 1 implementation plan](2026-10-08-arena-benchmark-plan-3-part-1.md) carries those
-requirements into a separate consumer handoff. Laya is now an available evaluation candidate; stronger
+requirements by linking to the consumer-design section of the server handoff. Laya is now an available evaluation candidate; stronger
 27B probabilities and the small Flash parity sample are not evidence of benchmark quality. The
 same-menu control, objective-blind public observations, all-nine freeze and held-out restrictions remain.
 

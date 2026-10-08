@@ -162,10 +162,17 @@ has an explicit coverage status. Missing evidence required by a primary predicat
 reporting error, never a false predicate or fabricated zero. Normal absence of a destroyed or consumed
 entity is different from a truncated response.
 
-Every version-2 capture has a **2.0-second hard wall limit**, covering its query, parsing, normalisation,
-and digest. A timeout or overrun is an infrastructure failure, never a scoreable model timeout. The same
-classification applies if the episode wall expires while a capture is in flight. Discard an incomplete
-capture and require the existing reload/reconnect path before another attempt.
+Every version-2 capture uses **one Lua execution** and has a **2.0-second hard wall limit**, covering
+connection drains, query, parsing, normalisation and digest. The implementation plan fixes the row grammar
+and count-bearing end sentinel before query/parser implementation; fixtures are hand-written from that
+grammar. Per-city/unit/tile query fan-out is not an admitted capture.
+
+A capture timeout or overrun is an infrastructure failure, never a scoreable model timeout. The same
+classification applies when the agent confirms its episode deadline expired while a capture was in flight.
+The wrapper records cancellation telemetry in `finally`; external task/shutdown cancellation propagates
+unchanged through the agent and runner. Only the agent's timeout context can attribute its own enclosing
+deadline. Discard an incomplete capture and require the existing reload/reconnect path before another
+infrastructure attempt; do not turn an external cancellation into a retry.
 
 Measure each capture with a monotonic clock. Keep timing outside canonical state and its digest; persist
 phase, duration, and completion status in trial/attempt diagnostics. The null script must exercise the
@@ -175,6 +182,18 @@ share of episode wall time. Only tool-before/tool-after captures enter that shar
 and final captures are outside `EpisodeEvidence.wall_clock_s`. The existing episode wall still includes
 capture work, but that cost must not be hidden in model latency. Optimise the query or prospectively
 amend the budget if it fails; do not remove required evidence to pass the timing gate.
+
+Measure pre/post connection drains separately from the non-drain residual. The existing connection uses
+0.1s and 0.2s drain waits per Lua call; report actual elapsed drain time, not a fixed subtraction. Two
+captures around one read tool can therefore account for roughly two thirds of the step's elapsed time
+without implying an expensive state query. All of that overhead remains inside the capture wall bound.
+
+Before freezing the implementation budget and before any library authoring clock, run a one-off full-scope
+v2 timing probe on the existing `builder-posctrl-v1` positive-control save. It is not a library position.
+Use only observations and verified reloads, no model inference; retain twenty complete samples, scope/row
+counts, unchanged identity/digests, per-phase timings and source identity. Every sample must use one Lua
+execution and meet 2.0s. Failure blocks budget freeze until query optimization or a prospective amendment
+passes the probe. Each eventual library position still needs its own full-scope null timing gate.
 
 Capture enough tile content before actions to measure alternatives outside the declared objective tiles.
 For these three positions, include player-owned tiles and a frozen, player-discoverable area covering
@@ -332,6 +351,11 @@ do not select input actions from the expected-membership list. Feed the resultin
 classifier used for new reports. There is no separate historical-mode classifier or live regression run.
 This acceptance test must pass offline before any authoring clock starts.
 
+All 96 historical economy trials are already Git-tracked despite the `benchmark_runs/` ignore rule.
+The fixture references those paths and SHA-256 values directly and fails on missing/altered inputs; do not
+duplicate them in a compressed corpus. Pin `benchmark_report.py` and `action_metrics.py` to their unchanged
+`bf0f0b5` file digests as recorded in the implementation plan.
+
 The original evidence did not record tile yields. The audit's later city-yield probes are supplementary
 historical measurements, explicitly labelled as such. They can support the historical interpretation of
 the 28 farms, but cannot be relabelled as measured tile deltas in those trials. Automate what the archived
@@ -478,7 +502,8 @@ civilian harm just to repeat a shared geometry test.
 - Legitimate final-charge consumption where applicable, with completion retained and no false loss.
 - Snapshot incompleteness, wrong identity, malformed predicates, and unsupported tools failing explicitly.
 - Full-scope null capture timings within 2.0 seconds each, plus offline timeout/cancellation cases proving
-  capture failures cannot become model failures and timing cannot change a state digest.
+  capture failures cannot become model failures, external cancellation propagates, and timing cannot change
+  a state digest. Require the earlier positive-control timing gate as well.
 - Scripted records rejected from model-comparison aggregates.
 
 The null case tests stability of the recorded state under the tested query sequence. It does not prove
@@ -493,8 +518,8 @@ Stop only after setup, legality probes, archive capture, twelve reload checks, m
 scripted cases, and the final restored-state check have passed. Persist start/end times and stage timings
 in provenance. All retries, debugging during that attempt, load waits, and interruptions count.
 
-Toolkit implementation, the 117-mutation regression, other offline tests, and offline scenario design
-occur before this clock starts. A failed recipe replay or restarted process does not reset it. Exceeding
+Toolkit implementation, the 117-mutation regression, other offline tests, offline scenario design, and
+the non-library positive-control timing probe occur before this clock starts. A failed recipe replay or restarted process does not reset it. Exceeding
 the bound fails that scenario attempt; retain it and report the failure.
 
 Each family permits **one declared scenario substitution**, for at most two scenario attempts. Before
@@ -520,7 +545,14 @@ produced or viewed during Part 1.
 Unit and integration validation must additionally preserve version-1 interpretation, exercise signed
 normalisation and deduction deduplication, and prove that expected script scores cannot override derived
 scores. The implementation plan selects the concrete tests; it must include the actual production runner
-and dispatch integration, not just tests of standalone predicate helpers.
+and dispatch integration, not just tests of standalone predicate helpers. Run the entire `uv run pytest`
+suite before candidate-contract freeze and again at the Part 1 exit gate.
+
+Force-add the complete Part 1 raw evidence and failed-attempt history under `benchmark_runs/plan3-part1/`
+using the implementation plan's finite path/hash inventory. Include run locks, raw trials, attempts/journals,
+authoring stages and clocks, probes, timing samples, reports and supporting evidence. Verify every referenced
+input is Git-tracked and hash-correct, then regenerate reports from a checkout containing only tracked files;
+an ignored local-only dependency cannot satisfy the reproducibility gate.
 
 ## 12. Parts 2 and 3 delta roadmap
 
@@ -605,7 +637,7 @@ The [SystemOne server handoff](../../handoffs/2026-10-08-systemone-decision-serv
 `02f0176`, records available local Clef-Flash/Laya services and a hosted Clef 27B reference. Their registry
 support exists; the arena decision adapter and health/protocol admission still belong to that separate
 experiment. They are not chat endpoints, additional screen models, or a Part 1 dependency. The implementation
-plan carries the consumer's protocol, timing, probability, menu and telemetry requirements forward. Part 1
+plan links to the consumer requirements now kept in the server handoff. Part 1
 discoverability must cite facts visible in the tool results actually delivered under the locked character
 cap, not facts found only in private or untruncated scoring evidence. Infrastructure availability does not
 authorize any model warm-up or trial on library positions during Part 1.
