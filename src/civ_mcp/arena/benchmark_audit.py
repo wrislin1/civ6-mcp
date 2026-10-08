@@ -133,7 +133,7 @@ def _improvement(step: dict[str, Any], actor: dict[str, Any] | None,
 
 def mutation_records(trial: dict[str, Any], progress: list[dict[str, Any]], *,
                      task_tiles: list[tuple[int, int]],
-                     declared_losses: list[dict[str, Any]] = ()) -> list[dict[str, Any]]:
+                     declared_losses: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Self-contained records for successful, state-changing, uncredited steps.
 
     `task_tiles` are public task coordinates from archived tool observations

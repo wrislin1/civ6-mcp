@@ -1,6 +1,8 @@
 """Tests for the uncredited-mutation classifier and the all-action loss audit."""
 from __future__ import annotations
 
+import pytest
+
 from civ_mcp.arena.benchmark_audit import (
     audit_losses,
     classify_mutation,
@@ -126,6 +128,13 @@ def test_loss_on_error_returning_action_is_audited_with_error_shape():
     assert loss["result_shape"] == "error" and loss["lifecycle"] == "lost"
     assert loss["entity"] == [0, 9] and loss["tool_name"] == "delete_unit"
     assert mutation_records(t, progress, task_tiles=[], declared_losses=harms) == []
+
+
+def test_mutation_records_require_declared_losses():
+    t = delete_warrior_trial()
+    progress, _ = audit(t)
+    with pytest.raises(TypeError, match="declared_losses"):
+        mutation_records(t, progress, task_tiles=[])
 
 
 def test_unmutated_steps_are_not_mutation_records():
