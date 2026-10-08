@@ -294,8 +294,10 @@ class SingleTurnAgent:
         self._progress_completion_tokens: int = 0
         self._progress_wall_clock_start: float = time.time()
         if self._capture_telemetry is not None:
-            # Never let an earlier episode's cancellation latch classify this one.
-            self._capture_telemetry.reset()
+            # Never let an earlier episode's cancellation latch classify this
+            # one. Clear only the latch: `records` may be shared with the
+            # runner (its initial capture), which owns the full reset().
+            self._capture_telemetry.cancelled_capture = None
         try:
             async with asyncio.timeout(self.episode_wall_s) as cm:
                 return await self._run_episode(gs, player_id, turn)

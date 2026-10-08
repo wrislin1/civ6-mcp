@@ -4121,6 +4121,36 @@ async def test_runner_resets_telemetry_before_each_attempt(tmp_path):
     assert [r["phase"] for r in telemetry.records] == ["initial", "final"]
 
 
+@pytest.mark.asyncio
+async def test_shared_telemetry_keeps_runner_and_agent_records_in_order(tmp_path):
+    telemetry = CaptureTelemetry()
+
+    async def tool_capture(conn, player_id, tile_coords):
+        return _v2_canonical()
+
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        capture_state=AsyncMock(return_value=_v2_canonical()),
+        capture_telemetry=telemetry,
+        make_agent=lambda spec: SingleTurnAgent(
+            _OneToolBackend(), "minimal", episode_wall_s=5.0, max_steps=4,
+            tile_coords=[(9, 10)], capture_state=tool_capture,
+            capture_telemetry=telemetry,
+        ),
+    )
+    runner = _runner(store, deps, expected_state=_v2_canonical())
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert store.completed_indices() == {1}
+    assert store.trial(1)["steps"][0]["tool_name"] == "get_units"
+    assert [r["phase"] for r in telemetry.records] == [
+        "initial", "tool_before", "tool_after", "final",
+    ]
+    assert all(r["complete"] for r in telemetry.records)
+    assert telemetry.summary(episode_wall_s=5.0)["count"] == 4
+
+
 def _assert_no_infra_side_effects(store, deps, index: int = 1) -> None:
     assert store.completed_indices() == set()
     assert store.attempt_count(index) == 0

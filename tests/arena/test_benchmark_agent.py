@@ -698,7 +698,7 @@ async def test_episode_deadline_during_backend_call_stays_episode_timed_out():
 async def test_stale_latch_from_an_earlier_run_is_reset():
     telemetry = CaptureTelemetry()
     telemetry.cancelled_capture = {"phase": "tool_before", "stale": True}
-    telemetry.records.append({"phase": "stale"})
+    telemetry.records.append({"phase": "initial"})
     agent = SingleTurnAgent(
         HangingBackend(), "minimal", episode_wall_s=0.02, max_steps=4,
         capture_telemetry=telemetry,
@@ -706,7 +706,9 @@ async def test_stale_latch_from_an_earlier_run_is_reset():
     with pytest.raises(EpisodeTimedOut):
         await agent.run(FakeGS(), player_id=0, turn=1)
     assert telemetry.cancelled_capture is None
-    assert telemetry.records == []
+    # The agent clears only the latch: records it does not own (e.g. the
+    # runner's initial capture on a shared instance) are kept.
+    assert telemetry.records == [{"phase": "initial"}]
 
 
 @pytest.mark.asyncio
