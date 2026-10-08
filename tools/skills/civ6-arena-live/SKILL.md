@@ -272,3 +272,14 @@ computed from the live game turn — see "Resume budget accounting" above.
 - **A minimized game window** (`-32000,-32000`, 0x0) makes OCR fail and the screen classifier read
   `unknown`; the classifier now restores it, but if a reload wait stalls on `unknown`, check window
   state first (`ShowWindow SW_RESTORE`) before assuming the game is hung.
+- **Hands off the gaming PC during a run** (learned 2026-09-28). Operator mouse use minimized the game
+  window and stole focus; the Escape press is refused unless Civ is foreground, so the continue screen was
+  never dismissed, three reload attempts failed, and the run aborted. Leave the machine alone until the
+  runner exits.
+- **The attempt budget persists per run id.** After `attempts_exhausted` (3 infrastructure attempts) a
+  same-id resume aborts immediately by design. For a non-counting pilot, rerun the frozen round in full under
+  a new run id and retain both directories; for a counted campaign the lock/resume rules apply — do not
+  reset attempts by hand.
+- **`restart-and-load` works from a dead game** (Civ exited): it reports `Kill: Game is not running`, launches,
+  OCR-selects the save, and classify-gates the Escape. Verify the canonical digest against the capture before
+  rerunning anything.

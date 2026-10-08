@@ -1533,6 +1533,17 @@ Expected: local and remote `main` match. Then fast-forward the native Windows ch
 > **Update (2026-09-27):** campaign v3 (task 3 scored on the quarry outcome) is also **BLOCKED**: gemma4-26b
 > MODEL_FLOOR_NULL, qwen3.6-27b MODEL_NULL (12/12 wins, median Δ 0.250). Per its stopping rule the
 > builder-economy position is retired for calibration; the next attempt needs a new position.
+>
+> **Update (2026-10-08): exit gate MET.** Campaign `builder-posctrl-cal-v1` on the positive-control position
+> `builder-posctrl-v1` (design `docs/superpowers/specs/2026-09-27-builder-positive-control-design.md`) is
+> **CALIBRATED**: gemma4-26b PASS and qwen3.6-27b PASS, each 12/12 decided, 12 standard wins, median
+> normalized Δ 0.750; metric fidelity OK on both blocks; report regenerates byte-identically; full suite
+> 3177 passed. `benchmarks/contracts/instrument-v1.yaml` is released (release record `instrument-v1.md`; the
+> candidate file is retained unchanged because the frozen campaign manifests reference it by path). Task 15
+> was re-executed for this campaign; see findings §12. **Plan 3 is unlocked** — handoff:
+> `docs/superpowers/plans/2026-10-08-plan-3-brainstorm-handoff.md`. The claim is narrow by design: the
+> instrument detects a known tool-capability difference under favourable conditions; navigation,
+> prioritisation and beneficial-alternative scoring remain open for Plan 3.
 
 Plan 2 is complete only when:
 

@@ -21,6 +21,10 @@ The instrument contract stays `benchmarks/contracts/instrument-v1-candidate.yaml
 `instrument-v1.yaml` is released. **Plan 3 (nine-position library, multi-model screen) remains
 blocked.**
 
+> **Update (2026-10-08, original text above kept as written):** the v1–v3 verdicts stand, but the
+> calibration requirement was subsequently met by the positive-control campaign (section 11). The contract
+> is released as `benchmarks/contracts/instrument-v1.yaml` and Plan 3 is unlocked (section 12).
+
 Interpretation, kept separate from the verdict: the treatment (builder tools) has a clear,
 one-directional effect on qwen3.6-27b (11 wins, 0 losses, 1 tie) whose size fell just under the
 preregistered 4/12 bar in v2 after clearing it (4.5/12, 12/12 wins) in v1 with the old scorer.
@@ -225,6 +229,7 @@ quarry was never built.
 By the preregistered stopping rule, `BUILDER_ECONOMY_CAL_V1`'s archive is retired for calibration
 under any rubric; the next calibration attempt uses a new position. The contract stays a candidate
 and Plan 3 stays blocked.
+*(Superseded 2026-10-08: the positive-control campaign met the requirement; contract released — see §§11–12.)*
 
 What the evidence supports: under v2 and v3 (each under its own frozen rubric version) the treatment
 arm won 23 of 24 pairs with one tie, a consistent direction on this position. v1 failed metric
@@ -273,3 +278,25 @@ Scope (unchanged from the design note §1): this satisfies the calibration requi
 detects a known capability difference under favourable conditions. It does not validate scoring of
 navigation, prioritisation, or beneficial alternative play; that concern stays open for Plan 3. Report:
 `benchmark_runs/builder-posctrl-cal-v1/campaign_report.md`.
+
+## 12. Plan 2 closure (2026-10-08)
+
+Task 15 of the plan, executed against campaign `builder-posctrl-cal-v1` at commit `2227b19`:
+
+- Full repository suite: **3177 passed** (`uv run pytest -q`, 152.9 s); `git diff --check` clean.
+- Campaign report regenerated twice from the lock plus `trials/`; byte-identical both times:
+  `campaign_report.json` `03d7a47e…`, `campaign_report.md` `d7a15e9c…`.
+- Verdict applied as preregistered: both admitted blocks pass all three separation gates, both pass metric
+  fidelity, no tied pairs. `CALIBRATED`. No threshold, audit index, or model configuration was modified.
+- Instrument contract released: `benchmarks/contracts/instrument-v1.yaml`, regenerated from the scorer source
+  with `benchmark_contract freeze` and identical in value to the candidate (fingerprint `30783b59…`). The
+  release record `instrument-v1.md` carries the predicate vocabulary, authoring conventions, compatibility
+  rules and evidence digests. The candidate file is retained unchanged because the four frozen campaign
+  manifests reference it by path; a test pins the released values to the campaign lock.
+- Plan 2 exit gate: every condition met (mandatory live admission; twelve reload cycles on the archive;
+  prompt, rubric, sampling, tool identities, audits and verdict rules frozen before counting; one audited
+  Gemma block; one audited Qwen block; byte-identical report regeneration; `CALIBRATED`). **Plan 3 is
+  unlocked.** Handoff for its brainstorm: `docs/superpowers/plans/2026-10-08-plan-3-brainstorm-handoff.md`.
+
+The scope caveat of section 11 carries forward unchanged: a positive control satisfies the calibration
+requirement; it does not validate scoring of navigation, prioritisation, or beneficial alternative play.

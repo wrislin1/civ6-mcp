@@ -4,6 +4,10 @@ Status: design, revised 2026-09-27 after review (intact-improvement predicates, 
 wording, pilot freeze rules, hypothesis wording, scope boundary). Offline until authoring starts. Supersedes nothing:
 the builder-economy position stays retired and campaigns v1–v3 stay `BLOCKED`.
 
+> **Status update (2026-10-08):** executed. Position authored 2026-09-27 (§3 authoring result), pilot round 1
+> passed 2026-09-28 (§9), counted campaign `builder-posctrl-cal-v1` **CALIBRATED** 2026-09-28 (findings §11),
+> instrument contract released 2026-10-08 (findings §12). The design text above is kept as frozen.
+
 ## 1. Claim
 
 Narrow by design: **the instrument detects a known capability difference — builder improvement tools present
