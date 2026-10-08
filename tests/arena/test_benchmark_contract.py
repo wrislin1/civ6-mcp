@@ -11,6 +11,7 @@ from civ_mcp.arena.benchmark_contract import (
     CalibrationRules,
     ContractVersions,
     ModelBlockConfig,
+    _load_contract_versions_file,
     fingerprint_identity,
     load_campaign_manifest,
     scorer_source_fingerprint,
@@ -660,3 +661,26 @@ def test_posctrl_campaign_differs_from_v3_only_by_id_and_position():
     assert sum(max(level["score"] for level in task["levels"]) for task in pos.rubric) == 12
     loaded = load_campaign_manifest(_REPO / "benchmarks" / "campaigns" / "builder-posctrl-cal-v1.yaml")
     assert not set(loaded.seeds) & {2011, 2027, 2039, 2053}  # disjoint from the pilot seeds
+
+
+def test_released_instrument_v1_matches_candidate_scorer_and_calibrated_lock():
+    """instrument-v1.yaml (released 2026-10-08 on builder-posctrl-cal-v1 CALIBRATED)
+    must carry exactly the loader's four fields, the scorer fingerprint of the
+    current source, and the same values the calibrated campaign's lock pinned.
+    The candidate file is retained unchanged because frozen campaign manifests
+    reference it by path; its values must therefore equal the release."""
+    import yaml
+
+    released_path = _REPO / "benchmarks" / "contracts" / "instrument-v1.yaml"
+    released = yaml.safe_load(released_path.read_text())
+    candidate = yaml.safe_load((_REPO / "benchmarks" / "contracts" / "instrument-v1-candidate.yaml").read_text())
+    assert set(released) == {
+        "evidence_schema_version", "predicate_schema_version", "report_schema_version", "scorer_fingerprint",
+    }
+    assert released == candidate
+    assert released["scorer_fingerprint"] == scorer_source_fingerprint(_REPO)
+    lock = json.loads((_REPO / "benchmark_runs" / "builder-posctrl-cal-v1" / "campaign.json").read_text())
+    assert lock["contracts"] == released
+    # A new campaign manifest can point at the released file and load.
+    versions = _load_contract_versions_file("../contracts/instrument-v1.yaml", _REPO / "benchmarks" / "campaigns")
+    assert versions.scorer_fingerprint == released["scorer_fingerprint"]
