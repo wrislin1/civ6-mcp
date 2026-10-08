@@ -10,9 +10,11 @@ The Lua query builder cannot run offline, so it is tested structurally.
 """
 from __future__ import annotations
 
+import asyncio
 import copy
 import random
 import re
+from pathlib import Path
 
 import pytest
 
@@ -20,11 +22,14 @@ from civ_mcp.arena import benchmark_contract_v2 as c2
 from civ_mcp.arena.benchmark_contract_v2 import document_digest
 from civ_mcp.arena.benchmark_state import BenchmarkStateError, state_digest
 from civ_mcp.arena.benchmark_state_v2 import (
+    capture_state_v2,
     digest_state_v2,
     normalize_state_v2,
     parse_state_v2,
     require_complete,
 )
+
+from .benchmark_v2_fixtures import state_v2
 
 
 def test_truncated_capture_is_not_an_empty_world():
@@ -668,3 +673,228 @@ def test_fingerprint_lists_v2_state_modules():
     assert "src/civ_mcp/lua/benchmark_v2.py" in deps
     assert "src/civ_mcp/arena/benchmark_state_v2.py" in deps
     assert deps == sorted(deps)
+
+
+# ---------------------------------------------------------------------------
+# Hand-written fixture file (tests/arena/fixtures/benchmark_state_v2.txt)
+# ---------------------------------------------------------------------------
+
+FIXTURE_PATH = Path(__file__).parent / "fixtures" / "benchmark_state_v2.txt"
+FIXTURE_COVERAGE = {"include_owned_tiles": True, "area": [[10, 10], [11, 10]],
+                    "tracked_targets": [[1, 70001]]}
+
+
+def fixture_raw(coverage=FIXTURE_COVERAGE):
+    return FIXTURE_PATH.read_text().replace("COVERAGE_SHA256", document_digest(coverage))
+
+
+def test_fixture_is_hand_written_with_a_digest_token():
+    lines = FIXTURE_PATH.read_text().splitlines()
+    assert lines[0] == "BEGIN|2.0.0|COVERAGE_SHA256"
+    assert lines[2] == "UNIT|0|131073|1|UNIT_BUILDER|civilian|10|10|100|100|2|1"
+    assert lines[-1] == "END|2.0.0|1|1|1|1|1|1|1|2|1"
+
+
+def test_literal_wire_field_order():
+    state = parse_state_v2(fixture_raw(), coverage=FIXTURE_COVERAGE)
+    assert state["units"][0]["charges"] == 1
+    assert state["units"][0]["hp"] == 100
+    assert state["cities"][0]["housing"] == 5
+    assert state["tiles"][0]["yields"]["food"] == 2
+
+
+def test_fixture_every_family_has_literal_values():
+    state = parse_state_v2(fixture_raw(), coverage=FIXTURE_COVERAGE)
+    assert (state["wire_version"], state["civ_type"], state["seed"], state["turn"],
+            state["active_player"], state["player_id"], state["gold"], state["faith"]
+            ) == ("2.0.0", "CIVILIZATION_KOREA", 7, 100, 0, 0, 100, 0)
+    assert state["units"] == [{
+        "owner": 0, "id": 131073, "unit_index": 1, "type": "UNIT_BUILDER",
+        "role": "civilian", "x": 10, "y": 10, "hp": 100, "max_hp": 100,
+        "moves": 2, "charges": 1}]
+    assert state["targets"] == [{
+        "owner": 1, "id": 70001, "tracked": True, "role": "combat", "hostile": True,
+        "visible": True, "status": "alive_visible", "x": 11, "y": 10,
+        "hp": 75, "max_hp": 100}]
+    (city,) = state["cities"]
+    assert {k: city[k] for k in ("owner", "id", "name", "x", "y", "population",
+                                 "housing")} == {
+        "owner": 0, "id": 65536, "name": "Seoul", "x": 9, "y": 10,
+        "population": 4, "housing": 5}
+    assert city["buildings"] == [{"building_type": "BUILDING_MONUMENT",
+                                  "present": True, "pillaged": False}]
+    assert city["districts"] == [{"district_id": 7,
+                                  "district_type": "DISTRICT_CITY_CENTER",
+                                  "x": 9, "y": 10, "complete": True, "pillaged": False}]
+    assert city["queue"] == {"item_kind": "UNIT", "item_type": "UNIT_BUILDER",
+                             "repair": False, "target_x": None, "target_y": None}
+    assert state["tiles"] == [
+        {"x": 10, "y": 10, "owner": 0, "terrain": "TERRAIN_GRASS", "feature": "NONE",
+         "resource": "NONE", "improvement": "NONE", "pillaged": False,
+         "district": "NONE", "visible": True,
+         "yields": {"food": 2, "production": 1, "gold": 0, "science": 0,
+                    "culture": 0, "faith": 0}},
+        {"x": 11, "y": 10, "owner": -1, "terrain": "TERRAIN_PLAINS",
+         "feature": "FEATURE_FOREST", "resource": "NONE", "improvement": "NONE",
+         "pillaged": False, "district": "NONE", "visible": True,
+         "yields": {"food": 1, "production": 2, "gold": 0, "science": 0,
+                    "culture": 0, "faith": 0}},
+    ]
+    assert state["resources"] == [{"resource_type": "RESOURCE_IRON", "access": True,
+                                   "stock": 2, "flow": None}]
+    assert state["coverage"] == FIXTURE_COVERAGE
+    assert state["row_counts"] == {"identity": 1, "unit": 1, "target": 1, "city": 1,
+                                   "building": 1, "district": 1, "queue": 1,
+                                   "tile": 2, "resource": 1}
+
+
+# ---------------------------------------------------------------------------
+# state_v2 fixture helper
+# ---------------------------------------------------------------------------
+
+HELPER_UNIT = {"owner": 0, "id": 5, "unit_index": 1, "type": "UNIT_WARRIOR",
+               "role": "combat", "x": 3, "y": 4, "hp": 100, "max_hp": 100,
+               "moves": 2, "charges": 0}
+HELPER_CITY = {"owner": 0, "id": 65536, "name": "Seoul", "x": 3, "y": 3,
+               "population": 2, "housing": 4,
+               "buildings": [{"building_type": "BUILDING_MONUMENT", "present": True,
+                              "pillaged": False}],
+               "districts": [], "queue": {"item_kind": "NONE", "item_type": "NONE",
+                                          "repair": False, "target_x": None,
+                                          "target_y": None}}
+HELPER_TILE = {"x": 3, "y": 4, "owner": 0, "terrain": "TERRAIN_GRASS",
+               "feature": "NONE", "resource": "NONE", "improvement": "NONE",
+               "pillaged": False, "district": "NONE", "visible": True,
+               "yields": {"food": 2, "production": 0, "gold": 0, "science": 0,
+                          "culture": 0, "faith": 0}}
+HELPER_TARGET = {"owner": 1, "id": 9, "tracked": True, "role": "combat",
+                 "hostile": True, "visible": True, "status": "alive_visible",
+                 "x": 4, "y": 4, "hp": 50, "max_hp": 100}
+
+
+def test_state_v2_default_root_matches_expected_shape():
+    state = state_v2()
+    assert set(state) == set(EXPECTED)
+    assert (state["wire_version"], state["turn"], state["player_id"],
+            state["active_player"], state["gold"], state["faith"]) == (
+        "2.0.0", 100, 0, 0, 100, 0)
+    assert state["units"] == state["targets"] == state["cities"] == []
+    assert state["coverage"] == {"include_owned_tiles": False, "area": [],
+                                 "tracked_targets": []}
+    assert set(state["row_counts"]) == set(EXPECTED["row_counts"])
+
+
+def test_state_v2_passes_entities_through_and_derives_scope():
+    state = state_v2(units=[HELPER_UNIT], cities=[HELPER_CITY], tiles=[HELPER_TILE],
+                     targets=[HELPER_TARGET], gold=7, faith=3)
+    assert state["units"] == [HELPER_UNIT]
+    assert state["cities"] == [HELPER_CITY]
+    assert state["tiles"] == [HELPER_TILE]
+    assert state["targets"] == [HELPER_TARGET]
+    assert (state["gold"], state["faith"]) == (7, 3)
+    assert state["coverage"] == {"include_owned_tiles": False, "area": [[3, 4]],
+                                 "tracked_targets": [[1, 9]]}
+    assert state["row_counts"] == {"identity": 1, "unit": 1, "target": 1, "city": 1,
+                                   "building": 1, "district": 0, "queue": 1,
+                                   "tile": 1, "resource": 0}
+
+
+def test_state_v2_does_not_invent_entity_fields():
+    bare = {"owner": 0, "id": 5, "x": 1, "y": 1}
+    assert state_v2(units=[bare])["units"] == [bare]
+
+
+def test_state_v2_is_canonical_and_digestible():
+    for state in (state_v2(), state_v2(units=[HELPER_UNIT], cities=[HELPER_CITY],
+                                       tiles=[HELPER_TILE], targets=[HELPER_TARGET])):
+        assert normalize_state_v2(state) == state
+        assert re.fullmatch(r"[0-9a-f]{64}", digest_state_v2(state))
+
+
+# ---------------------------------------------------------------------------
+# capture_state_v2 adapter
+# ---------------------------------------------------------------------------
+
+class RecordingConn:
+    """Fake connection: records every read, refuses writes."""
+
+    def __init__(self, lines=None, exc=None):
+        self.lines = lines if lines is not None else fixture_raw().splitlines()
+        self.exc = exc
+        self.calls = []
+
+    async def execute_read(self, lua_code, timeout=5.0, *, timing=None,
+                           retry_on_disconnect=True):
+        self.calls.append({"lua_code": lua_code, "timeout": timeout,
+                           "timing": timing, "retry_on_disconnect": retry_on_disconnect})
+        if timing is not None:
+            timing["lua_executions"] = timing.get("lua_executions", 0) + 1
+            timing["response_wait_s"] = 0.25
+        if self.exc is not None:
+            raise self.exc
+        return list(self.lines)
+
+    async def execute_write(self, *args, **kwargs):
+        raise AssertionError("capture must never write")
+
+
+async def test_capture_executes_one_read_query():
+    from civ_mcp.lua.benchmark_v2 import build_benchmark_state_query_v2
+    conn = RecordingConn()
+    state = await capture_state_v2(conn, 0, FIXTURE_COVERAGE)
+    assert len(conn.calls) == 1
+    (call,) = conn.calls
+    assert call["lua_code"] == build_benchmark_state_query_v2(0, FIXTURE_COVERAGE)
+    assert call["timeout"] == 2.0
+    assert call["retry_on_disconnect"] is False
+    assert call["timing"] is None
+    assert state == normalize_state_v2(
+        parse_state_v2(fixture_raw(), coverage=FIXTURE_COVERAGE))
+
+
+async def test_capture_with_timing_is_identical_and_timing_stays_out():
+    plain = await capture_state_v2(RecordingConn(), 0, FIXTURE_COVERAGE)
+    io_timing: dict = {}
+    conn = RecordingConn()
+    timed = await capture_state_v2(conn, 0, FIXTURE_COVERAGE, io_timing=io_timing)
+    assert len(conn.calls) == 1
+    assert conn.calls[0]["timing"] is io_timing
+    assert io_timing["lua_executions"] == 1
+    assert timed == plain
+    assert digest_state_v2(timed) == digest_state_v2(plain)
+    assert not set(io_timing) & set(timed)
+
+
+@pytest.mark.parametrize("exc", [ConnectionResetError("gone"), OSError("broken pipe"),
+                                 asyncio.IncompleteReadError(b"", 8)])
+async def test_capture_disconnect_is_typed_and_not_retried(exc):
+    conn = RecordingConn(exc=exc)
+    with pytest.raises(BenchmarkStateError, match="transport") as info:
+        await capture_state_v2(conn, 0, FIXTURE_COVERAGE)
+    assert info.value.__cause__ is exc
+    assert len(conn.calls) == 1
+
+
+async def test_capture_timeout_propagates_unchanged():
+    exc = TimeoutError("deadline")
+    conn = RecordingConn(exc=exc)
+    with pytest.raises(TimeoutError) as info:
+        await capture_state_v2(conn, 0, FIXTURE_COVERAGE)
+    assert info.value is exc
+    assert len(conn.calls) == 1
+
+
+async def test_capture_cancellation_propagates_unchanged():
+    exc = asyncio.CancelledError()
+    conn = RecordingConn(exc=exc)
+    with pytest.raises(asyncio.CancelledError) as info:
+        await capture_state_v2(conn, 0, FIXTURE_COVERAGE)
+    assert info.value is exc
+    assert len(conn.calls) == 1
+
+
+async def test_capture_incomplete_output_is_rejected_not_retried():
+    conn = RecordingConn(lines=fixture_raw().splitlines()[:-1])
+    with pytest.raises(BenchmarkStateError, match="incomplete"):
+        await capture_state_v2(conn, 0, FIXTURE_COVERAGE)
+    assert len(conn.calls) == 1

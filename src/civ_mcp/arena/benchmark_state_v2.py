@@ -410,3 +410,29 @@ def normalize_state_v2(state: dict[str, Any]) -> dict[str, Any]:
 def digest_state_v2(state: dict[str, Any]) -> str:
     """`document_digest` of the normalised v2 state."""
     return document_digest(normalize_state_v2(state))
+
+
+# ---------------------------------------------------------------------------
+# Capture adapter
+# ---------------------------------------------------------------------------
+
+async def capture_state_v2(conn: Any, player_id: int, coverage: dict[str, Any], *,
+                           io_timing: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Capture one canonical v2 state with exactly one GameCore Lua execution.
+
+    No reconnect-and-retry: a dead socket becomes `BenchmarkStateError`.
+    `TimeoutError` and cancellation propagate unchanged. `io_timing` receives
+    transport phase timings and never enters the returned state.
+    """
+    import asyncio
+    from civ_mcp.arena.benchmark_state import BenchmarkStateError
+    from civ_mcp.lua.benchmark_v2 import build_benchmark_state_query_v2
+    query = build_benchmark_state_query_v2(player_id, coverage)
+    try:
+        lines = await conn.execute_read(query, timeout=2.0, timing=io_timing,
+                                        retry_on_disconnect=False)
+    except TimeoutError:
+        raise  # The bounded wrapper classifies this deadline.
+    except (OSError, asyncio.IncompleteReadError) as exc:
+        raise BenchmarkStateError("v2 capture transport failed") from exc
+    return normalize_state_v2(parse_state_v2("\n".join(lines), coverage=coverage))
