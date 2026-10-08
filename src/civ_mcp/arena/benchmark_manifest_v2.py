@@ -169,6 +169,9 @@ def _validate_position(raw: dict[str, Any]) -> None:
             isinstance(rubric[key], list) and all(isinstance(i, dict) for i in rubric[key]),
             f"position.rubric.{key} must be a list of mappings",
         )
+    from civ_mcp.arena.benchmark_scoring_v2 import validate_rubric_structure
+
+    validate_rubric_structure(rubric)
 
 
 def _validate_case(raw: dict[str, Any]) -> None:

@@ -116,7 +116,9 @@ VALID = {
         "coverage": {"x": 1},
         "toolset": {"path": "t.yaml", "identity": {"source_sha256": "c", "schemas_sha256": "d"}},
         "contract_identity": "e" * 64,
-        "rubric": {"objectives": [{}], "harms": []},
+        "rubric": {"objectives": [{"id": "o", "rungs": [{"points": 4, "predicate": {
+            "kind": "unit_in_area", "unit_types": ["UNIT_BUILDER"], "tiles": [[1, 2]]}}]}],
+            "harms": []},
         "provenance": REF, "public_observation": REF,
         "public_task_tiles": [[1, 2]], "pilot_informed": False,
     },
@@ -237,6 +239,17 @@ def test_position_rubric_shape():
     raw = copy.deepcopy(VALID["position"])
     raw["rubric"] = {"objectives": []}
     with pytest.raises(ValueError, match="harms"):
+        validate_v2_document(raw, kind="position")
+
+
+def test_position_rubric_is_structurally_validated():
+    raw = copy.deepcopy(VALID["position"])
+    raw["rubric"]["objectives"][0]["rungs"][0]["points"] = 0
+    with pytest.raises(ValueError, match="points"):
+        validate_v2_document(raw, kind="position")
+    raw = copy.deepcopy(VALID["position"])
+    raw["rubric"]["objectives"] = [{}]
+    with pytest.raises(ValueError, match="objectives"):
         validate_v2_document(raw, kind="position")
 
 
