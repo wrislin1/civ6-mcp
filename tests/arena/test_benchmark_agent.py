@@ -576,3 +576,174 @@ async def test_genuine_episode_wall_expiry_still_converts_to_episode_timed_out()
 
     with pytest.raises(EpisodeTimedOut):
         await agent.run(RecordingGS(), player_id=0, turn=1)
+
+
+# ---------------------------------------------------------------------------
+# Bounded capture telemetry (v2). With no telemetry every v1 path is
+# unchanged; with telemetry, tool captures go through capture_bounded.
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+from civ_mcp.arena.benchmark_capture import CaptureFailure, CaptureTelemetry  # noqa: E402
+from civ_mcp.arena.benchmark_state import state_digest  # noqa: E402
+from civ_mcp.arena.benchmark_state_v2 import digest_state_v2  # noqa: E402
+
+
+def _v2_state(turn: int) -> dict:
+    return {
+        "wire_version": "2.0.0", "civ_type": "CIVILIZATION_X", "seed": 7, "turn": turn,
+        "active_player": 0, "player_id": 0, "gold": 10, "faith": 0,
+        "units": [], "targets": [], "cities": [], "tiles": [], "resources": [],
+        "coverage": {"area": [], "tracked_targets": []}, "row_counts": {},
+    }
+
+
+class FakeGSWithConn(FakeGS):
+    conn = "FAKE_CONN"
+
+
+@pytest.mark.asyncio
+async def test_without_telemetry_tool_captures_keep_v1_digest():
+    async def fake_capture_state(conn, player_id, tile_coords):
+        return {"turn": 1, "units": []}
+
+    agent = SingleTurnAgent(
+        OneShotFinishBackend(), "minimal", episode_wall_s=5.0, max_steps=4,
+        tile_coords=[(9, 10)], capture_state=fake_capture_state,
+    )
+    evidence = await agent.run(RecordingGS(), player_id=0, turn=1)
+    step = evidence.steps[0]
+    assert step["state_digest_before"] == state_digest({"turn": 1, "units": []})
+    assert step["state_digest_after"] == state_digest({"turn": 1, "units": []})
+
+
+@pytest.mark.asyncio
+async def test_telemetry_routes_tool_captures_through_bounded_wrapper():
+    calls = []
+    telemetry = CaptureTelemetry()
+
+    async def fake_capture_state(conn, player_id, tile_coords):
+        calls.append((conn, player_id, tile_coords))
+        telemetry.current_io["lua_executions"] = 1
+        return _v2_state(turn=len(calls))
+
+    agent = SingleTurnAgent(
+        OneShotFinishBackend(), "minimal", episode_wall_s=5.0, max_steps=4,
+        tile_coords=[(9, 10)], capture_state=fake_capture_state,
+        capture_telemetry=telemetry,
+    )
+    evidence = await agent.run(RecordingGS(), player_id=0, turn=1)
+    step = evidence.steps[0]
+    assert step["state_before"] == _v2_state(1)
+    assert step["state_digest_before"] == digest_state_v2(_v2_state(1))
+    assert step["state_digest_after"] == digest_state_v2(_v2_state(2))
+    assert calls[0] == ("FAKE_CONN", 0, ((9, 10),))
+    assert [r["phase"] for r in telemetry.records] == ["tool_before", "tool_after"]
+    assert all(r["complete"] and r["io"] == {"lua_executions": 1} for r in telemetry.records)
+
+
+class _BlockingCapture:
+    """Capture callable that returns normally `ok` times, then blocks."""
+
+    def __init__(self, ok: int = 0):
+        self.ok = ok
+        self.calls = 0
+        self.entered = asyncio.Event()
+
+    async def __call__(self, conn, player_id, tile_coords):
+        self.calls += 1
+        if self.calls > self.ok:
+            self.entered.set()
+            await asyncio.Event().wait()
+        return _v2_state(turn=self.calls)
+
+
+@pytest.mark.asyncio
+async def test_episode_deadline_during_capture_is_capture_failure():
+    telemetry = CaptureTelemetry()
+    capture = _BlockingCapture(ok=1)  # tool_before succeeds, tool_after blocks
+    agent = SingleTurnAgent(
+        OneShotFinishBackend(), "minimal", episode_wall_s=0.02, max_steps=4,
+        tile_coords=[(9, 10)], capture_state=capture, capture_telemetry=telemetry,
+    )
+    with pytest.raises(CaptureFailure, match="episode deadline interrupted capture") as info:
+        await agent.run(RecordingGS(), player_id=0, turn=1)
+    assert isinstance(info.value, BenchmarkStateError)
+    assert isinstance(info.value.__cause__, TimeoutError)
+    assert telemetry.cancelled_capture is not None
+    assert telemetry.cancelled_capture["phase"] == "tool_after"
+    assert [r["complete"] for r in telemetry.records] == [True, False]
+
+
+@pytest.mark.asyncio
+async def test_episode_deadline_during_backend_call_stays_episode_timed_out():
+    telemetry = CaptureTelemetry()
+
+    async def fake_capture_state(conn, player_id, tile_coords):
+        return _v2_state(turn=1)
+
+    agent = SingleTurnAgent(
+        TimeoutAfterOneStepBackend(), "minimal", episode_wall_s=0.02, max_steps=4,
+        tile_coords=[(9, 10)], capture_state=fake_capture_state, capture_telemetry=telemetry,
+    )
+    with pytest.raises(EpisodeTimedOut) as info:
+        await agent.run(FakeGSWithConn(), player_id=0, turn=1)
+    assert len(info.value.partial_evidence.steps) == 1
+    assert telemetry.cancelled_capture is None
+    assert [r["phase"] for r in telemetry.records] == ["tool_before", "tool_after"]
+
+
+@pytest.mark.asyncio
+async def test_stale_latch_from_an_earlier_run_is_reset():
+    telemetry = CaptureTelemetry()
+    telemetry.cancelled_capture = {"phase": "tool_before", "stale": True}
+    telemetry.records.append({"phase": "stale"})
+    agent = SingleTurnAgent(
+        HangingBackend(), "minimal", episode_wall_s=0.02, max_steps=4,
+        capture_telemetry=telemetry,
+    )
+    with pytest.raises(EpisodeTimedOut):
+        await agent.run(FakeGS(), player_id=0, turn=1)
+    assert telemetry.cancelled_capture is None
+    assert telemetry.records == []
+
+
+@pytest.mark.asyncio
+async def test_external_cancel_during_capture_propagates_through_real_agent():
+    telemetry = CaptureTelemetry()
+    capture = _BlockingCapture(ok=0)
+    agent = SingleTurnAgent(
+        OneShotFinishBackend(), "minimal", episode_wall_s=5.0, max_steps=4,
+        tile_coords=[(9, 10)], capture_state=capture, capture_telemetry=telemetry,
+    )
+    gs = RecordingGS()
+    task = asyncio.create_task(agent.run(gs, player_id=0, turn=1))
+    await asyncio.wait_for(capture.entered.wait(), timeout=2.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert gs.calls == []  # the tool never dispatched
+    assert telemetry.cancelled_capture["phase"] == "tool_before"
+
+
+@pytest.mark.asyncio
+async def test_external_cancel_during_backend_call_propagates_through_real_agent():
+    entered = asyncio.Event()
+
+    class BlockingBackend:
+        async def chat(self, messages, tools):
+            entered.set()
+            await asyncio.Event().wait()
+
+    telemetry = CaptureTelemetry()
+    agent = SingleTurnAgent(
+        BlockingBackend(), "minimal", episode_wall_s=5.0, max_steps=4,
+        capture_telemetry=telemetry,
+    )
+    task = asyncio.create_task(agent.run(FakeGS(), player_id=0, turn=1))
+    await asyncio.wait_for(entered.wait(), timeout=2.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert telemetry.cancelled_capture is None

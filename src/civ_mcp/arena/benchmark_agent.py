@@ -48,6 +48,7 @@ from enum import Enum
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from civ_mcp.arena.agent import MODEL_FEED_CHAR_CAP
+from civ_mcp.arena.benchmark_capture import CaptureFailure, CaptureTelemetry, capture_bounded
 from civ_mcp.arena.benchmark_state import capture_canonical_state, state_digest
 from civ_mcp.arena.registry import dispatch as _registry_dispatch
 from civ_mcp.arena.registry import openai_tools, resolve_tools
@@ -192,6 +193,7 @@ class SingleTurnAgent:
         tile_coords: Sequence[tuple[int, int]] = (),
         capture_state: CaptureStateFn | None = capture_canonical_state,
         user_prompt: str | None = None,
+        capture_telemetry: CaptureTelemetry | None = None,
     ) -> None:
         self.backend = backend
         self._game_tool_names = _resolve_game_tool_names(tier)
@@ -201,6 +203,10 @@ class SingleTurnAgent:
         self._char_cap = char_cap
         self._tile_coords = tuple(tile_coords)
         self._capture_state = capture_state
+        # None keeps every v1 capture path unchanged. When set, tool
+        # captures go through capture_bounded (2.0 s wall, v2 digest) and a
+        # cancellation that interrupts one is latched for run()'s handler.
+        self._capture_telemetry = capture_telemetry
         # A frozen campaign's exact objective-blind user prompt, injected
         # verbatim by the caller (see benchmark_contract.CampaignManifest.prompt)
         # instead of this module's own smoke/legacy benchmark_prompt(turn,
@@ -240,21 +246,28 @@ class SingleTurnAgent:
         )
 
     async def _capture(
-        self, gs: Any, player_id: int
+        self, gs: Any, player_id: int, phase: str
     ) -> tuple[Mapping[str, object] | None, str | None]:
         # No tile_coords/capture_state configured -> no harness query at all,
         # so this agent works against a bare GameState-like object with no
         # live connection. Never added to the model conversation either way.
         if not self._tile_coords or self._capture_state is None:
             return None, None
+        if self._capture_telemetry is not None:
+            capture_state = self._capture_state
+            return await capture_bounded(
+                lambda: capture_state(gs.conn, player_id, self._tile_coords),
+                phase=phase,
+                telemetry=self._capture_telemetry,
+            )
         state = await self._capture_state(gs.conn, player_id, self._tile_coords)
         return state, state_digest(state)
 
     async def run(self, gs: Any, player_id: int, turn: int) -> EpisodeEvidence:
         """Run one objective-blind turn and return its evidence.
 
-        Exception contract for the runner: `EpisodeTimedOut` is the *only*
-        exception this method raises deliberately -- it means the episode
+        Exception contract for the runner: `EpisodeTimedOut` is the only
+        model-outcome exception this method raises deliberately -- it means the episode
         ran out of wall-clock budget and is a scoreable-candidate timeout for
         the runner's health discriminator (healthy/identity-correct backend
         -> "runaway_timeout" terminal; unhealthy/unreachable -> infrastructure
@@ -263,7 +276,11 @@ class SingleTurnAgent:
         stale connection or a wrong manifest `player_id`) propagates out of
         `run()` unchanged, with no `EpisodeEvidence` returned -- this is a
         harness failure, not a model outcome, and the runner must classify
-        it as an infrastructure attempt rather than score it.
+        it as an infrastructure attempt rather than score it. With
+        `capture_telemetry` set, an episode deadline that lands inside a
+        bounded tool capture raises `benchmark_capture.CaptureFailure` (a
+        `BenchmarkStateError`, so also an infrastructure attempt) instead of
+        `EpisodeTimedOut`. `asyncio.CancelledError` is never caught here.
         """
         # Reset before every run(): these are mutated in place by
         # _run_episode as it goes (never reassigned via a local variable),
@@ -276,6 +293,9 @@ class SingleTurnAgent:
         self._progress_prompt_tokens: int = 0
         self._progress_completion_tokens: int = 0
         self._progress_wall_clock_start: float = time.time()
+        if self._capture_telemetry is not None:
+            # Never let an earlier episode's cancellation latch classify this one.
+            self._capture_telemetry.reset()
         try:
             async with asyncio.timeout(self.episode_wall_s) as cm:
                 return await self._run_episode(gs, player_id, turn)
@@ -292,6 +312,11 @@ class SingleTurnAgent:
             # TimeoutError.
             if not cm.expired():
                 raise
+            # The deadline's cancellation unwound through a bounded capture:
+            # a harness failure (infrastructure attempt), not a model timeout.
+            if (self._capture_telemetry is not None
+                    and self._capture_telemetry.cancelled_capture is not None):
+                raise CaptureFailure("episode deadline interrupted capture") from exc
             raise EpisodeTimedOut(
                 f"benchmark episode exceeded episode_wall_s={self.episode_wall_s}",
                 partial_evidence=self.partial_evidence(),
@@ -386,14 +411,14 @@ class SingleTurnAgent:
                     state_before = state_after = None
                     digest_before = digest_after = None
                 else:
-                    state_before, digest_before = await self._capture(gs, player_id)
+                    state_before, digest_before = await self._capture(gs, player_id, "tool_before")
                     try:
                         result = await _registry_dispatch(
                             gs, tc["name"], args, allowed=self._game_tool_names
                         )
                     except Exception as e:
                         result = f"ERROR: {e!r}"
-                    state_after, digest_after = await self._capture(gs, player_id)
+                    state_after, digest_after = await self._capture(gs, player_id, "tool_after")
 
                 ts_end = time.time()
                 result_str = str(result)

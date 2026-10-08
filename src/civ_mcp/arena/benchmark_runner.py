@@ -59,6 +59,7 @@ from civ_mcp.arena.backends import OpenAICompatBackend, RetryPolicy
 from civ_mcp.arena.benchmark_agent import EpisodeTimedOut, SingleTurnAgent, resolved_benchmark_tools
 from civ_mcp.arena.benchmark_backend import HealthProbe
 from civ_mcp.arena.benchmark_backend import probe_health as _probe_backend_health
+from civ_mcp.arena.benchmark_capture import CaptureTelemetry, capture_bounded
 from civ_mcp.arena.benchmark_gates import GateFailure
 from civ_mcp.arena.benchmark_manifest import (
     PositionManifest,
@@ -75,6 +76,7 @@ from civ_mcp.arena.benchmark_state import (
     state_digest,
     verify_expected_state_digest,
 )
+from civ_mcp.arena.benchmark_state_v2 import digest_state_v2
 from civ_mcp.arena.benchmark_store import (
     BenchmarkStore,
     BenchmarkStoreError,
@@ -200,6 +202,13 @@ class RunnerDependencies:
       `connection`'s own close/disconnect is the caller's (`_run_async`'s)
       responsibility, not this callable's, since the caller owns
       `connection`'s lifetime independently of `RunnerDependencies`.
+    - `capture_telemetry`: optional. `None` keeps the version-1 initial/
+      final capture path unchanged. When set, it is reset before every
+      attempt, initial/final captures run through
+      `benchmark_capture.capture_bounded` (2.0 s wall, v2 digest), and the
+      expected-state checksum uses the v2 digest. A local capture deadline
+      is a `CaptureFailure` infrastructure attempt; an external
+      cancellation propagates unchanged (no attempt, retry or commit).
     """
 
     reload_position: ReloadPositionFn
@@ -209,6 +218,7 @@ class RunnerDependencies:
     probe_health: ProbeHealthFn
     connection: Any = None
     aclose: Callable[[], Awaitable[None]] | None = None
+    capture_telemetry: CaptureTelemetry | None = None
 
 
 class BenchmarkRunner:
@@ -229,8 +239,21 @@ class BenchmarkRunner:
         self.store = store
         self._deps = dependencies
         self._expected_state = dict(expected_state)
-        self._expected_digest = state_digest(self._expected_state)
+        self._expected_digest = (
+            state_digest(self._expected_state)
+            if dependencies.capture_telemetry is None
+            else digest_state_v2(self._expected_state)
+        )
         self.player_id = player_id
+
+    async def _capture(self, phase: str) -> tuple[Mapping[str, object], str | None]:
+        """Runner-owned initial/final capture. Without telemetry this is
+        exactly the v1 call and returns no digest (the caller digests where
+        it always did); with telemetry it is the bounded v2 capture."""
+        telemetry = self._deps.capture_telemetry
+        if telemetry is None:
+            return await self._deps.capture_state(), None
+        return await capture_bounded(self._deps.capture_state, phase=phase, telemetry=telemetry)
 
     async def run(self, schedule: Sequence[TrialSpec]) -> None:
         """Strictly serial: walk `schedule` in order, skip any index the
@@ -317,6 +340,9 @@ class BenchmarkRunner:
                 },
             )
 
+        if self._deps.capture_telemetry is not None:
+            # Never classify this attempt with an earlier attempt's latch.
+            self._deps.capture_telemetry.reset()
         self.store.append_event("trial_attempt_started", trial_index=spec.index)
 
         # -- reload / continue / reconnect ----------------------------------
@@ -356,12 +382,13 @@ class BenchmarkRunner:
 
         # -- canonical checksum -----------------------------------------------
         try:
-            observed_state = await self._deps.capture_state()
+            observed_state, observed_digest = await self._capture("initial")
         except Exception as exc:  # noqa: BLE001
             self._record_infra_attempt(spec.index, FailureClass.HARNESS_CRASH, exc)
             return
 
-        observed_digest = state_digest(observed_state)
+        if observed_digest is None:
+            observed_digest = state_digest(observed_state)
         if observed_digest != self._expected_digest:
             # F12: journaling two opaque hashes is useless for actually
             # seeing what differed -- include the field-level diff so a
@@ -595,7 +622,7 @@ class BenchmarkRunner:
         but nothing is committed until this succeeds, so a fresh attempt
         reloads and reruns the whole episode from scratch."""
         try:
-            final_state = await self._deps.capture_state()
+            final_state, _final_digest = await self._capture("final")
         except Exception as exc:  # noqa: BLE001
             self._record_infra_attempt(spec.index, FailureClass.HARNESS_CRASH, exc)
             return

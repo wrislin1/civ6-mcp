@@ -3995,3 +3995,214 @@ async def test_ungated_suite_threads_its_optional_frozen_prompt(tmp_path, monkey
     )
     assert await benchmark_runner._run_async(args) == 0
     assert captured and captured[0].user_prompt == (prompt or "")
+
+
+# ---------------------------------------------------------------------------
+# Bounded capture (Task 4): CaptureFailure is an infrastructure attempt;
+# external cancellation propagates with no attempt, retry, reload or commit.
+# ---------------------------------------------------------------------------
+
+from civ_mcp.arena.benchmark_agent import SingleTurnAgent  # noqa: E402
+from civ_mcp.arena.benchmark_capture import CaptureFailure, CaptureTelemetry  # noqa: E402
+from civ_mcp.arena.backends import Reply  # noqa: E402
+
+
+def _v2_canonical(turn: int = 157) -> dict:
+    return {
+        "wire_version": "2.0.0", "civ_type": "CIVILIZATION_X", "seed": 7, "turn": turn,
+        "active_player": 0, "player_id": 0, "gold": 10, "faith": 0,
+        "units": [], "targets": [], "cities": [], "tiles": [],
+        # Deliberately unsorted: v2 normalisation sorts resources, v1 does
+        # not, so the v1 and v2 digests of this state differ.
+        "resources": [{"resource_type": "RESOURCE_B"}, {"resource_type": "RESOURCE_A"}],
+        "coverage": {"area": [], "tracked_targets": []}, "row_counts": {},
+    }
+
+
+class _OneToolBackend:
+    def __init__(self):
+        self.n = 0
+
+    async def chat(self, messages, tools):
+        self.n += 1
+        if self.n == 1:
+            return Reply(text=None, tool_calls=[
+                {"id": "1", "name": "get_units", "arguments": "{}"}],
+                prompt_tokens=1, completion_tokens=1)
+        return Reply(text=None, tool_calls=[
+            {"id": "2", "name": "finish_trial", "arguments": "{}"}],
+            prompt_tokens=1, completion_tokens=1)
+
+
+@pytest.mark.asyncio
+async def test_capture_failure_from_agent_is_an_infrastructure_attempt(tmp_path):
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(make_agent=lambda spec: _RaisingAgent(
+        CaptureFailure("episode deadline interrupted capture")))
+    runner = _runner(store, deps)
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert store.completed_indices() == set()
+    assert store.attempt_count(1) == 1
+    payload = _attempt_payload(tmp_path / "run", 1)
+    assert payload["failure_class"] == FailureClass.HARNESS_CRASH.value
+    assert payload["exception_type"] == "CaptureFailure"
+    deps.probe_health.assert_not_awaited()  # not routed to the timeout canary
+
+
+@pytest.mark.asyncio
+async def test_telemetry_routes_initial_and_final_captures_through_bounded_wrapper(tmp_path):
+    telemetry = CaptureTelemetry()
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        capture_state=AsyncMock(return_value=_v2_canonical()),
+        capture_telemetry=telemetry,
+    )
+    runner = _runner(store, deps, expected_state=_v2_canonical())
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert store.completed_indices() == {1}
+    assert [r["phase"] for r in telemetry.records] == ["initial", "final"]
+    assert all(r["complete"] for r in telemetry.records)
+
+
+@pytest.mark.asyncio
+async def test_telemetry_initial_capture_mismatch_uses_v2_digest(tmp_path):
+    telemetry = CaptureTelemetry()
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        capture_state=AsyncMock(return_value=_v2_canonical(turn=158)),
+        capture_telemetry=telemetry,
+    )
+    runner = _runner(store, deps, expected_state=_v2_canonical(turn=157))
+
+    with pytest.raises(SessionAborted) as info:
+        await runner.run_trial(_spec(1, "minimal"))
+    assert info.value.code == "checksum_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_initial_capture_local_deadline_is_an_infrastructure_attempt(tmp_path):
+    async def transport_deadline():
+        raise TimeoutError("transport deadline")
+
+    telemetry = CaptureTelemetry()
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(capture_state=transport_deadline, capture_telemetry=telemetry)
+    runner = _runner(store, deps, expected_state=_v2_canonical())
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert store.completed_indices() == set()
+    payload = _attempt_payload(tmp_path / "run", 1)
+    assert payload["failure_class"] == FailureClass.HARNESS_CRASH.value
+    assert payload["exception_type"] == "CaptureFailure"
+    assert telemetry.records[-1]["phase"] == "initial"
+    assert telemetry.cancelled_capture is None
+
+
+@pytest.mark.asyncio
+async def test_runner_resets_telemetry_before_each_attempt(tmp_path):
+    telemetry = CaptureTelemetry()
+    telemetry.cancelled_capture = {"phase": "tool_before", "stale": True}
+    telemetry.records.append({"phase": "stale"})
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        capture_state=AsyncMock(return_value=_v2_canonical()),
+        capture_telemetry=telemetry,
+    )
+    runner = _runner(store, deps, expected_state=_v2_canonical())
+
+    await runner.run_trial(_spec(1, "minimal"))
+
+    assert telemetry.cancelled_capture is None
+    assert [r["phase"] for r in telemetry.records] == ["initial", "final"]
+
+
+def _assert_no_infra_side_effects(store, deps, index: int = 1) -> None:
+    assert store.completed_indices() == set()
+    assert store.attempt_count(index) == 0
+    assert deps.reload_position.await_count == 1  # no retry reload
+    deps.probe_health.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_external_cancel_through_runner_and_real_agent_is_not_retried(tmp_path):
+    entered = asyncio.Event()
+    telemetry = CaptureTelemetry()
+    calls = 0
+
+    async def capture_state_tool(conn, player_id, tile_coords):
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await asyncio.Event().wait()
+
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(
+        capture_state=AsyncMock(return_value=_v2_canonical()),
+        capture_telemetry=telemetry,
+        make_agent=lambda spec: SingleTurnAgent(
+            _OneToolBackend(), "minimal", episode_wall_s=5.0, max_steps=4,
+            tile_coords=[(9, 10)], capture_state=capture_state_tool,
+            capture_telemetry=telemetry,
+        ),
+    )
+    runner = _runner(store, deps, expected_state=_v2_canonical())
+
+    task = asyncio.create_task(runner.run([_spec(1, "minimal")]))
+    await asyncio.wait_for(entered.wait(), timeout=2.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    _assert_no_infra_side_effects(store, deps)
+    assert calls == 1
+    assert telemetry.cancelled_capture["phase"] == "tool_before"
+
+
+@pytest.mark.asyncio
+async def test_external_cancel_during_initial_capture_is_not_retried(tmp_path):
+    entered = asyncio.Event()
+
+    async def blocked_capture():
+        entered.set()
+        await asyncio.Event().wait()
+
+    telemetry = CaptureTelemetry()
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(capture_state=blocked_capture, capture_telemetry=telemetry)
+    runner = _runner(store, deps, expected_state=_v2_canonical())
+
+    task = asyncio.create_task(runner.run([_spec(1, "minimal")]))
+    await asyncio.wait_for(entered.wait(), timeout=2.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    _assert_no_infra_side_effects(store, deps)
+    assert telemetry.cancelled_capture["phase"] == "initial"
+
+
+@pytest.mark.asyncio
+async def test_external_cancel_during_backend_call_is_not_retried(tmp_path):
+    entered = asyncio.Event()
+
+    class BlockingAgent:
+        async def run(self, gs, player_id, turn):
+            entered.set()
+            await asyncio.Event().wait()
+
+    store = BenchmarkStore.create(tmp_path / "run", _lock())
+    deps = _deps(make_agent=lambda spec: BlockingAgent())
+    runner = _runner(store, deps)
+
+    task = asyncio.create_task(runner.run([_spec(1, "minimal")]))
+    await asyncio.wait_for(entered.wait(), timeout=2.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    _assert_no_infra_side_effects(store, deps)
