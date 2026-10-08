@@ -1,6 +1,6 @@
 # Arena benchmark Plan 3 Part 1 authoring and scoring design
 
-Date: 2026-10-08. Status: design sections approved in conversation; written spec pending user review.
+Date: 2026-10-08. Status: approved for planning; written-review amendments incorporated on 2026-10-08.
 Implementation has not started. Scope: authoring and scoring foundations plus three development positions;
 Parts 2 and 3 appear only as changes to the existing roadmap.
 
@@ -43,11 +43,11 @@ it is not a Stage 3 injection arm.
 | Observation credit | Removed for Plan 3. The positive control awards one point per task for `get_units`, or 3/12 without a mutation. Plan 3 observation alone earns zero. |
 | Primary score | Signed progress less harm, divided by maximum positive objective credit. Gross credit and deductions remain separately visible. |
 | Partial progress | Observable intermediate endpoint states only. Distance reduction, tool calls, and intent are not primary progress. |
-| Harm | Frozen loss conditions, objective-anchored weights, compensation rules, and deduplication. |
+| Harm | Frozen loss conditions and newly created civilian exposure, objective-anchored weights, compensation rules, and deduplication. |
 | Economic alternatives | A measured ledger, without a combined utility score or advancement role. |
 | Budget | Fifteen model round trips, restoring the parent design rather than carrying forward Plan 2's eight. |
 | Validation actor | Scripted, explicitly non-counting episodes through the benchmark loop. |
-| Tool surface | Audit capabilities and freeze an explicit common list; the current `standard` label does not cover the whole library. |
+| Tool surface | Freeze the 35-tool Part 1 list in section 12 and in its implementation plan. Part 2 may extend it under a new identity. |
 
 **No Plan 3 primary score or primary-score improvement is comparable to a Plan 2 primary score or
 improvement.** Observation rungs, loss semantics, evidence coverage, budgets, and eventually the tool
@@ -148,8 +148,8 @@ position validation. Existing per-step snapshots are sufficient to perform these
 Preserve that timing. Extend the state query, parser, normalisation, and schema together to include the
 following scoring-relevant facts where required by a position:
 
-- Own units: stable identity and owner, type, location, health, remaining movement, and charges.
-- Tactical targets: identity, visibility, health, and verifiable destruction. Losing visibility is not
+- Own units: stable identity and owner, type, civilian/combat classification, location, health, remaining movement, and charges.
+- Tactical targets: identity, hostility, combat classification, visibility, health, and verifiable destruction. Losing visibility is not
   destruction and cannot earn kill credit. Fixtures must support unambiguous outcome verification.
 - Cities: housing state, buildings and repair state, district placement/construction, and the active
   production item, including whether it is a repair.
@@ -161,6 +161,20 @@ Canonical ordering and numeric precision are part of the contract. An unavailabl
 has an explicit coverage status. Missing evidence required by a primary predicate is an admission or
 reporting error, never a false predicate or fabricated zero. Normal absence of a destroyed or consumed
 entity is different from a truncated response.
+
+Every version-2 capture has a **2.0-second hard wall limit**, covering its query, parsing, normalisation,
+and digest. A timeout or overrun is an infrastructure failure, never a scoreable model timeout. The same
+classification applies if the episode wall expires while a capture is in flight. Discard an incomplete
+capture and require the existing reload/reconnect path before another attempt.
+
+Measure each capture with a monotonic clock. Keep timing outside canonical state and its digest; persist
+phase, duration, and completion status in trial/attempt diagnostics. The null script must exercise the
+full position scope and report capture count, mean, p95, maximum, and total duration. Every capture must
+meet the limit before admission. Model reports expose total capture time and the in-episode capture
+share of episode wall time. Only tool-before/tool-after captures enter that share; the runner's initial
+and final captures are outside `EpisodeEvidence.wall_clock_s`. The existing episode wall still includes
+capture work, but that cost must not be hidden in model latency. Optimise the query or prospectively
+amend the budget if it fails; do not remove required evidence to pass the timing gate.
 
 Capture enough tile content before actions to measure alternatives outside the declared objective tiles.
 For these three positions, include player-owned tiles and a frozen, player-discoverable area covering
@@ -220,7 +234,8 @@ key. The default deduction for losing asset X equals the maximum credit of the o
 four points here. Any deviation requires a preregistered rationale and a recomputed maximum and increment
 analysis. It cannot be chosen after model results are seen.
 
-Objectives are progress-based and harms are loss-based. Do not pair a four-point "keep the archer alive"
+Objectives are progress-based. Harms cover losses and the explicitly declared new-exposure condition
+below. Do not pair a four-point "keep the archer alive"
 objective with a four-point "archer lost" penalty. No positive rung rewards merely retaining the starting
 state, and no separate deduction charges a missed objective. A loss can prevent independent progress,
 but the scorer must not encode the same loss once as forfeited survival credit and again as a debit.
@@ -239,6 +254,23 @@ the finite, preregistered penalty budget.
 Reports expose each objective's credit, each fired or compensated harm with supporting evidence, gross
 credit, total harm, net credit, denominator, and signed score. A harmful action by itself can score below
 the zero earned by inaction.
+
+### Shared civilian exposure and cover geometry
+
+For a living civilian, `covered` means it occupies an owned city tile or has an owned military unit on
+its tile or an adjacent hex. `exposed` means it is outside an owned city, is adjacent to a currently
+visible hostile combat unit, and is not covered. Hex adjacency uses the existing offset-grid distance,
+not Cartesian distance. Missing visibility, hostility, or unit-role evidence is an error, not safety.
+
+A declared civilian incurs a four-point **new exposure** deduction only when it was not exposed initially
+and is exposed finally. Link the weight to the objective that civilian serves. This is an explicit
+end-state safety proxy, not a claim that a capture has occurred or will occur. Temporary exposure followed
+by recovery has no exposure debit. A consumed or lost unit cannot also incur an exposure debit.
+
+An initially exposed civilian left in place incurs no new-exposure deduction and earns no rescue credit.
+This preserves null-script zero. The tactical rescue objective uses the same `covered` geometry, with
+accepted endpoints that are uncovered initially and covered finally. Do not implement a second safety
+geometry for the builder position or turn exposure into a survival reward.
 
 ## 8. Benefit ledger and uncredited mutations
 
@@ -263,12 +295,21 @@ derived classification is never itself a scoring input.
 
 Every report includes successful mutations that received no objective-progress attribution, their raw
 tool/entity references, and their classification. Separate measured economic changes, builder positioning,
-non-builder movement, harm, and insufficient evidence. A distance-based positioning category is descriptive;
+non-builder movement, declared harm, **undeclared loss**, and insufficient evidence. Undeclared loss means
+an observed asset loss outside the declared scoring scope, such as a removed improvement or a lost scout.
+It has no automatic primary deduction and does not assert that the loss was strategically unjustified.
+Verified consumption or transformation, such as a builder's successful final charge or a unit upgrade,
+must not be mistaken for destruction. Unknown lifecycle evidence remains explicitly unresolved.
+
+The loss-coverage audit examines all recorded changes, including credited actions and actions returning
+an error. Thus an undeclared loss cannot disappear merely because the same action earned progress or had
+a rejection-shaped result. Link these loss records back to the uncredited-mutation section where applicable.
+A distance-based positioning category is descriptive;
 it never earns primary credit or claims a move was strategically useful or wasted. Also report completed
 outcomes receiving less than completion credit as a distinct under-credit audit, not as uncredited actions.
 
 The [historical audit](../../research/arena-benchmark-builder-calibration-uncredited-actions-audit.md)
-becomes a regression fixture under its original scoring and classification definitions. Across its 96
+becomes an **offline, data-driven regression fixture** under its original scoring and classification definitions. Across its 96
 trials, reproduce the membership of 117 uncredited mutations and these mutually exclusive action buckets:
 
 | Historical bucket | Count |
@@ -284,6 +325,12 @@ under-credited quarry completions. The historical task set comes from the archiv
 inputs and the historical evaluator identity so the new contract does not silently redefine membership.
 The audit identifies `bf0f0b5` as its corrected historical scorer; preserve that interpretation when
 constructing the fixture rather than applying the new observation and endpoint rules to old trials.
+Store expected trial/step membership and classifications in
+`tests/arena/fixtures/builder_uncredited_audit_v1.json`, with digests of raw inputs and public task-list
+evidence. Compute actual membership from the raw trials and their frozen version-1 objective definitions;
+do not select input actions from the expected-membership list. Feed the resulting records through the same
+classifier used for new reports. There is no separate historical-mode classifier or live regression run.
+This acceptance test must pass offline before any authoring clock starts.
 
 The original evidence did not record tile yields. The audit's later city-yield probes are supplementary
 historical measurements, explicitly labelled as such. They can support the historical interpretation of
@@ -316,8 +363,10 @@ Partial endpoints must be useful and legally actionable under the known tech and
 remaining movement may be exhausted. They must not already hold at entry. Declare alternatives before
 freezing rather than adding them after observing a model's preferred farm.
 
-The initial harm case is an uncompensated loss of an escort serving the resource objective, with a
-four-point deduction. Its lethal attack and corresponding safe or justified action are legality-probed.
+Declare two four-point harms: uncompensated loss of an escort serving the resource objective, and newly
+exposing a civilian serving that objective under the shared geometry. Their maximum combined deduction is
+eight points. Probe the lethal attack and corresponding safe or justified action, and the exposed versus
+covered civilian endpoints. The route decision is therefore scored even though the enemy takes no turn.
 Do not label a small unscored farm gain harmful merely because it spent a charge that could have served
 a scored task; record its measured effects in the ledger.
 
@@ -370,6 +419,11 @@ Set `max_steps = 15` for every Plan 3 model and arm. One step is one backend/mod
 a final response containing `finish_trial`; multiple tool calls in one response consume one round trip.
 It is not a tool-call or game-turn budget. Record both round trips and tool calls, as well as wall time,
 tokens, truncation, and terminal reason. Script batches follow the same counting rule.
+Reports show **non-finish tool-call attempts per round trip for each model**, both per episode and as a
+distribution, alongside dispatched-call counts. Count rounds directly, including finish-only rounds;
+never infer them from the number of tool rows. Round-trip budgeting permits batching, so the roughly two
+calls per step seen for Qwen versus one for Gemma in Plan 2 is a potential budget advantage to attribute,
+not evidence that equal round budgets imply equal tool-call opportunities.
 
 The parent design already specifies fifteen and diagnostic comparisons around that baseline. Plan 2
 froze eight for its calibration. The [findings](../../research/arena-benchmark-builder-calibration-v1-findings.md)
@@ -407,14 +461,24 @@ decision quality or the scientific validity of every weight.
 
 ### Required cases for each position
 
+Live witnesses cover each position's declared objectives and harms, including both full-score paths and
+its own observation-only null. Shared geometry edge cases and malformed-input, timeout, and actor-separation
+checks also have offline fixtures. The builder supplies live new-exposure/covered/recovered witnesses;
+the tactical position supplies the initially-exposed null. A city position need not acquire an unrelated
+civilian harm just to repeat a shared geometry test.
+
 - Joint full score, and a materially different acceptable full-score trajectory.
 - Each intermediate rung, plus a closer-but-not-at-an-eligible-endpoint action receiving no partial credit.
 - Every harm firing and a corresponding legitimate-action or accepted-compensation case avoiding it.
+- New exposure versus covered endpoints, temporary exposure repaired before finishing, and an initially
+  exposed civilian left unchanged with zero primary credit and zero new-exposure harm.
 - A pure-observation null script with gross credit zero, harm zero, primary zero, and identical initial and
   final digests. Every recorded before/after pair and adjacent snapshot boundary must agree as well.
 - Mixed gain and loss, an uncompensated harm-only negative score, and repeated/undone actions.
 - Legitimate final-charge consumption where applicable, with completion retained and no false loss.
 - Snapshot incompleteness, wrong identity, malformed predicates, and unsupported tools failing explicitly.
+- Full-scope null capture timings within 2.0 seconds each, plus offline timeout/cancellation cases proving
+  capture failures cannot become model failures and timing cannot change a state digest.
 - Scripted records rejected from model-comparison aggregates.
 
 The null case tests stability of the recorded state under the tested query sequence. It does not prove
@@ -429,11 +493,18 @@ Stop only after setup, legality probes, archive capture, twelve reload checks, m
 scripted cases, and the final restored-state check have passed. Persist start/end times and stage timings
 in provenance. All retries, debugging during that attempt, load waits, and interruptions count.
 
-Toolkit implementation and offline scenario design occur before this clock starts. A failed recipe
-replay or restarted process does not reset it. Exceeding the bound fails the exit gate; retain the attempt
-and report the failure. Do not discard an expensive attempt, rename the position, or revise the bound
-after seeing the duration and then call the original gate met. Further work must explicitly account for
-the failed gate and any prospectively approved amendment.
+Toolkit implementation, the 117-mutation regression, other offline tests, and offline scenario design
+occur before this clock starts. A failed recipe replay or restarted process does not reset it. Exceeding
+the bound fails that scenario attempt; retain it and report the failure.
+
+Each family permits **one declared scenario substitution**, for at most two scenario attempts. Before
+the substitute's first live command, record a new scenario ID, the failed predecessor, failure reason,
+and the material scenario change. It starts a fresh three-hour clock and must satisfy the same family
+objectives, tool surface, scoring rules, and complete validation gate. This allowance is preregistered
+here; it does not require an ad hoc amendment after the first failure. A restart or mere rename is not
+a substitution. Retain all failed artifacts, durations, and evidence, and report the whole family's
+cost even when its substitute passes. A second failed scenario blocks the family and Part 1; further
+attempts or changed bounds require a prospective amendment.
 
 ### Required evidence packet
 
@@ -441,8 +512,9 @@ All three final positions must have matching archive/provenance digests, their v
 complete scripted cases, the capability/discoverability record, and byte-identical report regeneration
 from the same raw evidence and locked scorer. Every harm must have anchored weights and passing positive
 and negative cases. The budget rule and each score/threshold derivation must be preregistered. The benefit
-ledger must be present with honest coverage, and the historical 117-mutation regression must reproduce
-its declared membership and counts. No tested-model transcript from a library position may have been
+ledger must include undeclared-loss coverage, and the offline historical 117-mutation regression must
+already have reproduced its declared membership and counts. The null timing gate must pass. No
+tested-model transcript from a library position may have been
 produced or viewed during Part 1.
 
 Unit and integration validation must additionally preserve version-1 interpretation, exercise signed
@@ -461,13 +533,60 @@ screen size, repetition schedules, advancement slots, treatment qualification, o
 | Five-model roster | Use anchors `gemma4-26b`, `qwen3.6-27b`, plus `qwen3.8-27b-cpp`, `granite4.2-30b-cpp`, and `ornith-1.5-35b-cpp`; verify their actual identities and topology during admission. |
 | Budget | Carry forward fifteen model round trips with common comparison limits and the parent's latency-derived wall guard and diagnostic A/B rules. |
 | Scoring | Use the signed version-2 contract, with per-position maximums, loss weights, and meaningful-increment derivations. Do not import calibration score interpretations. |
-| Common tool surface | Audit every library objective for observable facts and executable actions; freeze the exact common names and schemas, rather than assuming the current `standard` tier is sufficient. |
+| Common tool surface | Part 1 uses the frozen list below. Part 2 may extend it for remaining domains, creating a new identity and revalidating the common surface before model screening. |
+
+### Frozen Part 1 tool surface
+
+The implementation plan must create `benchmarks/toolsets/plan3-part1-v1.yaml` with toolset ID
+`plan3-part1-v1` and this exact ordered `game_tools` list. It is the current 29-tool standard surface plus
+six named capabilities; do not resolve a mutable `standard` alias at runtime. `finish_trial` is the
+separate common control tool and is appended by the benchmark agent. `end_turn` is absent.
+
+```yaml
+game_tools:
+  - get_overview
+  - get_units
+  - get_cities
+  - move_unit
+  - found_city
+  - set_city_production
+  - set_research
+  - fortify_unit
+  - skip_unit
+  - get_unit_promotions
+  - promote_unit
+  - get_map_area
+  - get_tech_civics
+  - attack_unit
+  - get_builder_tasks
+  - improve_tile
+  - remove_feature
+  - repair_improvement
+  - get_great_people
+  - recruit_great_person
+  - activate_great_person
+  - purchase_item
+  - heal_unit
+  - alert_unit
+  - set_civic
+  - get_pending_diplomacy
+  - respond_to_diplomacy
+  - get_pending_trades
+  - respond_to_trade
+  - get_city_production
+  - get_district_advisor
+  - get_purchasable_tiles
+  - purchase_tile
+  - get_pathing_estimate
+  - get_empire_resources
+```
 
 The capability audit is a newly discovered prerequisite. The current standard tier omits production-option
 and district-advisor queries, and several later diplomacy/religion/congress capabilities. Use an explicit,
 versioned benchmark allowlist with the same surface for all screen models and for both arms of an injection
-comparison. Part 1 scripts must declare and exercise their proposed screen tools. Part 2 completes the
-library-wide list before the common freeze; a surface change invalidates earlier tool-identity validation
+comparison. Part 1 scripts exercise this frozen surface, including production-option discoverability.
+Part 2 extends it only where the remaining library needs additional capabilities, before the common freeze;
+a surface change invalidates earlier tool-identity validation
 and requires revalidation of all positions using the changed common surface. This Part 2 revalidation is
 separate from the recorded Part 1 authoring attempt and cannot reuse its old tool-identity certification.
 Do not silently widen the arena's general standard tier.
@@ -490,4 +609,5 @@ starting the first position's live authoring clock. Live execution follows the e
 [arena operating playbook](../../../tools/skills/civ6-arena-live/SKILL.md), including single FireTuner
 ownership and the established benchmark reload workflow.
 
-The next deliverable is an implementation plan, not a counted run or a revision to historical calibration.
+The [Part 1 implementation plan](../plans/2026-10-08-arena-benchmark-plan-3-part-1.md) specifies the work,
+offline checks, and live gates. Implementation and live authoring have not started.

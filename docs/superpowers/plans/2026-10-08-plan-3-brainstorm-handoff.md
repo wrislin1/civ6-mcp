@@ -6,7 +6,9 @@ here is a decision; it is the state of the world and the questions a brainstorm 
 
 **Brainstorm follow-up (2026-10-08):** the design sections for Part 1 were approved in conversation.
 The [Part 1 authoring and scoring spec](../specs/2026-10-08-arena-benchmark-plan-3-part-1-design.md)
-records those decisions and the delta roadmap for Parts 2 and 3; the written spec awaits review.
+records those decisions and the delta roadmap for Parts 2 and 3. The six written-review amendments
+were incorporated on 2026-10-08. The [Part 1 implementation plan](2026-10-08-arena-benchmark-plan-3-part-1.md)
+is the execution handoff; software implementation and live authoring have not started.
 The handoff below retains the pre-brainstorm questions and evidence.
 
 ## 1. Where things stand
