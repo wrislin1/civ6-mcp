@@ -1555,4 +1555,4 @@ Plan 2 is complete only when:
 - reports regenerate byte-identically from locks plus `trials/` and pass metric-fidelity review; and
 - the campaign is `CALIBRATED` or `CALIBRATED_REPLICATION_DEFERRED`.
 
-Only then begin Plan 3: the nine-position development/held-out library, non-empty treatment options (briefing/tracker), and the qwen3.8/granite4.2/ornith multi-model screen. If the exit gate is not met, publish the failure honestly and keep Plan 3 blocked.
+Only then begin Plan 3: the nine-position development/held-out library, non-empty treatment options (briefing/playbook), and the qwen3.8/granite4.2/ornith multi-model screen. Task-tracker evaluation remains deferred to multi-turn rollouts, as required by the parent design. If the exit gate is not met, publish the failure honestly and keep Plan 3 blocked.

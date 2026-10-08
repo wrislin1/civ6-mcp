@@ -4,6 +4,11 @@ Written 2026-10-08 at the close of Plan 2, for a fresh session that will run `su
 on Plan 3 of the arena benchmark. Read this first, then the design and the findings it points to. Nothing
 here is a decision; it is the state of the world and the questions a brainstorm has to answer.
 
+**Brainstorm follow-up (2026-10-08):** the design sections for Part 1 were approved in conversation.
+The [Part 1 authoring and scoring spec](../specs/2026-10-08-arena-benchmark-plan-3-part-1-design.md)
+records those decisions and the delta roadmap for Parts 2 and 3; the written spec awaits review.
+The handoff below retains the pre-brainstorm questions and evidence.
+
 ## 1. Where things stand
 
 - **Plan 2 is closed with its exit gate met.** Campaign `builder-posctrl-cal-v1` is `CALIBRATED`:
@@ -50,8 +55,9 @@ gate") names three deliverables:
    positioning; late-game multi-system triage. Each: commandable without advancing the turn, two to four
    independently scored objectives, rubrics that reward verified progress and penalize harm without
    requiring one exact action sequence.
-2. **Non-empty treatment options** — briefing and tracker/playbook arms (Stage 3 A/B suites), combined only
-   after individual effects qualify. Plan 2 arms had `options: {}` by construction.
+2. **Non-empty treatment options** — briefing and playbook arms (Stage 3 A/B suites), combined only
+   after individual effects qualify. Plan 2 arms had `options: {}` by construction. Task-tracker evaluation
+   remains deferred to multi-turn rollouts; the parent design forbids it in fresh single-turn trials.
 3. **The multi-model screen** — roster `gemma4-26b`, `qwen3.6-27b` (anchors), `qwen3.8-27b-cpp`,
    `granite4.2-30b-cpp`, `ornith-1.5-35b-cpp` on `home-llm` (RTX 3090 24 GB + RTX 5060 Ti 16 GB; registry
    endpoint `home-gpu0-cpp` is llama-swap `--parallel 4`). Stage 4 held-out rules: equal-weight held-out
