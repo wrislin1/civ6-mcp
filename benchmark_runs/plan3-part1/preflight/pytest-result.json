@@ -1,15 +1,15 @@
 {
-  "code_identity": "60ee8a651e7d0c14e8bb7ab5018e07945adb74d977046c2ba9c6dd3c46a51f14",
+  "code_identity": "e9255e849b14462ea32c0765f041691717714449857358707ec59261be3bf260",
   "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
-  "duration_s": 181.903,
+  "duration_s": 184.914,
   "errors": 0,
   "exit_code": 0,
   "failed": 0,
-  "finished": "2026-10-09T04:31:06.327426+00:00",
-  "git_head": "5b8c06d9a72d446eed266ef96d24542f6f8a8a3c",
-  "git_head_note": "HEAD before the fingerprint-amendment commit; the suite ran on the uncommitted amendment working tree whose code identity is code_identity",
-  "passed": 4016,
+  "finished": "2026-10-09T15:36:15.926686+00:00",
+  "git_head": "8f9b884fc0b73e1915d59b5f5dd91dcfb77d4c8f",
+  "git_head_note": "HEAD is the final code commit of the pre-live review fix wave; the evidence commit that follows adds only these three force-added files, which are outside every fingerprint list",
+  "passed": 4051,
   "skipped": 0,
-  "started": "2026-10-09T04:28:04.424596+00:00",
-  "summary_line": "4016 passed in 180.53s (0:03:00)"
+  "started": "2026-10-09T15:33:11.012291+00:00",
+  "summary_line": "4051 passed in 183.41s (0:03:03)"
 }
