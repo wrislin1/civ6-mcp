@@ -477,8 +477,12 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
                     isinstance(p, list) and len(p) == 2 and all(_is_int(v) for v in p)
                     for p in value), f"{ctx}.selector.area must be a list of integer pairs")
             else:
-                _require(isinstance(value, (str, int, bool)) and value is not None,
-                         f"{ctx}.selector.{key} must be a scalar")
+                # A list means "any of" (e.g. every hills terrain for a Seowon site).
+                scalar = isinstance(value, (str, int, bool))
+                any_of = (isinstance(value, list) and bool(value)
+                          and all(isinstance(v, (str, int, bool)) for v in value))
+                _require(scalar or any_of, f"{ctx}.selector.{key} must be a scalar or a "
+                                           "non-empty list of scalars (any of)")
         names.append(binding["name"])
     _require(len(names) == len(set(names)), "recipe.bindings has duplicate names")
     rules: dict[str, str] = {}
@@ -942,12 +946,17 @@ def _resolution_coverage(recipe: dict[str, Any]) -> dict[str, Any]:
             "tracked_targets": []}
 
 
+def _selector_value_matches(actual: Any, wanted: Any) -> bool:
+    """A list selector value is "any of"; a scalar must equal the row's value."""
+    return actual in wanted if isinstance(wanted, list) else actual == wanted
+
+
 def _row_matches(row: dict[str, Any], selector: dict[str, Any]) -> bool:
     for key, value in selector.items():
         if key == "area":
             if [row.get("x"), row.get("y")] not in value:
                 return False
-        elif key not in row or row[key] != value:
+        elif key not in row or not _selector_value_matches(row[key], value):
             return False
     return True
 
@@ -960,7 +969,8 @@ def resolve_bindings(bindings: list[dict[str, Any]], state: dict[str, Any]) -> d
         matches = [row for row in rows if _row_matches(row, binding["selector"])]
         if len(matches) != 1:
             near = matches or [row for row in rows if any(
-                k != "area" and row.get(k) == v for k, v in binding["selector"].items())]
+                k != "area" and _selector_value_matches(row.get(k), v)
+                for k, v in binding["selector"].items())]
             raise StageFailure(
                 f"binding {binding['name']!r} resolved to {len(matches)} rows "
                 f"(exactly one required); candidates: {json.dumps(near[:20], sort_keys=True)}")

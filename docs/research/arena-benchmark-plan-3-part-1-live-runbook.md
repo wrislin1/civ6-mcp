@@ -9,13 +9,22 @@ precondition and outputs in one sentence.
 
 - **cwd = repository root** (the WSL checkout). Every path below is repo-relative.
 - **Windows checkout current.** The bridge runs the Windows checkout's code
-  (`/mnt/c/Users/wrisl/dev/civ6-mcp`, `game_launcher.WSL_WINDOWS_REPO`) *with that
-  checkout as its working directory*: repo-relative archive paths resolve there, so the
-  Windows checkout must be on this branch's HEAD and hold the same `benchmarks/saves/`.
-  An absolute non-`/mnt/<drive>/` path is refused before the bridge is called.
+  (`/mnt/c/Users/wrisl/dev/civ6-mcp`, `game_launcher.WSL_WINDOWS_REPO`; a
+  `CIV6_WINDOWS_BOOTSTRAP` override moves both the code and the working directory to the
+  checkout that holds the bootstrap) *with that checkout as its working directory*:
+  repo-relative archive paths resolve there, so the Windows checkout must be on this
+  branch's HEAD and hold the same `benchmarks/saves/`. Nothing is ever written to a
+  tracked path on the Windows side: native exports land in its gitignored
+  `benchmark_runs/plan3-part1/{bases,exports}/` and are copied into this repo's
+  `benchmarks/saves/` from there, so that checkout can always fast-forward to the commit
+  that adds an archive. An absolute non-`/mnt/<drive>/` path is refused before the bridge
+  is called.
 - **Directories.** `benchmark_runs/` is gitignored and need not exist: the stages create
   attempt directories, and the native export creates `benchmark_runs/plan3-part1/bases/`
-  on the Windows side. Nothing else needs pre-creating.
+  and `.../exports/<attempt>/` on the Windows side. Nothing else needs pre-creating.
+- **Attempt directories live under `benchmark_runs/plan3-part1/`.** The gate scans only
+  that root; the stage CLI refuses an attempt directory or a `--predecessor-journal`
+  anywhere else before the journal opens.
 - **One FireTuner owner.** Kill any session `civ-mcp` server first; acquire the game per
   the arena live playbook. Only the commands below talk to the game.
 
@@ -29,7 +38,10 @@ uv run python -m civ_mcp.arena.benchmark_capture_probe \
 ```
 
 Outputs: samples, `summary.json` and `evidence-index.json` under the output dir; the
-provenance record under `benchmarks/provenance/`. A rerun uses a new output dir.
+provenance record under `benchmarks/provenance/`. A rerun uses a new output dir. The gate
+re-verifies the record against its indexed raw evidence (every sample, the summary and
+the index must exist, hash-match and be Git-tracked), so force-add the output dir in
+step 4 and never edit it.
 
 ## 2. Offline preflight
 
@@ -64,17 +76,31 @@ position, scripts, cases, suite and provenance packet under `benchmarks/`. The p
 lands at the recipe's `outputs.provenance_packet` for the archived version
 (`benchmarks/provenance/plan3-<family>-a1-v<N>.json`).
 
-- **Recovery:** if `finish` or `abandon` fails after the journal closed (index/packet
-  write), re-run the same command: it rewrites only the index/packet.
+- **Archive stage and stale saves:** `archive` records the native save's
+  size/mtime signature (`stat-save`) before it saves, and the export waits out any
+  same-named file still carrying that signature (a leftover of an earlier attempt) instead
+  of archiving it; the export itself lands at a stage-unique path under the Windows
+  checkout's `benchmark_runs/plan3-part1/exports/<attempt>/`, so no leftover can collide.
+- **Recovery:** if `finish` or `abandon` fails after the journal closed (index and/or
+  packet write), re-run the same command: an index that was already written is verified
+  and reused, and only the missing index/packet is written. A re-run after everything
+  exists reports the attempt as closed.
 - **Abandon** a failed or expired attempt (offline, indexes it):
   `uv run python -m civ_mcp.arena.benchmark_authoring abandon --recipe $R --attempt-dir $A --reason "..."`
 - **Substitution** (once per family, only after the predecessor is terminal-failed,
   i.e. finished-failed or abandoned): write the `a2` recipe with `predecessor`,
-  `substitution_reason` and `material_change`, then run it in a **new** attempt dir.
-  The failed predecessor's journal is found among sibling attempt dirs automatically;
-  name it explicitly when needed:
+  `substitution_reason` and `material_change`, then run it in a **new** attempt dir
+  under `benchmark_runs/plan3-part1/`. The failed predecessor's journal is found among
+  sibling attempt dirs automatically; name it explicitly when needed, and it too must live
+  under `benchmark_runs/plan3-part1/` (the gate reads the predecessor from that journal
+  and refuses an imported reference to any other):
   `... survey --recipe benchmarks/recipes/plan3-builder-a2.yaml --attempt-dir benchmark_runs/plan3-part1/builder-a2 --predecessor-journal benchmark_runs/plan3-part1/builder-a1/authoring-journal.json`.
   A third identity in a family, across all sibling journals, is refused.
+- **Setup Lua runs in GameCore** (`GameConnection.execute_mutation`, never re-sent on a
+  dead socket): recipes may use the GameCore mutation APIs the verified journals used
+  (`UnitManager.InitUnit/PlaceUnit/RestoreMovement`, `ImprovementBuilder.*`, treasury
+  and city mutators). Every operation is proved by its readback; an unavailable API fails
+  `apply` with the Lua error in the mutations evidence, minutes into the clock.
 
 **`evidence_index_complete`:** after `finish`/`abandon` nothing new may appear in an
 attempt dir — any unindexed file there fails the gate. Write scratch output (notes,
@@ -88,11 +114,14 @@ attempt dir — any unindexed file there fails the gate. Write scratch output (n
 uv run python -m civ_mcp.arena.benchmark_authoring evidence-files \
   --root benchmark_runs/plan3-part1 --output /tmp/plan3-evidence-paths.txt
 git add -f --pathspec-from-file=/tmp/plan3-evidence-paths.txt
+git add -f benchmark_runs/plan3-part1/capture-probe   # the probe's indexed raw evidence
 git add benchmarks/
 xargs -a /tmp/plan3-evidence-paths.txt git ls-files --error-unmatch -- >/dev/null
 ```
 
 `evidence-files` refuses while any attempt is unindexed (finish or abandon it first).
+The timing-probe output dir is not an attempt: add it explicitly (the gate requires every
+file its `evidence-index.json` lists to be Git-tracked).
 
 ## 5. Gate and exit
 

@@ -21,16 +21,22 @@ player_id: 0
 # The arena's model feed cap (agent.MODEL_FEED_CHAR_CAP).
 result_char_cap: 1500
 
-# Offline declaration. Literal city names/ids/centres are MEASURED facts of this
-# base (benchmarks/positions/builder-posctrl-v1.yaml):
-#   Gyeongju 65536 (72,26) pop 12   Jeonju 131073 (67,24) pop 7
-#   Gwangju 196610 (70,22) pop 4
-# Three separate cities carry the three objectives so their queues never
-# compete: Gyeongju's housing shortfall (granary remedy, purchasable from the
-# authored treasury), Jeonju's campus placement (two accepted sites, one of
-# which replaces a lower-value plains farm; a grassland farm is protected), and
-# Gwangju's pillaged monument (urgent repair). Tiles are resolved live from the
-# selectors; ambiguity fails with the candidate list.
+# Offline declaration. Literal city names/ids/centres/buildings are MEASURED
+# facts of this base (benchmarks/positions/builder-posctrl-v1.yaml and the
+# positive control's initial get_cities readout):
+#   Gongju 262147 (73,19) pop 5, housing 6, GRANARY present, producing WALLS
+#   Jeonju 131073 (67,24) pop 7       Gwangju 196610 (70,22) pop 4
+# Every city of this base already holds a granary or has housing to spare, so
+# the housing shortfall is authored: setup removes Gongju's granary (housing 6
+# -> 4 against pop 5), which the granary alone then resolves. Korea builds the
+# SEOWON in place of the Campus (set_city_production passes the district through
+# without resolving civilization replacements), and a Seowon must stand on
+# hills: Jeonju's two accepted sites are a clean hills tile and a plains-hills
+# mine whose loss the Seowon outweighs; a grass-hills mine (more food) is
+# protected. Gwangju carries the pillaged monument (urgent repair). Three
+# separate cities carry the three objectives so their queues never compete.
+# Tiles are resolved live from the selectors; ambiguity fails with the
+# candidate list.
 setup:
   operations:
   - kind: lua
@@ -67,26 +73,42 @@ setup:
         print("ERR|Gwangju monument is not pillaged")
       end
   - kind: lua
-    # Measurement only. Gyeongju must have no granary and a shortfall that the
-    # granary alone resolves (minimum_surplus 1, as in the housing rubric):
+    # Housing shortfall: remove Gongju's granary (GameCore CityBuildings:RemoveBuilding).
+    # Gongju (pop 5, housing 6 including the granary's +2) then sits at surplus -1
+    # and the granary alone restores minimum_surplus 1 -- exactly the shape the
+    # housing rubric requires:
     #   housing - pop < 1   and   housing - pop + granary_housing >= 1.
+    # Proved by readback; an unavailable API fails this stage before any further
+    # mutation (substitute with a different shortfall if it does).
     lua: |
-      print("OK|measure housing")
+      local c = nil
+      for _, city in Players[0]:GetCities():Members() do
+        if Locale.Lookup(city:GetName()) == "Gongju" then c = city end
+      end
+      if c == nil then print("ERR|Gongju missing") return end
+      local info = GameInfo.Buildings["BUILDING_GRANARY"]
+      local cb = c:GetBuildings()
+      if not cb:HasBuilding(info.Index) then print("ERR|Gongju has no granary to remove") return end
+      if cb.RemoveBuilding == nil then
+        print("ERR|CityBuildings:RemoveBuilding is not available in GameCore") return
+      end
+      cb:RemoveBuilding(info.Index)
+      print("OK|removed|Gongju|BUILDING_GRANARY")
     readback: |
       local minimum_surplus = 1
       local c = nil
       for _, city in Players[0]:GetCities():Members() do
-        if Locale.Lookup(city:GetName()) == "Gyeongju" then c = city end
+        if Locale.Lookup(city:GetName()) == "Gongju" then c = city end
       end
-      if c == nil then print("ERR|Gyeongju missing") return end
+      if c == nil then print("ERR|Gongju missing") return end
       local info = GameInfo.Buildings["BUILDING_GRANARY"]
       local gain = info.Housing or 0
       local surplus = c:GetGrowth():GetHousing() - c:GetPopulation()
       local granary = c:GetBuildings():HasBuilding(info.Index)
       if not granary and surplus < minimum_surplus and surplus + gain >= minimum_surplus then
-        print("OK|housing_city|Gyeongju|surplus " .. surplus .. "|granary_housing " .. gain)
+        print("OK|housing_city|Gongju|surplus " .. surplus .. "|granary_housing " .. gain)
       else
-        print("ERR|Gyeongju surplus " .. surplus .. " granary_housing " .. gain
+        print("ERR|Gongju surplus " .. surplus .. " granary_housing " .. gain
               .. " has_granary " .. tostring(granary))
       end
   assertions:
@@ -101,34 +123,34 @@ setup:
   - id: district-not-committed
     value: false
     predicate: {kind: district_committed, cities: ["${district_city.id}"],
-                district_types: [DISTRICT_CAMPUS],
+                district_types: [DISTRICT_SEOWON],
                 tiles: ["${district_site.xy}", "${replacement_site.xy}"]}
-  - id: protected-farm-present
+  - id: protected-mine-present
     value: true
     predicate: {kind: tile_matches, tiles: ["${protected_asset.xy}"],
-                fields: {improvement: IMPROVEMENT_FARM, pillaged: false}}
+                fields: {improvement: IMPROVEMENT_MINE, pillaged: false}}
 
 survey:
   queries:
   - {tool: get_overview, arguments: {}}
   - {tool: get_cities, arguments: {}}
-  - {tool: get_city_production, arguments: {city_id: 65536}}
+  - {tool: get_city_production, arguments: {city_id: 262147}}
   - {tool: get_city_production, arguments: {city_id: 196610}}
-  - {tool: get_district_advisor, arguments: {city_id: 131073, district_type: DISTRICT_CAMPUS}}
+  - {tool: get_district_advisor, arguments: {city_id: 131073, district_type: DISTRICT_SEOWON}}
   - {tool: get_map_area, arguments: {x: 67, y: 24, radius: 2}}
   - {tool: get_purchasable_tiles, arguments: {city_id: 131073}}
   required_facts:
-  - {id: housing-visible, source: get_cities, pattern: "Gyeongju \\(pop \\d+\\).*Housing \\d+"}
+  - {id: housing-visible, source: get_cities, pattern: "Gongju \\(pop \\d+\\).*Housing \\d+"}
   - {id: pillaged-building-visible, source: get_cities, pattern: "PILLAGED: .*MONUMENT"}
   - {id: granary-purchasable, source: get_city_production, pattern: "GRANARY"}
   - {id: monument-repair-listed, source: get_city_production, pattern: "MONUMENT"}
-  - {id: campus-sites-ranked, source: get_district_advisor, pattern: "\\(\\d+,\\s*\\d+\\)"}
-  - {id: farms-visible, source: get_map_area, pattern: "(?i)farm"}
+  - {id: seowon-sites-ranked, source: get_district_advisor, pattern: "\\(\\d+,\\s*\\d+\\)"}
+  - {id: mines-visible, source: get_map_area, pattern: "(?i)mine"}
 
 bindings:
 - name: housing_city
   resolves: city
-  selector: {owner: 0, name: Gyeongju}
+  selector: {owner: 0, name: Gongju}
 - name: district_city
   resolves: city
   selector: {owner: 0, name: Jeonju}
@@ -136,25 +158,31 @@ bindings:
   resolves: city
   selector: {owner: 0, name: Gwangju}
 - name: district_site
-  # Accepted site that displaces nothing: owned, unimproved, featureless,
-  # no resource, within the Jeonju ring.
+  # Accepted site that displaces nothing: owned hills (a Seowon's placement
+  # requirement), unimproved, featureless, no resource, within the Jeonju ring.
+  # A list selector value means "any of".
   resolves: tile
   selector: {owner: 0, improvement: NONE, district: NONE, resource: NONE, feature: NONE,
+             terrain: [TERRAIN_GRASS_HILLS, TERRAIN_PLAINS_HILLS, TERRAIN_DESERT_HILLS,
+                       TERRAIN_TUNDRA_HILLS],
              area: [[66, 23], [67, 23], [68, 23], [66, 24], [68, 24], [66, 25], [67, 25],
                     [68, 25]]}
 - name: replacement_site
-  # Accepted productive replacement: a plains farm whose loss the campus outweighs.
+  # Accepted productive replacement: an intact plains-hills mine (less food than
+  # the grass-hills one) whose loss the Seowon outweighs.
   resolves: tile
-  selector: {owner: 0, improvement: IMPROVEMENT_FARM, terrain: TERRAIN_PLAINS,
-             resource: NONE, district: NONE,
+  selector: {owner: 0, improvement: IMPROVEMENT_MINE, pillaged: false,
+             terrain: TERRAIN_PLAINS_HILLS, resource: NONE, district: NONE,
              area: [[66, 22], [67, 22], [68, 22], [65, 23], [66, 23], [67, 23], [68, 23],
                     [69, 23], [65, 24], [66, 24], [68, 24], [69, 24], [65, 25], [66, 25],
                     [67, 25], [68, 25], [69, 25], [66, 26], [67, 26], [68, 26]]}
 - name: protected_asset
-  # Unacceptable displacement: a grassland farm (higher food) near Jeonju.
+  # Unacceptable displacement: an intact grass-hills mine (higher food) near
+  # Jeonju. Resource tiles are excluded from every site: the base's iron mine
+  # at (68,23) is never a Seowon target.
   resolves: tile
-  selector: {owner: 0, improvement: IMPROVEMENT_FARM, terrain: TERRAIN_GRASS,
-             resource: NONE, district: NONE,
+  selector: {owner: 0, improvement: IMPROVEMENT_MINE, pillaged: false,
+             terrain: TERRAIN_GRASS_HILLS, resource: NONE, district: NONE,
              area: [[66, 22], [67, 22], [68, 22], [65, 23], [66, 23], [67, 23], [68, 23],
                     [69, 23], [65, 24], [66, 24], [68, 24], [69, 24], [65, 25], [66, 25],
                     [67, 25], [68, 25], [69, 25], [66, 26], [67, 26], [68, 26]]}
@@ -177,7 +205,7 @@ objectives:
   rungs:
   - points: 4
     predicate: {kind: district_committed, cities: ["${district_city.id}"],
-                district_types: [DISTRICT_CAMPUS],
+                district_types: [DISTRICT_SEOWON],
                 tiles: ["${district_site.xy}", "${replacement_site.xy}"]}
 - id: initiate-repair
   rungs:
@@ -194,12 +222,12 @@ harms:
   timing: event
   priority: 0
   predicate: {kind: asset_displaced, tiles: ["${protected_asset.xy}", "${replacement_site.xy}"],
-              asset_fields: {improvement: IMPROVEMENT_FARM}}
-  # Displacing the plains farm for a committed campus there is accepted.
+              asset_fields: {improvement: IMPROVEMENT_MINE}}
+  # Displacing the plains-hills mine for a committed Seowon there is accepted.
   compensation:
   - timing: final
     predicate: {kind: district_committed, cities: ["${district_city.id}"],
-                district_types: [DISTRICT_CAMPUS], tiles: ["${replacement_site.xy}"]}
+                district_types: [DISTRICT_SEOWON], tiles: ["${replacement_site.xy}"]}
 
 probes:
 - {id: purchase-granary, tool: purchase_item, expect: ok, restore: true,
@@ -208,29 +236,29 @@ probes:
 - {id: queue-granary, tool: set_city_production, expect: ok, restore: true,
    arguments_from_bindings: {city_id: "${housing_city.id}", item_type: BUILDING,
                              item_name: BUILDING_GRANARY}}
-- {id: campus-at-clean-site, tool: set_city_production, expect: ok, restore: true,
+- {id: seowon-at-clean-site, tool: set_city_production, expect: ok, restore: true,
    arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
-                             item_name: DISTRICT_CAMPUS, target_x: "${district_site.x}",
+                             item_name: DISTRICT_SEOWON, target_x: "${district_site.x}",
                              target_y: "${district_site.y}"}}
-- {id: campus-at-replacement-site, tool: set_city_production, expect: ok, restore: true,
+- {id: seowon-at-replacement-site, tool: set_city_production, expect: ok, restore: true,
    arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
-                             item_name: DISTRICT_CAMPUS, target_x: "${replacement_site.x}",
+                             item_name: DISTRICT_SEOWON, target_x: "${replacement_site.x}",
                              target_y: "${replacement_site.y}"}}
-- {id: campus-on-protected-farm, tool: set_city_production, expect: ok, restore: true,
+- {id: seowon-on-protected-mine, tool: set_city_production, expect: ok, restore: true,
    arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
-                             item_name: DISTRICT_CAMPUS, target_x: "${protected_asset.x}",
+                             item_name: DISTRICT_SEOWON, target_x: "${protected_asset.x}",
                              target_y: "${protected_asset.y}"}}
 - {id: queue-monument-repair, tool: set_city_production, expect: ok, restore: true,
    arguments_from_bindings: {city_id: "${repair_city.id}", item_type: BUILDING,
                              item_name: BUILDING_MONUMENT}}
-- {id: campus-on-city-centre-rejected, tool: set_city_production, expect: rejected,
+- {id: seowon-on-city-centre-rejected, tool: set_city_production, expect: rejected,
    restore: true,
    arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
-                             item_name: DISTRICT_CAMPUS, target_x: "${district_city.x}",
+                             item_name: DISTRICT_SEOWON, target_x: "${district_city.x}",
                              target_y: "${district_city.y}"}}
 - {id: purchase-district-rejected, tool: purchase_item, expect: rejected, restore: true,
    arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
-                             item_name: DISTRICT_CAMPUS}}
+                             item_name: DISTRICT_SEOWON}}
 
 archive:
   name: PLAN3_CITY_A1_V{version}
@@ -252,7 +280,7 @@ scripts:
   - calls:
     - {name: get_city_production, arguments: {city_id: "${housing_city.id}"}}
     - {name: get_district_advisor, arguments: {city_id: "${district_city.id}",
-                                               district_type: DISTRICT_CAMPUS}}
+                                               district_type: DISTRICT_SEOWON}}
   - calls:
     - {name: finish_trial, arguments: {}}
 - script_id: joint-full
@@ -261,7 +289,7 @@ scripts:
     - {name: purchase_item, arguments: {city_id: "${housing_city.id}", item_type: BUILDING,
                                         item_name: BUILDING_GRANARY}}
     - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
-                                              item_name: DISTRICT_CAMPUS,
+                                              item_name: DISTRICT_SEOWON,
                                               target_x: "${district_site.x}",
                                               target_y: "${district_site.y}"}}
     - {name: set_city_production, arguments: {city_id: "${repair_city.id}", item_type: BUILDING,
@@ -276,7 +304,7 @@ scripts:
                                               item_name: BUILDING_MONUMENT}}
   - calls:
     - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
-                                              item_name: DISTRICT_CAMPUS,
+                                              item_name: DISTRICT_SEOWON,
                                               target_x: "${replacement_site.x}",
                                               target_y: "${replacement_site.y}"}}
   - calls:
@@ -295,7 +323,7 @@ scripts:
   batches:
   - calls:
     - {name: get_district_advisor, arguments: {city_id: "${district_city.id}",
-                                               district_type: DISTRICT_CAMPUS}}
+                                               district_type: DISTRICT_SEOWON}}
     - {name: get_purchasable_tiles, arguments: {city_id: "${district_city.id}"}}
   - calls:
     - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: UNIT,
@@ -306,7 +334,7 @@ scripts:
   batches:
   - calls:
     - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
-                                              item_name: DISTRICT_CAMPUS,
+                                              item_name: DISTRICT_SEOWON,
                                               target_x: "${protected_asset.x}",
                                               target_y: "${protected_asset.y}"}}
   - calls:
@@ -318,13 +346,13 @@ scripts:
                                         item_name: BUILDING_GRANARY}}
   - calls:
     - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
-                                              item_name: DISTRICT_CAMPUS,
+                                              item_name: DISTRICT_SEOWON,
                                               target_x: "${protected_asset.x}",
                                               target_y: "${protected_asset.y}"}}
   - calls:
     - {name: finish_trial, arguments: {}}
 - script_id: queue-overwrite
-  # Commit at the replacement site (farm displaced, compensated while
+  # Commit at the replacement site (mine displaced, compensated while
   # committed), then overwrite the queue: the commitment credit and the
   # compensation vanish, the past displacement stays.
   batches:
@@ -333,7 +361,7 @@ scripts:
                                               item_name: BUILDING_MONUMENT}}
   - calls:
     - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
-                                              item_name: DISTRICT_CAMPUS,
+                                              item_name: DISTRICT_SEOWON,
                                               target_x: "${replacement_site.x}",
                                               target_y: "${replacement_site.y}"}}
   - calls:
@@ -374,9 +402,9 @@ cases:
   expected:
     score: {gross_credit: 12, harm_total: 0, net_credit: 12, primary_score: 1.0}
     endpoints:
-    - {id: protected-farm-kept, value: true,
+    - {id: protected-mine-kept, value: true,
        predicate: {kind: tile_matches, tiles: ["${protected_asset.xy}"],
-                   fields: {improvement: IMPROVEMENT_FARM}}}
+                   fields: {improvement: IMPROVEMENT_MINE}}}
     ledger: []
 - case_id: alternative-full
   script_id: alternative-full
@@ -384,9 +412,9 @@ cases:
   expected:
     score: {gross_credit: 12, harm_total: 0, net_credit: 12, primary_score: 1.0}
     endpoints:
-    - {id: replacement-farm-displaced, value: false,
+    - {id: replacement-mine-displaced, value: false,
        predicate: {kind: tile_matches, tiles: ["${replacement_site.xy}"],
-                   fields: {improvement: IMPROVEMENT_FARM}}}
+                   fields: {improvement: IMPROVEMENT_MINE}}}
     ledger: []
 - case_id: housing-partial
   script_id: housing-partial
@@ -408,9 +436,9 @@ cases:
   expected:
     score: {gross_credit: 0, harm_total: 4, net_credit: -4, primary_score: -0.3333333333333333}
     endpoints:
-    - {id: protected-farm-lost, value: false,
+    - {id: protected-mine-lost, value: false,
        predicate: {kind: tile_matches, tiles: ["${protected_asset.xy}"],
-                   fields: {improvement: IMPROVEMENT_FARM}}}
+                   fields: {improvement: IMPROVEMENT_MINE}}}
     ledger: []
 - case_id: mixed-gain-loss
   script_id: mixed-gain-loss

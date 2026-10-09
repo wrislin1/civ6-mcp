@@ -1368,6 +1368,36 @@ async def test_archive_export_excludes_a_stale_same_name_native_save(tmp_path, t
     assert archive["evidence"]["export_sha256"] == hashlib.sha256(local.read_bytes()).hexdigest()
 
 
+def test_list_selector_values_mean_any_of():
+    """A Seowon site is 'any hills terrain': a list selector value matches any
+    listed value; the resolved row must still be unique."""
+    rows = [dict(_tile(1, 1), terrain="TERRAIN_GRASS"),
+            dict(_tile(2, 1), terrain="TERRAIN_PLAINS_HILLS"),
+            dict(_tile(3, 1), terrain="TERRAIN_GRASS_HILLS", improvement="IMPROVEMENT_MINE")]
+    hills = ["TERRAIN_GRASS_HILLS", "TERRAIN_PLAINS_HILLS"]
+    site = {"name": "site", "resolves": "tile",
+            "selector": {"terrain": hills, "improvement": "NONE"}}
+    resolved = authoring.resolve_bindings([site], state_v2(tiles=rows))
+    assert resolved["site"]["xy"] == [2, 1]
+    both = dict(site, selector={"terrain": hills})
+    with pytest.raises(authoring.StageFailure, match="resolved to 2 rows"):
+        authoring.resolve_bindings([both], state_v2(tiles=rows))
+    none = dict(site, selector={"terrain": ["TERRAIN_SNOW_HILLS"]})
+    with pytest.raises(authoring.StageFailure, match="resolved to 0 rows"):
+        authoring.resolve_bindings([none], state_v2(tiles=rows))
+
+
+def test_recipe_selector_lists_must_be_non_empty_scalars(tmp_path):
+    recipe = _recipe()
+    recipe["bindings"][1]["selector"] = {"terrain": ["TERRAIN_GRASS_HILLS", "TERRAIN_PLAINS_HILLS"],
+                                         "x": 12, "y": 10}
+    authoring.load_recipe(write_recipe(tmp_path, recipe), root=tmp_path)
+    for bad in ([], [["nested"]], [None]):
+        recipe["bindings"][1]["selector"] = {"terrain": bad, "x": 12, "y": 10}
+        with pytest.raises(ValueError, match="scalar or a non-empty list"):
+            authoring.load_recipe(write_recipe(tmp_path, recipe), root=tmp_path)
+
+
 async def test_toolset_is_resolved_once_per_stage_not_per_dispatch(tmp_path, tool_log,
                                                                    monkeypatch):
     """Survey queries and legality probes run while the authoring clock

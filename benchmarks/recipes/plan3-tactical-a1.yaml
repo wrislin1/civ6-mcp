@@ -30,7 +30,12 @@ result_char_cap: 1500
 # declaration-turn combat sync) stands two tiles from Gongju; a settler stands
 # next to it, initially exposed (no own combat unit within one tile); a badly
 # wounded own warrior stands next to the attacker and dies if it attacks first.
-# The archer can shoot from Gongju; the treasury buys a reinforcement.
+# Setup moves the garrisoned archer onto a land tile beside Gongju within two
+# tiles of the attacker: a land-combat unit on the city tile would block every
+# same-class purchase there (lua.cities: ERR:STACKING_CONFLICT), so the
+# reinforcement probes and witnesses need the slot free. The archer can still
+# shoot the attacker and still covers the city tile; the treasury buys a
+# reinforcement.
 #
 # DAMAGE THRESHOLD: target_damaged.minimum_damage (25) is a provisional
 # placeholder declared in measured_parameters. The archive stage refuses to run
@@ -77,6 +82,50 @@ setup:
         end
       end
       if n ~= 1 then print("ERR|expected one visible attacker near Gongju, found " .. n) end
+  - kind: lua
+    # Archer: off the city tile (frees Gongju's combat slot for purchases), onto an
+    # empty land tile beside Gongju within two tiles of the attacker. Verified pattern
+    # (provenance mutation_journal seq 2/3): UnitManager.PlaceUnit + RestoreMovement.
+    # Runs before the civilian spawn so the settler's exposure check sees the new tile.
+    lua: |
+      local ax, ay = nil, nil
+      for _, u in Players[63]:GetUnits():Members() do
+        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end
+      end
+      if ax == nil then print("ERR|attacker missing") return end
+      local archer = nil
+      for _, v in Players[0]:GetUnits():Members() do
+        if GameInfo.Units[v:GetType()].UnitType == "UNIT_ARCHER"
+            and v:GetX() == 73 and v:GetY() == 19 then archer = v end
+      end
+      if archer == nil then print("ERR|no archer garrisoned in Gongju") return end
+      local pick = nil
+      for dir = 0, 5 do
+        local p = Map.GetAdjacentPlot(73, 19, dir)
+        if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()
+            and not p:IsCity() and p:GetUnitCount() == 0
+            and Map.GetPlotDistance(p:GetX(), p:GetY(), ax, ay) <= 2 then pick = p end
+      end
+      if pick == nil then print("ERR|no empty land tile beside Gongju within range of the attacker") return end
+      UnitManager.PlaceUnit(archer, pick:GetX(), pick:GetY())
+      UnitManager.RestoreMovement(archer)
+      print("OK|archer|" .. pick:GetX() .. "," .. pick:GetY())
+    readback: |
+      local n, on_city = 0, 0
+      for _, v in Players[0]:GetUnits():Members() do
+        local info = GameInfo.Units[v:GetType()]
+        if info.UnitType == "UNIT_ARCHER"
+            and Map.GetPlotDistance(v:GetX(), v:GetY(), 73, 19) == 1 then
+          n = n + 1
+          print("OK|archer|" .. v:GetX() .. "," .. v:GetY())
+        end
+        if v:GetX() == 73 and v:GetY() == 19
+            and info.FormationClass == "FORMATION_CLASS_LAND_COMBAT" then
+          on_city = on_city + 1
+        end
+      end
+      if n ~= 1 then print("ERR|expected one archer beside Gongju, found " .. n) end
+      if on_city ~= 0 then print("ERR|a land combat unit still occupies Gongju's tile") end
   - kind: lua
     # Civilian: a settler next to the attacker with no own combat unit within one tile.
     lua: |
@@ -165,6 +214,10 @@ setup:
   - id: civilian-not-yet-rescued
     value: false
     predicate: {kind: unit_in_area, unit_types: [UNIT_SETTLER], tiles: ["${defended_city.xy}"]}
+  - id: city-combat-slot-free
+    # No archer on the centre: a same-class unit there blocks every purchase.
+    value: false
+    predicate: {kind: unit_in_area, unit_types: [UNIT_ARCHER], tiles: ["${defended_city.xy}"]}
   - id: no-reinforcement-in-area
     value: false
     predicate:
@@ -200,8 +253,11 @@ bindings:
   resolves: unit
   selector: {type: UNIT_WARRIOR, role: combat}
 - name: archer
+  # Relocated by setup: the one archer in Gongju's surrounding box, off the centre.
   resolves: unit
-  selector: {type: UNIT_ARCHER, role: combat, x: 73, y: 19}
+  selector: {type: UNIT_ARCHER, role: combat,
+             area: [[72, 18], [73, 18], [74, 18], [72, 19], [74, 19], [72, 20], [73, 20],
+                    [74, 20]]}
 - name: defended_city
   resolves: city
   selector: {owner: 0, name: Gongju}
