@@ -1,0 +1,14 @@
+{
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/preflight/pytest.txt",
+      "sha256": "fe68057aa6e4ecebf9af4af325ecdc35f0df606a322141dc5d5bd486c3a7748a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/preflight/pytest-result.json",
+      "sha256": "31bfaaabcb0e925b8b174e36ffdc5424989fc653d208dd07946fd3f63c907a14"
+    }
+  ],
+  "schema_version": "2.0.0",
+  "scope": "plan3-part1 preflight full suite"
+}

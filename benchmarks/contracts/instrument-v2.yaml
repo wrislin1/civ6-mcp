@@ -1,0 +1,101 @@
+# Candidate instrument contract v2 (Plan 3 Part 1). NOT released: it is the
+# contract used for scripted authoring and is released at Task 22 only if every
+# Part 1 gate passes. See instrument-v2.md for the human record.
+contract_id: instrument-v2
+status: candidate
+released: false
+primary_comparable_to_plan2: false
+evidence_schema_version: 2.0.0
+predicate_schema_version: 2.0.0
+report_schema_version: 2.0.0
+budget: benchmarks/contracts/plan3-part1-budget.yaml
+toolset:
+  toolset_id: plan3-part1-v1
+  path: benchmarks/toolsets/plan3-part1-v1.yaml
+  identity:
+    source_sha256: e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882
+    schemas_sha256: 79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7
+contract_identity_rule: >-
+  implementation_fingerprint (benchmark_contract_v2) over fingerprint_dependencies;
+  recorded per position (contract_identity), per suite and in the offline preflight
+  (code_identity). Every packet and the preflight must carry the same value.
+coverage_rule: >-
+  Owned tiles when include_owned_tiles is true, plus every tile within
+  area_radius in x and in y (a square window) of each bound tile, plus the tracked target
+  units named by tracked_target_bindings. Coverage is frozen in the position
+  and is a comparison identity; a capture outside it is incomplete, not safe.
+scoring:
+  primary_score: (gross_credit - harm_total) / maximum_credit
+  clipped: false
+  maximum_credit: 12            # M: three four-point objectives per position
+  intermediate_rung_points: 2
+  default_harm_weight: served objective maximum (4); any deviation needs a preregistered weight_reason
+  harm_maxima:                  # declared maximum deduction per position, never above M
+    builder: 8
+    city: 4
+    tactical: 4
+  harm_rules:
+    - deduplicated per loss_key; one loss is charged once
+    - compensated harms keep evidence and deduct nothing
+    - final harms compare episode endpoints; event harms inspect every recorded step transition
+    - event-only kinds are unit_lost and asset_displaced; exposure is final-only
+    - missed progress is never debited
+predicate_kinds:
+  - all
+  - any
+  - tile_matches
+  - charged_builder_at
+  - active_production
+  - housing_resolved
+  - district_committed
+  - target_damaged
+  - target_neutralised
+  - civilian_covered
+  - civilian_exposed
+  - unit_in_area
+  - unit_lost
+  - asset_displaced
+  - new_civilian_exposure
+report_sections:
+  - provenance
+  - identity
+  - mechanics
+  - terminal
+  - counters
+  - score
+  - ledger
+  - audits
+  - capture
+  - model_usage
+  - digests
+fingerprint_dependencies:
+  - src/civ_mcp/arena/action_metrics.py
+  - src/civ_mcp/arena/benchmark_agent.py
+  - src/civ_mcp/arena/benchmark_audit.py
+  - src/civ_mcp/arena/benchmark_authoring.py
+  - src/civ_mcp/arena/benchmark_authoring_journal.py
+  - src/civ_mcp/arena/benchmark_capture.py
+  - src/civ_mcp/arena/benchmark_capture_probe.py
+  - src/civ_mcp/arena/benchmark_contract_v2.py
+  - src/civ_mcp/arena/benchmark_deploy.py
+  - src/civ_mcp/arena/benchmark_ledger.py
+  - src/civ_mcp/arena/benchmark_lifecycle.py
+  - src/civ_mcp/arena/benchmark_manifest_v2.py
+  - src/civ_mcp/arena/benchmark_part1_gate.py
+  - src/civ_mcp/arena/benchmark_position.py
+  - src/civ_mcp/arena/benchmark_predicates_v2.py
+  - src/civ_mcp/arena/benchmark_report_v2.py
+  - src/civ_mcp/arena/benchmark_runner.py
+  - src/civ_mcp/arena/benchmark_scoring_v2.py
+  - src/civ_mcp/arena/benchmark_scripted.py
+  - src/civ_mcp/arena/benchmark_scripted_runner.py
+  - src/civ_mcp/arena/benchmark_state.py
+  - src/civ_mcp/arena/benchmark_state_v2.py
+  - src/civ_mcp/arena/benchmark_store.py
+  - src/civ_mcp/arena/benchmark_validation.py
+  - src/civ_mcp/arena/registry.py
+  - src/civ_mcp/connection.py
+  - src/civ_mcp/game_launcher.py
+  - src/civ_mcp/game_state.py
+  - src/civ_mcp/lua/benchmark.py
+  - src/civ_mcp/lua/benchmark_v2.py

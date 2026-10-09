@@ -52,7 +52,8 @@ and records the measurements in the authoring provenance.
 Offline commands (never connect to the game):
 
     uv run python -m civ_mcp.arena.benchmark_authoring STAGE --recipe PATH --attempt-dir PATH
-    uv run python -m civ_mcp.arena.benchmark_authoring preflight --recipes PATH... --output PATH
+    uv run python -m civ_mcp.arena.benchmark_authoring preflight --recipes PATH... --output PATH [--probe PATH]
+    uv run python -m civ_mcp.arena.benchmark_authoring gate --packets PATH... --output PATH [--preflight PATH]
     uv run python -m civ_mcp.arena.benchmark_authoring evidence-files --root PATH --output PATH
     uv run python -m civ_mcp.arena.benchmark_authoring abandon --recipe PATH --attempt-dir PATH --reason TEXT
 """
@@ -81,13 +82,18 @@ from civ_mcp.arena.benchmark_agent import FINISH_TRIAL_TOOL_NAME
 from civ_mcp.arena.benchmark_audit import reproduce_audit
 from civ_mcp.arena.benchmark_authoring_journal import AuthoringJournal
 from civ_mcp.arena.benchmark_capture import CaptureTelemetry
-from civ_mcp.arena.benchmark_contract_v2 import implementation_fingerprint
+from civ_mcp.arena.benchmark_contract_v2 import document_digest, implementation_fingerprint
 from civ_mcp.arena.benchmark_manifest_v2 import (
     SCHEMA_VERSION,
     load_toolset,
     load_v2_document,
     validate_case_expected,
     validate_v2_document,
+)
+from civ_mcp.arena.benchmark_part1_gate import (
+    check_part1_gate,
+    check_part1_packet,
+    probe_problems,
 )
 from civ_mcp.arena.benchmark_position import REQUIRED_CYCLES
 from civ_mcp.arena.benchmark_predicates_v2 import evaluate_predicate, validate_predicate
@@ -105,6 +111,8 @@ __all__ = [
     "STAGE_PREREQUISITES",
     "LiveOps",
     "abandon_attempt",
+    "check_part1_gate",
+    "check_part1_packet",
     "evidence_files",
     "load_recipe",
     "main",
@@ -132,6 +140,9 @@ EVIDENCE_SCOPES = ("benchmark_runs/plan3-part1/", "benchmarks/")
 BASE_EXPORT_DIR = "benchmark_runs/plan3-part1/bases"
 AUDIT_FIXTURE = "tests/arena/fixtures/builder_uncredited_audit_v1.json"
 PREFLIGHT_PYTEST = "benchmark_runs/plan3-part1/preflight/pytest.txt"
+PREFLIGHT_PYTEST_RESULT = "benchmark_runs/plan3-part1/preflight/pytest-result.json"
+PREFLIGHT_OUTPUT = "benchmarks/provenance/plan3-part1-offline-preflight.json"
+PROBE_PROVENANCE = "benchmarks/provenance/plan3-part1-capture-probe.json"
 EPISODE_WALL_S = 300
 
 
@@ -1926,8 +1937,52 @@ def _portable(path: Path, root: Path) -> str:
         return os.path.abspath(path)
 
 
-def preflight(recipe_paths: list[Path], *, root: Path | None = None) -> dict[str, Any]:
-    """Offline identity binding and historical regression; never connects."""
+def _bind_probe(path: Path, root: Path) -> tuple[dict[str, Any], list[str]]:
+    """Bind the Task 17 probe provenance; problems name why it cannot be relied on."""
+    if not path.is_file():
+        return {"present": False}, ["probe provenance file missing"]
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    problems = probe_problems(doc)
+    return {"present": True, "path": _portable(path, root), "sha256": _sha256_file(path),
+            "verdict": doc.get("verdict"), "samples": doc.get("samples"),
+            "capture_implementation_sha256": doc.get("capture_implementation_sha256"),
+            "evidence_index_path": doc.get("evidence_index_path"),
+            "evidence_index_sha256": doc.get("evidence_index_sha256"),
+            "limitations": doc.get("limitations"), "problems": problems}, problems
+
+
+def _bind_full_suite(path: Path, root: Path, code_identity: str) -> dict[str, Any]:
+    """Bind the retained full-suite result; it must pass under this code identity."""
+    if not path.is_file():
+        return {"present": False, "passed": False, "problems": ["pytest result missing"]}
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    output = path.parent / Path(PREFLIGHT_PYTEST).name
+    problems = []
+    if not (doc.get("exit_code") == 0 and doc.get("failed") == 0 and doc.get("errors") == 0):
+        problems.append(f"suite did not pass: exit {doc.get('exit_code')}, "
+                        f"{doc.get('failed')} failed, {doc.get('errors')} errors")
+    if doc.get("code_identity") != code_identity:
+        problems.append("suite ran under a different code identity")
+    if not output.is_file():
+        problems.append(f"{output.name} missing")
+    return {"present": True, "passed": not problems, "problems": problems,
+            "result": {"path": _portable(path, root), "sha256": _sha256_file(path)},
+            "output": ({"path": _portable(output, root), "sha256": _sha256_file(output)}
+                       if output.is_file() else None),
+            "tests_passed": doc.get("passed"),
+            **{k: doc.get(k) for k in ("command", "exit_code", "failed", "errors", "duration_s",
+                                       "started", "finished", "code_identity", "git_head")}}
+
+
+def preflight(recipe_paths: list[Path], *, root: Path | None = None,
+              probe_path: Path | None = None,
+              pytest_result_path: Path | None = None) -> dict[str, Any]:
+    """Offline identity binding and historical regression; never connects.
+
+    Binds code/schema/toolset identities, recipe versions, the historical
+    audit's input and result digests, the full-suite result and the Task 17
+    positive-control timing probe. `passed` is false, with the reasons named
+    in `failed_requirements`, unless every binding holds."""
     root = Path(os.path.abspath(root or _REPO_ROOT))
     recipes = []
     for path in recipe_paths:
@@ -1939,12 +1994,21 @@ def preflight(recipe_paths: list[Path], *, root: Path | None = None) -> dict[str
                         "toolset_id": toolset["toolset_id"],
                         "toolset_identity": toolset["identity"]})
     arena = root / "src" / "civ_mcp" / "arena"
-    audit = reproduce_audit(root / AUDIT_FIXTURE, root=root)
-    pytest_result = root / PREFLIGHT_PYTEST
+    code_identity = implementation_fingerprint(root)
+    fixture_path = root / AUDIT_FIXTURE
+    audit = reproduce_audit(fixture_path, root=root)
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
     matches = audit.get("membership_matches") is True
+    probe, probe_failures = _bind_probe(Path(probe_path or root / PROBE_PROVENANCE), root)
+    suite = _bind_full_suite(Path(pytest_result_path or root / PREFLIGHT_PYTEST_RESULT), root,
+                             code_identity)
+    failed = [name for name, ok in (("historical_audit", matches),
+                                    ("full_suite_result", suite["passed"]),
+                                    ("positive_control_timing_probe", not probe_failures))
+              if not ok]
     return {
         "schema_version": SCHEMA_VERSION,
-        "code_identity": implementation_fingerprint(root),
+        "code_identity": code_identity,
         "schema_identity": {
             "schema_version": SCHEMA_VERSION,
             "manifest_sha256": _sha256_file(arena / "benchmark_manifest_v2.py"),
@@ -1953,12 +2017,17 @@ def preflight(recipe_paths: list[Path], *, root: Path | None = None) -> dict[str
             "state_sha256": _sha256_file(arena / "benchmark_state_v2.py"),
         },
         "recipes": recipes,
-        "historical_audit": {"fixture": AUDIT_FIXTURE, "membership_matches": matches,
-                             **{k: audit[k] for k in ("trial_count", "uncredited_count",
-                                                      "affected_trial_count") if k in audit}},
-        "full_suite_result": ({"path": PREFLIGHT_PYTEST, "sha256": _sha256_file(pytest_result)}
-                              if pytest_result.is_file() else None),
-        "passed": matches,
+        "historical_audit": {
+            "fixture": AUDIT_FIXTURE, "membership_matches": matches,
+            "fixture_sha256": _sha256_file(fixture_path),
+            "inputs_sha256": document_digest(fixture.get("inputs", [])),
+            "result_sha256": document_digest(audit),
+            **{k: audit[k] for k in ("trial_count", "uncredited_count",
+                                     "affected_trial_count") if k in audit}},
+        "full_suite_result": suite,
+        "probe": probe,
+        "passed": not failed,
+        "failed_requirements": failed,
     }
 
 
@@ -1978,6 +2047,11 @@ def main(argv: list[str] | None = None) -> int:
     pre = sub.add_parser("preflight", help="offline identity binding (never connects)")
     pre.add_argument("--recipes", type=Path, nargs="+", required=True)
     pre.add_argument("--output", type=Path, required=True)
+    pre.add_argument("--probe", type=Path, default=None)
+    gate = sub.add_parser("gate", help="offline Part 1 acceptance gate over family packets")
+    gate.add_argument("--packets", type=Path, nargs="+", required=True)
+    gate.add_argument("--preflight", type=Path, default=None)
+    gate.add_argument("--output", type=Path, required=True)
     files = sub.add_parser("evidence-files", help="offline evidence inventory/closure check")
     files.add_argument("--root", type=Path, required=True)
     files.add_argument("--output", type=Path, required=True)
@@ -1994,7 +2068,17 @@ def main(argv: list[str] | None = None) -> int:
                               "evidence_index": record["evidence_index"]}))
             return 0
         if args.command == "preflight":
-            result = preflight(args.recipes)
+            result = preflight(args.recipes, probe_path=args.probe)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_bytes(_json_bytes(result))
+            print(args.output)
+            return 0 if result["passed"] else 1
+        if args.command == "gate":
+            packets = [json.loads(p.read_text(encoding="utf-8")) for p in args.packets]
+            pre_path = args.preflight or _REPO_ROOT / PREFLIGHT_OUTPUT
+            pre_doc = (json.loads(pre_path.read_text(encoding="utf-8")) if pre_path.is_file()
+                       else {"passed": False, "failed_requirements": ["preflight_missing"]})
+            result = check_part1_gate(packets, pre_doc, root=_REPO_ROOT)
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_bytes(_json_bytes(result))
             print(args.output)

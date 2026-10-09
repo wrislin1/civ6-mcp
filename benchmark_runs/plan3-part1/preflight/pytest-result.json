@@ -1,0 +1,15 @@
+{
+  "code_identity": "5c545dee140d6c856a669a35ce4213c4c82759ca1e23efcf4ca4a488d3883bf2",
+  "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
+  "duration_s": 167.887,
+  "errors": 0,
+  "exit_code": 0,
+  "failed": 0,
+  "finished": "2026-10-09T03:08:54.152890+00:00",
+  "git_head": "01d7ae530050f03828c14114d5648fe584954188",
+  "git_head_note": "HEAD before the Task 18 commit; the suite ran on the uncommitted Task 18 working tree whose code identity is code_identity",
+  "passed": 3944,
+  "skipped": 0,
+  "started": "2026-10-09T03:06:06.265741+00:00",
+  "summary_line": "3944 passed in 166.67s (0:02:46)"
+}

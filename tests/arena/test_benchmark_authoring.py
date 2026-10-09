@@ -920,7 +920,7 @@ def test_preflight_binds_identities_offline(tmp_path, monkeypatch):
     monkeypatch.setattr(authoring, "production_ops",
                         lambda: pytest.fail("preflight must never build live operations"))
     result = preflight([_preflight_recipe(tmp_path)], root=REPO)
-    assert result["passed"] is True
+    assert "historical_audit" not in result["failed_requirements"]
     assert calls and calls[0].name == "builder_uncredited_audit_v1.json"
     (entry,) = result["recipes"]
     assert entry["recipe_id"] == "test-builder-a1"
