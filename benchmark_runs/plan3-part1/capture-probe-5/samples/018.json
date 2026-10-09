@@ -1,0 +1,46 @@
+{
+  "attempt_id": "capture-probe-20261009T195704922673Z",
+  "error": null,
+  "identity": {
+    "active_player": 0,
+    "player_id": 0,
+    "turn": 100
+  },
+  "identity_matches": true,
+  "index": 17,
+  "invalid_fields": [],
+  "record": {
+    "cancelled": false,
+    "complete": true,
+    "duration_s": 0.38878652900166344,
+    "io": {
+      "connect_s": 1.0493997251614928e-05,
+      "lock_wait_s": 1.4250108506530523e-06,
+      "lua_executions": 1,
+      "post_drain_s": 0.20032917000935413,
+      "pre_drain_s": 0.10032337499433197,
+      "response_wait_s": 0.05589896300807595
+    },
+    "phase": "probe"
+  },
+  "row": {
+    "complete": true,
+    "digest": "c5f5230176615163d8bc971ecf3c3b11f8f9990bfad183184790a34644417781",
+    "duration_s": 0.38878652900166344,
+    "lua_executions": 1,
+    "phase": "probe",
+    "post_drain_s": 0.20032917000935413,
+    "pre_drain_s": 0.10032337499433197
+  },
+  "row_counts": {
+    "building": 21,
+    "city": 5,
+    "district": 18,
+    "identity": 1,
+    "queue": 5,
+    "resource": 54,
+    "target": 0,
+    "tile": 366,
+    "unit": 13
+  }
+}

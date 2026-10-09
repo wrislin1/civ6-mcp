@@ -1,0 +1,18 @@
+{
+  "error": "SessionAborted: trial 6 exhausted 3 infrastructure attempts (including attempts from a prior process); stopping the session rather than shrinking the arm",
+  "evidence": {
+    "run_dir": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation"
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "ccf1c16db9c79c4452bf608c1b8fb4a3e8a5074ee315417059e81e9506938be0",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 31,
+  "stage": "validate",
+  "status": "failed"
+}

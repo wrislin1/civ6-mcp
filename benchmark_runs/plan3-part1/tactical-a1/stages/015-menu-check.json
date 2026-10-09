@@ -1,0 +1,57 @@
+{
+  "error": null,
+  "evidence": {
+    "deploy": {
+      "archive_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+      "deployed_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_TACTICAL_A1_V1.Civ6Save",
+      "expected_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+      "ok": true,
+      "raw": {
+        "archive_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+        "deployed_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+        "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_TACTICAL_A1_V1.Civ6Save",
+        "expected_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+        "ok": true,
+        "save_name": "PLAN3_TACTICAL_A1_V1",
+        "source": "benchmarks/saves/plan3-tactical-a1-v1.Civ6Save"
+      },
+      "save_name": "PLAN3_TACTICAL_A1_V1"
+    },
+    "digest_matches": true,
+    "expected_identity": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "expected_state_sha256": "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+    "identity_matches": true,
+    "loader": "restart_and_load",
+    "loader_result": "Kill: Game killed. Steam deregistration wait complete. | Launch: Game launched. Process started after 1s, FireTuner port is open. | Load: Loaded PLAN3_TACTICAL_A1_V1: world ready, FireTuner port is open. Reconnect and verify with get_game_overview. Steps: Clicked Single Player, Clicked Load Game, Default save list (regular saves), Selected save PLAN3_TACTICAL_A1_V1, Clicked Load Game button.",
+    "observed_identity": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "observed_state_sha256": "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+    "popups": "POPUPS|BoostUnlockedPopup",
+    "reconnect": {
+      "fresh_connection": true,
+      "reconnected": true
+    }
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "111310d89bf5b027edfef70df41230c6f14c1d82f3c2e4c903f976a93d55a65f",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 15,
+  "stage": "menu-check",
+  "status": "passed"
+}

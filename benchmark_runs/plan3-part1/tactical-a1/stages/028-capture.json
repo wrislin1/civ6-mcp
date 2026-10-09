@@ -1,0 +1,507 @@
+{
+  "error": null,
+  "evidence": {
+    "archive_path": "benchmarks/saves/plan3-tactical-a1-v2.Civ6Save",
+    "archive_sha256": "bbf196d263c5896cda7ea1e342d4ab79895ff0d4e67bf97c4922a530eb7981b2",
+    "assertions": [
+      {
+        "actual": true,
+        "expected": true,
+        "id": "civilian-initially-exposed",
+        "passed": true,
+        "predicate": {
+          "kind": "civilian_exposed",
+          "unit": [
+            0,
+            1769484
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "civilian-not-yet-rescued",
+        "passed": true,
+        "predicate": {
+          "kind": "unit_in_area",
+          "tiles": [
+            [
+              73,
+              19
+            ]
+          ],
+          "unit_types": [
+            "UNIT_SETTLER"
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "city-combat-slot-free",
+        "passed": true,
+        "predicate": {
+          "kind": "unit_in_area",
+          "tiles": [
+            [
+              73,
+              19
+            ]
+          ],
+          "unit_types": [
+            "UNIT_ARCHER"
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "no-reinforcement-in-area",
+        "passed": true,
+        "predicate": {
+          "kind": "unit_in_area",
+          "tiles": [
+            [
+              72,
+              18
+            ],
+            [
+              73,
+              18
+            ],
+            [
+              74,
+              18
+            ],
+            [
+              72,
+              19
+            ],
+            [
+              73,
+              19
+            ],
+            [
+              74,
+              19
+            ],
+            [
+              72,
+              20
+            ],
+            [
+              73,
+              20
+            ],
+            [
+              74,
+              20
+            ]
+          ],
+          "unit_types": [
+            "UNIT_SPEARMAN",
+            "UNIT_SWORDSMAN"
+          ]
+        }
+      }
+    ],
+    "authoring_input": {
+      "path": "benchmarks/provenance/plan3-tactical-a1-v2-authoring.json",
+      "sha256": "05418449e740c3ade4c616c8d314e6c11748ace9924332bf1c13945b9c48693a"
+    },
+    "captured_state_sha256": "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+    "cases": [
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/null-discovery.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/joint-full.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/alternative-full.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/meaningful-damage.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/reinforcement-partial.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/closer-only.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/covered-rescue.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/military-loss.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/mixed-gain-loss.json",
+      "benchmarks/validation/plan3-tactical-a1-v2/cases/repeat-undo.json"
+    ],
+    "contract_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
+    "coverage": {
+      "area": [
+        [
+          70,
+          19
+        ],
+        [
+          70,
+          20
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          17
+        ],
+        [
+          71,
+          18
+        ],
+        [
+          71,
+          19
+        ],
+        [
+          71,
+          20
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          72,
+          17
+        ],
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          72,
+          21
+        ],
+        [
+          72,
+          22
+        ],
+        [
+          72,
+          23
+        ],
+        [
+          72,
+          24
+        ],
+        [
+          73,
+          17
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          19
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          73,
+          21
+        ],
+        [
+          73,
+          22
+        ],
+        [
+          73,
+          23
+        ],
+        [
+          73,
+          24
+        ],
+        [
+          74,
+          17
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ],
+        [
+          74,
+          21
+        ],
+        [
+          74,
+          22
+        ],
+        [
+          74,
+          23
+        ],
+        [
+          74,
+          24
+        ],
+        [
+          75,
+          17
+        ],
+        [
+          75,
+          18
+        ],
+        [
+          75,
+          19
+        ],
+        [
+          75,
+          20
+        ],
+        [
+          75,
+          21
+        ],
+        [
+          75,
+          22
+        ],
+        [
+          75,
+          23
+        ],
+        [
+          75,
+          24
+        ],
+        [
+          76,
+          18
+        ],
+        [
+          76,
+          19
+        ],
+        [
+          76,
+          20
+        ],
+        [
+          76,
+          21
+        ],
+        [
+          76,
+          22
+        ],
+        [
+          76,
+          23
+        ],
+        [
+          76,
+          24
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": [
+        [
+          63,
+          16908390
+        ]
+      ]
+    },
+    "game_save_name": "PLAN3_TACTICAL_A1_V2",
+    "popup_hygiene": {
+      "status": "POPUPS|BoostUnlockedPopup"
+    },
+    "position_id": "plan3-tactical-a1-v2",
+    "position_path": "benchmarks/positions/plan3-tactical-a1-v2.json",
+    "position_sha256": "4d5f720b79dca5f24270076ecc5346c6f68f74d6d40398d9a8fba0057bf8170b",
+    "public_observation": "benchmarks/validation/plan3-tactical-a1-v2/public-observation.json",
+    "reload": {
+      "verified": true
+    },
+    "row_counts": {
+      "building": 21,
+      "city": 5,
+      "district": 18,
+      "identity": 1,
+      "queue": 5,
+      "resource": 54,
+      "target": 1,
+      "tile": 102,
+      "unit": 14
+    },
+    "scripts": [
+      "benchmarks/scripts/plan3-tactical-a1-v2/observe.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/joint-full.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/alternative-full.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/meaningful-damage.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/reinforcement-partial.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/closer-only.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/covered-rescue.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/military-loss.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/mixed-gain-loss.json",
+      "benchmarks/scripts/plan3-tactical-a1-v2/repeat-undo.json"
+    ],
+    "suite_id": "plan3-tactical-a1-v2-validation",
+    "suite_path": "benchmarks/validation/plan3-tactical-a1-v2/suite.json",
+    "telemetry": {
+      "all_single_execution": true,
+      "count": 1,
+      "in_episode_share": 0.0,
+      "in_episode_total_s": 0,
+      "lua_executions_total": 1,
+      "max_s": 0.3716546180075966,
+      "mean_s": 0.3716546180075966,
+      "non_drain_residual_s": 0.07099208200816065,
+      "p95_s": 0.3716546180075966,
+      "post_drain_total_s": 0.20034884200140368,
+      "pre_drain_total_s": 0.10031369399803225,
+      "total_s": 0.3716546180075966,
+      "unavailable": {}
+    },
+    "toolset_identity": {
+      "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+      "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+    },
+    "version": 2
+  },
+  "files": [
+    {
+      "path": "benchmarks/provenance/plan3-tactical-a1-v2-authoring.json",
+      "sha256": "05418449e740c3ade4c616c8d314e6c11748ace9924332bf1c13945b9c48693a"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/public-observation.json",
+      "sha256": "425cdd993975a2d96341c3006f4e53062ef2701c7809ae15bf24f0305459ce85"
+    },
+    {
+      "path": "benchmarks/positions/plan3-tactical-a1-v2.json",
+      "sha256": "4d5f720b79dca5f24270076ecc5346c6f68f74d6d40398d9a8fba0057bf8170b"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/observe.json",
+      "sha256": "6f88e23708a8cf8a886399b95f78052af2f2d421e3b4fd10c7cfa440fb500cba"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/joint-full.json",
+      "sha256": "3391ca2fd47e4b9f05c03edbb5342987b5290d443e7cefb1762381d568d681b4"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/alternative-full.json",
+      "sha256": "3c275b6f4419f08ccb994992367ed42dccac6f2af497ecbbb55d4f06f975b9bd"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/meaningful-damage.json",
+      "sha256": "417bc7a84ed05de68b5126437ceb73d0162d93b1047733facedee3354e6a3e7a"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/reinforcement-partial.json",
+      "sha256": "6f66348c0c8c177e2201e560b6c31425617e9f2d51745256a7c606f4b7ecda09"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/closer-only.json",
+      "sha256": "fbab46b1a4f92768eb071758b602066731583a4aee72f30cbdfeda4a55d0ba0c"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/covered-rescue.json",
+      "sha256": "c25d65bec6ab024e0aa054572c93e4a855a0438210202de2ad7c2e1ae568d3c9"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/military-loss.json",
+      "sha256": "72f2b5d6b1ec8434b73b86b4fea3bb91cac8376d57547c5e9c28c4118e0353b4"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/mixed-gain-loss.json",
+      "sha256": "ad4ce8997d5b595386552f43fb95564fbad869aa2706d953653db99c621144a0"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/repeat-undo.json",
+      "sha256": "84e99fa06ab0a2a532a32a37fb33e562db09f837a0fccfeed9539a0daa23d515"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/null-discovery.json",
+      "sha256": "bfc5fad825a7cf7631a753914a1bba1d29c0b53d41f413c4055160121172f51b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/joint-full.json",
+      "sha256": "1d05b151f48a7cf4a68391fb0c0637d087a1b98daabe6c6bf40bd7effc364f0b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/alternative-full.json",
+      "sha256": "9fb1990d25f93ab312b80a0f77ddcaa26c606428a7ed103f1667d3268410d09b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/meaningful-damage.json",
+      "sha256": "fab4c377d40d016787c8cb3ed5678c977f7a4efc5ed17c9baa4e71e1008f466e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/reinforcement-partial.json",
+      "sha256": "beb7c58c7ee181afed9c3e5a5b94942fce102125a3f858ef132121112a01bdd2"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/closer-only.json",
+      "sha256": "00b3c78512f74a828e8819d88d16dad7c7fed789689b6482ff66c6c6fa7aa237"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/covered-rescue.json",
+      "sha256": "059b40f81ee82023d3b228578ad52cf234addbd096f6af144dfabf5bd717f37b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/military-loss.json",
+      "sha256": "12a62a9c9f38eca16e17fbb21133bc04e7658d8f39e1397602b4183d5327e2e3"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/mixed-gain-loss.json",
+      "sha256": "a0699a6d7624f9fa11d24accfc9f694bb6cd7a78d05dde88f13da8dcc3eb4497"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/repeat-undo.json",
+      "sha256": "36d7b682b6a2d271ad27d77b6194093b431ad5f9bc4de2ca20b8d5389402e54a"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/suite.json",
+      "sha256": "f85eca3f318a4519a8aa50946a7027ec937160b06ba835613b7b1e0fa29cefbd"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "ccf1c16db9c79c4452bf608c1b8fb4a3e8a5074ee315417059e81e9506938be0",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 28,
+  "stage": "capture",
+  "status": "passed"
+}

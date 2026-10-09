@@ -1,0 +1,161 @@
+{
+  "families": {
+    "city": {
+      "scenarios": [
+        {
+          "attempt": 1,
+          "checkpoints": [
+            {
+              "elapsed_s": 0.0,
+              "label": "begin",
+              "unix_s": 1791564121.9449358
+            },
+            {
+              "elapsed_s": 0.00590968132019043,
+              "label": "survey:connect",
+              "unix_s": 1791564121.9508455
+            },
+            {
+              "elapsed_s": 0.37781262397766113,
+              "label": "survey:load-base",
+              "unix_s": 1791564122.3227484
+            },
+            {
+              "elapsed_s": 50.24586749076843,
+              "label": "survey:query-0",
+              "unix_s": 1791564172.1908033
+            },
+            {
+              "elapsed_s": 51.63227343559265,
+              "label": "survey:query-1",
+              "unix_s": 1791564173.5772092
+            },
+            {
+              "elapsed_s": 51.981953859329224,
+              "label": "survey:query-2",
+              "unix_s": 1791564173.9268897
+            },
+            {
+              "elapsed_s": 52.33058166503906,
+              "label": "survey:query-3",
+              "unix_s": 1791564174.2755175
+            },
+            {
+              "elapsed_s": 52.67927861213684,
+              "label": "survey:query-4",
+              "unix_s": 1791564174.6242144
+            },
+            {
+              "elapsed_s": 53.027838706970215,
+              "label": "survey:query-5",
+              "unix_s": 1791564174.9727745
+            },
+            {
+              "elapsed_s": 53.37779903411865,
+              "label": "survey:query-6",
+              "unix_s": 1791564175.3227348
+            },
+            {
+              "elapsed_s": 53.70972537994385,
+              "label": "stage:survey",
+              "unix_s": 1791564175.6546612
+            },
+            {
+              "elapsed_s": 336.27654099464417,
+              "label": "resume",
+              "unix_s": 1791564458.2214768
+            },
+            {
+              "elapsed_s": 336.28028988838196,
+              "label": "apply:connect",
+              "unix_s": 1791564458.2252257
+            },
+            {
+              "elapsed_s": 336.64647150039673,
+              "label": "apply:load-base",
+              "unix_s": 1791564458.5914073
+            },
+            {
+              "elapsed_s": 386.1100814342499,
+              "label": "apply:setup-0",
+              "unix_s": 1791564508.0550172
+            },
+            {
+              "elapsed_s": 390.7707440853119,
+              "label": "apply:setup-1",
+              "unix_s": 1791564512.71568
+            },
+            {
+              "elapsed_s": 395.44159746170044,
+              "label": "apply:setup-2",
+              "unix_s": 1791564517.3865333
+            },
+            {
+              "elapsed_s": 400.45731949806213,
+              "label": "stage:apply",
+              "unix_s": 1791564522.4022553
+            },
+            {
+              "elapsed_s": 450.15729570388794,
+              "label": "stage:abandon",
+              "unix_s": 1791564572.1022315
+            },
+            {
+              "elapsed_s": 450.1630029678345,
+              "label": "finish",
+              "unix_s": 1791564572.1079388
+            }
+          ],
+          "expired": false,
+          "family": "city",
+          "finished_unix_s": 1791564572.1079388,
+          "material_change": null,
+          "predecessor": null,
+          "reason": null,
+          "recorded_elapsed_s": 450.1630029678345,
+          "scenario_id": "city-a1",
+          "stages": [
+            {
+              "elapsed_s": 53.70972537994385,
+              "ended_unix_s": 1791564175.6546612,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/001-survey.json",
+                "sha256": "3f103ded3df09f02a5a70cf0eca940070f2f35af236de04ff48f9d21c310e1e7"
+              },
+              "passed": true,
+              "stage": "survey",
+              "started_unix_s": 1791564121.9449358
+            },
+            {
+              "elapsed_s": 346.7475941181183,
+              "ended_unix_s": 1791564522.4022553,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/002-apply.json",
+                "sha256": "6623192d3a462ae76a15f3ce6db1317b12f71fb530bc87160041fe4642ae79d1"
+              },
+              "passed": false,
+              "stage": "apply",
+              "started_unix_s": 1791564175.6546612
+            },
+            {
+              "elapsed_s": 49.699976205825806,
+              "ended_unix_s": 1791564572.1022315,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/003-abandon.json",
+                "sha256": "d466643ee3e4b49832fc1c7e12ad06bee14cb87f4f9c51bfc62ce431d4b0b0aa"
+              },
+              "passed": false,
+              "stage": "abandon",
+              "started_unix_s": 1791564522.4022553
+            }
+          ],
+          "started_unix_s": 1791564121.9449358,
+          "status": "failed",
+          "wall_elapsed_s": 450.1630029678345
+        }
+      ],
+      "total_elapsed_s": 450.1630029678345
+    }
+  },
+  "schema_version": "2.0.0"
+}

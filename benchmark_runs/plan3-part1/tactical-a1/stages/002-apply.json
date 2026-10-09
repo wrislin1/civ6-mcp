@@ -1,0 +1,35 @@
+{
+  "error": "StageFailure: setup operation 3 readback failed: ['ERR|expected one own warrior, found 0']",
+  "evidence": {
+    "replay": {
+      "base_export": {
+        "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+        "excluded_signature": null,
+        "existed": true,
+        "ok": true,
+        "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+        "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+        "size": 3145591,
+        "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+      },
+      "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview."
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/002-apply.json",
+      "sha256": "205201d6c1bdedf80f244bf368c16c070fba66ab0efc9d1c4aea89adf77fedde"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "fa6ea054f7238bcd8a6c98c75dd938e9c893dd34f2bfadda5cb7c61c04f918bd",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 2,
+  "stage": "apply",
+  "status": "failed"
+}

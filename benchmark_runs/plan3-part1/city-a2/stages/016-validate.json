@@ -1,0 +1,72 @@
+{
+  "error": null,
+  "evidence": {
+    "expected_state_sha256": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "reports": {
+      "alternative-full/report.json": "69b1b2597bd1a0f2deef240e1d65c6afea836a76125abf7f3023f18f84d91be8",
+      "alternative-full/report.md": "402a86ce32c722de8197fe930353a6f088df246c9a928346574c3736a85a4ce1",
+      "destructive-placement/report.json": "6f742c8c7f9da4237e50cfa894f8568e94dd4096965baa6295af0405fa5ab41f",
+      "destructive-placement/report.md": "bb1c264979403a1cca57a4130d59ea17bbe73636aa1373889b2c5839d995cdd3",
+      "housing-partial/report.json": "ccb0f7320cd0e8684f0214bf30aa7da798369b314856572e79a8072868371d06",
+      "housing-partial/report.md": "5057b8e0b01cb2b29df26445bcda1947e253f594f4584f5790ba9eea91e86686",
+      "joint-full/report.json": "d2a49d02ec88af0a48ee98a6149082b8d31fcd5e313871e963b42cc8e08d2085",
+      "joint-full/report.md": "5ccc80bfb8a0c31a964138d5a48654117cec7e17968d965eb480bc18472bc9cf",
+      "mixed-gain-loss/report.json": "bc7376f7061bf249f21d13dd9e64b386837d4de33f34ba50a1e7c54560212377",
+      "mixed-gain-loss/report.md": "c2b0e44aa2034d80457d772a3559e9fdbeaa660aa6453a8cf2669dd0ca85a3c2",
+      "null-discovery/report.json": "c99ee52802629bf985e4f3b7e863356f9a86537e631356aac34a318eb23de283",
+      "null-discovery/report.md": "81d7000170522c01c89310aec7b56fa17249c6cfc67b7a7e514fd65abfbd3b5c",
+      "queue-overwrite/report.json": "6d6e1d715b23ec5166ec88c692191668e1ed769db206ef56ae450fe5c3cd6bc2",
+      "queue-overwrite/report.md": "37d92c11b77b561871f42b0bd525101af86731c7105d08f80e7084528f3a929d",
+      "repeat-undo/report.json": "18e8a1561d3599a38cbf290f99aaad7f8b6c05ae04f210fa8da9f91e83208a02",
+      "repeat-undo/report.md": "474d7c0a9c73b30a3d4dd86b2e3891fad7272c8e9047daabf6d278bd193f7c39",
+      "uncredited-preparation/report.json": "89f802cff3d54f71450b3174c3c2083b292a5c7743c1231ea8796ab2a6c5b704",
+      "uncredited-preparation/report.md": "ad3c787b3976fefdb9a9f235ff51bba7d29f055fbdf602fb11696a7c05316117"
+    },
+    "reports_identical": true,
+    "restore": {
+      "digest": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+      "reconnect": {
+        "reconnected": true
+      },
+      "reloaded": true
+    },
+    "restore_deploy": {
+      "archive_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+      "deployed_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_CITY_A2_V1.Civ6Save",
+      "expected_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+      "ok": true,
+      "raw": {
+        "archive_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+        "deployed_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+        "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_CITY_A2_V1.Civ6Save",
+        "expected_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+        "ok": true,
+        "save_name": "PLAN3_CITY_A2_V1",
+        "source": "benchmarks/saves/plan3-city-a2-v1.Civ6Save"
+      },
+      "save_name": "PLAN3_CITY_A2_V1"
+    },
+    "restore_reload_verified": true,
+    "restored_digest": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "restored_digest_matches": true,
+    "run_dir": "benchmark_runs/plan3-part1/city-a2/validation/plan3-city-a2-v1/plan3-city-a2-v1-validation",
+    "validation": {
+      "errored": false,
+      "passed": true
+    },
+    "validation_sha256": "47f14421902cd54e9765c34dc54327fed24dbbd94b020a7b730c97850488c794"
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "aba6b0a558094669b6dca0e4c39d95035f238cc2c15291107b3a3eb058ab243c",
+    "version": 1
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 16,
+  "stage": "validate",
+  "status": "passed"
+}

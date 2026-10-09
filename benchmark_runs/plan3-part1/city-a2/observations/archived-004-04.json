@@ -1,0 +1,17 @@
+{
+  "arguments": {
+    "city_id": 131073,
+    "district_type": "DISTRICT_SEOWON"
+  },
+  "capped_sha256": "40d0b5b9873e5cf4d9e59f4a947843022050c05fe04e9b28bf97737730414834",
+  "full_sha256": "40d0b5b9873e5cf4d9e59f4a947843022050c05fe04e9b28bf97737730414834",
+  "index": 4,
+  "resolved_arguments": {
+    "city_id": 131073,
+    "district_type": "DISTRICT_SEOWON"
+  },
+  "result_capped": "DISTRICT_SEOWON placement options (3 tiles):\n  #1 (67,23) Adj: +0 (no adjacency) — Grassland (Hills) Hills\n  #2 (68,24) Adj: +0 (no adjacency) — Grassland (Hills) Hills Woods\n  #3 (67,22) Adj: +0 (no adjacency) — Grassland (Hills) Hills",
+  "result_char_cap": 1500,
+  "result_full": "DISTRICT_SEOWON placement options (3 tiles):\n  #1 (67,23) Adj: +0 (no adjacency) — Grassland (Hills) Hills\n  #2 (68,24) Adj: +0 (no adjacency) — Grassland (Hills) Hills Woods\n  #3 (67,22) Adj: +0 (no adjacency) — Grassland (Hills) Hills",
+  "tool": "get_district_advisor"
+}

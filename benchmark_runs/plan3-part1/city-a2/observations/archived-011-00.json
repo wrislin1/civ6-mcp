@@ -1,0 +1,11 @@
+{
+  "arguments": {},
+  "capped_sha256": "b4b2ca217ce903b7dcf9c246b7f8c20a40933473d656c9146b77ea5d4e944cca",
+  "full_sha256": "b4b2ca217ce903b7dcf9c246b7f8c20a40933473d656c9146b77ea5d4e944cca",
+  "index": 0,
+  "resolved_arguments": {},
+  "result_capped": "Turn 100 | Korea (Seondeok) | Score: 321 | Prince\nGold: 500 (+23/turn) | Income: 42 | Maintenance: -19 (units: 6) | Science: 33.5 | Culture: 15.4 | Faith: 120 | Favor: 149 (+4/turn)\nResearch: Apprenticeship | Civic: Recorded History\nCities: 5 | Population: 29 | Units: 12 — 3 Scout, 2 Apostle, 2 Builder, 2 Swordsman, 2 Archer, 1 Trader\nExplored: 40% of land (1179/2914 tiles)\nReligion: Custom Religion (6/7 slots)\nVictory: Domination, Culture, Religious, Diplomatic only (disabled: Science)\nEra: Classical Era | Score: 74 (Dark: 59, Golden: 73) -> GOLDEN AGE\nRankings: Korea 321 > Maya 175 > Phoenicia 157 > Nubia 139 > Arabia 138 > Ottomans 138 > Georgia 133",
+  "result_char_cap": 1500,
+  "result_full": "Turn 100 | Korea (Seondeok) | Score: 321 | Prince\nGold: 500 (+23/turn) | Income: 42 | Maintenance: -19 (units: 6) | Science: 33.5 | Culture: 15.4 | Faith: 120 | Favor: 149 (+4/turn)\nResearch: Apprenticeship | Civic: Recorded History\nCities: 5 | Population: 29 | Units: 12 — 3 Scout, 2 Apostle, 2 Builder, 2 Swordsman, 2 Archer, 1 Trader\nExplored: 40% of land (1179/2914 tiles)\nReligion: Custom Religion (6/7 slots)\nVictory: Domination, Culture, Religious, Diplomatic only (disabled: Science)\nEra: Classical Era | Score: 74 (Dark: 59, Golden: 73) -> GOLDEN AGE\nRankings: Korea 321 > Maya 175 > Phoenicia 157 > Nubia 139 > Arabia 138 > Ottomans 138 > Georgia 133",
+  "tool": "get_overview"
+}

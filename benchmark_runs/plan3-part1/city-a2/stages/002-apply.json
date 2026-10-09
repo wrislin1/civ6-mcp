@@ -1,0 +1,258 @@
+{
+  "error": null,
+  "evidence": {
+    "bindings": {
+      "district_city": {
+        "id": 131073,
+        "owner": 0,
+        "pair": [
+          0,
+          131073
+        ],
+        "x": 67,
+        "xy": [
+          67,
+          24
+        ],
+        "y": 24
+      },
+      "district_site": {
+        "owner": 0,
+        "x": 68,
+        "xy": [
+          68,
+          24
+        ],
+        "y": 24
+      },
+      "housing_city": {
+        "id": 262147,
+        "owner": 0,
+        "pair": [
+          0,
+          262147
+        ],
+        "x": 73,
+        "xy": [
+          73,
+          19
+        ],
+        "y": 19
+      },
+      "protected_asset": {
+        "owner": 0,
+        "x": 67,
+        "xy": [
+          67,
+          23
+        ],
+        "y": 23
+      },
+      "repair_city": {
+        "id": 196610,
+        "owner": 0,
+        "pair": [
+          0,
+          196610
+        ],
+        "x": 70,
+        "xy": [
+          70,
+          22
+        ],
+        "y": 22
+      },
+      "replacement_site": {
+        "owner": 0,
+        "x": 67,
+        "xy": [
+          67,
+          22
+        ],
+        "y": 22
+      }
+    },
+    "coverage": {
+      "area": [
+        [
+          66,
+          21
+        ],
+        [
+          66,
+          22
+        ],
+        [
+          66,
+          23
+        ],
+        [
+          66,
+          24
+        ],
+        [
+          66,
+          25
+        ],
+        [
+          67,
+          21
+        ],
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          67,
+          24
+        ],
+        [
+          67,
+          25
+        ],
+        [
+          68,
+          21
+        ],
+        [
+          68,
+          22
+        ],
+        [
+          68,
+          23
+        ],
+        [
+          68,
+          24
+        ],
+        [
+          68,
+          25
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          69,
+          24
+        ],
+        [
+          69,
+          25
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          19
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": []
+    },
+    "grid": [
+      130,
+      66
+    ],
+    "replay": {
+      "assertions_passed": true,
+      "base_export": {
+        "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+        "excluded_signature": null,
+        "existed": true,
+        "ok": true,
+        "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+        "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+        "size": 3145591,
+        "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+      },
+      "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+      "state_sha256": "c02f423d758895d4ff0cd08f7b493956308e8b1528a51c01f3660f62335df8a2"
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/mutations/002-apply.json",
+      "sha256": "a768484e78296aecc2f34904657ab091849f48acfa5290b40424ddf88ad073a5"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "679c31d1a63ae6d2b29058ab5b1989ae31aa8e9cf01f29e28c8b5a3d2bb98416",
+    "version": 1
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 2,
+  "stage": "apply",
+  "status": "passed"
+}

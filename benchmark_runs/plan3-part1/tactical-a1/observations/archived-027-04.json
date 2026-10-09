@@ -1,0 +1,19 @@
+{
+  "arguments": {
+    "radius": 1,
+    "x": "${attacker.x}",
+    "y": "${attacker.y}"
+  },
+  "capped_sha256": "9860758fdb017cd7f59c1c397097ba87663fc2fc8733f376b39719295bc3879a",
+  "full_sha256": "9860758fdb017cd7f59c1c397097ba87663fc2fc8733f376b39719295bc3879a",
+  "index": 4,
+  "resolved_arguments": {
+    "radius": 1,
+    "x": 73,
+    "y": 21
+  },
+  "result_capped": "9 tiles:\n  (72,20): PLAINS_HILLS Hills (Road) [SEOWON] {F:0 P:0} (owned by Korea)\n  (73,20): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3] [my: BUILDER]\n  (74,20): GRASS FOREST [DEER] Coast {F:2 P:2} (owned by Korea) [mv:2] [my: SETTLER]\n  (72,21): GRASS {F:2 P:0} [my: ARCHER]\n  (73,21): GRASS FLOODPLAINS_GRASSLAND River {F:2 P:0} **[Barbarian WARRIOR]**\n  (74,21): GRASS FLOODPLAINS_GRASSLAND River Coast {F:2 P:0}\n  (72,22): GRASS River {F:2 P:0} **[Jerusalem WARRIOR]**\n  (73,22): GRASS FLOODPLAINS_GRASSLAND River {F:2 P:0}\n  (74,22): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} [my: WARRIOR]",
+  "result_char_cap": 1500,
+  "result_full": "9 tiles:\n  (72,20): PLAINS_HILLS Hills (Road) [SEOWON] {F:0 P:0} (owned by Korea)\n  (73,20): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3] [my: BUILDER]\n  (74,20): GRASS FOREST [DEER] Coast {F:2 P:2} (owned by Korea) [mv:2] [my: SETTLER]\n  (72,21): GRASS {F:2 P:0} [my: ARCHER]\n  (73,21): GRASS FLOODPLAINS_GRASSLAND River {F:2 P:0} **[Barbarian WARRIOR]**\n  (74,21): GRASS FLOODPLAINS_GRASSLAND River Coast {F:2 P:0}\n  (72,22): GRASS River {F:2 P:0} **[Jerusalem WARRIOR]**\n  (73,22): GRASS FLOODPLAINS_GRASSLAND River {F:2 P:0}\n  (74,22): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} [my: WARRIOR]",
+  "tool": "get_map_area"
+}

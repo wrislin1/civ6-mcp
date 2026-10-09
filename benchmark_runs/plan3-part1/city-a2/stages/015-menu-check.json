@@ -1,0 +1,57 @@
+{
+  "error": null,
+  "evidence": {
+    "deploy": {
+      "archive_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+      "deployed_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_CITY_A2_V1.Civ6Save",
+      "expected_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+      "ok": true,
+      "raw": {
+        "archive_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+        "deployed_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+        "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_CITY_A2_V1.Civ6Save",
+        "expected_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+        "ok": true,
+        "save_name": "PLAN3_CITY_A2_V1",
+        "source": "benchmarks/saves/plan3-city-a2-v1.Civ6Save"
+      },
+      "save_name": "PLAN3_CITY_A2_V1"
+    },
+    "digest_matches": true,
+    "expected_identity": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "expected_state_sha256": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "identity_matches": true,
+    "loader": "restart_and_load",
+    "loader_result": "Kill: Game killed. Steam deregistration wait complete. | Launch: Game launched. Process started after 1s, FireTuner port is open. | Load: Loaded PLAN3_CITY_A2_V1: world ready, FireTuner port is open. Reconnect and verify with get_game_overview. Steps: Clicked Single Player, Clicked Load Game, Default save list (regular saves), Selected save PLAN3_CITY_A2_V1, Clicked Load Game button.",
+    "observed_identity": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "observed_state_sha256": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "popups": "POPUPS|none",
+    "reconnect": {
+      "fresh_connection": true,
+      "reconnected": true
+    }
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "aba6b0a558094669b6dca0e4c39d95035f238cc2c15291107b3a3eb058ab243c",
+    "version": 1
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 15,
+  "stage": "menu-check",
+  "status": "passed"
+}

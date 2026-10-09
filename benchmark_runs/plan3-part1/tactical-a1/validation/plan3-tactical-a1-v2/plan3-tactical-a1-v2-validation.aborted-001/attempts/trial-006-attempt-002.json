@@ -1,0 +1,1 @@
+{"error":"RuntimeError(\"reload_position('PLAN3_TACTICAL_A1_V2') failed: Error: Save 'PLAN3_TACTICAL_A1_V2' not found in Lua query or on filesystem. Check the name and try list_saves() to see available saves.\")","exception_type":"RuntimeError","failure_class":"reload_or_reconnect_failure","trial_index":6}

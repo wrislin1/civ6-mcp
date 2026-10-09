@@ -1,0 +1,106 @@
+{
+  "error": null,
+  "evidence": {
+    "probes": [
+      {
+        "expect": "ok",
+        "id": "archer-shot",
+        "measurement": {
+          "delta": 60,
+          "hp_after": 5,
+          "hp_before": 65,
+          "status_after": "alive_visible",
+          "target": [
+            63,
+            16908390
+          ]
+        },
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-archer-shot.json"
+      },
+      {
+        "expect": "ok",
+        "id": "expendable-attack",
+        "measurement": {
+          "delta": 27,
+          "hp_after": 38,
+          "hp_before": 65,
+          "status_after": "alive_visible",
+          "target": [
+            63,
+            16908390
+          ]
+        },
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-expendable-attack.json"
+      },
+      {
+        "expect": "ok",
+        "id": "civilian-to-city",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-civilian-to-city.json"
+      },
+      {
+        "expect": "ok",
+        "id": "civilian-pathing",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-civilian-pathing.json"
+      },
+      {
+        "expect": "ok",
+        "id": "purchase-spearman",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-purchase-spearman.json"
+      },
+      {
+        "expect": "ok",
+        "id": "queue-spearman",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-queue-spearman.json"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-archer-shot.json",
+      "sha256": "18ac31a48e71f20aefe9382a89f97794012bf5f03615969319f7535b4445cf94"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-expendable-attack.json",
+      "sha256": "3feae66d2136f5653feb833340e7b10d197bb00d75ad287e2f81a653c3dfaf91"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-civilian-to-city.json",
+      "sha256": "37b01196ba990ffe06dab61b15ada16bb98d646828a8faba2c56120b7808d0b3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-civilian-pathing.json",
+      "sha256": "7cdbb7b7cadb8e40b0c7e6cb2006761249efea93445914573e13a06ddb57e8e4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-purchase-spearman.json",
+      "sha256": "a400cc6608519b4f3e3db0444b78ce3e7660dcd6f4a76cc8c80510855b406adc"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-queue-spearman.json",
+      "sha256": "9293e37ff983cbff561ebf22c47d7d8aaf09f25473b57e86fc51b95bf97ec8ce"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "ccf1c16db9c79c4452bf608c1b8fb4a3e8a5074ee315417059e81e9506938be0",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 26,
+  "stage": "probe",
+  "status": "passed"
+}

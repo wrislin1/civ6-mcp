@@ -1,0 +1,387 @@
+{
+  "error": null,
+  "evidence": {
+    "archive_path": "benchmarks/saves/plan3-city-a2-v1.Civ6Save",
+    "archive_sha256": "e46b65b9e14d51923136b653370b446a52cd8181810fa3504d72a5b312981b02",
+    "assertions": [
+      {
+        "actual": false,
+        "expected": false,
+        "id": "housing-unresolved",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            131073
+          ],
+          "kind": "housing_resolved",
+          "minimum_surplus": 1,
+          "remedy_buildings": [
+            "BUILDING_GRANARY"
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "repair-not-queued",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            196610
+          ],
+          "items": [
+            "BUILDING_MONUMENT"
+          ],
+          "kind": "active_production",
+          "repair": true
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "district-not-committed",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            131073
+          ],
+          "district_types": [
+            "DISTRICT_SEOWON"
+          ],
+          "kind": "district_committed",
+          "tiles": [
+            [
+              68,
+              24
+            ],
+            [
+              67,
+              22
+            ]
+          ]
+        }
+      },
+      {
+        "actual": true,
+        "expected": true,
+        "id": "protected-quarry-present",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_QUARRY",
+            "pillaged": false
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              23
+            ]
+          ]
+        }
+      },
+      {
+        "actual": true,
+        "expected": true,
+        "id": "replacement-mine-present",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_MINE",
+            "pillaged": false
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              22
+            ]
+          ]
+        }
+      }
+    ],
+    "authoring_input": {
+      "path": "benchmarks/provenance/plan3-city-a2-v1-authoring.json",
+      "sha256": "984b7b4663df140bb5b4fa17d6e77bcffd13c4d3664636ba2175a4d06040bc28"
+    },
+    "captured_state_sha256": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "cases": [
+      "benchmarks/validation/plan3-city-a2-v1/cases/null-discovery.json",
+      "benchmarks/validation/plan3-city-a2-v1/cases/joint-full.json",
+      "benchmarks/validation/plan3-city-a2-v1/cases/alternative-full.json",
+      "benchmarks/validation/plan3-city-a2-v1/cases/housing-partial.json",
+      "benchmarks/validation/plan3-city-a2-v1/cases/uncredited-preparation.json",
+      "benchmarks/validation/plan3-city-a2-v1/cases/destructive-placement.json",
+      "benchmarks/validation/plan3-city-a2-v1/cases/mixed-gain-loss.json",
+      "benchmarks/validation/plan3-city-a2-v1/cases/queue-overwrite.json",
+      "benchmarks/validation/plan3-city-a2-v1/cases/repeat-undo.json"
+    ],
+    "contract_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
+    "coverage": {
+      "area": [
+        [
+          66,
+          21
+        ],
+        [
+          66,
+          22
+        ],
+        [
+          66,
+          23
+        ],
+        [
+          66,
+          24
+        ],
+        [
+          66,
+          25
+        ],
+        [
+          67,
+          21
+        ],
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          67,
+          24
+        ],
+        [
+          67,
+          25
+        ],
+        [
+          68,
+          21
+        ],
+        [
+          68,
+          22
+        ],
+        [
+          68,
+          23
+        ],
+        [
+          68,
+          24
+        ],
+        [
+          68,
+          25
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          69,
+          24
+        ],
+        [
+          69,
+          25
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": []
+    },
+    "game_save_name": "PLAN3_CITY_A2_V1",
+    "popup_hygiene": {
+      "status": "POPUPS|none"
+    },
+    "position_id": "plan3-city-a2-v1",
+    "position_path": "benchmarks/positions/plan3-city-a2-v1.json",
+    "position_sha256": "5619d998eb0d913c73af5ec18d6bdb586c75d77e59fc0aae2fb2407eae9e8b8a",
+    "public_observation": "benchmarks/validation/plan3-city-a2-v1/public-observation.json",
+    "reload": {
+      "verified": true
+    },
+    "row_counts": {
+      "building": 20,
+      "city": 5,
+      "district": 18,
+      "identity": 1,
+      "queue": 5,
+      "resource": 54,
+      "target": 0,
+      "tile": 77,
+      "unit": 12
+    },
+    "scripts": [
+      "benchmarks/scripts/plan3-city-a2-v1/observe.json",
+      "benchmarks/scripts/plan3-city-a2-v1/joint-full.json",
+      "benchmarks/scripts/plan3-city-a2-v1/alternative-full.json",
+      "benchmarks/scripts/plan3-city-a2-v1/housing-partial.json",
+      "benchmarks/scripts/plan3-city-a2-v1/uncredited-preparation.json",
+      "benchmarks/scripts/plan3-city-a2-v1/destructive-placement.json",
+      "benchmarks/scripts/plan3-city-a2-v1/mixed-gain-loss.json",
+      "benchmarks/scripts/plan3-city-a2-v1/queue-overwrite.json",
+      "benchmarks/scripts/plan3-city-a2-v1/repeat-undo.json"
+    ],
+    "suite_id": "plan3-city-a2-v1-validation",
+    "suite_path": "benchmarks/validation/plan3-city-a2-v1/suite.json",
+    "telemetry": {
+      "all_single_execution": true,
+      "count": 1,
+      "in_episode_share": 0.0,
+      "in_episode_total_s": 0,
+      "lua_executions_total": 1,
+      "max_s": 0.3544860699912533,
+      "mean_s": 0.3544860699912533,
+      "non_drain_residual_s": 0.053752961990539916,
+      "p95_s": 0.3544860699912533,
+      "post_drain_total_s": 0.20048044000577647,
+      "pre_drain_total_s": 0.10025266799493693,
+      "total_s": 0.3544860699912533,
+      "unavailable": {}
+    },
+    "toolset_identity": {
+      "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+      "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+    },
+    "version": 1
+  },
+  "files": [
+    {
+      "path": "benchmarks/provenance/plan3-city-a2-v1-authoring.json",
+      "sha256": "984b7b4663df140bb5b4fa17d6e77bcffd13c4d3664636ba2175a4d06040bc28"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/public-observation.json",
+      "sha256": "f0f457730006fea96fb0a4b931733752cf333b622558c7fb172969401c1941e1"
+    },
+    {
+      "path": "benchmarks/positions/plan3-city-a2-v1.json",
+      "sha256": "5619d998eb0d913c73af5ec18d6bdb586c75d77e59fc0aae2fb2407eae9e8b8a"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/observe.json",
+      "sha256": "c329725070f246a356f2158351c76b0a14f2a98c3488d907b389138d0073599c"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/joint-full.json",
+      "sha256": "d6242be99b989384b8e55a8bd85eb3c537ae22e3b5484cca67beb1dca3bd26ae"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/alternative-full.json",
+      "sha256": "bbfd00c15793e860614108007f970b2063d9920a2c37c3e836c49e4e398ce652"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/housing-partial.json",
+      "sha256": "f77b42907ee491a3261f5e75fd947d84239bb30ce376384e49a5fde802fe9c40"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/uncredited-preparation.json",
+      "sha256": "9cf4b1a9d625abc0cd750ad39f94e78a51a97c230c2e28581a286ed1b5cf3812"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/destructive-placement.json",
+      "sha256": "84ca7541c5b2ce1fa2d8ebfe179d99cb2a307849c05fefec42bdb8a1fe00dd52"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/mixed-gain-loss.json",
+      "sha256": "a6b43e4aaebb92f7f8f7c5caefa6ca3ae440041f56d94aad1681eb1647755c75"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/queue-overwrite.json",
+      "sha256": "eaa50de6e56801f20aba1d5a341508c2173d2aa8889fe0b4ac956705662b98d5"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v1/repeat-undo.json",
+      "sha256": "71cfc9b1329a5b5860be7385da12588066e22b7c2510daca0e7c52bde493e68f"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/null-discovery.json",
+      "sha256": "4cc0b4141c16f90c15ca7fc815e22f704c808a752d99738064b88cd13e26cf72"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/joint-full.json",
+      "sha256": "b6284565b8d387a878d753c2758242a1685220c1822652bbb823e51a858e4ea9"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/alternative-full.json",
+      "sha256": "0bdd8735b372bd2fce48a03eaa935e814c1b705dacca7d3bd7ae1fdabab661a5"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/housing-partial.json",
+      "sha256": "d0fbad1adc5559c6b4c359799095351742fb3e316bfd2575c5be6b443e3c2351"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/uncredited-preparation.json",
+      "sha256": "9c387c383a4b71d544cc561bb64d4c5825e29200e17fda6873023a59c1b6751b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/destructive-placement.json",
+      "sha256": "eb0c6822a2eb62f01d61c53cfe040dbd095296032b3b0c3dfe6faaa620ffee97"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/mixed-gain-loss.json",
+      "sha256": "8292748325402c3ea46b96d4ebd163886a4e83ad770858d2be249cd10e1d9888"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/queue-overwrite.json",
+      "sha256": "4ff340983c2e31b52d18c40f5033be4823a9567a20665a766811cfb9e3400e71"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/cases/repeat-undo.json",
+      "sha256": "3da3ff8d62fe676bf411575a49075c90a1c6dee1914ac9a8614a61822244ea39"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v1/suite.json",
+      "sha256": "bdfd151440207bb856ad8e488266d8982eeaac118067fc31f3ae112910a29812"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "aba6b0a558094669b6dca0e4c39d95035f238cc2c15291107b3a3eb058ab243c",
+    "version": 1
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 12,
+  "stage": "capture",
+  "status": "passed"
+}

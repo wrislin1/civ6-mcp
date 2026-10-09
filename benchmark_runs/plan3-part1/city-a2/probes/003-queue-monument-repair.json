@@ -1,0 +1,467 @@
+{
+  "arguments": {
+    "city_id": 196610,
+    "item_name": "BUILDING_MONUMENT",
+    "item_type": "BUILDING"
+  },
+  "outcome": "ok",
+  "passed": true,
+  "probe": {
+    "arguments_from_bindings": {
+      "city_id": "${repair_city.id}",
+      "item_name": "BUILDING_MONUMENT",
+      "item_type": "BUILDING"
+    },
+    "expect": "ok",
+    "id": "queue-monument-repair",
+    "restore": true,
+    "tool": "set_city_production"
+  },
+  "restore": {
+    "assertions": [
+      {
+        "actual": false,
+        "expected": false,
+        "id": "housing-unresolved",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            262147
+          ],
+          "kind": "housing_resolved",
+          "minimum_surplus": 1,
+          "remedy_buildings": [
+            "BUILDING_GRANARY"
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "repair-not-queued",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            196610
+          ],
+          "items": [
+            "BUILDING_MONUMENT"
+          ],
+          "kind": "active_production",
+          "repair": true
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "district-not-committed",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            131073
+          ],
+          "district_types": [
+            "DISTRICT_SEOWON"
+          ],
+          "kind": "district_committed",
+          "tiles": [
+            [
+              68,
+              24
+            ],
+            [
+              67,
+              22
+            ]
+          ]
+        }
+      },
+      {
+        "actual": true,
+        "expected": true,
+        "id": "protected-quarry-present",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_QUARRY",
+            "pillaged": false
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              23
+            ]
+          ]
+        }
+      },
+      {
+        "actual": true,
+        "expected": true,
+        "id": "replacement-mine-present",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_MINE",
+            "pillaged": false
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              22
+            ]
+          ]
+        }
+      }
+    ],
+    "assertions_passed": true,
+    "base_export": {
+      "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+      "excluded_signature": null,
+      "existed": true,
+      "ok": true,
+      "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+      "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+      "size": 3145591,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+    },
+    "base_identity": {
+      "expected": {
+        "civ_type": "CIVILIZATION_KOREA",
+        "player_id": 0,
+        "seed": 1881300077,
+        "turn": 100
+      },
+      "matches": true,
+      "observed": {
+        "civ_type": "CIVILIZATION_KOREA",
+        "player_id": 0,
+        "seed": 1881300077,
+        "turn": 100
+      }
+    },
+    "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+    "base_popups": "POPUPS|none",
+    "base_reconnect": {
+      "reconnected": true
+    },
+    "base_save_identity": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "name": "SEONDEOK 100 400 BC",
+      "seed": 1881300077,
+      "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+      "turn": 100
+    },
+    "bindings": {
+      "district_city": {
+        "id": 131073,
+        "owner": 0,
+        "pair": [
+          0,
+          131073
+        ],
+        "x": 67,
+        "xy": [
+          67,
+          24
+        ],
+        "y": 24
+      },
+      "district_site": {
+        "owner": 0,
+        "x": 68,
+        "xy": [
+          68,
+          24
+        ],
+        "y": 24
+      },
+      "housing_city": {
+        "id": 262147,
+        "owner": 0,
+        "pair": [
+          0,
+          262147
+        ],
+        "x": 73,
+        "xy": [
+          73,
+          19
+        ],
+        "y": 19
+      },
+      "protected_asset": {
+        "owner": 0,
+        "x": 67,
+        "xy": [
+          67,
+          23
+        ],
+        "y": 23
+      },
+      "repair_city": {
+        "id": 196610,
+        "owner": 0,
+        "pair": [
+          0,
+          196610
+        ],
+        "x": 70,
+        "xy": [
+          70,
+          22
+        ],
+        "y": 22
+      },
+      "replacement_site": {
+        "owner": 0,
+        "x": 67,
+        "xy": [
+          67,
+          22
+        ],
+        "y": 22
+      }
+    },
+    "coverage": {
+      "area": [
+        [
+          66,
+          21
+        ],
+        [
+          66,
+          22
+        ],
+        [
+          66,
+          23
+        ],
+        [
+          66,
+          24
+        ],
+        [
+          66,
+          25
+        ],
+        [
+          67,
+          21
+        ],
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          67,
+          24
+        ],
+        [
+          67,
+          25
+        ],
+        [
+          68,
+          21
+        ],
+        [
+          68,
+          22
+        ],
+        [
+          68,
+          23
+        ],
+        [
+          68,
+          24
+        ],
+        [
+          68,
+          25
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          69,
+          24
+        ],
+        [
+          69,
+          25
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          19
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": []
+    },
+    "grid": [
+      130,
+      66
+    ],
+    "operations": [
+      {
+        "context": "gamecore",
+        "index": 0,
+        "lua": "local t = Players[0]:GetTreasury()\nt:ChangeGoldBalance(500 - t:GetGoldBalance())\nprint(\"OK|gold \" .. t:GetGoldBalance())\n",
+        "readback": [
+          "OK|gold 500"
+        ],
+        "readback_lua": "local g = Players[0]:GetTreasury():GetGoldBalance()\nif g >= 500 then print(\"OK|gold \" .. g) else print(\"ERR|gold \" .. g) end\n",
+        "readback_ok": true,
+        "result": [
+          "OK|gold 500"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 1,
+        "lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gwangju\" then c = city end\nend\nif c == nil then print(\"ERR|Gwangju missing\") return end\nlocal b = GameInfo.Buildings[\"BUILDING_MONUMENT\"].Index\nif not c:GetBuildings():HasBuilding(b) then print(\"ERR|Gwangju has no monument\") return end\nc:GetBuildings():SetPillaged(b, true)\nprint(\"OK|pillaged|Gwangju|BUILDING_MONUMENT\")\n",
+        "readback": [
+          "OK|repair_city|Gwangju|BUILDING_MONUMENT|pillaged"
+        ],
+        "readback_lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gwangju\" then c = city end\nend\nlocal b = GameInfo.Buildings[\"BUILDING_MONUMENT\"].Index\nif c ~= nil and c:GetBuildings():IsPillaged(b) then\n  print(\"OK|repair_city|Gwangju|BUILDING_MONUMENT|pillaged\")\nelse\n  print(\"ERR|Gwangju monument is not pillaged\")\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|pillaged|Gwangju|BUILDING_MONUMENT"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 2,
+        "lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gongju\" then c = city end\nend\nif c == nil then print(\"ERR|Gongju missing\") return end\nlocal info = GameInfo.Buildings[\"BUILDING_GRANARY\"]\nlocal cb = c:GetBuildings()\nif not cb:HasBuilding(info.Index) then print(\"ERR|Gongju has no granary to remove\") return end\nif cb.RemoveBuilding == nil then\n  print(\"ERR|CityBuildings:RemoveBuilding is not available in GameCore\") return\nend\ncb:RemoveBuilding(info.Index)\nprint(\"OK|removed|Gongju|BUILDING_GRANARY\")\n",
+        "readback": [
+          "OK|housing_city|Gongju|surplus -1|granary_housing 2"
+        ],
+        "readback_lua": "local minimum_surplus = 1\nlocal c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gongju\" then c = city end\nend\nif c == nil then print(\"ERR|Gongju missing\") return end\nlocal info = GameInfo.Buildings[\"BUILDING_GRANARY\"]\nlocal gain = info.Housing or 0\nlocal surplus = c:GetGrowth():GetHousing() - c:GetPopulation()\nlocal granary = c:GetBuildings():HasBuilding(info.Index)\nif not granary and surplus < minimum_surplus and surplus + gain >= minimum_surplus then\n  print(\"OK|housing_city|Gongju|surplus \" .. surplus .. \"|granary_housing \" .. gain)\nelse\n  print(\"ERR|Gongju surplus \" .. surplus .. \" granary_housing \" .. gain\n        .. \" has_granary \" .. tostring(granary))\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|removed|Gongju|BUILDING_GRANARY"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 3,
+        "lua": "local p = Map.GetPlot(67, 22)\nif p == nil then print(\"ERR|(67,22) missing\") return end\nif p:GetOwner() ~= -1 then print(\"ERR|(67,22) already owned by \" .. p:GetOwner()) return end\np:SetOwner(0, 131073)\nprint(\"OK|owner|67,22|Jeonju\")\n",
+        "readback": [
+          "OK|replacement_site|67,22|owned|TERRAIN_GRASS_HILLS|bare"
+        ],
+        "readback_lua": "local p = Map.GetPlot(67, 22)\nif p ~= nil and p:GetOwner() == 0\n    and GameInfo.Terrains[p:GetTerrainType()].TerrainType == \"TERRAIN_GRASS_HILLS\"\n    and p:GetFeatureType() < 0 and p:GetResourceType() < 0 and p:GetDistrictType() < 0 then\n  print(\"OK|replacement_site|67,22|owned|TERRAIN_GRASS_HILLS|bare\")\nelse\n  print(\"ERR|(67,22) is not Korea's bare grass hills\")\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|owner|67,22|Jeonju"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 4,
+        "lua": "local p = Map.GetPlot(67, 22)\nif p == nil then print(\"ERR|(67,22) missing\") return end\nImprovementBuilder.SetImprovementType(p, GameInfo.Improvements[\"IMPROVEMENT_MINE\"].Index, 0)\nprint(\"OK|mine|67,22\")\n",
+        "readback": [
+          "OK|replacement_site|67,22|IMPROVEMENT_MINE|intact"
+        ],
+        "readback_lua": "local p = Map.GetPlot(67, 22)\nlocal imp = p ~= nil and p:GetImprovementType() or -1\nlocal info = imp >= 0 and GameInfo.Improvements[imp] or nil\nif info ~= nil and info.ImprovementType == \"IMPROVEMENT_MINE\"\n    and not p:IsImprovementPillaged() and p:GetOwner() == 0 then\n  print(\"OK|replacement_site|67,22|IMPROVEMENT_MINE|intact\")\nelse\n  print(\"ERR|(67,22) holds no intact owned mine\")\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|mine|67,22"
+        ]
+      }
+    ],
+    "resolution_coverage": {
+      "area": [
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          68,
+          24
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": []
+    },
+    "resolution_state_sha256": "669a0faa7007d2b6622b9409fe5b2329b5f4470ddd867444f7f6ebdd9807fc3c",
+    "state": null,
+    "state_sha256": "c02f423d758895d4ff0cd08f7b493956308e8b1528a51c01f3660f62335df8a2"
+  },
+  "result": "PRODUCING|BUILDING_MONUMENT|3 turns"
+}

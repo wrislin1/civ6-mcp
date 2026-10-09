@@ -1,0 +1,38 @@
+{
+  "error": null,
+  "evidence": {
+    "cycles": 12,
+    "expected_state_sha256": "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+    "result": {
+      "cycles_completed": 12,
+      "digests": [
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+        "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b"
+      ],
+      "ok": true,
+      "position_id": "plan3-tactical-a1-v1"
+    }
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "111310d89bf5b027edfef70df41230c6f14c1d82f3c2e4c903f976a93d55a65f",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 14,
+  "stage": "verify",
+  "status": "passed"
+}

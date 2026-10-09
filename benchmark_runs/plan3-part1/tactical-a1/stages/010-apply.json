@@ -1,0 +1,347 @@
+{
+  "error": null,
+  "evidence": {
+    "bindings": {
+      "archer": {
+        "id": 851976,
+        "owner": 0,
+        "pair": [
+          0,
+          851976
+        ],
+        "unit_index": 8,
+        "x": 74,
+        "xy": [
+          74,
+          20
+        ],
+        "y": 20
+      },
+      "attacker": {
+        "id": 16908390,
+        "owner": 63,
+        "pair": [
+          63,
+          16908390
+        ],
+        "x": 72,
+        "xy": [
+          72,
+          21
+        ],
+        "y": 21
+      },
+      "civilian": {
+        "id": 1769484,
+        "owner": 0,
+        "pair": [
+          0,
+          1769484
+        ],
+        "unit_index": 12,
+        "x": 73,
+        "xy": [
+          73,
+          22
+        ],
+        "y": 22
+      },
+      "defended_city": {
+        "id": 262147,
+        "owner": 0,
+        "pair": [
+          0,
+          262147
+        ],
+        "x": 73,
+        "xy": [
+          73,
+          19
+        ],
+        "y": 19
+      },
+      "expendable": {
+        "id": 1835021,
+        "owner": 0,
+        "pair": [
+          0,
+          1835021
+        ],
+        "unit_index": 13,
+        "x": 71,
+        "xy": [
+          71,
+          21
+        ],
+        "y": 21
+      }
+    },
+    "coverage": {
+      "area": [
+        [
+          69,
+          19
+        ],
+        [
+          69,
+          20
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          70,
+          19
+        ],
+        [
+          70,
+          20
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          17
+        ],
+        [
+          71,
+          18
+        ],
+        [
+          71,
+          19
+        ],
+        [
+          71,
+          20
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          71,
+          24
+        ],
+        [
+          72,
+          17
+        ],
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          72,
+          21
+        ],
+        [
+          72,
+          22
+        ],
+        [
+          72,
+          23
+        ],
+        [
+          72,
+          24
+        ],
+        [
+          73,
+          17
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          19
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          73,
+          21
+        ],
+        [
+          73,
+          22
+        ],
+        [
+          73,
+          23
+        ],
+        [
+          73,
+          24
+        ],
+        [
+          74,
+          17
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ],
+        [
+          74,
+          21
+        ],
+        [
+          74,
+          22
+        ],
+        [
+          74,
+          23
+        ],
+        [
+          74,
+          24
+        ],
+        [
+          75,
+          17
+        ],
+        [
+          75,
+          18
+        ],
+        [
+          75,
+          19
+        ],
+        [
+          75,
+          20
+        ],
+        [
+          75,
+          21
+        ],
+        [
+          75,
+          22
+        ],
+        [
+          75,
+          23
+        ],
+        [
+          75,
+          24
+        ],
+        [
+          76,
+          18
+        ],
+        [
+          76,
+          19
+        ],
+        [
+          76,
+          20
+        ],
+        [
+          76,
+          21
+        ],
+        [
+          76,
+          22
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": [
+        [
+          63,
+          16908390
+        ]
+      ]
+    },
+    "grid": [
+      130,
+      66
+    ],
+    "replay": {
+      "assertions_passed": true,
+      "base_export": {
+        "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+        "excluded_signature": null,
+        "existed": true,
+        "ok": true,
+        "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+        "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+        "size": 3145591,
+        "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+      },
+      "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+      "state_sha256": "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b"
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/010-apply.json",
+      "sha256": "dc4d7c3f6f69f832e524a268f1e225e8a5043097cb9a8bd663f43d3eac38380d"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "111310d89bf5b027edfef70df41230c6f14c1d82f3c2e4c903f976a93d55a65f",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 10,
+  "stage": "apply",
+  "status": "passed"
+}

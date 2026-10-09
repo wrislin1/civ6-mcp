@@ -1,0 +1,74 @@
+{
+  "error": "StageFailure: validate failed: ['validation']",
+  "evidence": {
+    "expected_state_sha256": "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+    "reports": {
+      "alternative-full/report.json": "f4b5cd703da81992aa560274504691b60c6e2f8462418183e32fb5c1a487277c",
+      "alternative-full/report.md": "be5ebfe4b1afcf6eb9c59b57e4d0db3534e610b3ff80f09d23cb64caaa283d38",
+      "closer-only/report.json": "f0a1caf9afd05938c1273c28e783ee7086d7985c3a6f1d07d4d164b3b77af8e5",
+      "closer-only/report.md": "2ab9b6baf27f05ed478315f2192417470826fa26a8f0f423af909c319c8cfbc1",
+      "covered-rescue/report.json": "b2182094776f56663891029190da025acd9337f9a28d96d75e27bfb8d57e8861",
+      "covered-rescue/report.md": "a98b3bf39f927d47428a12cd8c2b728d0af463825dc9aacad74a5338a60078db",
+      "joint-full/report.json": "4664fe2f40edd4bad4afa5be5d23f6fef0e51144b21dc5ff73c3eb4cde0c5618",
+      "joint-full/report.md": "56aefd3dfc33f3f90778e04b660f45510f57d933d2cad64bcac78bfaa5cb209a",
+      "meaningful-damage/report.json": "32ebcb5201501eba1fcd39f31cafbe7044efbe9f8ddccbfdf5107ef023ddf762",
+      "meaningful-damage/report.md": "686d83b0b81f609f4704daa39632c8c74dcd14b49c2500615ccac33cde2a6426",
+      "military-loss/report.json": "d82fd2a81346c916010509f6fc141ec533d2f21f33c0813564e82363116acbe8",
+      "military-loss/report.md": "77f1e5074318e62fa974001d9ef9c0c440284c9c814708a2420a998ffcef46bf",
+      "mixed-gain-loss/report.json": "23d82250cbb2217d95a4137c224e8b8486c22e5ea5e83bcb12dac78685475e1a",
+      "mixed-gain-loss/report.md": "2a7cab30376763ad16cc90bd4a06ae045d0770550bfb872594acea92835e2b2e",
+      "null-discovery/report.json": "891c0b1fc8368a04b485dbbae2a36a91bddf069c117a7587caa290641afc8124",
+      "null-discovery/report.md": "f7154b406476c7e84bc5999dc516d1687e3b5603882ce5378b4ec0d7d061dbe9",
+      "reinforcement-partial/report.json": "e56ed68b4a26f43577605a4e129942c4ca139fdafd87a0dd3df40240cb9a3fda",
+      "reinforcement-partial/report.md": "c480af2e586850d200ab2b6d34135fc45d5c6394b55d92b282b2a2148e338b1b",
+      "repeat-undo/report.json": "11b71ece16050527e49b9850671a3ec040feab002f222e1cc1fa5896b9152e96",
+      "repeat-undo/report.md": "ce592bea4b3a066e9da5e51a3987c8bedfdec78afb2ebbfcb8cd58cd12efef7b"
+    },
+    "reports_identical": true,
+    "restore": {
+      "digest": "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+      "reconnect": {
+        "reconnected": true
+      },
+      "reloaded": true
+    },
+    "restore_deploy": {
+      "archive_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+      "deployed_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_TACTICAL_A1_V1.Civ6Save",
+      "expected_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+      "ok": true,
+      "raw": {
+        "archive_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+        "deployed_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+        "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_TACTICAL_A1_V1.Civ6Save",
+        "expected_sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280",
+        "ok": true,
+        "save_name": "PLAN3_TACTICAL_A1_V1",
+        "source": "benchmarks/saves/plan3-tactical-a1-v1.Civ6Save"
+      },
+      "save_name": "PLAN3_TACTICAL_A1_V1"
+    },
+    "restore_reload_verified": true,
+    "restored_digest": "8afb5df47442d7abfdaf245c07f2755fae10ee27c119a94181d820c83b840b6b",
+    "restored_digest_matches": true,
+    "run_dir": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation",
+    "validation": {
+      "errored": false,
+      "passed": false
+    },
+    "validation_sha256": "3d486f35ee1347a58d8e62b55d75a4f3c7eb925e8c883426af6f3555f7643fc7"
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "111310d89bf5b027edfef70df41230c6f14c1d82f3c2e4c903f976a93d55a65f",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 16,
+  "stage": "validate",
+  "status": "failed"
+}

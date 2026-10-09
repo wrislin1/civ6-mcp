@@ -1,0 +1,108 @@
+{
+  "error": null,
+  "evidence": {
+    "probes": [
+      {
+        "expect": "ok",
+        "id": "purchase-granary",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2/probes/003-purchase-granary.json"
+      },
+      {
+        "expect": "ok",
+        "id": "queue-granary",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2/probes/003-queue-granary.json"
+      },
+      {
+        "expect": "ok",
+        "id": "seowon-at-clean-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2/probes/003-seowon-at-clean-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "seowon-at-replacement-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2/probes/003-seowon-at-replacement-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "seowon-on-protected-mine",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2/probes/003-seowon-on-protected-mine.json"
+      },
+      {
+        "expect": "ok",
+        "id": "queue-monument-repair",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2/probes/003-queue-monument-repair.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "seowon-on-city-centre-rejected",
+        "outcome": "rejected",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2/probes/003-seowon-on-city-centre-rejected.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "purchase-district-rejected",
+        "outcome": "rejected",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2/probes/003-purchase-district-rejected.json"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/probes/003-purchase-granary.json",
+      "sha256": "86f0d0dd97a4e3d9beb272c4466028fa02a2f54e8c270d6a54ededc67270381b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/probes/003-queue-granary.json",
+      "sha256": "21680b1db4ace0d6f8fb48d0acc0c86ea056a0d570f234cf9514671b2d1248b3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/probes/003-seowon-at-clean-site.json",
+      "sha256": "1247294055fb5cb1e8ab312e342ff195b6ae27b144264b038d11a8e70fe583c7"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/probes/003-seowon-at-replacement-site.json",
+      "sha256": "9b0d1361f9af4865337947cb5ce3c1fe9b04cf8f3ad36639c9c311f2786434b3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/probes/003-seowon-on-protected-mine.json",
+      "sha256": "d16b1a48c1fb6e9b775c4c2069ad48712ab14ab2971a32ba64f9b2b8abe33854"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/probes/003-queue-monument-repair.json",
+      "sha256": "1eccecb03d7e3d443238cfabb269701826282c4b6616dc7b7608a086b3f778a4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/probes/003-seowon-on-city-centre-rejected.json",
+      "sha256": "69e794798f2a67611cd835ae1b039581b65192f33bd095f0b404ed510dde1565"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/probes/003-purchase-district-rejected.json",
+      "sha256": "f55f3c571c301ab7d1c007b29aa4323d5142e035ceb139c5712f95444c53ec48"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "679c31d1a63ae6d2b29058ab5b1989ae31aa8e9cf01f29e28c8b5a3d2bb98416",
+    "version": 1
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 3,
+  "stage": "probe",
+  "status": "passed"
+}

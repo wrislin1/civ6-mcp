@@ -1,0 +1,9 @@
+{
+  "attempt_id": "capture-probe-20261009T162245283226Z",
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/capture-probe-2/summary.json",
+      "sha256": "3b554a4044759f81d2b096ff0272a822ddb1f27bfeef2e20767145baf5746934"
+    }
+  ]
+}

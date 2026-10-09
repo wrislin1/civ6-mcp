@@ -1,0 +1,484 @@
+{
+  "error": null,
+  "evidence": {
+    "archive_name": "PLAN3_TACTICAL_A1_V2",
+    "archive_path": "benchmarks/saves/plan3-tactical-a1-v2.Civ6Save",
+    "archived_observations": [
+      "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-00.json",
+      "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-01.json",
+      "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-02.json",
+      "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-03.json",
+      "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-04.json",
+      "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-05.json"
+    ],
+    "bindings": {
+      "archer": {
+        "id": 851976,
+        "owner": 0,
+        "pair": [
+          0,
+          851976
+        ],
+        "unit_index": 8,
+        "x": 72,
+        "xy": [
+          72,
+          21
+        ],
+        "y": 21
+      },
+      "attacker": {
+        "id": 16908390,
+        "owner": 63,
+        "pair": [
+          63,
+          16908390
+        ],
+        "x": 73,
+        "xy": [
+          73,
+          21
+        ],
+        "y": 21
+      },
+      "civilian": {
+        "id": 1769484,
+        "owner": 0,
+        "pair": [
+          0,
+          1769484
+        ],
+        "unit_index": 12,
+        "x": 74,
+        "xy": [
+          74,
+          20
+        ],
+        "y": 20
+      },
+      "defended_city": {
+        "id": 262147,
+        "owner": 0,
+        "pair": [
+          0,
+          262147
+        ],
+        "x": 73,
+        "xy": [
+          73,
+          19
+        ],
+        "y": 19
+      },
+      "expendable": {
+        "id": 1835021,
+        "owner": 0,
+        "pair": [
+          0,
+          1835021
+        ],
+        "unit_index": 13,
+        "x": 74,
+        "xy": [
+          74,
+          22
+        ],
+        "y": 22
+      }
+    },
+    "bindings_changed": true,
+    "coverage": {
+      "area": [
+        [
+          70,
+          19
+        ],
+        [
+          70,
+          20
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          17
+        ],
+        [
+          71,
+          18
+        ],
+        [
+          71,
+          19
+        ],
+        [
+          71,
+          20
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          72,
+          17
+        ],
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          72,
+          21
+        ],
+        [
+          72,
+          22
+        ],
+        [
+          72,
+          23
+        ],
+        [
+          72,
+          24
+        ],
+        [
+          73,
+          17
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          19
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          73,
+          21
+        ],
+        [
+          73,
+          22
+        ],
+        [
+          73,
+          23
+        ],
+        [
+          73,
+          24
+        ],
+        [
+          74,
+          17
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ],
+        [
+          74,
+          21
+        ],
+        [
+          74,
+          22
+        ],
+        [
+          74,
+          23
+        ],
+        [
+          74,
+          24
+        ],
+        [
+          75,
+          17
+        ],
+        [
+          75,
+          18
+        ],
+        [
+          75,
+          19
+        ],
+        [
+          75,
+          20
+        ],
+        [
+          75,
+          21
+        ],
+        [
+          75,
+          22
+        ],
+        [
+          75,
+          23
+        ],
+        [
+          75,
+          24
+        ],
+        [
+          76,
+          18
+        ],
+        [
+          76,
+          19
+        ],
+        [
+          76,
+          20
+        ],
+        [
+          76,
+          21
+        ],
+        [
+          76,
+          22
+        ],
+        [
+          76,
+          23
+        ],
+        [
+          76,
+          24
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": [
+        [
+          63,
+          16908390
+        ]
+      ]
+    },
+    "export": {
+      "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\exports\\tactical-a1\\027-plan3-tactical-a1-v2.Civ6Save",
+      "excluded_signature": null,
+      "existed": false,
+      "ok": true,
+      "save_name": "PLAN3_TACTICAL_A1_V2.Civ6Save",
+      "sha256": "bbf196d263c5896cda7ea1e342d4ab79895ff0d4e67bf97c4922a530eb7981b2",
+      "size": 3146770,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_TACTICAL_A1_V2.Civ6Save"
+    },
+    "export_sha256": "bbf196d263c5896cda7ea1e342d4ab79895ff0d4e67bf97c4922a530eb7981b2",
+    "export_staging_path": "/mnt/c/Users/wrisl/dev/civ6-mcp/benchmark_runs/plan3-part1/exports/tactical-a1/027-plan3-tactical-a1-v2.Civ6Save",
+    "local_sha256": "bbf196d263c5896cda7ea1e342d4ab79895ff0d4e67bf97c4922a530eb7981b2",
+    "measured_parameters": [
+      {
+        "evidence": [
+          "benchmark_runs/plan3-part1/tactical-a1/probes/026-expendable-attack.json",
+          "benchmark_runs/plan3-part1/tactical-a1/probes/026-archer-shot.json"
+        ],
+        "measurements": {
+          "archer-shot": {
+            "delta": 60,
+            "hp_after": 5,
+            "hp_before": 65,
+            "status_after": "alive_visible",
+            "target": [
+              63,
+              16908390
+            ]
+          },
+          "expendable-attack": {
+            "delta": 27,
+            "hp_after": 38,
+            "hp_before": 65,
+            "status_after": "alive_visible",
+            "target": [
+              63,
+              16908390
+            ]
+          }
+        },
+        "name": "tactical_damage_threshold",
+        "rule": {
+          "strictly_between": [
+            "expendable-attack",
+            "archer-shot"
+          ],
+          "survives": [
+            "archer-shot"
+          ]
+        },
+        "used_by": [
+          [
+            "objectives",
+            0,
+            "rungs",
+            0,
+            "predicate",
+            "minimum_damage"
+          ]
+        ],
+        "value": 40
+      }
+    ],
+    "native_save_before": {
+      "exists": false,
+      "mtime_ns": null,
+      "ok": true,
+      "save_name": "PLAN3_TACTICAL_A1_V2.Civ6Save",
+      "size": null,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_TACTICAL_A1_V2.Civ6Save"
+    },
+    "position_id": "plan3-tactical-a1-v2",
+    "publish_sha256": "bbf196d263c5896cda7ea1e342d4ab79895ff0d4e67bf97c4922a530eb7981b2",
+    "published": true,
+    "required_facts": [
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "attacker-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-04.json"
+        ],
+        "pattern": "\\*\\*\\[[^\\]]*Barbarian",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "civilian-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-01.json"
+        ],
+        "pattern": "(?i)settler",
+        "source": "get_units"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "expendable-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-01.json"
+        ],
+        "pattern": "(?i)warrior",
+        "source": "get_units"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "defended-city-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-02.json"
+        ],
+        "pattern": "Gongju \\(pop \\d+\\)",
+        "source": "get_cities"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "reinforcement-available",
+        "observations": [
+          "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-05.json"
+        ],
+        "pattern": "SPEARMAN|SWORDSMAN",
+        "source": "get_city_production"
+      }
+    ],
+    "save_ack": {
+      "message": "Saved: PLAN3_TACTICAL_A1_V2",
+      "ok": true
+    },
+    "state_sha256": "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+    "version": 2
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/027-archive.json",
+      "sha256": "55cc3bba7d4a1de70f6eb3838e6baf0b3e4eb7c63b613dcdee5889ebd9a8b16d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-00.json",
+      "sha256": "886c049703f9277537a754fb7e9d205c0812cce3a19be0fb9062bbf6502ae9ff"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-01.json",
+      "sha256": "3061ac9b80a6131971174832d84c9968e3e532cc5915cfb51777dd33abad76db"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-02.json",
+      "sha256": "e2cf06ff813592f4090e40db2c9a35729ae63dd12291b54f17d49de52438d29a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-03.json",
+      "sha256": "6daf68ebeeffc837d89bb80f6a4327b185c3c0c86b58fca37ae8113c6bb5a97a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-04.json",
+      "sha256": "0e0d5b42de73c397d9ac712bd3c7242590f88d0b70db504f9febe67b201da3da"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-05.json",
+      "sha256": "58404d46ea42d2fd9059691cf8c252fe802d27edf1d2fe8b970f169e3d9a7a32"
+    },
+    {
+      "path": "benchmarks/saves/plan3-tactical-a1-v2.Civ6Save",
+      "sha256": "bbf196d263c5896cda7ea1e342d4ab79895ff0d4e67bf97c4922a530eb7981b2"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "ccf1c16db9c79c4452bf608c1b8fb4a3e8a5074ee315417059e81e9506938be0",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 27,
+  "stage": "archive",
+  "status": "passed"
+}

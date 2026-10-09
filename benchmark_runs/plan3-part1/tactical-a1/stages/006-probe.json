@@ -1,0 +1,139 @@
+{
+  "error": "StageFailure: legality probes failed: ['purchase-swordsman', 'civilian-attack-rejected', 'civilian-fortify-rejected']",
+  "evidence": {
+    "probes": [
+      {
+        "expect": "ok",
+        "id": "archer-shot",
+        "measurement": {
+          "delta": null,
+          "hp_after": null,
+          "hp_before": 50,
+          "status_after": "alive_not_visible",
+          "target": [
+            63,
+            16908390
+          ]
+        },
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-archer-shot.json"
+      },
+      {
+        "expect": "ok",
+        "id": "expendable-attack",
+        "measurement": {
+          "delta": 29,
+          "hp_after": 21,
+          "hp_before": 50,
+          "status_after": "alive_visible",
+          "target": [
+            63,
+            16908390
+          ]
+        },
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-expendable-attack.json"
+      },
+      {
+        "expect": "ok",
+        "id": "civilian-to-city",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-to-city.json"
+      },
+      {
+        "expect": "ok",
+        "id": "civilian-pathing",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-pathing.json"
+      },
+      {
+        "expect": "ok",
+        "id": "purchase-spearman",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-purchase-spearman.json"
+      },
+      {
+        "expect": "ok",
+        "id": "purchase-swordsman",
+        "outcome": "rejected",
+        "passed": false,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-purchase-swordsman.json"
+      },
+      {
+        "expect": "ok",
+        "id": "queue-spearman",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-queue-spearman.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "civilian-attack-rejected",
+        "outcome": "ok",
+        "passed": false,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-attack-rejected.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "civilian-fortify-rejected",
+        "outcome": "ok",
+        "passed": false,
+        "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-fortify-rejected.json"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-archer-shot.json",
+      "sha256": "44b37096c73975f3d0933af418a66be107a8cdb1bb9de1e7d21d143152b05690"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-expendable-attack.json",
+      "sha256": "c6bae0329f3b661244a2ed3c35180d94f6d052bf8f52f85e72ec5a34d926bde3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-to-city.json",
+      "sha256": "aed692e0fa1b292e4454f02a25b3752ec9695d3b52785244dac177ca60188d56"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-pathing.json",
+      "sha256": "fd3e09d12b3d51ece11cde848402b092890017449a8ac8fd4ba42e473d399584"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-purchase-spearman.json",
+      "sha256": "37bae1747dab19465e59e98f0dfb86bb72aa3ff6618b28b0a124709183240474"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-purchase-swordsman.json",
+      "sha256": "f4813bd008629ddca1d35a310e77f1a07df1d40ae13fe541eea1005fc814fbc4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-queue-spearman.json",
+      "sha256": "bf3ebe92a532b7b4f090f300321e9b0635312c4f1b087bb0e8197c712b10668e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-attack-rejected.json",
+      "sha256": "08412e880ff8d35f9918a3537f504ebc93885ed112a070fc14cac8fa91122d88"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-fortify-rejected.json",
+      "sha256": "0ffda9dbd3e255e0d1ad391d60d037b130f595ed8a679128b392b22331d33062"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "6e43ff3ea59e8eda7bf43feb849c0a2dca800252f645a95405e25426f95499fb",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 6,
+  "stage": "probe",
+  "status": "failed"
+}

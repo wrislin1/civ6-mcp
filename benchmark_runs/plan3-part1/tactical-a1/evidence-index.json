@@ -1,0 +1,908 @@
+{
+  "attempt_dir": "benchmark_runs/plan3-part1/tactical-a1",
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/authoring-journal.json",
+      "sha256": "fcb90a6c2037e432b516481ad27d9c3928f923302bf02a4f833b3f78c8b34758"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/002-apply.json",
+      "sha256": "205201d6c1bdedf80f244bf368c16c070fba66ab0efc9d1c4aea89adf77fedde"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/005-apply.json",
+      "sha256": "e38e173976e1e0176c532ad2896d67ec133366cad2c4bb989dde8b9bbb5f4c61"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/010-apply.json",
+      "sha256": "dc4d7c3f6f69f832e524a268f1e225e8a5043097cb9a8bd663f43d3eac38380d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/012-archive.json",
+      "sha256": "dc4d7c3f6f69f832e524a268f1e225e8a5043097cb9a8bd663f43d3eac38380d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/025-apply.json",
+      "sha256": "55cc3bba7d4a1de70f6eb3838e6baf0b3e4eb7c63b613dcdee5889ebd9a8b16d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/mutations/027-archive.json",
+      "sha256": "55cc3bba7d4a1de70f6eb3838e6baf0b3e4eb7c63b613dcdee5889ebd9a8b16d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/001-survey-00.json",
+      "sha256": "add91bd4071179a1f6d1a7ef662a8a798004044616f7a7b1ebeb97fa4741fbb5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/001-survey-01.json",
+      "sha256": "79e73942bbee3902bfba43dcb7478ab42eb37a8d1c324515c8cfc8a02b037b1f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/001-survey-02.json",
+      "sha256": "d7a15c306621597e8b040c772052bdb08f3d413bb482b51117022362d1a745c8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/001-survey-03.json",
+      "sha256": "6bfe331e01239bb33e915f9266108f02a368ae33571c3a5bba9632cdb80b7b41"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/001-survey-05.json",
+      "sha256": "58404d46ea42d2fd9059691cf8c252fe802d27edf1d2fe8b970f169e3d9a7a32"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/004-survey-00.json",
+      "sha256": "c85bd4cf5eac4ffea45d818ec8d958cfb92973f774517f3175b879c373574f4d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/004-survey-01.json",
+      "sha256": "79e73942bbee3902bfba43dcb7478ab42eb37a8d1c324515c8cfc8a02b037b1f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/004-survey-02.json",
+      "sha256": "d7a15c306621597e8b040c772052bdb08f3d413bb482b51117022362d1a745c8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/004-survey-03.json",
+      "sha256": "6bfe331e01239bb33e915f9266108f02a368ae33571c3a5bba9632cdb80b7b41"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/004-survey-05.json",
+      "sha256": "58404d46ea42d2fd9059691cf8c252fe802d27edf1d2fe8b970f169e3d9a7a32"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/009-survey-00.json",
+      "sha256": "2066994e61c45a059d87b22bb5fe34d7bc35763d1be6d76d7e5e984b71b61614"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/009-survey-01.json",
+      "sha256": "79e73942bbee3902bfba43dcb7478ab42eb37a8d1c324515c8cfc8a02b037b1f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/009-survey-02.json",
+      "sha256": "d7a15c306621597e8b040c772052bdb08f3d413bb482b51117022362d1a745c8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/009-survey-03.json",
+      "sha256": "6bfe331e01239bb33e915f9266108f02a368ae33571c3a5bba9632cdb80b7b41"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/009-survey-05.json",
+      "sha256": "58404d46ea42d2fd9059691cf8c252fe802d27edf1d2fe8b970f169e3d9a7a32"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/024-survey-00.json",
+      "sha256": "858d8fd9b3ff3299a5ca6fdd4da8472ed8fc7a61e609a10fa513364d9faf5141"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/024-survey-01.json",
+      "sha256": "79e73942bbee3902bfba43dcb7478ab42eb37a8d1c324515c8cfc8a02b037b1f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/024-survey-02.json",
+      "sha256": "d7a15c306621597e8b040c772052bdb08f3d413bb482b51117022362d1a745c8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/024-survey-03.json",
+      "sha256": "6bfe331e01239bb33e915f9266108f02a368ae33571c3a5bba9632cdb80b7b41"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/024-survey-05.json",
+      "sha256": "58404d46ea42d2fd9059691cf8c252fe802d27edf1d2fe8b970f169e3d9a7a32"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-012-00.json",
+      "sha256": "32cb97e56c47dcec12c2e27b46a6c20b3a37b8196635a6a15ba4a24bdfe56fda"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-012-01.json",
+      "sha256": "29772c820af2519cf792f670aad2363a4ab25cb555391771abfb8065c6a2eb44"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-012-02.json",
+      "sha256": "e2cf06ff813592f4090e40db2c9a35729ae63dd12291b54f17d49de52438d29a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-012-03.json",
+      "sha256": "6d6a8488bffa69d05d4160b83e41de292d20090d410f582773664936d8b48c08"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-012-04.json",
+      "sha256": "95e62f3b3e30c527b5b7f2d6935f89c2d7b8f9fb4c6d9e1140162fed6f86ed1e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-012-05.json",
+      "sha256": "58404d46ea42d2fd9059691cf8c252fe802d27edf1d2fe8b970f169e3d9a7a32"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-00.json",
+      "sha256": "886c049703f9277537a754fb7e9d205c0812cce3a19be0fb9062bbf6502ae9ff"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-01.json",
+      "sha256": "3061ac9b80a6131971174832d84c9968e3e532cc5915cfb51777dd33abad76db"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-02.json",
+      "sha256": "e2cf06ff813592f4090e40db2c9a35729ae63dd12291b54f17d49de52438d29a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-03.json",
+      "sha256": "6daf68ebeeffc837d89bb80f6a4327b185c3c0c86b58fca37ae8113c6bb5a97a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-04.json",
+      "sha256": "0e0d5b42de73c397d9ac712bd3c7242590f88d0b70db504f9febe67b201da3da"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/observations/archived-027-05.json",
+      "sha256": "58404d46ea42d2fd9059691cf8c252fe802d27edf1d2fe8b970f169e3d9a7a32"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-archer-shot.json",
+      "sha256": "44b37096c73975f3d0933af418a66be107a8cdb1bb9de1e7d21d143152b05690"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-attack-rejected.json",
+      "sha256": "08412e880ff8d35f9918a3537f504ebc93885ed112a070fc14cac8fa91122d88"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-fortify-rejected.json",
+      "sha256": "0ffda9dbd3e255e0d1ad391d60d037b130f595ed8a679128b392b22331d33062"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-pathing.json",
+      "sha256": "fd3e09d12b3d51ece11cde848402b092890017449a8ac8fd4ba42e473d399584"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-civilian-to-city.json",
+      "sha256": "aed692e0fa1b292e4454f02a25b3752ec9695d3b52785244dac177ca60188d56"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-expendable-attack.json",
+      "sha256": "c6bae0329f3b661244a2ed3c35180d94f6d052bf8f52f85e72ec5a34d926bde3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-purchase-spearman.json",
+      "sha256": "37bae1747dab19465e59e98f0dfb86bb72aa3ff6618b28b0a124709183240474"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-purchase-swordsman.json",
+      "sha256": "f4813bd008629ddca1d35a310e77f1a07df1d40ae13fe541eea1005fc814fbc4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/006-queue-spearman.json",
+      "sha256": "bf3ebe92a532b7b4f090f300321e9b0635312c4f1b087bb0e8197c712b10668e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/011-archer-shot.json",
+      "sha256": "c46df87102a3794cfa2e2f2152c7107e379826a872358ad0062cc4f3cb1d876c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/011-civilian-pathing.json",
+      "sha256": "8eaa969f007ac652afe21ee5e2a7bd613e2e4920cbbe034cf520857c157460b0"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/011-civilian-to-city.json",
+      "sha256": "0edb2d9af9e90b5b40fb1251de0f2c60f8605e442cd53d8a29cd31a64dbf026c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/011-expendable-attack.json",
+      "sha256": "44c15c700359cd22658b6823ed5930a8d66097fbf7a385656aea691a88b9e230"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/011-purchase-spearman.json",
+      "sha256": "30dfb401baa8e96a15c818faaa500163447540f762addbee892791536ee11ecb"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/011-queue-spearman.json",
+      "sha256": "bad0c9fc586dbb5a4814dd87cf10eec67cef6530ddafc4736f2cad8f000c6166"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-archer-shot.json",
+      "sha256": "18ac31a48e71f20aefe9382a89f97794012bf5f03615969319f7535b4445cf94"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-civilian-pathing.json",
+      "sha256": "7cdbb7b7cadb8e40b0c7e6cb2006761249efea93445914573e13a06ddb57e8e4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-civilian-to-city.json",
+      "sha256": "37b01196ba990ffe06dab61b15ada16bb98d646828a8faba2c56120b7808d0b3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-expendable-attack.json",
+      "sha256": "3feae66d2136f5653feb833340e7b10d197bb00d75ad287e2f81a653c3dfaf91"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-purchase-spearman.json",
+      "sha256": "a400cc6608519b4f3e3db0444b78ce3e7660dcd6f4a76cc8c80510855b406adc"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/probes/026-queue-spearman.json",
+      "sha256": "9293e37ff983cbff561ebf22c47d7d8aaf09f25473b57e86fc51b95bf97ec8ce"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/samples/001-survey-state.json",
+      "sha256": "d0c6e1948f809e2223712a6f27cb6c6766eb5044f2430afd215b893afb4c2a55"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/samples/004-survey-state.json",
+      "sha256": "d0c6e1948f809e2223712a6f27cb6c6766eb5044f2430afd215b893afb4c2a55"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/samples/009-survey-state.json",
+      "sha256": "d0c6e1948f809e2223712a6f27cb6c6766eb5044f2430afd215b893afb4c2a55"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/samples/024-survey-state.json",
+      "sha256": "213adb178191d04af29c7787e70beb61fb636495a203ddba31352b1f3f0aa9f2"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/001-survey.json",
+      "sha256": "e6b4ac3c3a15cbb735f1413625e6ee529ca71393ec7a1a82934e1f12af6b9d7e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/002-apply.json",
+      "sha256": "ace96adf38106ef7473c41daf1172c54548ee7ce6be49b38397de7cabb13d09b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/003-apply.json",
+      "sha256": "1507898cc2c94dadd4231d0bcb596aa572f57611222af2b471e43d6a6292d962"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/004-survey.json",
+      "sha256": "bdcf1df5ecf045c3a0c0dc1689123f958d17f3faccc8cf2366e9db39d8a005ba"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/005-apply.json",
+      "sha256": "62dad5aa37f7ee9de6c487c81bc3d3a55413ad16161a9a9f1eb2ee939ec5d732"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/006-probe.json",
+      "sha256": "079d3ce56b4a62796c31cd2a659e02623ecdf8ba08f1fd4d6b2f5899b799a2b7"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/007-apply.json",
+      "sha256": "cd6d2499623dd44fd0ef535d622e1253bf8ff42095584163f03a1a37b9edc689"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/008-probe.json",
+      "sha256": "d75007579a028ceaf9190644f0325247ecd1b3a85eb114fc394ff44251fc10d2"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/009-survey.json",
+      "sha256": "e183e4eb53e3db00f3fdd490ca2cfc34ddb676896c4761835368df212563c896"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/010-apply.json",
+      "sha256": "a16afbc0d565c86edb1e3367fa2bb782d7b71c5ca2f4107dba6a9eb1fbeec3be"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/011-probe.json",
+      "sha256": "045e3a0cd90b490182a30ab2847ea3c80cd4760bd14b496b7098023c048cd501"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/012-archive.json",
+      "sha256": "1525e2b16919947c24fd77614a3aa937eef2629a514f993720f08ef9bb6a2f79"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/013-capture.json",
+      "sha256": "bf737145b11f7367119541d81a544c023cb1ac2e9126029fab160c0a1f2b8edb"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/014-verify.json",
+      "sha256": "2c863dc05506da8ee6d0354b9647125f145ee1add66cbf465ead194ff5d91c95"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/015-menu-check.json",
+      "sha256": "0948f9026e439549696cc49a9b777d33dadd796a4a8554feb7ac859fa68edb4e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/016-validate.json",
+      "sha256": "cc2d3c079fc8e10c968406c2962a13669fa3af04ef308a0884169216beb10fdd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/017-apply.json",
+      "sha256": "0fca9db5a0ae46870dd382245f7d3e87090fa36d429c5d7686b8530e2fde0df1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/018-probe.json",
+      "sha256": "ef08923ec595e3e0e8b862dee6880048d14244ea9c0257c7dc9fb60254d69676"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/019-archive.json",
+      "sha256": "579e68ee702c143b66bdc1306ea96fc2d7ae122a89e2d53a5112916fcc230878"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/020-capture.json",
+      "sha256": "f291980892db28f67a6778aba5a102ac771e3799b30b7e386d8be570fc029fa0"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/021-verify.json",
+      "sha256": "eeb0bac781c3ba202e27970fbb51b6f6562b0b4844b82de828aaff580d2411f5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/022-menu-check.json",
+      "sha256": "9e1bfb561bef1aa71afa1be5b724f95c5dfbb9cefadbbf5cc8a8629673f93a7a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/023-validate.json",
+      "sha256": "40629f56f17c498ffb8ff1ea8dd3c3d34f6d9aa1339dca4fdd1df17aa98f6d3a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/024-survey.json",
+      "sha256": "6a0a019c6caf0095b470d7eb90e4a49f89b83ae6d742909ffe254940729e65a6"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/025-apply.json",
+      "sha256": "5972d5c6f1a9de57056b545ee94cc13a1fbc8c286573c5a341d1024c2632d26f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/026-probe.json",
+      "sha256": "6bf5618724331bbe31b1fa618304057410bb02624568e097b6c5a8ba6e8d2504"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/027-archive.json",
+      "sha256": "c81f56ba8efc88778fafe1a6c6737dc79943b6310f53c9aae6d4f358d728b0e7"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/028-capture.json",
+      "sha256": "51a541bb847cd2b88e1b29228e36e5ca757049be1c63d6c3b4cec51a0af6d532"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/029-verify.json",
+      "sha256": "6edfcc99e9e024817ca65422b04f416339b7d91d2cfc77d37f36ee1575f8001a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/030-menu-check.json",
+      "sha256": "b861a9e9fc70bbf5cb044050f8e81f6e41d0aeef086501e7451e8c0f893a2052"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/031-validate.json",
+      "sha256": "52a785f853ff8d781819693a8782f78578a520488a1b82c0ff4d99612dd0c0d2"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/032-validate.json",
+      "sha256": "55213ca7724c9cff2cbfd90a47e3f0c3f8293a234e7de1579fe66802cf1e9ce3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/stages/033-finish.json",
+      "sha256": "7bbaf2cf9c858abc6d7153bb7580a5278b3eb1721a978d0b8981532bd8401140"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/journal.jsonl",
+      "sha256": "cf81ca38a45157db6492167f9bf94863534390d3621bb077951d9edd09a8cbcd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/alternative-full/report.json",
+      "sha256": "f4b5cd703da81992aa560274504691b60c6e2f8462418183e32fb5c1a487277c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/alternative-full/report.md",
+      "sha256": "be5ebfe4b1afcf6eb9c59b57e4d0db3534e610b3ff80f09d23cb64caaa283d38"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/closer-only/report.json",
+      "sha256": "f0a1caf9afd05938c1273c28e783ee7086d7985c3a6f1d07d4d164b3b77af8e5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/closer-only/report.md",
+      "sha256": "2ab9b6baf27f05ed478315f2192417470826fa26a8f0f423af909c319c8cfbc1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/covered-rescue/report.json",
+      "sha256": "b2182094776f56663891029190da025acd9337f9a28d96d75e27bfb8d57e8861"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/covered-rescue/report.md",
+      "sha256": "a98b3bf39f927d47428a12cd8c2b728d0af463825dc9aacad74a5338a60078db"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/joint-full/report.json",
+      "sha256": "4664fe2f40edd4bad4afa5be5d23f6fef0e51144b21dc5ff73c3eb4cde0c5618"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/joint-full/report.md",
+      "sha256": "56aefd3dfc33f3f90778e04b660f45510f57d933d2cad64bcac78bfaa5cb209a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/meaningful-damage/report.json",
+      "sha256": "32ebcb5201501eba1fcd39f31cafbe7044efbe9f8ddccbfdf5107ef023ddf762"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/meaningful-damage/report.md",
+      "sha256": "686d83b0b81f609f4704daa39632c8c74dcd14b49c2500615ccac33cde2a6426"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/military-loss/report.json",
+      "sha256": "d82fd2a81346c916010509f6fc141ec533d2f21f33c0813564e82363116acbe8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/military-loss/report.md",
+      "sha256": "77f1e5074318e62fa974001d9ef9c0c440284c9c814708a2420a998ffcef46bf"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/mixed-gain-loss/report.json",
+      "sha256": "23d82250cbb2217d95a4137c224e8b8486c22e5ea5e83bcb12dac78685475e1a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/mixed-gain-loss/report.md",
+      "sha256": "2a7cab30376763ad16cc90bd4a06ae045d0770550bfb872594acea92835e2b2e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/null-discovery/report.json",
+      "sha256": "891c0b1fc8368a04b485dbbae2a36a91bddf069c117a7587caa290641afc8124"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/null-discovery/report.md",
+      "sha256": "f7154b406476c7e84bc5999dc516d1687e3b5603882ce5378b4ec0d7d061dbe9"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/reinforcement-partial/report.json",
+      "sha256": "e56ed68b4a26f43577605a4e129942c4ca139fdafd87a0dd3df40240cb9a3fda"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/reinforcement-partial/report.md",
+      "sha256": "c480af2e586850d200ab2b6d34135fc45d5c6394b55d92b282b2a2148e338b1b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/repeat-undo/report.json",
+      "sha256": "11b71ece16050527e49b9850671a3ec040feab002f222e1cc1fa5896b9152e96"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/reports/repeat-undo/report.md",
+      "sha256": "ce592bea4b3a066e9da5e51a3987c8bedfdec78afb2ebbfcb8cd58cd12efef7b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/session.json",
+      "sha256": "04cc4a5c0050ba1a5fca13d7c9ae80d2a8af6fe603953ea2d21ade603d4cb00c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-001.json",
+      "sha256": "1b3e210a8e28540442a3e7b02f49a2405063c956b9dbe8f2992516ea8b93eb26"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-002.json",
+      "sha256": "987f3e18771c3fa644cdbfd5348d7094d7cb3ee18907984d5e498e069ccfbaba"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-003.json",
+      "sha256": "c061321f198b2ace5895efc343025d352c483ed9627bf44b9909696e819314a7"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-004.json",
+      "sha256": "09cecb98817d822aed463c2947ca7b740bfc68fee85a2929ac8def0470c7c2e9"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-005.json",
+      "sha256": "356d441766ad6fec36f0bfd672d71d81b08968319171584a06906e1736e74c7b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-006.json",
+      "sha256": "8a6e87e2c75d0eb5d3a28158189a52385255b952c1b3c80bf6b5c80a76a14487"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-007.json",
+      "sha256": "7e9735612e04e218e02c00226bd62adc467d95922921a430528cd2834235a16f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-008.json",
+      "sha256": "beb4031a38712b67993fe67b5faed505fe4facd591b4c74882308ceb06e73d2a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-009.json",
+      "sha256": "9c90e7d7f9322b030bb7eeeeed1bc9e2be9001b96079df9ebaf9c1dae66a8419"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/trials/trial-010.json",
+      "sha256": "cd1c57268b8e1f58517e42a3577883d24481697d3eeebe89066d213db0836fc2"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v1/plan3-tactical-a1-v1-validation/validation.json",
+      "sha256": "3d486f35ee1347a58d8e62b55d75a4f3c7eb925e8c883426af6f3555f7643fc7"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/attempts/trial-006-attempt-001.json",
+      "sha256": "f0a5d8305cfeb3383e1f8b72b412a02be7ecb6517c6ed4f1237bc2a3959c7992"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/attempts/trial-006-attempt-002.json",
+      "sha256": "f0a5d8305cfeb3383e1f8b72b412a02be7ecb6517c6ed4f1237bc2a3959c7992"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/attempts/trial-006-attempt-003.json",
+      "sha256": "f0a5d8305cfeb3383e1f8b72b412a02be7ecb6517c6ed4f1237bc2a3959c7992"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/journal.jsonl",
+      "sha256": "8fff6b600296faa56541682547ea9301cadf7df88adfd6757f1c97320d3c9e20"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/session.json",
+      "sha256": "654e9583f7474cd37a75fcf22c60ffb6d3ae9fd68c182ff7f5c9de4cd1b3ea31"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/trials/trial-001.json",
+      "sha256": "a377859d6c60fbfdf5f629892cc18af5e8e78d7e08542fe2cde87d37febf1c9a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/trials/trial-002.json",
+      "sha256": "601a5b048ee06d8172d6d8c8becf567f3ff8bf41ed3b8e5bbfe0bf880b3e78d9"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/trials/trial-003.json",
+      "sha256": "aa6756128046e0fbe049ca71825d6beb9ae6b1d6111f8ab7d8b2cb7c80a671aa"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/trials/trial-004.json",
+      "sha256": "936ecde2820d0f9ac8196caea29e5749a17287b598215c9a34088117f5fed456"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation.aborted-001/trials/trial-005.json",
+      "sha256": "0396af41a5ea00323167920866d2ae93976b93b7cfeda0116f33b4dece2fc1ac"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/journal.jsonl",
+      "sha256": "0a9609ff3d7e64c1316c53e7ff5c0e9523710090a3df3b4e2a6ed27f8c7abdf9"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+      "sha256": "8a9a1b34ede517db8dd341ecffa3492e3ca6fd67ebe329d2e8a644664306d8fd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.md",
+      "sha256": "6079ed4d6f2b882512722595917623100f22551a824972b1795434d69dc0c6ec"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+      "sha256": "2ece32a551dc167583eb3132a148138669cd42a5f79a8b2c5558f21cbc127314"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.md",
+      "sha256": "32b7d928d63de976d777620c30fe211b9c1dceb182c765c71e676b02e94b6b35"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.json",
+      "sha256": "ca5efc7065c77ea312faa03d202c021025ff38efb99ac700d24bfb56016f4570"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.md",
+      "sha256": "26eb235d9bcdc8cf069d5fb1a42608e20187d9f7f6fc7fda076d8860de713877"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+      "sha256": "34df97b8eb3c47089a4b70e753da89f6d23a59f3efd1b8cfdee4e035877acfb6"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.md",
+      "sha256": "3d181d6297b7f8ef334947bdb2e8e6f08ed9f79907070d16b270b9c5542dde5d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.json",
+      "sha256": "e347ad3bcadc75db239449e8f4bfc407539017271b64cbd8166be36c90ffd17a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.md",
+      "sha256": "7a56daa4f4fcfa40479330ddf83fcaf6b2f3a7998d0c29f8005e78fc50877f1c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+      "sha256": "3aefb183b64f070a9c4f4bddbdca30e6569448ad3fe2608a3c0d74e4836b3875"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.md",
+      "sha256": "979e1fb08aacf947461b5459a9d740bd661bb3bad3a5e888f0d874f6cdf92377"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+      "sha256": "d25050b73b5d7f640d24621a2972c6fb45bced348f70f928037d5ce66f5b7fe4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.md",
+      "sha256": "e9d26c3e758188ea72bc6868918adda43cabf508b614f8bb98415614277b2eed"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+      "sha256": "491fdeef5831eb15e90de4d6be08bdee76edc04b9049b095475915a2b7b7019d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.md",
+      "sha256": "056e7fe42b3f1dc95f13ea35f2ce94448ba0f62451c2334fe5cbc384cfdcd935"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.json",
+      "sha256": "346201d6962d75eac40ee1d8cff804a8bd360709c139d8d8853126bb1964ffff"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.md",
+      "sha256": "35c0d92c0c1b5b522629a58dd43c3a119edd47a29cd24da3125a5915b6208b9b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.json",
+      "sha256": "209c4a804acb46c2b0e264eaa2901accdedf27b077edfc93c128b07e3691da07"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.md",
+      "sha256": "bf021dd939b50c392d27ffbaa1a32cc15917722a856384dd82b3b5cba744213b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/session.json",
+      "sha256": "654e9583f7474cd37a75fcf22c60ffb6d3ae9fd68c182ff7f5c9de4cd1b3ea31"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json",
+      "sha256": "070edfb19abe04e14337b44f2028f2f054e9cb3620b3d8708892710363aa207b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json",
+      "sha256": "1c8e3d23f1647c54f0eb2bcc99e3f620939f6eea16027d445274b3ad0cf8e203"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json",
+      "sha256": "6363fd92f1180277655e66a31c7822eb376ff8c0433d1d13c4a299e0ac212db6"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-004.json",
+      "sha256": "a8ffed08749fcc379027e1d742063f48c81e53eceaf0c63be1bcbce72ff67c29"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-005.json",
+      "sha256": "b28cebd133975a98063054aa79e5c26300f4032089f044899a27ad694fa56912"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json",
+      "sha256": "75d39217a5b07b3260a8a56dee0c76e76e69ff0fa2683ab2cc46bdfca813a357"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-007.json",
+      "sha256": "ca89d0e3ae1ac6b531bcc07a55a31e388adb038950b2ac981b284ab9147ba85c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+      "sha256": "0d261966394a14750b0d74f3534b0c11286dd6927dc62925538154a05e7843c6"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json",
+      "sha256": "babeebb8dbc9183bac3f5872f6eead25902e6ce5665d4787475e92c9419af758"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-010.json",
+      "sha256": "7b71110523fd8ddcb9824d23923b600ee9281d6511f75c393af5ed93af852215"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/validation.json",
+      "sha256": "49960d14de4856785ddfe7cc51a0d18c17c30cdffd84d6a98bb9e2e7a5c3fb3f"
+    },
+    {
+      "path": "benchmarks/positions/plan3-tactical-a1-v1.json",
+      "sha256": "0fbfcd0e657339d4c4b44a27f98d973ce2e09a9a4c14547b610d66db4ffa3a98"
+    },
+    {
+      "path": "benchmarks/positions/plan3-tactical-a1-v2.json",
+      "sha256": "4d5f720b79dca5f24270076ecc5346c6f68f74d6d40398d9a8fba0057bf8170b"
+    },
+    {
+      "path": "benchmarks/provenance/plan3-tactical-a1-v1-authoring.json",
+      "sha256": "0520e701da777bf6404a7f71453a1a114acd010bdbb5b4203af00aff995c5d12"
+    },
+    {
+      "path": "benchmarks/provenance/plan3-tactical-a1-v2-authoring.json",
+      "sha256": "05418449e740c3ade4c616c8d314e6c11748ace9924332bf1c13945b9c48693a"
+    },
+    {
+      "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+      "sha256": "ccf1c16db9c79c4452bf608c1b8fb4a3e8a5074ee315417059e81e9506938be0"
+    },
+    {
+      "path": "benchmarks/saves/plan3-tactical-a1-v1.Civ6Save",
+      "sha256": "209bdf4dd86312d901d2e74eaa9fcdddab6873f8dc5ccc6a1c5aad0fc19d7280"
+    },
+    {
+      "path": "benchmarks/saves/plan3-tactical-a1-v2.Civ6Save",
+      "sha256": "bbf196d263c5896cda7ea1e342d4ab79895ff0d4e67bf97c4922a530eb7981b2"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/alternative-full.json",
+      "sha256": "530660aecd9ae741c592e49e041178510cacf5eb74dd3120d77e2b316e1f15b5"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/closer-only.json",
+      "sha256": "f0b4f559e413314d740d6a21c6354b916a7a8b89e86a6b69f18e884946b7e03d"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/covered-rescue.json",
+      "sha256": "c25d65bec6ab024e0aa054572c93e4a855a0438210202de2ad7c2e1ae568d3c9"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/joint-full.json",
+      "sha256": "c818933227661e3600eb44812cdafb50c0beb8af737b25c438ed2c0d271155b0"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/meaningful-damage.json",
+      "sha256": "caf78d2d86d7eb6d47fe89e86c96954d7fe8646ba7287d3ea925ce91b0b1f824"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/military-loss.json",
+      "sha256": "46842a9b6ff0e7eabd2ad2eaff361449938cb202ce03953b957176b8a3f783a0"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/mixed-gain-loss.json",
+      "sha256": "e14d4afa43883416c9a45add344c27365f1993e030b827a5876c6f98383bdd25"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/observe.json",
+      "sha256": "f8ed2265a9fe99fe9b872fb31423532aafa56660c8d93b3fe9967b6623204519"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/reinforcement-partial.json",
+      "sha256": "6f66348c0c8c177e2201e560b6c31425617e9f2d51745256a7c606f4b7ecda09"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v1/repeat-undo.json",
+      "sha256": "f29a111f3d7d872655a736ed5583eeee26e4c484455523d372878637fa85078a"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/alternative-full.json",
+      "sha256": "3c275b6f4419f08ccb994992367ed42dccac6f2af497ecbbb55d4f06f975b9bd"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/closer-only.json",
+      "sha256": "fbab46b1a4f92768eb071758b602066731583a4aee72f30cbdfeda4a55d0ba0c"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/covered-rescue.json",
+      "sha256": "c25d65bec6ab024e0aa054572c93e4a855a0438210202de2ad7c2e1ae568d3c9"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/joint-full.json",
+      "sha256": "3391ca2fd47e4b9f05c03edbb5342987b5290d443e7cefb1762381d568d681b4"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/meaningful-damage.json",
+      "sha256": "417bc7a84ed05de68b5126437ceb73d0162d93b1047733facedee3354e6a3e7a"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/military-loss.json",
+      "sha256": "72f2b5d6b1ec8434b73b86b4fea3bb91cac8376d57547c5e9c28c4118e0353b4"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/mixed-gain-loss.json",
+      "sha256": "ad4ce8997d5b595386552f43fb95564fbad869aa2706d953653db99c621144a0"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/observe.json",
+      "sha256": "6f88e23708a8cf8a886399b95f78052af2f2d421e3b4fd10c7cfa440fb500cba"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/reinforcement-partial.json",
+      "sha256": "6f66348c0c8c177e2201e560b6c31425617e9f2d51745256a7c606f4b7ecda09"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-tactical-a1-v2/repeat-undo.json",
+      "sha256": "84e99fa06ab0a2a532a32a37fb33e562db09f837a0fccfeed9539a0daa23d515"
+    },
+    {
+      "path": "benchmarks/toolsets/plan3-part1-v1.yaml",
+      "sha256": "c456f0907b2a20c649ce31166fc830334283326f96b8e4bb471d6f447fb4967e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/alternative-full.json",
+      "sha256": "6680b829c18ff1e76d1a18250dc02f523c04f0f9115cb7eb0897c81f088995d0"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/closer-only.json",
+      "sha256": "fe649748993b4639d080c3307bd98e32d1aafe2b356b28ecfbbdd53e09a644d9"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/covered-rescue.json",
+      "sha256": "e2290734f055c64b4bedf0179d85c15c28a5772d51ca3b8cbbb7702a710e7f36"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/joint-full.json",
+      "sha256": "26359ada498c83acacfc25cd389c9ceac016cb99def70702624c87c82ec9c519"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/meaningful-damage.json",
+      "sha256": "2a0b606348421ded4151af5a826fc1290e95c8d03749f2ba7532d5a7450df507"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/military-loss.json",
+      "sha256": "4475f1188fe28f9d8b77d2b024666504956e177a6dace971c27e177651794ca3"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/mixed-gain-loss.json",
+      "sha256": "af593dd1b3968fdaf92f1cbc94ad0b8d678612d7bc3292d41e5f6494264259b7"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/null-discovery.json",
+      "sha256": "3a7e096835b0ea5b809f5c5459e8f4204e1a4e35dc0ca4b5ba670c025e02437e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/reinforcement-partial.json",
+      "sha256": "0f12886069bc00c31648d6926f5e772806b7c4b49c016a20ad4e81d04cc8cb69"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/cases/repeat-undo.json",
+      "sha256": "49152528a0e1f27091fa271f7bcde284415636cc30b5ab13abf5c4f0a26124f8"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/public-observation.json",
+      "sha256": "c2aae876e6a5681b198f4f91e634b978ea85fdba6b3cb067ee19a0d884e96848"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v1/suite.json",
+      "sha256": "bdfc71a7830e098879b4eb89cffe90b46a37c618f8664583d6e4d1e775adcf04"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/alternative-full.json",
+      "sha256": "9fb1990d25f93ab312b80a0f77ddcaa26c606428a7ed103f1667d3268410d09b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/closer-only.json",
+      "sha256": "00b3c78512f74a828e8819d88d16dad7c7fed789689b6482ff66c6c6fa7aa237"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/covered-rescue.json",
+      "sha256": "059b40f81ee82023d3b228578ad52cf234addbd096f6af144dfabf5bd717f37b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/joint-full.json",
+      "sha256": "1d05b151f48a7cf4a68391fb0c0637d087a1b98daabe6c6bf40bd7effc364f0b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/meaningful-damage.json",
+      "sha256": "fab4c377d40d016787c8cb3ed5678c977f7a4efc5ed17c9baa4e71e1008f466e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/military-loss.json",
+      "sha256": "12a62a9c9f38eca16e17fbb21133bc04e7658d8f39e1397602b4183d5327e2e3"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/mixed-gain-loss.json",
+      "sha256": "a0699a6d7624f9fa11d24accfc9f694bb6cd7a78d05dde88f13da8dcc3eb4497"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/null-discovery.json",
+      "sha256": "bfc5fad825a7cf7631a753914a1bba1d29c0b53d41f413c4055160121172f51b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/reinforcement-partial.json",
+      "sha256": "beb7c58c7ee181afed9c3e5a5b94942fce102125a3f858ef132121112a01bdd2"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/cases/repeat-undo.json",
+      "sha256": "36d7b682b6a2d271ad27d77b6194093b431ad5f9bc4de2ca20b8d5389402e54a"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/public-observation.json",
+      "sha256": "425cdd993975a2d96341c3006f4e53062ef2701c7809ae15bf24f0305459ce85"
+    },
+    {
+      "path": "benchmarks/validation/plan3-tactical-a1-v2/suite.json",
+      "sha256": "f85eca3f318a4519a8aa50946a7027ec937160b06ba835613b7b1e0fa29cefbd"
+    }
+  ],
+  "position_id": "plan3-tactical-a1-v2",
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0"
+}

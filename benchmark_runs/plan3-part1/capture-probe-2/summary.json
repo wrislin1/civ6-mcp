@@ -1,30 +1,19 @@
 {
   "archive_sha256": "265bb002e74e4ff495e1a5118c383bc31af65f4560cf97c09a00d4c384988fab",
-  "attempt_id": "capture-probe-20261009T195704922673Z",
-  "capture_implementation_sha256": "19c9c30ffcffcb78545a717feccbf2f3aadaca99369c9e5a1421efeec3460e6f",
+  "attempt_id": "capture-probe-20261009T162245283226Z",
+  "capture_implementation_sha256": "714d59dcaff4ce54c42a541009b2c423416b80b286b596e0e70b9124fcb30454",
   "capture_limit_s": 2.0,
-  "code_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
-  "evidence_index_path": "benchmark_runs/plan3-part1/capture-probe-5/evidence-index.json",
-  "evidence_index_sha256": "357e1f3d58f2a40fbffeebe0020988eb7a419aa60e90a741bfdb2a7e3316eacd",
+  "code_identity": "e9255e849b14462ea32c0765f041691717714449857358707ec59261be3bf260",
   "expected_state_sha256": "d619e33b475cd95c7bfbe3c877bd40160729075887f94884c4ad3d32c053988f",
-  "finished": "2026-10-09T19:58:03.078363+00:00",
+  "finished": "2026-10-09T16:23:34.869986+00:00",
   "limitations": [
     "timing proven only for the recorded scope",
-    "no visible hostile targets at the positive control: TARGET rows not timed"
+    "target discovery did not run: TARGET rows not timed"
   ],
   "position_id": "builder-posctrl-v1",
-  "row_counts": {
-    "building": 21,
-    "city": 5,
-    "district": 18,
-    "identity": 1,
-    "queue": 5,
-    "resource": 54,
-    "target": 0,
-    "tile": 366,
-    "unit": 13
-  },
-  "samples": 20,
+  "row_counts": null,
+  "rows": [],
+  "samples": 0,
   "samples_requested": 20,
   "scope": {
     "area": [
@@ -1518,9 +1507,7 @@
         74,
         30
       ]
-    ],
-    "tracked_count": 0,
-    "tracked_targets_source": "untimed v2 discovery capture: visible hostiles"
+    ]
   },
   "scope_sha256": "698818a445e3b8a84af39d0a33e3d7173dd54322ce3daad69b03f7e00fff9f0c",
   "setup": {
@@ -1548,46 +1535,38 @@
     },
     "popups": "POPUPS|none",
     "reload_verified": true,
-    "survey": {
-      "duration_s": 0.38629962100822013,
-      "lua_executions": 1,
-      "op": "capture_v2_target_discovery",
-      "row_counts": {
-        "building": 21,
-        "city": 5,
-        "district": 18,
-        "identity": 1,
-        "queue": 5,
-        "resource": 54,
-        "target": 0,
-        "tile": 366,
-        "unit": 13
-      },
-      "timed_sample": false,
-      "tracked_targets": []
-    },
-    "v1_final_digest": "d619e33b475cd95c7bfbe3c877bd40160729075887f94884c4ad3d32c053988f",
     "v1_initial_digest": "d619e33b475cd95c7bfbe3c877bd40160729075887f94884c4ad3d32c053988f"
   },
-  "started": "2026-10-09T19:57:04.922673+00:00",
+  "started": "2026-10-09T16:22:45.283226+00:00",
   "telemetry_summary": {
     "all_single_execution": true,
-    "count": 20,
+    "count": 0,
     "excluded_invalid_records": [],
-    "in_episode_share": 0.0,
+    "in_episode_share": null,
     "in_episode_total_s": 0,
-    "lua_executions_total": 20,
-    "max_s": 0.400749854001333,
-    "mean_s": 0.38514352924976264,
-    "non_drain_residual_s": 1.6889642900205217,
-    "p95_s": 0.397122134003439,
-    "post_drain_total_s": 4.007372524996754,
-    "pre_drain_total_s": 2.0065337699779775,
-    "total_s": 7.702870584995253,
+    "lua_executions_total": 0,
+    "max_s": null,
+    "mean_s": null,
+    "non_drain_residual_s": 0,
+    "p95_s": null,
+    "post_drain_total_s": 0,
+    "pre_drain_total_s": 0,
+    "total_s": 0,
     "unavailable": {}
   },
   "verdict": {
-    "passed": true,
-    "reasons": []
+    "passed": false,
+    "reasons": [
+      {
+        "code": "sample_count",
+        "detail": "0 samples, exactly 20 required",
+        "samples": []
+      },
+      {
+        "code": "survey_failed",
+        "detail": "target discovery capture failed: BenchmarkStateError: v2 capture reported an error: ERR:V2_CAPTURE|[string \"...\"]:145: function expected instead of nil%0Astack traceback:%0A\t[string \"...\"]:145: in function 'capture'%0A\t[C]: in function 'pcall'%0A\t[string \"...\"]:230: in function '(main chunk)'",
+        "samples": []
+      }
+    ]
   }
 }

@@ -1,0 +1,365 @@
+{
+  "error": "StageFailure: required facts not discoverable at the archived start within the 1500-character result cap: ['housing-visible']",
+  "evidence": {
+    "archive_name": "PLAN3_CITY_A2_V1",
+    "archive_path": "benchmarks/saves/plan3-city-a2-v1.Civ6Save",
+    "archived_observations": [
+      "benchmark_runs/plan3-part1/city-a2/observations/archived-004-00.json",
+      "benchmark_runs/plan3-part1/city-a2/observations/archived-004-01.json",
+      "benchmark_runs/plan3-part1/city-a2/observations/archived-004-02.json",
+      "benchmark_runs/plan3-part1/city-a2/observations/archived-004-03.json",
+      "benchmark_runs/plan3-part1/city-a2/observations/archived-004-04.json",
+      "benchmark_runs/plan3-part1/city-a2/observations/archived-004-05.json",
+      "benchmark_runs/plan3-part1/city-a2/observations/archived-004-06.json"
+    ],
+    "bindings": {
+      "district_city": {
+        "id": 131073,
+        "owner": 0,
+        "pair": [
+          0,
+          131073
+        ],
+        "x": 67,
+        "xy": [
+          67,
+          24
+        ],
+        "y": 24
+      },
+      "district_site": {
+        "owner": 0,
+        "x": 68,
+        "xy": [
+          68,
+          24
+        ],
+        "y": 24
+      },
+      "housing_city": {
+        "id": 262147,
+        "owner": 0,
+        "pair": [
+          0,
+          262147
+        ],
+        "x": 73,
+        "xy": [
+          73,
+          19
+        ],
+        "y": 19
+      },
+      "protected_asset": {
+        "owner": 0,
+        "x": 67,
+        "xy": [
+          67,
+          23
+        ],
+        "y": 23
+      },
+      "repair_city": {
+        "id": 196610,
+        "owner": 0,
+        "pair": [
+          0,
+          196610
+        ],
+        "x": 70,
+        "xy": [
+          70,
+          22
+        ],
+        "y": 22
+      },
+      "replacement_site": {
+        "owner": 0,
+        "x": 67,
+        "xy": [
+          67,
+          22
+        ],
+        "y": 22
+      }
+    },
+    "bindings_changed": false,
+    "coverage": {
+      "area": [
+        [
+          66,
+          21
+        ],
+        [
+          66,
+          22
+        ],
+        [
+          66,
+          23
+        ],
+        [
+          66,
+          24
+        ],
+        [
+          66,
+          25
+        ],
+        [
+          67,
+          21
+        ],
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          67,
+          24
+        ],
+        [
+          67,
+          25
+        ],
+        [
+          68,
+          21
+        ],
+        [
+          68,
+          22
+        ],
+        [
+          68,
+          23
+        ],
+        [
+          68,
+          24
+        ],
+        [
+          68,
+          25
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          69,
+          24
+        ],
+        [
+          69,
+          25
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          19
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": []
+    },
+    "measured_parameters": [],
+    "position_id": "plan3-city-a2-v1",
+    "published": false,
+    "required_facts": [
+      {
+        "beyond_cap_only": true,
+        "discoverable": false,
+        "id": "housing-visible",
+        "observations": [],
+        "pattern": "Gongju \\(pop \\d+\\).*Housing \\d+",
+        "source": "get_cities"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "pillaged-building-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2/observations/archived-004-01.json"
+        ],
+        "pattern": "PILLAGED: .*MONUMENT",
+        "source": "get_cities"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "granary-purchasable",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2/observations/archived-004-02.json",
+          "benchmark_runs/plan3-part1/city-a2/observations/archived-004-03.json"
+        ],
+        "pattern": "GRANARY",
+        "source": "get_city_production"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "monument-repair-listed",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2/observations/archived-004-03.json"
+        ],
+        "pattern": "MONUMENT",
+        "source": "get_city_production"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "seowon-sites-ranked",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2/observations/archived-004-04.json"
+        ],
+        "pattern": "\\(\\d+,\\s*\\d+\\)",
+        "source": "get_district_advisor"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "replacement-site-ranked",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2/observations/archived-004-04.json"
+        ],
+        "pattern": "\\(67,\\s*22\\)",
+        "source": "get_district_advisor"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "mines-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2/observations/archived-004-05.json"
+        ],
+        "pattern": "(?i)mine",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "quarry-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2/observations/archived-004-05.json"
+        ],
+        "pattern": "(?i)quarry",
+        "source": "get_map_area"
+      }
+    ],
+    "state_sha256": "c02f423d758895d4ff0cd08f7b493956308e8b1528a51c01f3660f62335df8a2",
+    "version": 1
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/mutations/004-archive.json",
+      "sha256": "a768484e78296aecc2f34904657ab091849f48acfa5290b40424ddf88ad073a5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/observations/archived-004-00.json",
+      "sha256": "86907ff3346f537a8ecf922f7db632535a64f61ea613b6d0a22c411619ea739e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/observations/archived-004-01.json",
+      "sha256": "d4b7ce81be7c9366a099618639f39a17ad6d328f901b3f5f382d88cdc29a2b2d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/observations/archived-004-02.json",
+      "sha256": "5f47c63abbd33d51130cb52b816d7a32f9e4d592e908599e5a9ac20d0882c793"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/observations/archived-004-03.json",
+      "sha256": "33f2002286d512de141d406d51428f5a0c6f58bc2e573217e10d2c0ce27f74f6"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/observations/archived-004-04.json",
+      "sha256": "3c442b2610cb7e4b5421bb74b88ca1341440a09fdfbcd9f770a05e23c6504f23"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/observations/archived-004-05.json",
+      "sha256": "97bdb5fc977489ef8068abeed2c82022b641a92354c74895f5784e282e039588"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2/observations/archived-004-06.json",
+      "sha256": "14893e81a5bfcd496a08bb818a553fe37293f55046196c58b7c16ae387bab877"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "679c31d1a63ae6d2b29058ab5b1989ae31aa8e9cf01f29e28c8b5a3d2bb98416",
+    "version": 1
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 4,
+  "stage": "archive",
+  "status": "failed"
+}

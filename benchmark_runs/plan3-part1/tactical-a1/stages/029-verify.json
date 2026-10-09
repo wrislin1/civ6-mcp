@@ -1,0 +1,38 @@
+{
+  "error": null,
+  "evidence": {
+    "cycles": 12,
+    "expected_state_sha256": "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+    "result": {
+      "cycles_completed": 12,
+      "digests": [
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81",
+        "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81"
+      ],
+      "ok": true,
+      "position_id": "plan3-tactical-a1-v2"
+    }
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "ccf1c16db9c79c4452bf608c1b8fb4a3e8a5074ee315417059e81e9506938be0",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 29,
+  "stage": "verify",
+  "status": "passed"
+}

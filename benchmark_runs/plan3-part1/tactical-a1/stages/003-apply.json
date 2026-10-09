@@ -1,0 +1,21 @@
+{
+  "error": null,
+  "evidence": {},
+  "files": [],
+  "invalidated_by": {
+    "sequence": 4,
+    "stage": "survey"
+  },
+  "invalidates_sequence": 2,
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+    "recipe_id": "plan3-tactical-a1",
+    "sha256": "6e43ff3ea59e8eda7bf43feb849c0a2dca800252f645a95405e25426f95499fb",
+    "version": 1
+  },
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "sequence": 3,
+  "stage": "apply",
+  "status": "invalidated"
+}

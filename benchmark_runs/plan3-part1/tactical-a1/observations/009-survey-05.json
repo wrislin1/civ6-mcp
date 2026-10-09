@@ -1,0 +1,15 @@
+{
+  "arguments": {
+    "city_id": 262147
+  },
+  "capped_sha256": "cab495c575323c4168551743b2a5f25bdcd5f3c099b9ba62ece153768e96c36e",
+  "full_sha256": "cab495c575323c4168551743b2a5f25bdcd5f3c099b9ba62ece153768e96c36e",
+  "index": 5,
+  "resolved_arguments": {
+    "city_id": 262147
+  },
+  "result_capped": "Units:\n  UNIT_SETTLER (cost 80, 25 turns, buy: 560g)\n  UNIT_BUILDER (cost 50, 10 turns, buy: 205g)\n  UNIT_SCOUT (cost 30, 4 turns, buy: 120g)\n  UNIT_WARRIOR (cost 40, 5 turns, buy: 160g)\n  UNIT_GALLEY (cost 65, 9 turns, buy: 260g)\n  UNIT_ARCHER (cost 60, 8 turns, buy: 240g)\n  UNIT_SPEARMAN (cost 65, 9 turns, buy: 260g)\n  UNIT_HEAVY_CHARIOT (cost 65, 9 turns, buy: 260g)\n  UNIT_BATTERING_RAM (cost 65, 9 turns, buy: 260g)\n  UNIT_HORSEMAN (cost 80, 10 turns, buy: 320g)\nBuildings:\n  BUILDING_LIBRARY (cost 90, 12 turns, buy: 360g)\n  BUILDING_SHRINE (cost 70, 9 turns, buy: 280g)\n  BUILDING_WALLS (cost 80, 5 turns, buy: 160g)\n  BUILDING_ORACLE (cost 290, 32 turns)\nDistricts:\n  DISTRICT_ENCAMPMENT (cost 54, 20 turns)\n  DISTRICT_HARBOR (cost 54, 20 turns)\n  DISTRICT_COMMERCIAL_HUB (cost 54, 20 turns)\n  DISTRICT_ENTERTAINMENT_COMPLEX (cost 54, 20 turns)\n  DISTRICT_THEATER (cost 54, 20 turns)\n  DISTRICT_GOVERNMENT (cost 30, 12 turns)\n  DISTRICT_PRESERVE (cost 54, 20 turns)\n  DISTRICT_DIPLOMATIC_QUARTER (cost 30, 12 turns)\nProjects:\n  PROJECT_ENHANCE_DISTRICT_HOLY_SITE (cost 25, 13 turns)\n  PROJECT_ENHANCE_DISTRICT_CAMPUS (cost 25, 13 turns)",
+  "result_char_cap": 1500,
+  "result_full": "Units:\n  UNIT_SETTLER (cost 80, 25 turns, buy: 560g)\n  UNIT_BUILDER (cost 50, 10 turns, buy: 205g)\n  UNIT_SCOUT (cost 30, 4 turns, buy: 120g)\n  UNIT_WARRIOR (cost 40, 5 turns, buy: 160g)\n  UNIT_GALLEY (cost 65, 9 turns, buy: 260g)\n  UNIT_ARCHER (cost 60, 8 turns, buy: 240g)\n  UNIT_SPEARMAN (cost 65, 9 turns, buy: 260g)\n  UNIT_HEAVY_CHARIOT (cost 65, 9 turns, buy: 260g)\n  UNIT_BATTERING_RAM (cost 65, 9 turns, buy: 260g)\n  UNIT_HORSEMAN (cost 80, 10 turns, buy: 320g)\nBuildings:\n  BUILDING_LIBRARY (cost 90, 12 turns, buy: 360g)\n  BUILDING_SHRINE (cost 70, 9 turns, buy: 280g)\n  BUILDING_WALLS (cost 80, 5 turns, buy: 160g)\n  BUILDING_ORACLE (cost 290, 32 turns)\nDistricts:\n  DISTRICT_ENCAMPMENT (cost 54, 20 turns)\n  DISTRICT_HARBOR (cost 54, 20 turns)\n  DISTRICT_COMMERCIAL_HUB (cost 54, 20 turns)\n  DISTRICT_ENTERTAINMENT_COMPLEX (cost 54, 20 turns)\n  DISTRICT_THEATER (cost 54, 20 turns)\n  DISTRICT_GOVERNMENT (cost 30, 12 turns)\n  DISTRICT_PRESERVE (cost 54, 20 turns)\n  DISTRICT_DIPLOMATIC_QUARTER (cost 30, 12 turns)\nProjects:\n  PROJECT_ENHANCE_DISTRICT_HOLY_SITE (cost 25, 13 turns)\n  PROJECT_ENHANCE_DISTRICT_CAMPUS (cost 25, 13 turns)",
+  "tool": "get_city_production"
+}

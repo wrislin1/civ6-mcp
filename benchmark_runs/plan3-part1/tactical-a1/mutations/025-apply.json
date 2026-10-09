@@ -1,0 +1,3665 @@
+{
+  "assertions": [
+    {
+      "actual": true,
+      "expected": true,
+      "id": "civilian-initially-exposed",
+      "passed": true,
+      "predicate": {
+        "kind": "civilian_exposed",
+        "unit": [
+          0,
+          1769484
+        ]
+      }
+    },
+    {
+      "actual": false,
+      "expected": false,
+      "id": "civilian-not-yet-rescued",
+      "passed": true,
+      "predicate": {
+        "kind": "unit_in_area",
+        "tiles": [
+          [
+            73,
+            19
+          ]
+        ],
+        "unit_types": [
+          "UNIT_SETTLER"
+        ]
+      }
+    },
+    {
+      "actual": false,
+      "expected": false,
+      "id": "city-combat-slot-free",
+      "passed": true,
+      "predicate": {
+        "kind": "unit_in_area",
+        "tiles": [
+          [
+            73,
+            19
+          ]
+        ],
+        "unit_types": [
+          "UNIT_ARCHER"
+        ]
+      }
+    },
+    {
+      "actual": false,
+      "expected": false,
+      "id": "no-reinforcement-in-area",
+      "passed": true,
+      "predicate": {
+        "kind": "unit_in_area",
+        "tiles": [
+          [
+            72,
+            18
+          ],
+          [
+            73,
+            18
+          ],
+          [
+            74,
+            18
+          ],
+          [
+            72,
+            19
+          ],
+          [
+            73,
+            19
+          ],
+          [
+            74,
+            19
+          ],
+          [
+            72,
+            20
+          ],
+          [
+            73,
+            20
+          ],
+          [
+            74,
+            20
+          ]
+        ],
+        "unit_types": [
+          "UNIT_SPEARMAN",
+          "UNIT_SWORDSMAN"
+        ]
+      }
+    }
+  ],
+  "assertions_passed": true,
+  "base_export": {
+    "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+    "excluded_signature": null,
+    "existed": true,
+    "ok": true,
+    "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "size": 3145591,
+    "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+  },
+  "base_identity": {
+    "expected": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "matches": true,
+    "observed": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    }
+  },
+  "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+  "base_popups": "POPUPS|none",
+  "base_reconnect": {
+    "reconnected": true
+  },
+  "base_save_identity": {
+    "civ_type": "CIVILIZATION_KOREA",
+    "name": "SEONDEOK 100 400 BC",
+    "seed": 1881300077,
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "turn": 100
+  },
+  "bindings": {
+    "archer": {
+      "id": 851976,
+      "owner": 0,
+      "pair": [
+        0,
+        851976
+      ],
+      "unit_index": 8,
+      "x": 72,
+      "xy": [
+        72,
+        21
+      ],
+      "y": 21
+    },
+    "attacker": {
+      "id": 16908390,
+      "owner": 63,
+      "pair": [
+        63,
+        16908390
+      ],
+      "x": 73,
+      "xy": [
+        73,
+        21
+      ],
+      "y": 21
+    },
+    "civilian": {
+      "id": 1769484,
+      "owner": 0,
+      "pair": [
+        0,
+        1769484
+      ],
+      "unit_index": 12,
+      "x": 74,
+      "xy": [
+        74,
+        20
+      ],
+      "y": 20
+    },
+    "defended_city": {
+      "id": 262147,
+      "owner": 0,
+      "pair": [
+        0,
+        262147
+      ],
+      "x": 73,
+      "xy": [
+        73,
+        19
+      ],
+      "y": 19
+    },
+    "expendable": {
+      "id": 1835021,
+      "owner": 0,
+      "pair": [
+        0,
+        1835021
+      ],
+      "unit_index": 13,
+      "x": 74,
+      "xy": [
+        74,
+        22
+      ],
+      "y": 22
+    }
+  },
+  "coverage": {
+    "area": [
+      [
+        70,
+        19
+      ],
+      [
+        70,
+        20
+      ],
+      [
+        70,
+        21
+      ],
+      [
+        70,
+        22
+      ],
+      [
+        70,
+        23
+      ],
+      [
+        71,
+        17
+      ],
+      [
+        71,
+        18
+      ],
+      [
+        71,
+        19
+      ],
+      [
+        71,
+        20
+      ],
+      [
+        71,
+        21
+      ],
+      [
+        71,
+        22
+      ],
+      [
+        71,
+        23
+      ],
+      [
+        72,
+        17
+      ],
+      [
+        72,
+        18
+      ],
+      [
+        72,
+        19
+      ],
+      [
+        72,
+        20
+      ],
+      [
+        72,
+        21
+      ],
+      [
+        72,
+        22
+      ],
+      [
+        72,
+        23
+      ],
+      [
+        72,
+        24
+      ],
+      [
+        73,
+        17
+      ],
+      [
+        73,
+        18
+      ],
+      [
+        73,
+        19
+      ],
+      [
+        73,
+        20
+      ],
+      [
+        73,
+        21
+      ],
+      [
+        73,
+        22
+      ],
+      [
+        73,
+        23
+      ],
+      [
+        73,
+        24
+      ],
+      [
+        74,
+        17
+      ],
+      [
+        74,
+        18
+      ],
+      [
+        74,
+        19
+      ],
+      [
+        74,
+        20
+      ],
+      [
+        74,
+        21
+      ],
+      [
+        74,
+        22
+      ],
+      [
+        74,
+        23
+      ],
+      [
+        74,
+        24
+      ],
+      [
+        75,
+        17
+      ],
+      [
+        75,
+        18
+      ],
+      [
+        75,
+        19
+      ],
+      [
+        75,
+        20
+      ],
+      [
+        75,
+        21
+      ],
+      [
+        75,
+        22
+      ],
+      [
+        75,
+        23
+      ],
+      [
+        75,
+        24
+      ],
+      [
+        76,
+        18
+      ],
+      [
+        76,
+        19
+      ],
+      [
+        76,
+        20
+      ],
+      [
+        76,
+        21
+      ],
+      [
+        76,
+        22
+      ],
+      [
+        76,
+        23
+      ],
+      [
+        76,
+        24
+      ]
+    ],
+    "include_owned_tiles": true,
+    "tracked_targets": [
+      [
+        63,
+        16908390
+      ]
+    ]
+  },
+  "grid": [
+    130,
+    66
+  ],
+  "operations": [
+    {
+      "context": "gamecore",
+      "index": 0,
+      "lua": "local CX, CY = 73, 19\nlocal function free(p)\n  return p ~= nil and not p:IsWater() and not p:IsImpassable() and not p:IsCity()\n    and p:GetUnitCount() == 0 and p:GetDistrictType() < 0\nend\nlocal function same(p, q)\n  return p ~= nil and q ~= nil and p:GetX() == q:GetX() and p:GetY() == q:GetY()\nend\nlocal function dist(p, x, y) return Map.GetPlotDistance(p:GetX(), p:GetY(), x, y) end\nlocal archer = nil\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_ARCHER\"\n      and v:GetX() == CX and v:GetY() == CY then archer = v end\nend\nif archer == nil then print(\"ERR|no archer garrisoned in Gongju\") return end\nlocal function guarded(s, a)\n  for _, v in Players[0]:GetUnits():Members() do\n    if v:GetID() ~= archer:GetID()\n        and GameInfo.Units[v:GetType()].FormationClass ~= \"FORMATION_CLASS_CIVILIAN\"\n        and dist(s, v:GetX(), v:GetY()) <= 1 then return true end\n  end\n  return dist(s, a:GetX(), a:GetY()) <= 1\nend\nlocal P, A, S, W = nil, nil, nil, nil\nfor y = 22, 16, -1 do\n  for x = 70, 76 do\n    local p = Map.GetPlot(x, y)\n    if P == nil and free(p) and dist(p, CX, CY) == 2 then\n      for d1 = 0, 5 do\n        local s = Map.GetAdjacentPlot(x, y, d1)\n        if P == nil and free(s) and dist(s, CX, CY) == 1 then\n          for ry = 17, 21 do\n            for rx = 71, 75 do\n              local a = Map.GetPlot(rx, ry)\n              if P == nil and free(a) and not same(a, s) and dist(a, CX, CY) <= 2\n                  and dist(a, x, y) <= 2 and dist(a, s:GetX(), s:GetY()) >= 2\n                  and not guarded(s, a) then\n                for d2 = 0, 5 do\n                  local w = Map.GetAdjacentPlot(x, y, d2)\n                  if P == nil and free(w) and not same(w, a) and not same(w, s)\n                      and dist(w, s:GetX(), s:GetY()) >= 2 then\n                    P, A, S, W = p, a, s, w\n                  end\n                end\n              end\n            end\n          end\n        end\n      end\n    end\n  end\nend\nif P == nil then print(\"ERR|no attacker tile at distance 2 from Gongju admits the layout\") return end\nlocal att = UnitManager.InitUnit(63, \"UNIT_WARRIOR\", P:GetX(), P:GetY())\nif att == nil then print(\"ERR|barbarian spawn failed\") return end\natt:SetDamage(35)\nUnitManager.PlaceUnit(archer, A:GetX(), A:GetY())\nUnitManager.RestoreMovement(archer)\nlocal st = UnitManager.InitUnit(0, \"UNIT_SETTLER\", S:GetX(), S:GetY())\nif st == nil then print(\"ERR|settler spawn failed\") return end\nUnitManager.RestoreMovement(st)\nlocal ex = UnitManager.InitUnit(0, \"UNIT_WARRIOR\", W:GetX(), W:GetY())\nif ex == nil then print(\"ERR|warrior spawn failed\") return end\nex:SetDamage(80)\nUnitManager.RestoreMovement(ex)\nprint(\"OK|layout|attacker \" .. P:GetX() .. \",\" .. P:GetY() .. \"|archer \" .. A:GetX() .. \",\"\n  .. A:GetY() .. \"|civilian \" .. S:GetX() .. \",\" .. S:GetY() .. \"|expendable \" .. W:GetX()\n  .. \",\" .. W:GetY())\n",
+      "readback": [
+        "OK|attacker|73,21|hp 65",
+        "OK|archer|72,21",
+        "OK|civilian|74,20",
+        "OK|expendable|74,22|hp 20"
+      ],
+      "readback_lua": "local CX, CY = 73, 19\nlocal ax, ay, n = nil, nil, 0\nfor _, u in Players[63]:GetUnits():Members() do\n  local p = Map.GetPlot(u:GetX(), u:GetY())\n  if Map.GetPlotDistance(u:GetX(), u:GetY(), CX, CY) == 2\n      and PlayersVisibility[0]:IsVisible(p:GetIndex()) then\n    n = n + 1\n    ax, ay = u:GetX(), u:GetY()\n    print(\"OK|attacker|\" .. ax .. \",\" .. ay .. \"|hp \" .. (u:GetMaxDamage() - u:GetDamage()))\n  end\nend\nif n ~= 1 then print(\"ERR|expected one visible attacker at distance 2 from Gongju, found \" .. n) return end\nlocal na, on_city = 0, 0\nfor _, v in Players[0]:GetUnits():Members() do\n  local info = GameInfo.Units[v:GetType()]\n  if info.UnitType == \"UNIT_ARCHER\" and Map.GetPlotDistance(v:GetX(), v:GetY(), CX, CY) >= 1\n      and Map.GetPlotDistance(v:GetX(), v:GetY(), CX, CY) <= 2 then\n    na = na + 1\n    if Map.GetPlotDistance(v:GetX(), v:GetY(), ax, ay) > 2 then\n      print(\"ERR|archer beyond two tiles of the attacker\")\n    end\n    print(\"OK|archer|\" .. v:GetX() .. \",\" .. v:GetY())\n  end\n  if v:GetX() == CX and v:GetY() == CY and info.FormationClass == \"FORMATION_CLASS_LAND_COMBAT\" then\n    on_city = on_city + 1\n  end\nend\nif na ~= 1 then print(\"ERR|expected one archer within two tiles of Gongju, found \" .. na) end\nif on_city ~= 0 then print(\"ERR|a land combat unit still occupies Gongju's tile\") end\nlocal sx, sy, ns = nil, nil, 0\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_SETTLER\" then\n    ns = ns + 1\n    sx, sy = v:GetX(), v:GetY()\n    print(\"OK|civilian|\" .. sx .. \",\" .. sy)\n  end\nend\nif ns ~= 1 then print(\"ERR|expected one settler, found \" .. ns) return end\nif Map.GetPlotDistance(sx, sy, ax, ay) ~= 1 then print(\"ERR|settler is not beside the attacker\") end\nif Map.GetPlotDistance(sx, sy, CX, CY) ~= 1 then print(\"ERR|settler is not beside Gongju\") end\nfor _, v in Players[0]:GetUnits():Members() do\n  local info = GameInfo.Units[v:GetType()]\n  if info.FormationClass ~= \"FORMATION_CLASS_CIVILIAN\"\n      and Map.GetPlotDistance(sx, sy, v:GetX(), v:GetY()) <= 1 then\n    print(\"ERR|settler is covered by \" .. info.UnitType .. \" at \" .. v:GetX() .. \",\" .. v:GetY())\n  end\nend\nlocal nw = 0\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_WARRIOR\" then\n    nw = nw + 1\n    print(\"OK|expendable|\" .. v:GetX() .. \",\" .. v:GetY() .. \"|hp \" .. (v:GetMaxDamage() - v:GetDamage()))\n    if Map.GetPlotDistance(v:GetX(), v:GetY(), ax, ay) ~= 1 then print(\"ERR|warrior is not beside the attacker\") end\n    if Map.GetPlotDistance(v:GetX(), v:GetY(), sx, sy) < 2 then print(\"ERR|warrior covers the settler\") end\n  end\nend\nif nw ~= 1 then print(\"ERR|expected one own warrior, found \" .. nw) end\n",
+      "readback_ok": true,
+      "result": [
+        "OK|layout|attacker 73,21|archer 72,21|civilian 74,20|expendable 74,22"
+      ]
+    },
+    {
+      "context": "gamecore",
+      "index": 1,
+      "lua": "local t = Players[0]:GetTreasury()\nt:ChangeGoldBalance(500 - t:GetGoldBalance())\nprint(\"OK|gold \" .. t:GetGoldBalance())\n",
+      "readback": [
+        "OK|gold 500"
+      ],
+      "readback_lua": "local g = Players[0]:GetTreasury():GetGoldBalance()\nif g >= 500 then print(\"OK|gold \" .. g) else print(\"ERR|gold \" .. g) end\n",
+      "readback_ok": true,
+      "result": [
+        "OK|gold 500"
+      ]
+    }
+  ],
+  "resolution_coverage": {
+    "area": [
+      [
+        71,
+        19
+      ],
+      [
+        72,
+        17
+      ],
+      [
+        72,
+        20
+      ],
+      [
+        72,
+        21
+      ],
+      [
+        73,
+        18
+      ],
+      [
+        73,
+        20
+      ],
+      [
+        73,
+        21
+      ],
+      [
+        74,
+        20
+      ],
+      [
+        74,
+        21
+      ]
+    ],
+    "include_owned_tiles": true,
+    "tracked_targets": []
+  },
+  "resolution_state_sha256": "a23d3d108dd2be34785107b223eb8ee1eb642b428e04ef7b388ff7ebc8465ff3",
+  "state": {
+    "active_player": 0,
+    "cities": [
+      {
+        "buildings": [
+          {
+            "building_type": "BUILDING_GRANARY",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_HANGING_GARDENS",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_MAHABODHI_TEMPLE",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_PALACE",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_SHRINE",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_TEMPLE",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_TEMPLE_ARTEMIS",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_WALLS",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_WATER_MILL",
+            "pillaged": false,
+            "present": true
+          }
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "district_id": 65536,
+            "district_type": "DISTRICT_CITY_CENTER",
+            "pillaged": false,
+            "x": 72,
+            "y": 26
+          },
+          {
+            "complete": true,
+            "district_id": 196610,
+            "district_type": "DISTRICT_WONDER",
+            "pillaged": false,
+            "x": 73,
+            "y": 26
+          },
+          {
+            "complete": true,
+            "district_id": 393221,
+            "district_type": "DISTRICT_WONDER",
+            "pillaged": false,
+            "x": 71,
+            "y": 25
+          },
+          {
+            "complete": true,
+            "district_id": 655369,
+            "district_type": "DISTRICT_HOLY_SITE",
+            "pillaged": false,
+            "x": 75,
+            "y": 26
+          },
+          {
+            "complete": true,
+            "district_id": 786443,
+            "district_type": "DISTRICT_SEOWON",
+            "pillaged": false,
+            "x": 73,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "district_id": 983054,
+            "district_type": "DISTRICT_WONDER",
+            "pillaged": false,
+            "x": 74,
+            "y": 26
+          }
+        ],
+        "housing": 15,
+        "id": 65536,
+        "name": "Gyeongju",
+        "owner": 0,
+        "population": 12,
+        "queue": {
+          "item_kind": "NONE",
+          "item_type": "NONE",
+          "repair": false,
+          "target_x": null,
+          "target_y": null
+        },
+        "x": 72,
+        "y": 26
+      },
+      {
+        "buildings": [
+          {
+            "building_type": "BUILDING_GRANARY",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_MONUMENT",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_SHRINE",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_STONEHENGE",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_TEMPLE",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_WALLS",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_WATER_MILL",
+            "pillaged": false,
+            "present": true
+          }
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "district_id": 131073,
+            "district_type": "DISTRICT_CITY_CENTER",
+            "pillaged": false,
+            "x": 67,
+            "y": 24
+          },
+          {
+            "complete": true,
+            "district_id": 327684,
+            "district_type": "DISTRICT_HOLY_SITE",
+            "pillaged": false,
+            "x": 67,
+            "y": 25
+          },
+          {
+            "complete": true,
+            "district_id": 720906,
+            "district_type": "DISTRICT_WONDER",
+            "pillaged": false,
+            "x": 66,
+            "y": 23
+          },
+          {
+            "complete": false,
+            "district_id": 1048591,
+            "district_type": "DISTRICT_ENCAMPMENT",
+            "pillaged": false,
+            "x": 68,
+            "y": 22
+          }
+        ],
+        "housing": 8,
+        "id": 131073,
+        "name": "Jeonju",
+        "owner": 0,
+        "population": 7,
+        "queue": {
+          "item_kind": "DISTRICT",
+          "item_type": "DISTRICT_ENCAMPMENT",
+          "repair": false,
+          "target_x": 68,
+          "target_y": 22
+        },
+        "x": 67,
+        "y": 24
+      },
+      {
+        "buildings": [
+          {
+            "building_type": "BUILDING_MONUMENT",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_WATER_MILL",
+            "pillaged": false,
+            "present": true
+          }
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "district_id": 262147,
+            "district_type": "DISTRICT_CITY_CENTER",
+            "pillaged": false,
+            "x": 70,
+            "y": 22
+          },
+          {
+            "complete": true,
+            "district_id": 458758,
+            "district_type": "DISTRICT_HOLY_SITE",
+            "pillaged": false,
+            "x": 69,
+            "y": 24
+          },
+          {
+            "complete": true,
+            "district_id": 851980,
+            "district_type": "DISTRICT_SEOWON",
+            "pillaged": false,
+            "x": 72,
+            "y": 23
+          }
+        ],
+        "housing": 6,
+        "id": 196610,
+        "name": "Gwangju",
+        "owner": 0,
+        "population": 4,
+        "queue": {
+          "item_kind": "BUILDING",
+          "item_type": "BUILDING_GRANARY",
+          "repair": false,
+          "target_x": null,
+          "target_y": null
+        },
+        "x": 70,
+        "y": 22
+      },
+      {
+        "buildings": [
+          {
+            "building_type": "BUILDING_GRANARY",
+            "pillaged": false,
+            "present": true
+          },
+          {
+            "building_type": "BUILDING_MONUMENT",
+            "pillaged": false,
+            "present": true
+          }
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "district_id": 524295,
+            "district_type": "DISTRICT_CITY_CENTER",
+            "pillaged": false,
+            "x": 73,
+            "y": 19
+          },
+          {
+            "complete": true,
+            "district_id": 589832,
+            "district_type": "DISTRICT_HOLY_SITE",
+            "pillaged": false,
+            "x": 72,
+            "y": 17
+          },
+          {
+            "complete": true,
+            "district_id": 917517,
+            "district_type": "DISTRICT_SEOWON",
+            "pillaged": false,
+            "x": 72,
+            "y": 20
+          }
+        ],
+        "housing": 6,
+        "id": 262147,
+        "name": "Gongju",
+        "owner": 0,
+        "population": 5,
+        "queue": {
+          "item_kind": "BUILDING",
+          "item_type": "BUILDING_WALLS",
+          "repair": false,
+          "target_x": null,
+          "target_y": null
+        },
+        "x": 73,
+        "y": 19
+      },
+      {
+        "buildings": [
+          {
+            "building_type": "BUILDING_WALLS",
+            "pillaged": false,
+            "present": true
+          }
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "district_id": 1114128,
+            "district_type": "DISTRICT_CITY_CENTER",
+            "pillaged": false,
+            "x": 73,
+            "y": 30
+          },
+          {
+            "complete": false,
+            "district_id": 1179665,
+            "district_type": "DISTRICT_COMMERCIAL_HUB",
+            "pillaged": false,
+            "x": 72,
+            "y": 32
+          }
+        ],
+        "housing": 5,
+        "id": 327684,
+        "name": "Jinju",
+        "owner": 0,
+        "population": 1,
+        "queue": {
+          "item_kind": "DISTRICT",
+          "item_type": "DISTRICT_COMMERCIAL_HUB",
+          "repair": false,
+          "target_x": 72,
+          "target_y": 32
+        },
+        "x": 73,
+        "y": 30
+      }
+    ],
+    "civ_type": "CIVILIZATION_KOREA",
+    "coverage": {
+      "area": [
+        [
+          70,
+          19
+        ],
+        [
+          70,
+          20
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          17
+        ],
+        [
+          71,
+          18
+        ],
+        [
+          71,
+          19
+        ],
+        [
+          71,
+          20
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          72,
+          17
+        ],
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          72,
+          21
+        ],
+        [
+          72,
+          22
+        ],
+        [
+          72,
+          23
+        ],
+        [
+          72,
+          24
+        ],
+        [
+          73,
+          17
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          19
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          73,
+          21
+        ],
+        [
+          73,
+          22
+        ],
+        [
+          73,
+          23
+        ],
+        [
+          73,
+          24
+        ],
+        [
+          74,
+          17
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ],
+        [
+          74,
+          21
+        ],
+        [
+          74,
+          22
+        ],
+        [
+          74,
+          23
+        ],
+        [
+          74,
+          24
+        ],
+        [
+          75,
+          17
+        ],
+        [
+          75,
+          18
+        ],
+        [
+          75,
+          19
+        ],
+        [
+          75,
+          20
+        ],
+        [
+          75,
+          21
+        ],
+        [
+          75,
+          22
+        ],
+        [
+          75,
+          23
+        ],
+        [
+          75,
+          24
+        ],
+        [
+          76,
+          18
+        ],
+        [
+          76,
+          19
+        ],
+        [
+          76,
+          20
+        ],
+        [
+          76,
+          21
+        ],
+        [
+          76,
+          22
+        ],
+        [
+          76,
+          23
+        ],
+        [
+          76,
+          24
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": [
+        [
+          63,
+          16908390
+        ]
+      ]
+    },
+    "faith": 119.7890625,
+    "gold": 500,
+    "player_id": 0,
+    "resources": [
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_ALUMINUM",
+        "stock": 0
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_AMBER",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_ANTIQUITY_SITE",
+        "stock": null
+      },
+      {
+        "access": true,
+        "flow": null,
+        "resource_type": "RESOURCE_BANANAS",
+        "stock": null
+      },
+      {
+        "access": true,
+        "flow": null,
+        "resource_type": "RESOURCE_CATTLE",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_CINNAMON",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_CITRUS",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_CLOVES",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_COAL",
+        "stock": 0
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_COCOA",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_COFFEE",
+        "stock": null
+      },
+      {
+        "access": true,
+        "flow": null,
+        "resource_type": "RESOURCE_COPPER",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_COSMETICS",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_COTTON",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_CRABS",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_DEER",
+        "stock": null
+      },
+      {
+        "access": true,
+        "flow": null,
+        "resource_type": "RESOURCE_DIAMONDS",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_DYES",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_FISH",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_FURS",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_GYPSUM",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_HONEY",
+        "stock": null
+      },
+      {
+        "access": true,
+        "flow": null,
+        "resource_type": "RESOURCE_HORSES",
+        "stock": 54
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_INCENSE",
+        "stock": null
+      },
+      {
+        "access": true,
+        "flow": null,
+        "resource_type": "RESOURCE_IRON",
+        "stock": 10
+      },
+      {
+        "access": true,
+        "flow": null,
+        "resource_type": "RESOURCE_IVORY",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_JADE",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_JEANS",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_MAIZE",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_MARBLE",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_MERCURY",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_NITER",
+        "stock": 0
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_OIL",
+        "stock": 0
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_OLIVES",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_PEARLS",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_PERFUME",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_RICE",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_SALT",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_SHEEP",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_SHIPWRECK",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_SILK",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_SILVER",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_SPICES",
+        "stock": null
+      },
+      {
+        "access": true,
+        "flow": null,
+        "resource_type": "RESOURCE_STONE",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_SUGAR",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_TEA",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_TOBACCO",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_TOYS",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_TRUFFLES",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_TURTLES",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_URANIUM",
+        "stock": 0
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_WHALES",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_WHEAT",
+        "stock": null
+      },
+      {
+        "access": false,
+        "flow": null,
+        "resource_type": "RESOURCE_WINE",
+        "stock": null
+      }
+    ],
+    "row_counts": {
+      "building": 21,
+      "city": 5,
+      "district": 18,
+      "identity": 1,
+      "queue": 5,
+      "resource": 54,
+      "target": 1,
+      "tile": 102,
+      "unit": 14
+    },
+    "seed": 1881300077,
+    "targets": [
+      {
+        "hostile": true,
+        "hp": 65,
+        "id": 16908390,
+        "max_hp": 100,
+        "owner": 63,
+        "role": "combat",
+        "status": "alive_visible",
+        "tracked": true,
+        "visible": true,
+        "x": 73,
+        "y": 21
+      }
+    ],
+    "tiles": [
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 66,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_WONDER",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_NITER",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 66,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 66,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 66,
+        "y": 25,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 66,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "IMPROVEMENT_CAMP",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_IVORY",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 66,
+        "y": 27,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 1,
+          "production": 3,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "IMPROVEMENT_QUARRY",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_STONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 67,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_CITY_CENTER",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_DIAMONDS",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 67,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 3,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_HOLY_SITE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 67,
+        "y": 25,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 67,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 68,
+        "y": 21,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_ENCAMPMENT",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 68,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "IMPROVEMENT_MINE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_IRON",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 68,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 1
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 68,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_ALUMINUM",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 68,
+        "y": 25,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 68,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 69,
+        "y": 20,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_MARSH",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 69,
+        "y": 21,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 69,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "IMPROVEMENT_FARM",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 69,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_HOLY_SITE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 69,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 70,
+        "y": 19,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_IVORY",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 70,
+        "y": 20,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 1,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_MARSH",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 70,
+        "y": 21,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_CITY_CENTER",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 70,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_COPPER",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 70,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 2,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 70,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 70,
+        "y": 25,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "IMPROVEMENT_MINE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_DIAMONDS",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 70,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 3,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 70,
+        "y": 27,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "IMPROVEMENT_PLANTATION",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_BANANAS",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 70,
+        "y": 28,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 4,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 19,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS_MOUNTAIN",
+        "visible": true,
+        "x": 71,
+        "y": 17,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "IMPROVEMENT_MINE",
+        "owner": 19,
+        "pillaged": false,
+        "resource": "RESOURCE_DIAMONDS",
+        "terrain": "TERRAIN_PLAINS_HILLS",
+        "visible": true,
+        "x": 71,
+        "y": 18,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 3,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_IRON",
+        "terrain": "TERRAIN_PLAINS_HILLS",
+        "visible": true,
+        "x": 71,
+        "y": 19,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 2,
+          "science": 1
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 71,
+        "y": 20,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_STONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 71,
+        "y": 21,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 71,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_COPPER",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 71,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 2,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "IMPROVEMENT_MINE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_COPPER",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 71,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 2,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_WONDER",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 71,
+        "y": 25,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 71,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_VOLCANIC_SOIL",
+        "improvement": "IMPROVEMENT_FARM",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 71,
+        "y": 27,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 3,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_JUNGLE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 71,
+        "y": 28,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_DEER",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 71,
+        "y": 30,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_HOLY_SITE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_COAL",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 72,
+        "y": 17,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_MOUNTAIN",
+        "visible": true,
+        "x": 72,
+        "y": 18,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS_MOUNTAIN",
+        "visible": true,
+        "x": 72,
+        "y": 19,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_SEOWON",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS_HILLS",
+        "visible": true,
+        "x": 72,
+        "y": 20,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 72,
+        "y": 21,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 72,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_SEOWON",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 72,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "IMPROVEMENT_MINE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 72,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 72,
+        "y": 25,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_CITY_CENTER",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 72,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_VOLCANIC_SOIL",
+        "improvement": "IMPROVEMENT_CAMP",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_IVORY",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 72,
+        "y": 27,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 1,
+          "production": 3,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_VOLCANO",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_MOUNTAIN",
+        "visible": true,
+        "x": 72,
+        "y": 28,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 72,
+        "y": 29,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "IMPROVEMENT_CAMP",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_IVORY",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 72,
+        "y": 30,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 1,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_RICE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 72,
+        "y": 31,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_COMMERCIAL_HUB",
+        "feature": "FEATURE_FLOODPLAINS_PLAINS",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 72,
+        "y": 32,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 73,
+        "y": 17,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 18,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_CITY_CENTER",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_CATTLE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 19,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 73,
+        "y": 20,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 21,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "RESOURCE_RICE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_COAL",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 25,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_WONDER",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 73,
+        "y": 27,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 73,
+        "y": 28,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_SEOWON",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 73,
+        "y": 29,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_CITY_CENTER",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 30,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_RICE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 73,
+        "y": 31,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 74,
+        "y": 17,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 74,
+        "y": 18,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 74,
+        "y": 19,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_DEER",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 74,
+        "y": 20,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 74,
+        "y": 21,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "RESOURCE_RICE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 74,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "RESOURCE_ALUMINUM",
+        "terrain": "TERRAIN_PLAINS",
+        "visible": true,
+        "x": 74,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 0,
+          "production": 1,
+          "science": 1
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 74,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_WONDER",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 74,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_VOLCANIC_SOIL",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_DIAMONDS",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 74,
+        "y": 27,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 6,
+          "gold": 3,
+          "production": 2,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_HORSES",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 74,
+        "y": 30,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 3,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_OCEAN",
+        "visible": true,
+        "x": 75,
+        "y": 17,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_FISH",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 75,
+        "y": 18,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 75,
+        "y": 19,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "RESOURCE_PEARLS",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 75,
+        "y": 20,
+        "yields": {
+          "culture": 0,
+          "faith": 1,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 75,
+        "y": 21,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FLOODPLAINS_GRASSLAND",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 75,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 75,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 75,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "DISTRICT_HOLY_SITE",
+        "feature": "FEATURE_VOLCANIC_SOIL",
+        "improvement": "NONE",
+        "owner": 0,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_GRASS_HILLS",
+        "visible": true,
+        "x": 75,
+        "y": 26,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 0,
+          "gold": 0,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 76,
+        "y": 18,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 76,
+        "y": 19,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 76,
+        "y": 20,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 76,
+        "y": 21,
+        "yields": {
+          "culture": 1,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 1
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "NONE",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": true,
+        "x": 76,
+        "y": 22,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 1,
+          "gold": 1,
+          "production": 0,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_REEF",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "NONE",
+        "terrain": "TERRAIN_COAST",
+        "visible": false,
+        "x": 76,
+        "y": 23,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 1,
+          "production": 1,
+          "science": 0
+        }
+      },
+      {
+        "district": "NONE",
+        "feature": "FEATURE_FOREST",
+        "improvement": "NONE",
+        "owner": -1,
+        "pillaged": false,
+        "resource": "RESOURCE_DEER",
+        "terrain": "TERRAIN_GRASS",
+        "visible": true,
+        "x": 76,
+        "y": 24,
+        "yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 2,
+          "science": 0
+        }
+      }
+    ],
+    "turn": 100,
+    "units": [
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 196608,
+        "max_hp": 100,
+        "moves": 3,
+        "owner": 0,
+        "role": "combat",
+        "type": "UNIT_SCOUT",
+        "unit_index": 0,
+        "x": 103,
+        "y": 37
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 262146,
+        "max_hp": 100,
+        "moves": 3,
+        "owner": 0,
+        "role": "combat",
+        "type": "UNIT_SCOUT",
+        "unit_index": 2,
+        "x": 59,
+        "y": 36
+      },
+      {
+        "charges": 0,
+        "hp": 80,
+        "id": 393220,
+        "max_hp": 100,
+        "moves": 3,
+        "owner": 0,
+        "role": "combat",
+        "type": "UNIT_SCOUT",
+        "unit_index": 4,
+        "x": 88,
+        "y": 61
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 720901,
+        "max_hp": 100,
+        "moves": 2,
+        "owner": 0,
+        "role": "combat",
+        "type": "UNIT_ARCHER",
+        "unit_index": 5,
+        "x": 70,
+        "y": 22
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 851976,
+        "max_hp": 100,
+        "moves": 2,
+        "owner": 0,
+        "role": "combat",
+        "type": "UNIT_ARCHER",
+        "unit_index": 8,
+        "x": 72,
+        "y": 21
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 1179654,
+        "max_hp": 100,
+        "moves": 2,
+        "owner": 0,
+        "role": "civilian",
+        "type": "UNIT_TRADER",
+        "unit_index": 6,
+        "x": 70,
+        "y": 17
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 1376259,
+        "max_hp": 100,
+        "moves": 2,
+        "owner": 0,
+        "role": "combat",
+        "type": "UNIT_SWORDSMAN",
+        "unit_index": 3,
+        "x": 73,
+        "y": 30
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 1441799,
+        "max_hp": 100,
+        "moves": 2,
+        "owner": 0,
+        "role": "combat",
+        "type": "UNIT_SWORDSMAN",
+        "unit_index": 7,
+        "x": 67,
+        "y": 24
+      },
+      {
+        "charges": 2,
+        "hp": 100,
+        "id": 1507329,
+        "max_hp": 100,
+        "moves": 4,
+        "owner": 0,
+        "role": "civilian",
+        "type": "UNIT_BUILDER",
+        "unit_index": 1,
+        "x": 72,
+        "y": 30
+      },
+      {
+        "charges": 3,
+        "hp": 100,
+        "id": 1572874,
+        "max_hp": 100,
+        "moves": 4,
+        "owner": 0,
+        "role": "civilian",
+        "type": "UNIT_BUILDER",
+        "unit_index": 10,
+        "x": 73,
+        "y": 20
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 1638409,
+        "max_hp": 100,
+        "moves": 4,
+        "owner": 0,
+        "role": "civilian",
+        "type": "UNIT_APOSTLE",
+        "unit_index": 9,
+        "x": 75,
+        "y": 26
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 1703947,
+        "max_hp": 100,
+        "moves": 4,
+        "owner": 0,
+        "role": "civilian",
+        "type": "UNIT_APOSTLE",
+        "unit_index": 11,
+        "x": 72,
+        "y": 26
+      },
+      {
+        "charges": 0,
+        "hp": 100,
+        "id": 1769484,
+        "max_hp": 100,
+        "moves": 2,
+        "owner": 0,
+        "role": "civilian",
+        "type": "UNIT_SETTLER",
+        "unit_index": 12,
+        "x": 74,
+        "y": 20
+      },
+      {
+        "charges": 0,
+        "hp": 20,
+        "id": 1835021,
+        "max_hp": 100,
+        "moves": 2,
+        "owner": 0,
+        "role": "combat",
+        "type": "UNIT_WARRIOR",
+        "unit_index": 13,
+        "x": 74,
+        "y": 22
+      }
+    ],
+    "wire_version": "2.0.0"
+  },
+  "state_sha256": "12e8dd59233b638df36f5482c00d1ce21dfc4160772d75daeaba0ee359790f81"
+}

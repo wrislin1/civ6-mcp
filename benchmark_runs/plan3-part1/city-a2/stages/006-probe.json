@@ -1,0 +1,21 @@
+{
+  "error": null,
+  "evidence": {},
+  "files": [],
+  "invalidated_by": {
+    "sequence": 8,
+    "stage": "survey"
+  },
+  "invalidates_sequence": 3,
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "aba6b0a558094669b6dca0e4c39d95035f238cc2c15291107b3a3eb058ab243c",
+    "version": 1
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 6,
+  "stage": "probe",
+  "status": "invalidated"
+}

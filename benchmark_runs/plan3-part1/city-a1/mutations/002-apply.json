@@ -1,0 +1,167 @@
+{
+  "base_export": {
+    "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+    "excluded_signature": null,
+    "existed": true,
+    "ok": true,
+    "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "size": 3145591,
+    "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+  },
+  "base_identity": {
+    "expected": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "matches": true,
+    "observed": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    }
+  },
+  "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+  "base_popups": "POPUPS|none",
+  "base_reconnect": {
+    "reconnected": true
+  },
+  "base_save_identity": {
+    "civ_type": "CIVILIZATION_KOREA",
+    "name": "SEONDEOK 100 400 BC",
+    "seed": 1881300077,
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "turn": 100
+  },
+  "operations": [
+    {
+      "context": "gamecore",
+      "index": 0,
+      "lua": "local t = Players[0]:GetTreasury()\nt:ChangeGoldBalance(500 - t:GetGoldBalance())\nprint(\"OK|gold \" .. t:GetGoldBalance())\n",
+      "readback": [
+        "OK|gold 500"
+      ],
+      "readback_lua": "local g = Players[0]:GetTreasury():GetGoldBalance()\nif g >= 500 then print(\"OK|gold \" .. g) else print(\"ERR|gold \" .. g) end\n",
+      "readback_ok": true,
+      "result": [
+        "OK|gold 500"
+      ]
+    },
+    {
+      "context": "gamecore",
+      "index": 1,
+      "lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gwangju\" then c = city end\nend\nif c == nil then print(\"ERR|Gwangju missing\") return end\nlocal b = GameInfo.Buildings[\"BUILDING_MONUMENT\"].Index\nif not c:GetBuildings():HasBuilding(b) then print(\"ERR|Gwangju has no monument\") return end\nc:GetBuildings():SetPillaged(b, true)\nprint(\"OK|pillaged|Gwangju|BUILDING_MONUMENT\")\n",
+      "readback": [
+        "OK|repair_city|Gwangju|BUILDING_MONUMENT|pillaged"
+      ],
+      "readback_lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gwangju\" then c = city end\nend\nlocal b = GameInfo.Buildings[\"BUILDING_MONUMENT\"].Index\nif c ~= nil and c:GetBuildings():IsPillaged(b) then\n  print(\"OK|repair_city|Gwangju|BUILDING_MONUMENT|pillaged\")\nelse\n  print(\"ERR|Gwangju monument is not pillaged\")\nend\n",
+      "readback_ok": true,
+      "result": [
+        "OK|pillaged|Gwangju|BUILDING_MONUMENT"
+      ]
+    },
+    {
+      "context": "gamecore",
+      "index": 2,
+      "lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gongju\" then c = city end\nend\nif c == nil then print(\"ERR|Gongju missing\") return end\nlocal info = GameInfo.Buildings[\"BUILDING_GRANARY\"]\nlocal cb = c:GetBuildings()\nif not cb:HasBuilding(info.Index) then print(\"ERR|Gongju has no granary to remove\") return end\nif cb.RemoveBuilding == nil then\n  print(\"ERR|CityBuildings:RemoveBuilding is not available in GameCore\") return\nend\ncb:RemoveBuilding(info.Index)\nprint(\"OK|removed|Gongju|BUILDING_GRANARY\")\n",
+      "readback": [
+        "OK|housing_city|Gongju|surplus -1|granary_housing 2"
+      ],
+      "readback_lua": "local minimum_surplus = 1\nlocal c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gongju\" then c = city end\nend\nif c == nil then print(\"ERR|Gongju missing\") return end\nlocal info = GameInfo.Buildings[\"BUILDING_GRANARY\"]\nlocal gain = info.Housing or 0\nlocal surplus = c:GetGrowth():GetHousing() - c:GetPopulation()\nlocal granary = c:GetBuildings():HasBuilding(info.Index)\nif not granary and surplus < minimum_surplus and surplus + gain >= minimum_surplus then\n  print(\"OK|housing_city|Gongju|surplus \" .. surplus .. \"|granary_housing \" .. gain)\nelse\n  print(\"ERR|Gongju surplus \" .. surplus .. \" granary_housing \" .. gain\n        .. \" has_granary \" .. tostring(granary))\nend\n",
+      "readback_ok": true,
+      "result": [
+        "OK|removed|Gongju|BUILDING_GRANARY"
+      ]
+    }
+  ],
+  "resolution_coverage": {
+    "area": [
+      [
+        65,
+        23
+      ],
+      [
+        65,
+        24
+      ],
+      [
+        65,
+        25
+      ],
+      [
+        66,
+        22
+      ],
+      [
+        66,
+        23
+      ],
+      [
+        66,
+        24
+      ],
+      [
+        66,
+        25
+      ],
+      [
+        66,
+        26
+      ],
+      [
+        67,
+        22
+      ],
+      [
+        67,
+        23
+      ],
+      [
+        67,
+        25
+      ],
+      [
+        67,
+        26
+      ],
+      [
+        68,
+        22
+      ],
+      [
+        68,
+        23
+      ],
+      [
+        68,
+        24
+      ],
+      [
+        68,
+        25
+      ],
+      [
+        68,
+        26
+      ],
+      [
+        69,
+        23
+      ],
+      [
+        69,
+        24
+      ],
+      [
+        69,
+        25
+      ]
+    ],
+    "include_owned_tiles": true,
+    "tracked_targets": []
+  },
+  "resolution_state_sha256": "cb40003e7660c3486b2f160bc3976926748b951b304f86a9a4b6b3a79414775f"
+}

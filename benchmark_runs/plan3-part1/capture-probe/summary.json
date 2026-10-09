@@ -1,0 +1,72 @@
+{
+  "archive_sha256": "265bb002e74e4ff495e1a5118c383bc31af65f4560cf97c09a00d4c384988fab",
+  "attempt_id": "capture-probe-20261009T161024693245Z",
+  "capture_implementation_sha256": "714d59dcaff4ce54c42a541009b2c423416b80b286b596e0e70b9124fcb30454",
+  "capture_limit_s": 2.0,
+  "code_identity": "e9255e849b14462ea32c0765f041691717714449857358707ec59261be3bf260",
+  "expected_state_sha256": "d619e33b475cd95c7bfbe3c877bd40160729075887f94884c4ad3d32c053988f",
+  "finished": "2026-10-09T16:15:46.839448+00:00",
+  "limitations": [
+    "timing proven only for the recorded scope",
+    "target discovery did not run: TARGET rows not timed"
+  ],
+  "position_id": "builder-posctrl-v1",
+  "row_counts": null,
+  "rows": [],
+  "samples": 0,
+  "samples_requested": 20,
+  "scope": null,
+  "scope_info": null,
+  "scope_sha256": null,
+  "setup": {
+    "deployment": {
+      "archive_sha256": "265bb002e74e4ff495e1a5118c383bc31af65f4560cf97c09a00d4c384988fab",
+      "deployed_sha256": "265bb002e74e4ff495e1a5118c383bc31af65f4560cf97c09a00d4c384988fab",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\BUILDER_POSCTRL_V1.Civ6Save",
+      "expected_sha256": "265bb002e74e4ff495e1a5118c383bc31af65f4560cf97c09a00d4c384988fab",
+      "ok": true,
+      "raw": {
+        "archive_sha256": "265bb002e74e4ff495e1a5118c383bc31af65f4560cf97c09a00d4c384988fab",
+        "deployed_sha256": "265bb002e74e4ff495e1a5118c383bc31af65f4560cf97c09a00d4c384988fab",
+        "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\BUILDER_POSCTRL_V1.Civ6Save",
+        "expected_sha256": "265bb002e74e4ff495e1a5118c383bc31af65f4560cf97c09a00d4c384988fab",
+        "ok": true,
+        "save_name": "BUILDER_POSCTRL_V1",
+        "source": "benchmarks/saves/BUILDER_POSCTRL_V1.Civ6Save"
+      },
+      "save_name": "BUILDER_POSCTRL_V1"
+    }
+  },
+  "started": "2026-10-09T16:10:24.693245+00:00",
+  "telemetry_summary": {
+    "all_single_execution": true,
+    "count": 0,
+    "excluded_invalid_records": [],
+    "in_episode_share": null,
+    "in_episode_total_s": 0,
+    "lua_executions_total": 0,
+    "max_s": null,
+    "mean_s": null,
+    "non_drain_residual_s": 0,
+    "p95_s": null,
+    "post_drain_total_s": 0,
+    "pre_drain_total_s": 0,
+    "total_s": 0,
+    "unavailable": {}
+  },
+  "verdict": {
+    "passed": false,
+    "reasons": [
+      {
+        "code": "sample_count",
+        "detail": "0 samples, exactly 20 required",
+        "samples": []
+      },
+      {
+        "code": "probe_error",
+        "detail": "RuntimeError: reload_position('BUILDER_POSCTRL_V1') failed: Error: Save 'BUILDER_POSCTRL_V1' not found in Lua query or on filesystem. Check the name and try list_saves() to see available saves.",
+        "samples": []
+      }
+    ]
+  }
+}

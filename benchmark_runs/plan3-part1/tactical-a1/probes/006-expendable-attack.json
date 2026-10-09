@@ -1,0 +1,556 @@
+{
+  "arguments": {
+    "unit_index": 13,
+    "x": 72,
+    "y": 21
+  },
+  "measurement": {
+    "delta": 29,
+    "hp_after": 21,
+    "hp_before": 50,
+    "status_after": "alive_visible",
+    "target": [
+      63,
+      16908390
+    ]
+  },
+  "outcome": "ok",
+  "passed": true,
+  "probe": {
+    "arguments_from_bindings": {
+      "unit_index": "${expendable.unit_index}",
+      "x": "${attacker.x}",
+      "y": "${attacker.y}"
+    },
+    "expect": "ok",
+    "id": "expendable-attack",
+    "measure_target": "${attacker.pair}",
+    "restore": true,
+    "tool": "attack_unit"
+  },
+  "restore": {
+    "assertions": [
+      {
+        "actual": true,
+        "expected": true,
+        "id": "civilian-initially-exposed",
+        "passed": true,
+        "predicate": {
+          "kind": "civilian_exposed",
+          "unit": [
+            0,
+            1769484
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "civilian-not-yet-rescued",
+        "passed": true,
+        "predicate": {
+          "kind": "unit_in_area",
+          "tiles": [
+            [
+              73,
+              19
+            ]
+          ],
+          "unit_types": [
+            "UNIT_SETTLER"
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "city-combat-slot-free",
+        "passed": true,
+        "predicate": {
+          "kind": "unit_in_area",
+          "tiles": [
+            [
+              73,
+              19
+            ]
+          ],
+          "unit_types": [
+            "UNIT_ARCHER"
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "no-reinforcement-in-area",
+        "passed": true,
+        "predicate": {
+          "kind": "unit_in_area",
+          "tiles": [
+            [
+              72,
+              18
+            ],
+            [
+              73,
+              18
+            ],
+            [
+              74,
+              18
+            ],
+            [
+              72,
+              19
+            ],
+            [
+              73,
+              19
+            ],
+            [
+              74,
+              19
+            ],
+            [
+              72,
+              20
+            ],
+            [
+              73,
+              20
+            ],
+            [
+              74,
+              20
+            ]
+          ],
+          "unit_types": [
+            "UNIT_SPEARMAN",
+            "UNIT_SWORDSMAN"
+          ]
+        }
+      }
+    ],
+    "assertions_passed": true,
+    "base_export": {
+      "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+      "excluded_signature": null,
+      "existed": true,
+      "ok": true,
+      "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+      "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+      "size": 3145591,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+    },
+    "base_identity": {
+      "expected": {
+        "civ_type": "CIVILIZATION_KOREA",
+        "player_id": 0,
+        "seed": 1881300077,
+        "turn": 100
+      },
+      "matches": true,
+      "observed": {
+        "civ_type": "CIVILIZATION_KOREA",
+        "player_id": 0,
+        "seed": 1881300077,
+        "turn": 100
+      }
+    },
+    "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+    "base_popups": "POPUPS|none",
+    "base_reconnect": {
+      "reconnected": true
+    },
+    "base_save_identity": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "name": "SEONDEOK 100 400 BC",
+      "seed": 1881300077,
+      "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+      "turn": 100
+    },
+    "bindings": {
+      "archer": {
+        "id": 851976,
+        "owner": 0,
+        "pair": [
+          0,
+          851976
+        ],
+        "unit_index": 8,
+        "x": 74,
+        "xy": [
+          74,
+          20
+        ],
+        "y": 20
+      },
+      "attacker": {
+        "id": 16908390,
+        "owner": 63,
+        "pair": [
+          63,
+          16908390
+        ],
+        "x": 72,
+        "xy": [
+          72,
+          21
+        ],
+        "y": 21
+      },
+      "civilian": {
+        "id": 1769484,
+        "owner": 0,
+        "pair": [
+          0,
+          1769484
+        ],
+        "unit_index": 12,
+        "x": 73,
+        "xy": [
+          73,
+          22
+        ],
+        "y": 22
+      },
+      "defended_city": {
+        "id": 262147,
+        "owner": 0,
+        "pair": [
+          0,
+          262147
+        ],
+        "x": 73,
+        "xy": [
+          73,
+          19
+        ],
+        "y": 19
+      },
+      "expendable": {
+        "id": 1835021,
+        "owner": 0,
+        "pair": [
+          0,
+          1835021
+        ],
+        "unit_index": 13,
+        "x": 71,
+        "xy": [
+          71,
+          21
+        ],
+        "y": 21
+      }
+    },
+    "coverage": {
+      "area": [
+        [
+          69,
+          19
+        ],
+        [
+          69,
+          20
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          70,
+          19
+        ],
+        [
+          70,
+          20
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          17
+        ],
+        [
+          71,
+          18
+        ],
+        [
+          71,
+          19
+        ],
+        [
+          71,
+          20
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          71,
+          24
+        ],
+        [
+          72,
+          17
+        ],
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          72,
+          21
+        ],
+        [
+          72,
+          22
+        ],
+        [
+          72,
+          23
+        ],
+        [
+          72,
+          24
+        ],
+        [
+          73,
+          17
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          19
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          73,
+          21
+        ],
+        [
+          73,
+          22
+        ],
+        [
+          73,
+          23
+        ],
+        [
+          73,
+          24
+        ],
+        [
+          74,
+          17
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ],
+        [
+          74,
+          21
+        ],
+        [
+          74,
+          22
+        ],
+        [
+          74,
+          23
+        ],
+        [
+          74,
+          24
+        ],
+        [
+          75,
+          17
+        ],
+        [
+          75,
+          18
+        ],
+        [
+          75,
+          19
+        ],
+        [
+          75,
+          20
+        ],
+        [
+          75,
+          21
+        ],
+        [
+          75,
+          22
+        ],
+        [
+          75,
+          23
+        ],
+        [
+          75,
+          24
+        ],
+        [
+          76,
+          18
+        ],
+        [
+          76,
+          19
+        ],
+        [
+          76,
+          20
+        ],
+        [
+          76,
+          21
+        ],
+        [
+          76,
+          22
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": [
+        [
+          63,
+          16908390
+        ]
+      ]
+    },
+    "grid": [
+      130,
+      66
+    ],
+    "operations": [
+      {
+        "context": "gamecore",
+        "index": 0,
+        "lua": "local CX, CY = 73, 19\nlocal function free(p)\n  return p ~= nil and not p:IsWater() and not p:IsImpassable() and not p:IsCity()\n    and p:GetUnitCount() == 0 and p:GetDistrictType() < 0\nend\nlocal function same(p, q)\n  return p ~= nil and q ~= nil and p:GetX() == q:GetX() and p:GetY() == q:GetY()\nend\nlocal archer = nil\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_ARCHER\"\n      and v:GetX() == CX and v:GetY() == CY then archer = v end\nend\nif archer == nil then print(\"ERR|no archer garrisoned in Gongju\") return end\nlocal function guarded(x, y, a)\n  for _, v in Players[0]:GetUnits():Members() do\n    if v:GetID() ~= archer:GetID()\n        and GameInfo.Units[v:GetType()].FormationClass ~= \"FORMATION_CLASS_CIVILIAN\"\n        and Map.GetPlotDistance(x, y, v:GetX(), v:GetY()) <= 1 then return true end\n  end\n  return Map.GetPlotDistance(x, y, a:GetX(), a:GetY()) <= 1\nend\nlocal P, A, S, W = nil, nil, nil, nil\nfor y = 16, 22 do\n  for x = 70, 76 do\n    local p = Map.GetPlot(x, y)\n    if P == nil and free(p) and Map.GetPlotDistance(x, y, CX, CY) == 2 then\n      local a = nil\n      for d = 0, 5 do\n        local q = Map.GetAdjacentPlot(CX, CY, d)\n        if a == nil and free(q) and Map.GetPlotDistance(q:GetX(), q:GetY(), x, y) <= 2 then a = q end\n      end\n      if a ~= nil then\n        for d1 = 0, 5 do\n          local s = Map.GetAdjacentPlot(x, y, d1)\n          if P == nil and free(s) and not same(s, a) and not guarded(s:GetX(), s:GetY(), a) then\n            for d2 = 0, 5 do\n              local w = Map.GetAdjacentPlot(x, y, d2)\n              if P == nil and free(w) and not same(w, a) and not same(w, s)\n                  and Map.GetPlotDistance(w:GetX(), w:GetY(), s:GetX(), s:GetY()) >= 2 then\n                P, A, S, W = p, a, s, w\n              end\n            end\n          end\n        end\n      end\n    end\n  end\nend\nif P == nil then print(\"ERR|no attacker tile at distance 2 from Gongju admits the layout\") return end\nlocal att = UnitManager.InitUnit(63, \"UNIT_WARRIOR\", P:GetX(), P:GetY())\nif att == nil then print(\"ERR|barbarian spawn failed\") return end\natt:SetDamage(50)\nUnitManager.PlaceUnit(archer, A:GetX(), A:GetY())\nUnitManager.RestoreMovement(archer)\nlocal st = UnitManager.InitUnit(0, \"UNIT_SETTLER\", S:GetX(), S:GetY())\nif st == nil then print(\"ERR|settler spawn failed\") return end\nUnitManager.RestoreMovement(st)\nlocal ex = UnitManager.InitUnit(0, \"UNIT_WARRIOR\", W:GetX(), W:GetY())\nif ex == nil then print(\"ERR|warrior spawn failed\") return end\nex:SetDamage(80)\nUnitManager.RestoreMovement(ex)\nprint(\"OK|layout|attacker \" .. P:GetX() .. \",\" .. P:GetY() .. \"|archer \" .. A:GetX() .. \",\"\n  .. A:GetY() .. \"|civilian \" .. S:GetX() .. \",\" .. S:GetY() .. \"|expendable \" .. W:GetX()\n  .. \",\" .. W:GetY())\n",
+        "readback": [
+          "OK|attacker|72,21|hp 50",
+          "OK|archer|74,20",
+          "OK|civilian|73,22",
+          "OK|expendable|71,21|hp 20"
+        ],
+        "readback_lua": "local CX, CY = 73, 19\nlocal ax, ay, n = nil, nil, 0\nfor _, u in Players[63]:GetUnits():Members() do\n  local p = Map.GetPlot(u:GetX(), u:GetY())\n  if Map.GetPlotDistance(u:GetX(), u:GetY(), CX, CY) == 2\n      and PlayersVisibility[0]:IsVisible(p:GetIndex()) then\n    n = n + 1\n    ax, ay = u:GetX(), u:GetY()\n    print(\"OK|attacker|\" .. ax .. \",\" .. ay .. \"|hp \" .. (u:GetMaxDamage() - u:GetDamage()))\n  end\nend\nif n ~= 1 then print(\"ERR|expected one visible attacker at distance 2 from Gongju, found \" .. n) return end\nlocal na, on_city = 0, 0\nfor _, v in Players[0]:GetUnits():Members() do\n  local info = GameInfo.Units[v:GetType()]\n  if info.UnitType == \"UNIT_ARCHER\" and Map.GetPlotDistance(v:GetX(), v:GetY(), CX, CY) == 1 then\n    na = na + 1\n    if Map.GetPlotDistance(v:GetX(), v:GetY(), ax, ay) > 2 then\n      print(\"ERR|archer beyond two tiles of the attacker\")\n    end\n    print(\"OK|archer|\" .. v:GetX() .. \",\" .. v:GetY())\n  end\n  if v:GetX() == CX and v:GetY() == CY and info.FormationClass == \"FORMATION_CLASS_LAND_COMBAT\" then\n    on_city = on_city + 1\n  end\nend\nif na ~= 1 then print(\"ERR|expected one archer beside Gongju, found \" .. na) end\nif on_city ~= 0 then print(\"ERR|a land combat unit still occupies Gongju's tile\") end\nlocal sx, sy, ns = nil, nil, 0\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_SETTLER\" then\n    ns = ns + 1\n    sx, sy = v:GetX(), v:GetY()\n    print(\"OK|civilian|\" .. sx .. \",\" .. sy)\n  end\nend\nif ns ~= 1 then print(\"ERR|expected one settler, found \" .. ns) return end\nif Map.GetPlotDistance(sx, sy, ax, ay) ~= 1 then print(\"ERR|settler is not beside the attacker\") end\nfor _, v in Players[0]:GetUnits():Members() do\n  local info = GameInfo.Units[v:GetType()]\n  if info.FormationClass ~= \"FORMATION_CLASS_CIVILIAN\"\n      and Map.GetPlotDistance(sx, sy, v:GetX(), v:GetY()) <= 1 then\n    print(\"ERR|settler is covered by \" .. info.UnitType .. \" at \" .. v:GetX() .. \",\" .. v:GetY())\n  end\nend\nlocal nw = 0\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_WARRIOR\" then\n    nw = nw + 1\n    print(\"OK|expendable|\" .. v:GetX() .. \",\" .. v:GetY() .. \"|hp \" .. (v:GetMaxDamage() - v:GetDamage()))\n    if Map.GetPlotDistance(v:GetX(), v:GetY(), ax, ay) ~= 1 then print(\"ERR|warrior is not beside the attacker\") end\n    if Map.GetPlotDistance(v:GetX(), v:GetY(), sx, sy) < 2 then print(\"ERR|warrior covers the settler\") end\n  end\nend\nif nw ~= 1 then print(\"ERR|expected one own warrior, found \" .. nw) end\n",
+        "readback_ok": true,
+        "result": [
+          "OK|layout|attacker 72,21|archer 74,20|civilian 73,22|expendable 71,21"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 1,
+        "lua": "local t = Players[0]:GetTreasury()\nt:ChangeGoldBalance(500 - t:GetGoldBalance())\nprint(\"OK|gold \" .. t:GetGoldBalance())\n",
+        "readback": [
+          "OK|gold 500"
+        ],
+        "readback_lua": "local g = Players[0]:GetTreasury():GetGoldBalance()\nif g >= 500 then print(\"OK|gold \" .. g) else print(\"ERR|gold \" .. g) end\n",
+        "readback_ok": true,
+        "result": [
+          "OK|gold 500"
+        ]
+      }
+    ],
+    "resolution_coverage": {
+      "area": [
+        [
+          72,
+          18
+        ],
+        [
+          72,
+          19
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          73,
+          18
+        ],
+        [
+          73,
+          20
+        ],
+        [
+          74,
+          18
+        ],
+        [
+          74,
+          19
+        ],
+        [
+          74,
+          20
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": []
+    },
+    "resolution_state_sha256": "392620ac8570b160f3e8a2cc6df8039f11511e8946e179943adb37866e873c21",
+    "state": null,
+    "state_sha256": "968938b479c30deaf7f343ff3f7e10b2b95f3aa8e3e41687d23fb44074779542"
+  },
+  "result": "Combat Estimate (Melee):\n  UNIT_WARRIOR (CS:20, HP:20) vs UNIT_WARRIOR (CS:20, HP:50)\n  Modifiers: none\n  Est damage to defender: ~24\n  Est damage to attacker: ~24\n  -> WARNING: attacker likely dies!\nMELEE_ATTACK|target:UNIT_WARRIOR at (72,21)|enemy HP:50 -> 50/100|your HP:20 -> 20 CS:20|damage dealt:29\n  Post-combat: UNIT_WARRIOR 21/100"
+}

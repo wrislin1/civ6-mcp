@@ -1,0 +1,138 @@
+{
+  "base_export": {
+    "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+    "excluded_signature": null,
+    "existed": true,
+    "ok": true,
+    "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "size": 3145591,
+    "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+  },
+  "base_identity": {
+    "expected": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "matches": true,
+    "observed": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    }
+  },
+  "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+  "base_popups": "POPUPS|none",
+  "base_reconnect": {
+    "reconnected": true
+  },
+  "base_save_identity": {
+    "civ_type": "CIVILIZATION_KOREA",
+    "name": "SEONDEOK 100 400 BC",
+    "seed": 1881300077,
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "turn": 100
+  },
+  "operations": [
+    {
+      "context": "gamecore",
+      "index": 0,
+      "lua": "local pick = nil\nfor y = 16, 22 do\n  for x = 70, 76 do\n    local p = Map.GetPlot(x, y)\n    if pick == nil and p ~= nil and Map.GetPlotDistance(x, y, 73, 19) == 2\n        and not p:IsWater() and not p:IsImpassable() and not p:IsCity()\n        and p:GetUnitCount() == 0 then pick = p end\n  end\nend\nif pick == nil then print(\"ERR|no attacker tile at distance 2 from Gongju\") return end\nlocal u = UnitManager.InitUnit(63, \"UNIT_WARRIOR\", pick:GetX(), pick:GetY())\nif u == nil then print(\"ERR|barbarian spawn failed\") return end\nu:SetDamage(50)\nprint(\"OK|attacker|\" .. pick:GetX() .. \",\" .. pick:GetY())\n",
+      "readback": [
+        "OK|attacker|72,17|hp 50"
+      ],
+      "readback_lua": "local n = 0\nfor _, u in Players[63]:GetUnits():Members() do\n  local p = Map.GetPlot(u:GetX(), u:GetY())\n  if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2\n      and PlayersVisibility[0]:IsVisible(p:GetIndex()) then\n    n = n + 1\n    print(\"OK|attacker|\" .. u:GetX() .. \",\" .. u:GetY() .. \"|hp \"\n          .. (u:GetMaxDamage() - u:GetDamage()))\n  end\nend\nif n ~= 1 then print(\"ERR|expected one visible attacker near Gongju, found \" .. n) end\n",
+      "readback_ok": true,
+      "result": [
+        "OK|attacker|72,17"
+      ]
+    },
+    {
+      "context": "gamecore",
+      "index": 1,
+      "lua": "local ax, ay = nil, nil\nfor _, u in Players[63]:GetUnits():Members() do\n  if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end\nend\nif ax == nil then print(\"ERR|attacker missing\") return end\nlocal archer = nil\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_ARCHER\"\n      and v:GetX() == 73 and v:GetY() == 19 then archer = v end\nend\nif archer == nil then print(\"ERR|no archer garrisoned in Gongju\") return end\nlocal pick = nil\nfor dir = 0, 5 do\n  local p = Map.GetAdjacentPlot(73, 19, dir)\n  if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()\n      and not p:IsCity() and p:GetUnitCount() == 0\n      and Map.GetPlotDistance(p:GetX(), p:GetY(), ax, ay) <= 2 then pick = p end\nend\nif pick == nil then print(\"ERR|no empty land tile beside Gongju within range of the attacker\") return end\nUnitManager.PlaceUnit(archer, pick:GetX(), pick:GetY())\nUnitManager.RestoreMovement(archer)\nprint(\"OK|archer|\" .. pick:GetX() .. \",\" .. pick:GetY())\n",
+      "readback": [
+        "OK|archer|73,18"
+      ],
+      "readback_lua": "local n, on_city = 0, 0\nfor _, v in Players[0]:GetUnits():Members() do\n  local info = GameInfo.Units[v:GetType()]\n  if info.UnitType == \"UNIT_ARCHER\"\n      and Map.GetPlotDistance(v:GetX(), v:GetY(), 73, 19) == 1 then\n    n = n + 1\n    print(\"OK|archer|\" .. v:GetX() .. \",\" .. v:GetY())\n  end\n  if v:GetX() == 73 and v:GetY() == 19\n      and info.FormationClass == \"FORMATION_CLASS_LAND_COMBAT\" then\n    on_city = on_city + 1\n  end\nend\nif n ~= 1 then print(\"ERR|expected one archer beside Gongju, found \" .. n) end\nif on_city ~= 0 then print(\"ERR|a land combat unit still occupies Gongju's tile\") end\n",
+      "readback_ok": true,
+      "result": [
+        "OK|archer|73,18",
+        "IAPETUS OCEAN (-601.73645019531, -841.64733886719)",
+        "IAPETUS OCEAN (-1543.2938232422, -1652.7861328125)",
+        "IAPETUS OCEAN (-3685.3081054688, 958.90277099609)",
+        "IAPETUS OCEAN (3550.986328125, -1142.3605957031)",
+        "IAPETUS OCEAN (987.51080322266, -1576.8875732422)",
+        "IAPETUS OCEAN (1265.0764160156, -972.91156005859)",
+        "IAPETUS OCEAN (-819.78436279297, -1549.3493652344)",
+        "IAPETUS OCEAN (-4090.1655273438, 426.69952392578)",
+        "IAPETUS OCEAN (-3311.3483886719, -403.19570922852)",
+        "IAPETUS OCEAN (1316.6551513672, -343.67660522461)",
+        "IAPETUS OCEAN (-214.51307678223, -1521.7719726563)",
+        "IAPETUS OCEAN (609.64294433594, -1118.6455078125)",
+        "IAPETUS OCEAN (-3377.9421386719, -1133.4261474609)",
+        "IAPETUS OCEAN (-333.51611328125, 1495.59765625)",
+        "IAPETUS OCEAN (-940.14019775391, 952.67205810547)",
+        "IAPETUS OCEAN (-3454.0083007813, 513.73248291016)",
+        "IAPETUS OCEAN (4092.3469238281, -805.10162353516)",
+        "IAPETUS OCEAN (1566.3389892578, -1492.6379394531)",
+        "IAPETUS OCEAN (2094.9860839844, -860.51116943359)",
+        "IAPETUS OCEAN (2071.583984375, -1596.1270751953)",
+        "IAPETUS OCEAN (2409.2163085938, -1233.7271728516)",
+        "IAPETUS OCEAN (-1024.8671875, -866.37768554688)",
+        "IAPETUS OCEAN (-3744.7492675781, -666.36126708984)",
+        "IAPETUS OCEAN (3949.3122558594, -1620.4339599609)",
+        "IAPETUS OCEAN (-116.69988250732, -917.50390625)",
+        "IAPETUS OCEAN (-2850.1499023438, -867.21600341797)",
+        "IAPETUS OCEAN (-4009.1733398438, -1265.4815673828)",
+        "IAPETUS OCEAN (1792.25, -511.93786621094)",
+        "IAPETUS OCEAN (2701.1850585938, -1653.3920898438)",
+        "IAPETUS OCEAN (3504.9545898438, 599.10760498047)",
+        "IAPETUS OCEAN (-2232.8881835938, -858.53143310547)",
+        "IAPETUS OCEAN (-921.6064453125, -77.290817260742)",
+        "IAPETUS OCEAN (-3595.5144042969, -1638.4217529297)",
+        "IAPETUS OCEAN (-1431.7816162109, 344.12954711914)",
+        "IAPETUS OCEAN (356.21792602539, -1596.6473388672)",
+        "IAPETUS OCEAN (3330.7102050781, -1622.1186523438)",
+        "IAPETUS OCEAN (-2548.9077148438, -281.64596557617)",
+        "IAPETUS OCEAN (-1385.3168945313, -1230.9479980469)",
+        "IAPETUS OCEAN (-2886.7045898438, -1540.7647705078)",
+        "IAPETUS OCEAN (-2265.4172363281, -1532.7301025391)",
+        "IAPETUS OCEAN (-4092.8247070313, -135.45291137695)",
+        "IAPETUS OCEAN (3484.7802734375, 142.96357727051)",
+        "IAPETUS OCEAN (3882.9106445313, 942.99822998047)",
+        "IAPETUS OCEAN (-3179.3828125, 80.525901794434)",
+        "IAPETUS OCEAN (2918.4558105469, -1241.2191162109)"
+      ]
+    },
+    {
+      "context": "gamecore",
+      "index": 2,
+      "lua": "local ax, ay = nil, nil\nfor _, u in Players[63]:GetUnits():Members() do\n  if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end\nend\nif ax == nil then print(\"ERR|attacker missing\") return end\nlocal function guarded(x, y)\n  for _, v in Players[0]:GetUnits():Members() do\n    local info = GameInfo.Units[v:GetType()]\n    if info.FormationClass ~= \"FORMATION_CLASS_CIVILIAN\"\n        and Map.GetPlotDistance(x, y, v:GetX(), v:GetY()) <= 1 then return true end\n  end\n  return false\nend\nlocal pick = nil\nfor dir = 0, 5 do\n  local p = Map.GetAdjacentPlot(ax, ay, dir)\n  if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()\n      and not p:IsCity() and p:GetUnitCount() == 0 and not guarded(p:GetX(), p:GetY()) then\n    pick = p\n  end\nend\nif pick == nil then print(\"ERR|no exposed civilian tile\") return end\nlocal u = UnitManager.InitUnit(0, \"UNIT_SETTLER\", pick:GetX(), pick:GetY())\nif u == nil then print(\"ERR|settler spawn failed\") return end\nUnitManager.RestoreMovement(u)\nprint(\"OK|civilian|\" .. pick:GetX() .. \",\" .. pick:GetY())\n",
+      "readback": [
+        "OK|civilian|72,16"
+      ],
+      "readback_lua": "local n = 0\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_SETTLER\" then\n    n = n + 1\n    print(\"OK|civilian|\" .. v:GetX() .. \",\" .. v:GetY())\n  end\nend\nif n ~= 1 then print(\"ERR|expected one settler, found \" .. n) end\n",
+      "readback_ok": true,
+      "result": [
+        "OK|civilian|72,16"
+      ]
+    },
+    {
+      "context": "gamecore",
+      "index": 3,
+      "lua": "local ax, ay, sx, sy = nil, nil, nil, nil\nfor _, u in Players[63]:GetUnits():Members() do\n  if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end\nend\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_SETTLER\" then sx, sy = v:GetX(), v:GetY() end\nend\nif ax == nil or sx == nil then print(\"ERR|attacker or settler missing\") return end\nlocal pick = nil\nfor dir = 0, 5 do\n  local p = Map.GetAdjacentPlot(ax, ay, dir)\n  if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()\n      and not p:IsCity() and p:GetUnitCount() == 0\n      and Map.GetPlotDistance(p:GetX(), p:GetY(), sx, sy) >= 2 then pick = p end\nend\nif pick == nil then print(\"ERR|no expendable tile\") return end\nlocal u = UnitManager.InitUnit(0, \"UNIT_WARRIOR\", pick:GetX(), pick:GetY())\nif u == nil then print(\"ERR|warrior spawn failed\") return end\nu:SetDamage(80)\nUnitManager.RestoreMovement(u)\nprint(\"OK|expendable|\" .. pick:GetX() .. \",\" .. pick:GetY())\n",
+      "readback": [
+        "ERR|expected one own warrior, found 0"
+      ],
+      "readback_lua": "local n = 0\nfor _, v in Players[0]:GetUnits():Members() do\n  if GameInfo.Units[v:GetType()].UnitType == \"UNIT_WARRIOR\" then\n    n = n + 1\n    print(\"OK|expendable|\" .. v:GetX() .. \",\" .. v:GetY() .. \"|hp \"\n          .. (v:GetMaxDamage() - v:GetDamage()))\n  end\nend\nif n ~= 1 then print(\"ERR|expected one own warrior, found \" .. n) end\n",
+      "readback_ok": false,
+      "result": [
+        "ERR|no expendable tile"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "error": "Live map differs from the offline declaration: Jeonju is the only city able to produce a Seowon and the game lists exactly two legal tiles for it, the wooded grass hills at (68,24) and the stone quarry at (67,23); district_site, replacement_site and protected_asset all resolved to 0 rows (apply stage 002, candidates recorded in mutations/). Gold, monument pillage and the Gongju granary removal (housing surplus -1, +2 with granary) all passed live. Substitute city-a2 authors a third legal site: tile (67,22) granted to Jeonju and mined.",
+  "evidence": {
+    "expired_before": false,
+    "journal_status_before": "open",
+    "latest_status": {
+      "apply": "failed",
+      "survey": "passed"
+    },
+    "reason": "Live map differs from the offline declaration: Jeonju is the only city able to produce a Seowon and the game lists exactly two legal tiles for it, the wooded grass hills at (68,24) and the stone quarry at (67,23); district_site, replacement_site and protected_asset all resolved to 0 rows (apply stage 002, candidates recorded in mutations/). Gold, monument pillage and the Gongju granary removal (housing surplus -1, +2 with granary) all passed live. Substitute city-a2 authors a third legal site: tile (67,22) granted to Jeonju and mined."
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a1.yaml",
+    "recipe_id": "plan3-city-a1",
+    "sha256": "d7125f69388ca60a138b2c8a93de7e3c361d4b94834155804a44cd773319c737",
+    "version": 1
+  },
+  "scenario_id": "city-a1",
+  "schema_version": "2.0.0",
+  "sequence": 3,
+  "stage": "abandon",
+  "status": "abandoned"
+}

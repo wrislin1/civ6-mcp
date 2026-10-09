@@ -1,0 +1,19 @@
+{
+  "arguments": {
+    "radius": 2,
+    "x": 67,
+    "y": 24
+  },
+  "capped_sha256": "3f9c67276ee50ae5723885ae7831595ec66f97e2caf2de04db94f6850f77fbeb",
+  "full_sha256": "5e4e22bd785b6da9371696a4fc0d2038b1b4159c57f7f5646b86ba38b27656fa",
+  "index": 5,
+  "resolved_arguments": {
+    "radius": 2,
+    "x": 67,
+    "y": 24
+  },
+  "result_capped": "25 tiles:\n  (65,22): COAST {F:1 P:0 G:1}\n  (66,22): PLAINS Coast {F:1 P:1} (owned by Korea)\n  (67,22): GRASS_HILLS Hills River {F:2 P:1} [mv:2]\n  (68,22): GRASS_HILLS Hills River [ENCAMPMENT] {F:0 P:0} (owned by Korea) [mv:2]\n  (69,22): PLAINS River {F:1 P:1} (owned by Korea)\n  (65,23): COAST {F:1 P:0 G:1}\n  (66,23): GRASS River Coast (Road) [WONDER] {F:0 P:0} (owned by Korea)\n  (67,23): GRASS_HILLS Hills [STONE] River (QUARRY) {F:2 P:2} (owned by Korea) [mv:2]\n  (68,23): GRASS_HILLS Hills [IRON*] (MINE) {F:2 P:1 S:1} (owned by Korea) [mv:2]\n  (69,23): GRASS River (FARM) {F:2 P:0} (owned by Korea)\n  (65,24): COAST {F:1 P:0 G:1}\n  (66,24): GRASS FOREST River Coast {F:2 P:1} (owned by Korea) [mv:2]\n  (67,24): GRASS_HILLS Hills [DIAMONDS+] River (Road) [CITY_CENTER] {F:2 P:1 G:3} (owned by Korea) [my: SWORDSMAN]\n  (68,24): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3]\n  (69,24): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)\n  (65,25): COAST {F:1 P:0 G:1}\n  (66,25): GRASS FOREST River Coast {F:2 P:1} (owned by Korea) [mv:2]\n  (67,25): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)\n  (68,25): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (69,25): GRASS FOREST {F:2 P:1} [mv:2]\n  (65,26): COAST {F:1 P:3 G:1}\n  (66,26): PLAINS JUNGLE River Coast {F:3 P:2} (owned by Korea) [mv:2]\n  (67,26): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (68,26): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (69,26): PLAINS JUNGLE River {F:3 P:2} [mv",
+  "result_char_cap": 1500,
+  "result_full": "25 tiles:\n  (65,22): COAST {F:1 P:0 G:1}\n  (66,22): PLAINS Coast {F:1 P:1} (owned by Korea)\n  (67,22): GRASS_HILLS Hills River {F:2 P:1} [mv:2]\n  (68,22): GRASS_HILLS Hills River [ENCAMPMENT] {F:0 P:0} (owned by Korea) [mv:2]\n  (69,22): PLAINS River {F:1 P:1} (owned by Korea)\n  (65,23): COAST {F:1 P:0 G:1}\n  (66,23): GRASS River Coast (Road) [WONDER] {F:0 P:0} (owned by Korea)\n  (67,23): GRASS_HILLS Hills [STONE] River (QUARRY) {F:2 P:2} (owned by Korea) [mv:2]\n  (68,23): GRASS_HILLS Hills [IRON*] (MINE) {F:2 P:1 S:1} (owned by Korea) [mv:2]\n  (69,23): GRASS River (FARM) {F:2 P:0} (owned by Korea)\n  (65,24): COAST {F:1 P:0 G:1}\n  (66,24): GRASS FOREST River Coast {F:2 P:1} (owned by Korea) [mv:2]\n  (67,24): GRASS_HILLS Hills [DIAMONDS+] River (Road) [CITY_CENTER] {F:2 P:1 G:3} (owned by Korea) [my: SWORDSMAN]\n  (68,24): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3]\n  (69,24): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)\n  (65,25): COAST {F:1 P:0 G:1}\n  (66,25): GRASS FOREST River Coast {F:2 P:1} (owned by Korea) [mv:2]\n  (67,25): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)\n  (68,25): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (69,25): GRASS FOREST {F:2 P:1} [mv:2]\n  (65,26): COAST {F:1 P:3 G:1}\n  (66,26): PLAINS JUNGLE River Coast {F:3 P:2} (owned by Korea) [mv:2]\n  (67,26): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (68,26): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (69,26): PLAINS JUNGLE River {F:3 P:2} [mv:2]",
+  "tool": "get_map_area"
+}

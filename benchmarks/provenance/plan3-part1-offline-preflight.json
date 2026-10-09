@@ -1,28 +1,28 @@
 {
-  "code_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
+  "code_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
   "failed_requirements": [],
   "full_suite_result": {
-    "code_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
+    "code_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
     "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
-    "duration_s": 195.382,
+    "duration_s": 188.167,
     "errors": 0,
     "exit_code": 0,
     "failed": 0,
-    "finished": "2026-10-09T17:43:40.823238+00:00",
-    "git_head": "f9728c550311984ac0c462e0da2dffbe8d90b818",
+    "finished": "2026-10-09T19:06:48.562603+00:00",
+    "git_head": "382a449351d4c1f3a10be382f22951a39667ddc7",
     "output": {
       "path": "benchmark_runs/plan3-part1/preflight/pytest.txt",
-      "sha256": "3fe76779304f49f72db3f7a68b3ffe5930c84f747f51d1713bfbe96c4977968e"
+      "sha256": "9f757b158b1fc4b7ecfa678d2e1e1aa1a8e8a1c796b3448322b3830d6c1c1909"
     },
     "passed": true,
     "present": true,
     "problems": [],
     "result": {
       "path": "benchmark_runs/plan3-part1/preflight/pytest-result.json",
-      "sha256": "2c21c432f57285a3170639c2da3dcfe62a7c1b478d6bc7f13891806827123771"
+      "sha256": "694c07e292d2967430c4ee5fac27384303c76f504e74c8d3b40f7551793a32d6"
     },
-    "started": "2026-10-09T17:40:25.440771+00:00",
-    "tests_passed": 4055
+    "started": "2026-10-09T19:03:40.395483+00:00",
+    "tests_passed": 4056
   },
   "historical_audit": {
     "affected_trial_count": 64,
@@ -36,9 +36,9 @@
   },
   "passed": true,
   "probe": {
-    "capture_implementation_sha256": "3ca9fb606f4f3a6a9edfe51478c46f90f6454e04a7c51b7272ae38d73fb92a15",
-    "evidence_index_path": "benchmark_runs/plan3-part1/capture-probe-4/evidence-index.json",
-    "evidence_index_sha256": "27889a7f6b1bf35540d4c794ae53c58be878c2da4ec61a21e4e11d4941266700",
+    "capture_implementation_sha256": "19c9c30ffcffcb78545a717feccbf2f3aadaca99369c9e5a1421efeec3460e6f",
+    "evidence_index_path": "benchmark_runs/plan3-part1/capture-probe-5/evidence-index.json",
+    "evidence_index_sha256": "357e1f3d58f2a40fbffeebe0020988eb7a419aa60e90a741bfdb2a7e3316eacd",
     "limitations": [
       "timing proven only for the recorded scope",
       "no visible hostile targets at the positive control: TARGET rows not timed"
@@ -47,7 +47,7 @@
     "present": true,
     "problems": [],
     "samples": 20,
-    "sha256": "5f810d6c4835ffb30ab0eef0c78f42e8dc366dfd8b3a8ef429598f2e2a293788",
+    "sha256": "a177a88c2af4fcf3d41330f2bcb1fefd6399ddee1999bfdb7bcf6898bd51c8cf",
     "verdict": {
       "passed": true,
       "reasons": []
@@ -85,7 +85,7 @@
       "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
       "recipe_id": "plan3-tactical-a1",
       "scenario_id": "tactical-a1",
-      "sha256": "fa6ea054f7238bcd8a6c98c75dd938e9c893dd34f2bfadda5cb7c61c04f918bd",
+      "sha256": "ccf1c16db9c79c4452bf608c1b8fb4a3e8a5074ee315417059e81e9506938be0",
       "toolset_id": "plan3-part1-v1",
       "toolset_identity": {
         "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",

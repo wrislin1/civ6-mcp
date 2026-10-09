@@ -1,0 +1,1512 @@
+{
+  "families": {
+    "city": {
+      "scenarios": [
+        {
+          "attempt": 1,
+          "checkpoints": [
+            {
+              "elapsed_s": 0.0,
+              "label": "begin",
+              "unix_s": 1791564121.9449358
+            },
+            {
+              "elapsed_s": 0.00590968132019043,
+              "label": "survey:connect",
+              "unix_s": 1791564121.9508455
+            },
+            {
+              "elapsed_s": 0.37781262397766113,
+              "label": "survey:load-base",
+              "unix_s": 1791564122.3227484
+            },
+            {
+              "elapsed_s": 50.24586749076843,
+              "label": "survey:query-0",
+              "unix_s": 1791564172.1908033
+            },
+            {
+              "elapsed_s": 51.63227343559265,
+              "label": "survey:query-1",
+              "unix_s": 1791564173.5772092
+            },
+            {
+              "elapsed_s": 51.981953859329224,
+              "label": "survey:query-2",
+              "unix_s": 1791564173.9268897
+            },
+            {
+              "elapsed_s": 52.33058166503906,
+              "label": "survey:query-3",
+              "unix_s": 1791564174.2755175
+            },
+            {
+              "elapsed_s": 52.67927861213684,
+              "label": "survey:query-4",
+              "unix_s": 1791564174.6242144
+            },
+            {
+              "elapsed_s": 53.027838706970215,
+              "label": "survey:query-5",
+              "unix_s": 1791564174.9727745
+            },
+            {
+              "elapsed_s": 53.37779903411865,
+              "label": "survey:query-6",
+              "unix_s": 1791564175.3227348
+            },
+            {
+              "elapsed_s": 53.70972537994385,
+              "label": "stage:survey",
+              "unix_s": 1791564175.6546612
+            },
+            {
+              "elapsed_s": 336.27654099464417,
+              "label": "resume",
+              "unix_s": 1791564458.2214768
+            },
+            {
+              "elapsed_s": 336.28028988838196,
+              "label": "apply:connect",
+              "unix_s": 1791564458.2252257
+            },
+            {
+              "elapsed_s": 336.64647150039673,
+              "label": "apply:load-base",
+              "unix_s": 1791564458.5914073
+            },
+            {
+              "elapsed_s": 386.1100814342499,
+              "label": "apply:setup-0",
+              "unix_s": 1791564508.0550172
+            },
+            {
+              "elapsed_s": 390.7707440853119,
+              "label": "apply:setup-1",
+              "unix_s": 1791564512.71568
+            },
+            {
+              "elapsed_s": 395.44159746170044,
+              "label": "apply:setup-2",
+              "unix_s": 1791564517.3865333
+            },
+            {
+              "elapsed_s": 400.45731949806213,
+              "label": "stage:apply",
+              "unix_s": 1791564522.4022553
+            },
+            {
+              "elapsed_s": 450.15729570388794,
+              "label": "stage:abandon",
+              "unix_s": 1791564572.1022315
+            },
+            {
+              "elapsed_s": 450.1630029678345,
+              "label": "finish",
+              "unix_s": 1791564572.1079388
+            }
+          ],
+          "expired": false,
+          "family": "city",
+          "finished_unix_s": 1791564572.1079388,
+          "imported_from": {
+            "journal": "benchmark_runs/plan3-part1/city-a1/authoring-journal.json",
+            "sha256": "9744851f071bef4e59512dfd79e4116e10e1b6ba1a3d84f2ae4f29bb86a8458c"
+          },
+          "material_change": null,
+          "predecessor": null,
+          "reason": null,
+          "recorded_elapsed_s": 450.1630029678345,
+          "scenario_id": "city-a1",
+          "stages": [
+            {
+              "elapsed_s": 53.70972537994385,
+              "ended_unix_s": 1791564175.6546612,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/001-survey.json",
+                "sha256": "3f103ded3df09f02a5a70cf0eca940070f2f35af236de04ff48f9d21c310e1e7"
+              },
+              "passed": true,
+              "stage": "survey",
+              "started_unix_s": 1791564121.9449358
+            },
+            {
+              "elapsed_s": 346.7475941181183,
+              "ended_unix_s": 1791564522.4022553,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/002-apply.json",
+                "sha256": "6623192d3a462ae76a15f3ce6db1317b12f71fb530bc87160041fe4642ae79d1"
+              },
+              "passed": false,
+              "stage": "apply",
+              "started_unix_s": 1791564175.6546612
+            },
+            {
+              "elapsed_s": 49.699976205825806,
+              "ended_unix_s": 1791564572.1022315,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/003-abandon.json",
+                "sha256": "d466643ee3e4b49832fc1c7e12ad06bee14cb87f4f9c51bfc62ce431d4b0b0aa"
+              },
+              "passed": false,
+              "stage": "abandon",
+              "started_unix_s": 1791564522.4022553
+            }
+          ],
+          "started_unix_s": 1791564121.9449358,
+          "status": "failed",
+          "wall_elapsed_s": 450.1630029678345
+        },
+        {
+          "attempt": 2,
+          "checkpoints": [
+            {
+              "elapsed_s": 0.0,
+              "label": "begin",
+              "unix_s": 1791564722.8041036
+            },
+            {
+              "elapsed_s": 0.0061914920806884766,
+              "label": "survey:connect",
+              "unix_s": 1791564722.810295
+            },
+            {
+              "elapsed_s": 0.3684670925140381,
+              "label": "survey:load-base",
+              "unix_s": 1791564723.1725707
+            },
+            {
+              "elapsed_s": 50.3926739692688,
+              "label": "survey:query-0",
+              "unix_s": 1791564773.1967776
+            },
+            {
+              "elapsed_s": 51.76726150512695,
+              "label": "survey:query-1",
+              "unix_s": 1791564774.571365
+            },
+            {
+              "elapsed_s": 52.11684536933899,
+              "label": "survey:query-2",
+              "unix_s": 1791564774.920949
+            },
+            {
+              "elapsed_s": 52.46616840362549,
+              "label": "survey:query-3",
+              "unix_s": 1791564775.270272
+            },
+            {
+              "elapsed_s": 52.81687259674072,
+              "label": "survey:query-4",
+              "unix_s": 1791564775.6209762
+            },
+            {
+              "elapsed_s": 53.16576528549194,
+              "label": "survey:query-5",
+              "unix_s": 1791564775.969869
+            },
+            {
+              "elapsed_s": 53.51571869850159,
+              "label": "survey:query-6",
+              "unix_s": 1791564776.3198223
+            },
+            {
+              "elapsed_s": 53.850091218948364,
+              "label": "stage:survey",
+              "unix_s": 1791564776.6541948
+            },
+            {
+              "elapsed_s": 66.82196187973022,
+              "label": "resume",
+              "unix_s": 1791564789.6260655
+            },
+            {
+              "elapsed_s": 66.82771158218384,
+              "label": "apply:connect",
+              "unix_s": 1791564789.6318152
+            },
+            {
+              "elapsed_s": 67.18995499610901,
+              "label": "apply:load-base",
+              "unix_s": 1791564789.9940586
+            },
+            {
+              "elapsed_s": 117.30420136451721,
+              "label": "apply:setup-0",
+              "unix_s": 1791564840.108305
+            },
+            {
+              "elapsed_s": 121.96532130241394,
+              "label": "apply:setup-1",
+              "unix_s": 1791564844.769425
+            },
+            {
+              "elapsed_s": 126.61836123466492,
+              "label": "apply:setup-2",
+              "unix_s": 1791564849.4224648
+            },
+            {
+              "elapsed_s": 131.26953840255737,
+              "label": "apply:setup-3",
+              "unix_s": 1791564854.073642
+            },
+            {
+              "elapsed_s": 135.9223530292511,
+              "label": "apply:setup-4",
+              "unix_s": 1791564858.7264566
+            },
+            {
+              "elapsed_s": 140.9424810409546,
+              "label": "apply:grid-size",
+              "unix_s": 1791564863.7465847
+            },
+            {
+              "elapsed_s": 141.63270664215088,
+              "label": "stage:apply",
+              "unix_s": 1791564864.4368103
+            },
+            {
+              "elapsed_s": 155.42667055130005,
+              "label": "resume",
+              "unix_s": 1791564878.2307742
+            },
+            {
+              "elapsed_s": 155.4323127269745,
+              "label": "probe:connect",
+              "unix_s": 1791564878.2364163
+            },
+            {
+              "elapsed_s": 155.80309891700745,
+              "label": "probe:load-base",
+              "unix_s": 1791564878.6072025
+            },
+            {
+              "elapsed_s": 205.2762701511383,
+              "label": "probe:setup-0",
+              "unix_s": 1791564928.0803738
+            },
+            {
+              "elapsed_s": 209.93444681167603,
+              "label": "probe:setup-1",
+              "unix_s": 1791564932.7385504
+            },
+            {
+              "elapsed_s": 214.60531854629517,
+              "label": "probe:setup-2",
+              "unix_s": 1791564937.4094222
+            },
+            {
+              "elapsed_s": 219.2653079032898,
+              "label": "probe:setup-3",
+              "unix_s": 1791564942.0694115
+            },
+            {
+              "elapsed_s": 223.91644406318665,
+              "label": "probe:setup-4",
+              "unix_s": 1791564946.7205477
+            },
+            {
+              "elapsed_s": 228.93068289756775,
+              "label": "probe:grid-size",
+              "unix_s": 1791564951.7347865
+            },
+            {
+              "elapsed_s": 229.61161041259766,
+              "label": "probe:probe-purchase-granary",
+              "unix_s": 1791564952.415714
+            },
+            {
+              "elapsed_s": 229.97048163414001,
+              "label": "probe:load-base",
+              "unix_s": 1791564952.7745852
+            },
+            {
+              "elapsed_s": 279.57126474380493,
+              "label": "probe:setup-0",
+              "unix_s": 1791565002.3753684
+            },
+            {
+              "elapsed_s": 284.2332708835602,
+              "label": "probe:setup-1",
+              "unix_s": 1791565007.0373745
+            },
+            {
+              "elapsed_s": 288.8864951133728,
+              "label": "probe:setup-2",
+              "unix_s": 1791565011.6905987
+            },
+            {
+              "elapsed_s": 293.53804111480713,
+              "label": "probe:setup-3",
+              "unix_s": 1791565016.3421447
+            },
+            {
+              "elapsed_s": 298.20591378211975,
+              "label": "probe:setup-4",
+              "unix_s": 1791565021.0100174
+            },
+            {
+              "elapsed_s": 303.23685359954834,
+              "label": "probe:grid-size",
+              "unix_s": 1791565026.0409572
+            },
+            {
+              "elapsed_s": 303.9194722175598,
+              "label": "probe:probe-queue-granary",
+              "unix_s": 1791565026.7235758
+            },
+            {
+              "elapsed_s": 304.59724283218384,
+              "label": "probe:load-base",
+              "unix_s": 1791565027.4013464
+            },
+            {
+              "elapsed_s": 354.08806467056274,
+              "label": "probe:setup-0",
+              "unix_s": 1791565076.8921683
+            },
+            {
+              "elapsed_s": 358.7457959651947,
+              "label": "probe:setup-1",
+              "unix_s": 1791565081.5498996
+            },
+            {
+              "elapsed_s": 363.412983417511,
+              "label": "probe:setup-2",
+              "unix_s": 1791565086.217087
+            },
+            {
+              "elapsed_s": 368.0755047798157,
+              "label": "probe:setup-3",
+              "unix_s": 1791565090.8796084
+            },
+            {
+              "elapsed_s": 372.7265980243683,
+              "label": "probe:setup-4",
+              "unix_s": 1791565095.5307016
+            },
+            {
+              "elapsed_s": 377.7453496456146,
+              "label": "probe:grid-size",
+              "unix_s": 1791565100.5494533
+            },
+            {
+              "elapsed_s": 378.42780780792236,
+              "label": "probe:probe-seowon-at-clean-site",
+              "unix_s": 1791565101.2319114
+            },
+            {
+              "elapsed_s": 379.10245513916016,
+              "label": "probe:load-base",
+              "unix_s": 1791565101.9065588
+            },
+            {
+              "elapsed_s": 429.0659456253052,
+              "label": "probe:setup-0",
+              "unix_s": 1791565151.8700492
+            },
+            {
+              "elapsed_s": 433.73166012763977,
+              "label": "probe:setup-1",
+              "unix_s": 1791565156.5357637
+            },
+            {
+              "elapsed_s": 438.3925516605377,
+              "label": "probe:setup-2",
+              "unix_s": 1791565161.1966553
+            },
+            {
+              "elapsed_s": 443.0562756061554,
+              "label": "probe:setup-3",
+              "unix_s": 1791565165.8603792
+            },
+            {
+              "elapsed_s": 447.7131085395813,
+              "label": "probe:setup-4",
+              "unix_s": 1791565170.5172122
+            },
+            {
+              "elapsed_s": 452.7300362586975,
+              "label": "probe:grid-size",
+              "unix_s": 1791565175.5341399
+            },
+            {
+              "elapsed_s": 453.41135334968567,
+              "label": "probe:probe-seowon-at-replacement-site",
+              "unix_s": 1791565176.215457
+            },
+            {
+              "elapsed_s": 454.08541083335876,
+              "label": "probe:load-base",
+              "unix_s": 1791565176.8895144
+            },
+            {
+              "elapsed_s": 503.6602203845978,
+              "label": "probe:setup-0",
+              "unix_s": 1791565226.464324
+            },
+            {
+              "elapsed_s": 508.3224501609802,
+              "label": "probe:setup-1",
+              "unix_s": 1791565231.1265538
+            },
+            {
+              "elapsed_s": 512.9781267642975,
+              "label": "probe:setup-2",
+              "unix_s": 1791565235.7822304
+            },
+            {
+              "elapsed_s": 517.646476984024,
+              "label": "probe:setup-3",
+              "unix_s": 1791565240.4505806
+            },
+            {
+              "elapsed_s": 522.2979354858398,
+              "label": "probe:setup-4",
+              "unix_s": 1791565245.102039
+            },
+            {
+              "elapsed_s": 527.3282775878906,
+              "label": "probe:grid-size",
+              "unix_s": 1791565250.1323812
+            },
+            {
+              "elapsed_s": 527.9998610019684,
+              "label": "probe:probe-seowon-on-protected-mine",
+              "unix_s": 1791565250.8039646
+            },
+            {
+              "elapsed_s": 528.6787021160126,
+              "label": "probe:load-base",
+              "unix_s": 1791565251.4828057
+            },
+            {
+              "elapsed_s": 578.2371098995209,
+              "label": "probe:setup-0",
+              "unix_s": 1791565301.0412135
+            },
+            {
+              "elapsed_s": 582.8944439888,
+              "label": "probe:setup-1",
+              "unix_s": 1791565305.6985476
+            },
+            {
+              "elapsed_s": 587.5459268093109,
+              "label": "probe:setup-2",
+              "unix_s": 1791565310.3500304
+            },
+            {
+              "elapsed_s": 592.2106924057007,
+              "label": "probe:setup-3",
+              "unix_s": 1791565315.014796
+            },
+            {
+              "elapsed_s": 596.8621017932892,
+              "label": "probe:setup-4",
+              "unix_s": 1791565319.6662054
+            },
+            {
+              "elapsed_s": 601.8607881069183,
+              "label": "probe:grid-size",
+              "unix_s": 1791565324.6648917
+            },
+            {
+              "elapsed_s": 602.5601201057434,
+              "label": "probe:probe-queue-monument-repair",
+              "unix_s": 1791565325.3642237
+            },
+            {
+              "elapsed_s": 603.2400846481323,
+              "label": "probe:load-base",
+              "unix_s": 1791565326.0441883
+            },
+            {
+              "elapsed_s": 652.8038394451141,
+              "label": "probe:setup-0",
+              "unix_s": 1791565375.607943
+            },
+            {
+              "elapsed_s": 657.4690184593201,
+              "label": "probe:setup-1",
+              "unix_s": 1791565380.273122
+            },
+            {
+              "elapsed_s": 662.1210887432098,
+              "label": "probe:setup-2",
+              "unix_s": 1791565384.9251924
+            },
+            {
+              "elapsed_s": 666.7728672027588,
+              "label": "probe:setup-3",
+              "unix_s": 1791565389.5769708
+            },
+            {
+              "elapsed_s": 671.4520890712738,
+              "label": "probe:setup-4",
+              "unix_s": 1791565394.2561927
+            },
+            {
+              "elapsed_s": 676.4520840644836,
+              "label": "probe:grid-size",
+              "unix_s": 1791565399.2561877
+            },
+            {
+              "elapsed_s": 677.1369037628174,
+              "label": "probe:probe-seowon-on-city-centre-rejected",
+              "unix_s": 1791565399.9410074
+            },
+            {
+              "elapsed_s": 678.1635663509369,
+              "label": "probe:load-base",
+              "unix_s": 1791565400.96767
+            },
+            {
+              "elapsed_s": 728.1375730037689,
+              "label": "probe:setup-0",
+              "unix_s": 1791565450.9416766
+            },
+            {
+              "elapsed_s": 732.7942283153534,
+              "label": "probe:setup-1",
+              "unix_s": 1791565455.598332
+            },
+            {
+              "elapsed_s": 737.4627935886383,
+              "label": "probe:setup-2",
+              "unix_s": 1791565460.2668972
+            },
+            {
+              "elapsed_s": 742.1133799552917,
+              "label": "probe:setup-3",
+              "unix_s": 1791565464.9174836
+            },
+            {
+              "elapsed_s": 746.7796928882599,
+              "label": "probe:setup-4",
+              "unix_s": 1791565469.5837965
+            },
+            {
+              "elapsed_s": 751.7871453762054,
+              "label": "probe:grid-size",
+              "unix_s": 1791565474.591249
+            },
+            {
+              "elapsed_s": 752.4686541557312,
+              "label": "probe:probe-purchase-district-rejected",
+              "unix_s": 1791565475.2727578
+            },
+            {
+              "elapsed_s": 752.8121998310089,
+              "label": "stage:probe",
+              "unix_s": 1791565475.6163034
+            },
+            {
+              "elapsed_s": 766.6705369949341,
+              "label": "resume",
+              "unix_s": 1791565489.4746406
+            },
+            {
+              "elapsed_s": 766.6777441501617,
+              "label": "archive:connect",
+              "unix_s": 1791565489.4818478
+            },
+            {
+              "elapsed_s": 767.0483376979828,
+              "label": "archive:load-base",
+              "unix_s": 1791565489.8524413
+            },
+            {
+              "elapsed_s": 816.548558473587,
+              "label": "archive:setup-0",
+              "unix_s": 1791565539.352662
+            },
+            {
+              "elapsed_s": 821.2053451538086,
+              "label": "archive:setup-1",
+              "unix_s": 1791565544.0094488
+            },
+            {
+              "elapsed_s": 825.8728516101837,
+              "label": "archive:setup-2",
+              "unix_s": 1791565548.6769552
+            },
+            {
+              "elapsed_s": 830.5294647216797,
+              "label": "archive:setup-3",
+              "unix_s": 1791565553.3335683
+            },
+            {
+              "elapsed_s": 835.199615240097,
+              "label": "archive:setup-4",
+              "unix_s": 1791565558.0037189
+            },
+            {
+              "elapsed_s": 840.2358441352844,
+              "label": "archive:grid-size",
+              "unix_s": 1791565563.0399477
+            },
+            {
+              "elapsed_s": 840.9382622241974,
+              "label": "archive:query-0",
+              "unix_s": 1791565563.7423658
+            },
+            {
+              "elapsed_s": 842.3275055885315,
+              "label": "archive:query-1",
+              "unix_s": 1791565565.1316092
+            },
+            {
+              "elapsed_s": 842.6765396595001,
+              "label": "archive:query-2",
+              "unix_s": 1791565565.4806433
+            },
+            {
+              "elapsed_s": 843.0267241001129,
+              "label": "archive:query-3",
+              "unix_s": 1791565565.8308277
+            },
+            {
+              "elapsed_s": 843.3753430843353,
+              "label": "archive:query-4",
+              "unix_s": 1791565566.1794467
+            },
+            {
+              "elapsed_s": 843.7243204116821,
+              "label": "archive:query-5",
+              "unix_s": 1791565566.528424
+            },
+            {
+              "elapsed_s": 844.0744650363922,
+              "label": "archive:query-6",
+              "unix_s": 1791565566.8785686
+            },
+            {
+              "elapsed_s": 844.4074442386627,
+              "label": "stage:archive",
+              "unix_s": 1791565567.2115479
+            },
+            {
+              "elapsed_s": 1061.280977487564,
+              "label": "resume",
+              "unix_s": 1791565784.085081
+            },
+            {
+              "elapsed_s": 1061.2894456386566,
+              "label": "survey:connect",
+              "unix_s": 1791565784.0935493
+            },
+            {
+              "elapsed_s": 1061.6525835990906,
+              "label": "survey:load-base",
+              "unix_s": 1791565784.4566872
+            },
+            {
+              "elapsed_s": 1111.5740242004395,
+              "label": "survey:query-0",
+              "unix_s": 1791565834.3781278
+            },
+            {
+              "elapsed_s": 1112.96550989151,
+              "label": "survey:query-1",
+              "unix_s": 1791565835.7696135
+            },
+            {
+              "elapsed_s": 1113.3160831928253,
+              "label": "survey:query-2",
+              "unix_s": 1791565836.1201868
+            },
+            {
+              "elapsed_s": 1113.6652553081512,
+              "label": "survey:query-3",
+              "unix_s": 1791565836.469359
+            },
+            {
+              "elapsed_s": 1114.0150921344757,
+              "label": "survey:query-4",
+              "unix_s": 1791565836.8191957
+            },
+            {
+              "elapsed_s": 1114.3640866279602,
+              "label": "survey:query-5",
+              "unix_s": 1791565837.1681902
+            },
+            {
+              "elapsed_s": 1114.714904308319,
+              "label": "survey:query-6",
+              "unix_s": 1791565837.519008
+            },
+            {
+              "elapsed_s": 1115.0481264591217,
+              "label": "stage:survey",
+              "unix_s": 1791565837.85223
+            },
+            {
+              "elapsed_s": 1127.622189283371,
+              "label": "resume",
+              "unix_s": 1791565850.426293
+            },
+            {
+              "elapsed_s": 1127.6296164989471,
+              "label": "apply:connect",
+              "unix_s": 1791565850.43372
+            },
+            {
+              "elapsed_s": 1127.996113538742,
+              "label": "apply:load-base",
+              "unix_s": 1791565850.8002172
+            },
+            {
+              "elapsed_s": 1177.7005670070648,
+              "label": "apply:setup-0",
+              "unix_s": 1791565900.5046706
+            },
+            {
+              "elapsed_s": 1182.3648748397827,
+              "label": "apply:setup-1",
+              "unix_s": 1791565905.1689785
+            },
+            {
+              "elapsed_s": 1187.0231969356537,
+              "label": "apply:setup-2",
+              "unix_s": 1791565909.8273005
+            },
+            {
+              "elapsed_s": 1191.692306280136,
+              "label": "apply:setup-3",
+              "unix_s": 1791565914.49641
+            },
+            {
+              "elapsed_s": 1196.3603723049164,
+              "label": "apply:setup-4",
+              "unix_s": 1791565919.164476
+            },
+            {
+              "elapsed_s": 1201.3565638065338,
+              "label": "apply:grid-size",
+              "unix_s": 1791565924.1606674
+            },
+            {
+              "elapsed_s": 1202.041095495224,
+              "label": "stage:apply",
+              "unix_s": 1791565924.845199
+            },
+            {
+              "elapsed_s": 1211.9125549793243,
+              "label": "resume",
+              "unix_s": 1791565934.7166586
+            },
+            {
+              "elapsed_s": 1211.9196469783783,
+              "label": "probe:connect",
+              "unix_s": 1791565934.7237506
+            },
+            {
+              "elapsed_s": 1212.2763817310333,
+              "label": "probe:load-base",
+              "unix_s": 1791565935.0804853
+            },
+            {
+              "elapsed_s": 1261.8310911655426,
+              "label": "probe:setup-0",
+              "unix_s": 1791565984.6351948
+            },
+            {
+              "elapsed_s": 1266.4906072616577,
+              "label": "probe:setup-1",
+              "unix_s": 1791565989.2947109
+            },
+            {
+              "elapsed_s": 1271.1441140174866,
+              "label": "probe:setup-2",
+              "unix_s": 1791565993.9482176
+            },
+            {
+              "elapsed_s": 1275.8106830120087,
+              "label": "probe:setup-3",
+              "unix_s": 1791565998.6147866
+            },
+            {
+              "elapsed_s": 1280.464094877243,
+              "label": "probe:setup-4",
+              "unix_s": 1791566003.2681985
+            },
+            {
+              "elapsed_s": 1285.4848237037659,
+              "label": "probe:grid-size",
+              "unix_s": 1791566008.2889273
+            },
+            {
+              "elapsed_s": 1286.1711659431458,
+              "label": "probe:probe-purchase-granary",
+              "unix_s": 1791566008.9752696
+            },
+            {
+              "elapsed_s": 1286.5311529636383,
+              "label": "probe:load-base",
+              "unix_s": 1791566009.3352566
+            },
+            {
+              "elapsed_s": 1336.5346510410309,
+              "label": "probe:setup-0",
+              "unix_s": 1791566059.3387547
+            },
+            {
+              "elapsed_s": 1341.1912469863892,
+              "label": "probe:setup-1",
+              "unix_s": 1791566063.9953506
+            },
+            {
+              "elapsed_s": 1345.8641321659088,
+              "label": "probe:setup-2",
+              "unix_s": 1791566068.6682358
+            },
+            {
+              "elapsed_s": 1350.5296156406403,
+              "label": "probe:setup-3",
+              "unix_s": 1791566073.3337193
+            },
+            {
+              "elapsed_s": 1355.2042162418365,
+              "label": "probe:setup-4",
+              "unix_s": 1791566078.0083199
+            },
+            {
+              "elapsed_s": 1360.217282295227,
+              "label": "probe:grid-size",
+              "unix_s": 1791566083.021386
+            },
+            {
+              "elapsed_s": 1360.8993692398071,
+              "label": "probe:probe-queue-granary",
+              "unix_s": 1791566083.7034729
+            },
+            {
+              "elapsed_s": 1361.574807882309,
+              "label": "probe:load-base",
+              "unix_s": 1791566084.3789115
+            },
+            {
+              "elapsed_s": 1411.538304567337,
+              "label": "probe:setup-0",
+              "unix_s": 1791566134.3424082
+            },
+            {
+              "elapsed_s": 1416.1990144252777,
+              "label": "probe:setup-1",
+              "unix_s": 1791566139.003118
+            },
+            {
+              "elapsed_s": 1420.8723022937775,
+              "label": "probe:setup-2",
+              "unix_s": 1791566143.676406
+            },
+            {
+              "elapsed_s": 1425.5335538387299,
+              "label": "probe:setup-3",
+              "unix_s": 1791566148.3376575
+            },
+            {
+              "elapsed_s": 1430.1887636184692,
+              "label": "probe:setup-4",
+              "unix_s": 1791566152.9928672
+            },
+            {
+              "elapsed_s": 1435.2040514945984,
+              "label": "probe:grid-size",
+              "unix_s": 1791566158.008155
+            },
+            {
+              "elapsed_s": 1435.8841972351074,
+              "label": "probe:probe-seowon-at-clean-site",
+              "unix_s": 1791566158.6883008
+            },
+            {
+              "elapsed_s": 1436.5587060451508,
+              "label": "probe:load-base",
+              "unix_s": 1791566159.3628097
+            },
+            {
+              "elapsed_s": 1486.2550704479218,
+              "label": "probe:setup-0",
+              "unix_s": 1791566209.059174
+            },
+            {
+              "elapsed_s": 1490.914873600006,
+              "label": "probe:setup-1",
+              "unix_s": 1791566213.7189772
+            },
+            {
+              "elapsed_s": 1495.5708448886871,
+              "label": "probe:setup-2",
+              "unix_s": 1791566218.3749485
+            },
+            {
+              "elapsed_s": 1500.2395558357239,
+              "label": "probe:setup-3",
+              "unix_s": 1791566223.0436594
+            },
+            {
+              "elapsed_s": 1504.9105579853058,
+              "label": "probe:setup-4",
+              "unix_s": 1791566227.7146616
+            },
+            {
+              "elapsed_s": 1509.9282536506653,
+              "label": "probe:grid-size",
+              "unix_s": 1791566232.7323573
+            },
+            {
+              "elapsed_s": 1510.6142637729645,
+              "label": "probe:probe-seowon-at-replacement-site",
+              "unix_s": 1791566233.4183674
+            },
+            {
+              "elapsed_s": 1511.2915217876434,
+              "label": "probe:load-base",
+              "unix_s": 1791566234.0956254
+            },
+            {
+              "elapsed_s": 1560.8574714660645,
+              "label": "probe:setup-0",
+              "unix_s": 1791566283.661575
+            },
+            {
+              "elapsed_s": 1565.5148930549622,
+              "label": "probe:setup-1",
+              "unix_s": 1791566288.3189967
+            },
+            {
+              "elapsed_s": 1570.1950087547302,
+              "label": "probe:setup-2",
+              "unix_s": 1791566292.9991124
+            },
+            {
+              "elapsed_s": 1574.8765029907227,
+              "label": "probe:setup-3",
+              "unix_s": 1791566297.6806066
+            },
+            {
+              "elapsed_s": 1579.5371670722961,
+              "label": "probe:setup-4",
+              "unix_s": 1791566302.3412707
+            },
+            {
+              "elapsed_s": 1584.555453300476,
+              "label": "probe:grid-size",
+              "unix_s": 1791566307.359557
+            },
+            {
+              "elapsed_s": 1585.2362105846405,
+              "label": "probe:probe-seowon-on-protected-mine",
+              "unix_s": 1791566308.0403142
+            },
+            {
+              "elapsed_s": 1585.9118967056274,
+              "label": "probe:load-base",
+              "unix_s": 1791566308.7160003
+            },
+            {
+              "elapsed_s": 1636.0196244716644,
+              "label": "probe:setup-0",
+              "unix_s": 1791566358.823728
+            },
+            {
+              "elapsed_s": 1640.6879286766052,
+              "label": "probe:setup-1",
+              "unix_s": 1791566363.4920323
+            },
+            {
+              "elapsed_s": 1645.368711233139,
+              "label": "probe:setup-2",
+              "unix_s": 1791566368.1728148
+            },
+            {
+              "elapsed_s": 1650.033400297165,
+              "label": "probe:setup-3",
+              "unix_s": 1791566372.837504
+            },
+            {
+              "elapsed_s": 1654.6901619434357,
+              "label": "probe:setup-4",
+              "unix_s": 1791566377.4942656
+            },
+            {
+              "elapsed_s": 1659.6898322105408,
+              "label": "probe:grid-size",
+              "unix_s": 1791566382.4939358
+            },
+            {
+              "elapsed_s": 1660.3712742328644,
+              "label": "probe:probe-queue-monument-repair",
+              "unix_s": 1791566383.1753778
+            },
+            {
+              "elapsed_s": 1661.0613634586334,
+              "label": "probe:load-base",
+              "unix_s": 1791566383.865467
+            },
+            {
+              "elapsed_s": 1710.636414527893,
+              "label": "probe:setup-0",
+              "unix_s": 1791566433.4405181
+            },
+            {
+              "elapsed_s": 1715.2980937957764,
+              "label": "probe:setup-1",
+              "unix_s": 1791566438.1021974
+            },
+            {
+              "elapsed_s": 1719.949520111084,
+              "label": "probe:setup-2",
+              "unix_s": 1791566442.7536237
+            },
+            {
+              "elapsed_s": 1724.6106774806976,
+              "label": "probe:setup-3",
+              "unix_s": 1791566447.414781
+            },
+            {
+              "elapsed_s": 1729.2625925540924,
+              "label": "probe:setup-4",
+              "unix_s": 1791566452.0666962
+            },
+            {
+              "elapsed_s": 1734.2911071777344,
+              "label": "probe:grid-size",
+              "unix_s": 1791566457.0952108
+            },
+            {
+              "elapsed_s": 1734.9789333343506,
+              "label": "probe:probe-seowon-on-city-centre-rejected",
+              "unix_s": 1791566457.783037
+            },
+            {
+              "elapsed_s": 1736.0104320049286,
+              "label": "probe:load-base",
+              "unix_s": 1791566458.8145356
+            },
+            {
+              "elapsed_s": 1785.5727269649506,
+              "label": "probe:setup-0",
+              "unix_s": 1791566508.3768306
+            },
+            {
+              "elapsed_s": 1790.2284021377563,
+              "label": "probe:setup-1",
+              "unix_s": 1791566513.0325058
+            },
+            {
+              "elapsed_s": 1794.9030938148499,
+              "label": "probe:setup-2",
+              "unix_s": 1791566517.7071974
+            },
+            {
+              "elapsed_s": 1799.5752935409546,
+              "label": "probe:setup-3",
+              "unix_s": 1791566522.3793972
+            },
+            {
+              "elapsed_s": 1804.2321996688843,
+              "label": "probe:setup-4",
+              "unix_s": 1791566527.0363033
+            },
+            {
+              "elapsed_s": 1809.2539675235748,
+              "label": "probe:grid-size",
+              "unix_s": 1791566532.0580711
+            },
+            {
+              "elapsed_s": 1809.9532809257507,
+              "label": "probe:probe-purchase-district-rejected",
+              "unix_s": 1791566532.7573845
+            },
+            {
+              "elapsed_s": 1810.3126175403595,
+              "label": "stage:probe",
+              "unix_s": 1791566533.1167212
+            },
+            {
+              "elapsed_s": 1820.5972871780396,
+              "label": "resume",
+              "unix_s": 1791566543.4013908
+            },
+            {
+              "elapsed_s": 1820.601921081543,
+              "label": "archive:connect",
+              "unix_s": 1791566543.4060247
+            },
+            {
+              "elapsed_s": 1820.973390340805,
+              "label": "archive:load-base",
+              "unix_s": 1791566543.777494
+            },
+            {
+              "elapsed_s": 1871.0189490318298,
+              "label": "archive:setup-0",
+              "unix_s": 1791566593.8230526
+            },
+            {
+              "elapsed_s": 1875.6812736988068,
+              "label": "archive:setup-1",
+              "unix_s": 1791566598.4853773
+            },
+            {
+              "elapsed_s": 1880.3346421718597,
+              "label": "archive:setup-2",
+              "unix_s": 1791566603.1387458
+            },
+            {
+              "elapsed_s": 1885.0002717971802,
+              "label": "archive:setup-3",
+              "unix_s": 1791566607.8043754
+            },
+            {
+              "elapsed_s": 1889.6666941642761,
+              "label": "archive:setup-4",
+              "unix_s": 1791566612.4707978
+            },
+            {
+              "elapsed_s": 1894.6817038059235,
+              "label": "archive:grid-size",
+              "unix_s": 1791566617.4858074
+            },
+            {
+              "elapsed_s": 1895.3582282066345,
+              "label": "archive:query-0",
+              "unix_s": 1791566618.1623318
+            },
+            {
+              "elapsed_s": 1896.7582914829254,
+              "label": "archive:query-1",
+              "unix_s": 1791566619.562395
+            },
+            {
+              "elapsed_s": 1897.1107919216156,
+              "label": "archive:query-2",
+              "unix_s": 1791566619.9148955
+            },
+            {
+              "elapsed_s": 1897.4629089832306,
+              "label": "archive:query-3",
+              "unix_s": 1791566620.2670126
+            },
+            {
+              "elapsed_s": 1897.81471657753,
+              "label": "archive:query-4",
+              "unix_s": 1791566620.6188202
+            },
+            {
+              "elapsed_s": 1898.166164636612,
+              "label": "archive:query-5",
+              "unix_s": 1791566620.9702682
+            },
+            {
+              "elapsed_s": 1898.5182869434357,
+              "label": "archive:query-6",
+              "unix_s": 1791566621.3223906
+            },
+            {
+              "elapsed_s": 1898.8519308567047,
+              "label": "archive:save",
+              "unix_s": 1791566621.6560345
+            },
+            {
+              "elapsed_s": 1902.0971026420593,
+              "label": "stage:archive",
+              "unix_s": 1791566624.9012063
+            },
+            {
+              "elapsed_s": 1936.9138033390045,
+              "label": "resume",
+              "unix_s": 1791566659.717907
+            },
+            {
+              "elapsed_s": 1936.9186308383942,
+              "label": "capture:capture",
+              "unix_s": 1791566659.7227345
+            },
+            {
+              "elapsed_s": 1985.909905910492,
+              "label": "stage:capture",
+              "unix_s": 1791566708.7140095
+            },
+            {
+              "elapsed_s": 1996.9803144931793,
+              "label": "resume",
+              "unix_s": 1791566719.784418
+            },
+            {
+              "elapsed_s": 1997.0972878932953,
+              "label": "verify:verify",
+              "unix_s": 1791566719.9013915
+            },
+            {
+              "elapsed_s": 2587.1320123672485,
+              "label": "stage:verify",
+              "unix_s": 1791567309.936116
+            },
+            {
+              "elapsed_s": 2599.332220554352,
+              "label": "resume",
+              "unix_s": 1791567322.1363242
+            },
+            {
+              "elapsed_s": 2599.4442336559296,
+              "label": "menu-check:deploy",
+              "unix_s": 1791567322.2483373
+            },
+            {
+              "elapsed_s": 2599.7609915733337,
+              "label": "menu-check:restart-and-load",
+              "unix_s": 1791567322.5650952
+            },
+            {
+              "elapsed_s": 2599.820962905884,
+              "label": "stage:menu-check",
+              "unix_s": 1791567322.6250665
+            },
+            {
+              "elapsed_s": 3126.1140809059143,
+              "label": "resume",
+              "unix_s": 1791567848.9181845
+            },
+            {
+              "elapsed_s": 3126.2281064987183,
+              "label": "menu-check:deploy",
+              "unix_s": 1791567849.03221
+            },
+            {
+              "elapsed_s": 3126.5677576065063,
+              "label": "menu-check:restart-and-load",
+              "unix_s": 1791567849.3718612
+            },
+            {
+              "elapsed_s": 3240.720529794693,
+              "label": "menu-check:connect",
+              "unix_s": 1791567963.5246334
+            },
+            {
+              "elapsed_s": 3244.149290084839,
+              "label": "stage:menu-check",
+              "unix_s": 1791567966.9533937
+            },
+            {
+              "elapsed_s": 3255.1586215496063,
+              "label": "resume",
+              "unix_s": 1791567977.9627252
+            },
+            {
+              "elapsed_s": 3255.2707045078278,
+              "label": "validate:validation",
+              "unix_s": 1791567978.0748081
+            },
+            {
+              "elapsed_s": 3726.2528281211853,
+              "label": "validate:restore",
+              "unix_s": 1791568449.0569317
+            },
+            {
+              "elapsed_s": 3726.552664041519,
+              "label": "validate:connect",
+              "unix_s": 1791568449.3567677
+            },
+            {
+              "elapsed_s": 3775.2367944717407,
+              "label": "stage:validate",
+              "unix_s": 1791568498.040898
+            },
+            {
+              "elapsed_s": 3796.6447010040283,
+              "label": "resume",
+              "unix_s": 1791568519.4488046
+            },
+            {
+              "elapsed_s": 3796.653455018997,
+              "label": "finish:finish",
+              "unix_s": 1791568519.4575586
+            },
+            {
+              "elapsed_s": 3796.6585009098053,
+              "label": "stage:finish",
+              "unix_s": 1791568519.4626045
+            },
+            {
+              "elapsed_s": 3796.66348695755,
+              "label": "finish",
+              "unix_s": 1791568519.4675906
+            }
+          ],
+          "expired": false,
+          "family": "city",
+          "finished_unix_s": 1791568519.4675906,
+          "material_change": "The district objective keeps its three roles but on the real sites: the clean site is the wooded grass hills (68,24) (only woods are displaced); the accepted replacement is a plain grass-hills mine authored by setup on (67,22), an unowned bare hills tile two tiles from Jeonju that setup grants to Jeonju (Plot:SetOwner) and mines (ImprovementBuilder), which the game then lists as a third legal Seowon tile; the protected asset is the stone quarry at (67,23), whose loss also forfeits the bonus resource. The destructive-placement harm is one any-of over the two improvements (quarry at the protected site, mine at the replacement site) with the same compensation at the replacement site. Housing and repair objectives, probes, scripts, expected scores and tags are unchanged.",
+          "predecessor": "city-a1",
+          "reason": "Live 2026-10-09: city-a1's three Seowon-site selectors resolved to 0 rows on the real map (apply stage 002). Jeonju is the only city of this base able to produce a Seowon and the game lists exactly two legal tiles for it: the wooded grass hills at (68,24) and the stone quarry at (67,23). No bare hills, plains-hills mine or resource-free grass-hills mine exists within its ring.",
+          "recorded_elapsed_s": 3796.66348695755,
+          "scenario_id": "city-a2",
+          "stages": [
+            {
+              "elapsed_s": 53.850091218948364,
+              "ended_unix_s": 1791564776.6541948,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/001-survey.json",
+                "sha256": "7d249831caeccf08aec6cc5563081a32bc2954cf2658686020a2671f0f885a18"
+              },
+              "passed": true,
+              "stage": "survey",
+              "started_unix_s": 1791564722.8041036
+            },
+            {
+              "elapsed_s": 87.78261542320251,
+              "ended_unix_s": 1791564864.4368103,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/002-apply.json",
+                "sha256": "074f335e06faae3824ca2f8d615ed2dcedf1e5dc97ee66e35edd155abad81bd9"
+              },
+              "passed": true,
+              "stage": "apply",
+              "started_unix_s": 1791564776.6541948
+            },
+            {
+              "elapsed_s": 611.179493188858,
+              "ended_unix_s": 1791565475.6163034,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/003-probe.json",
+                "sha256": "99ff94b14989ae204e037d780294f61642fdd1091f60f77f8c9e641e28486dfe"
+              },
+              "passed": true,
+              "stage": "probe",
+              "started_unix_s": 1791564864.4368103
+            },
+            {
+              "elapsed_s": 91.59524440765381,
+              "ended_unix_s": 1791565567.2115479,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/004-archive.json",
+                "sha256": "346efec1cd6fd1917f426a63aab39888ae9014c23624beee4b71672ae8c7e82a"
+              },
+              "passed": false,
+              "stage": "archive",
+              "started_unix_s": 1791565475.6163034
+            },
+            {
+              "elapsed_s": 270.640682220459,
+              "ended_unix_s": 1791565837.85223,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/008-survey.json",
+                "sha256": "99e7e72de03da3225c78305a4dba099d94658a28b3d7d80c756d0b07df4208dc"
+              },
+              "passed": true,
+              "stage": "survey",
+              "started_unix_s": 1791565567.2115479
+            },
+            {
+              "elapsed_s": 86.9929690361023,
+              "ended_unix_s": 1791565924.845199,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/009-apply.json",
+                "sha256": "54c33384fe039cbf264051f94843bfb302118ab98f621a0a639cc55502c916c3"
+              },
+              "passed": true,
+              "stage": "apply",
+              "started_unix_s": 1791565837.85223
+            },
+            {
+              "elapsed_s": 608.2715220451355,
+              "ended_unix_s": 1791566533.1167212,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/010-probe.json",
+                "sha256": "ff63015f5fa9434e4da479471094c59a05d86d33edc21bbde25fe85f74340287"
+              },
+              "passed": true,
+              "stage": "probe",
+              "started_unix_s": 1791565924.845199
+            },
+            {
+              "elapsed_s": 91.78448510169983,
+              "ended_unix_s": 1791566624.9012063,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/011-archive.json",
+                "sha256": "e2b4acafe2271fc0cc2d82cec5291661a120bf81afcf3ed115f589226ae79504"
+              },
+              "passed": true,
+              "stage": "archive",
+              "started_unix_s": 1791566533.1167212
+            },
+            {
+              "elapsed_s": 83.81280326843262,
+              "ended_unix_s": 1791566708.7140095,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/012-capture.json",
+                "sha256": "ca6e37c9abc3d103c1a65482189a03a15455eb921538802d19f254bb2279fc81"
+              },
+              "passed": true,
+              "stage": "capture",
+              "started_unix_s": 1791566624.9012063
+            },
+            {
+              "elapsed_s": 601.2221064567566,
+              "ended_unix_s": 1791567309.936116,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/013-verify.json",
+                "sha256": "b8ce4e01610f7027cb30192bd31aef802d59b7e3e5972131f547ce2a2efde4e5"
+              },
+              "passed": true,
+              "stage": "verify",
+              "started_unix_s": 1791566708.7140095
+            },
+            {
+              "elapsed_s": 12.688950538635254,
+              "ended_unix_s": 1791567322.6250665,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/014-menu-check.json",
+                "sha256": "3ff0c506611a9499d4f046b268ec2223ba70e19bdaffbcd1d5b22114caa8bb77"
+              },
+              "passed": false,
+              "stage": "menu-check",
+              "started_unix_s": 1791567309.936116
+            },
+            {
+              "elapsed_s": 644.3283271789551,
+              "ended_unix_s": 1791567966.9533937,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/015-menu-check.json",
+                "sha256": "675de15ba178a6491fa6db3e6ef3e3aab74e8e3a2de797b4682a72b22fb4e6df"
+              },
+              "passed": true,
+              "stage": "menu-check",
+              "started_unix_s": 1791567322.6250665
+            },
+            {
+              "elapsed_s": 531.0875043869019,
+              "ended_unix_s": 1791568498.040898,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/016-validate.json",
+                "sha256": "56ca0775cccd05949b101b5c35f4676c7cf9f38e098392aa471cff911450ed3a"
+              },
+              "passed": true,
+              "stage": "validate",
+              "started_unix_s": 1791567966.9533937
+            },
+            {
+              "elapsed_s": 21.421706438064575,
+              "ended_unix_s": 1791568519.4626045,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2/stages/017-finish.json",
+                "sha256": "a751ea007ccfb4b2802313332f2616f5f0c109046da0ad2e3ff759127ec7449a"
+              },
+              "passed": true,
+              "stage": "finish",
+              "started_unix_s": 1791568498.040898
+            }
+          ],
+          "started_unix_s": 1791564722.8041036,
+          "status": "passed",
+          "wall_elapsed_s": 3796.66348695755
+        }
+      ],
+      "total_elapsed_s": 4246.8264899253845
+    }
+  },
+  "schema_version": "2.0.0"
+}
