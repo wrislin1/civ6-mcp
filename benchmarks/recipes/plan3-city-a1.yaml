@@ -1,0 +1,432 @@
+schema_version: 2.0.0
+family: city
+scenario_id: city-a1
+predecessor: null
+substitution_reason: null
+material_change: null
+toolset_id: plan3-part1-v1
+max_steps: 15
+positive_maximum: 12
+harm_maximum: 4
+base_save_identity:
+  name: SEONDEOK 100 400 BC
+  sha256: 2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29
+  turn: 100
+  seed: 1881300077
+  civ_type: CIVILIZATION_KOREA
+recipe_id: plan3-city-a1
+version: 1
+toolset_path: benchmarks/toolsets/plan3-part1-v1.yaml
+player_id: 0
+# The arena's model feed cap (agent.MODEL_FEED_CHAR_CAP).
+result_char_cap: 1500
+
+# Offline declaration. Literal city names/ids/centres are MEASURED facts of this
+# base (benchmarks/positions/builder-posctrl-v1.yaml):
+#   Gyeongju 65536 (72,26) pop 12   Jeonju 131073 (67,24) pop 7
+#   Gwangju 196610 (70,22) pop 4
+# Three separate cities carry the three objectives so their queues never
+# compete: Gyeongju's housing shortfall (granary remedy, purchasable from the
+# authored treasury), Jeonju's campus placement (two accepted sites, one of
+# which replaces a lower-value plains farm; a grassland farm is protected), and
+# Gwangju's pillaged monument (urgent repair). Tiles are resolved live from the
+# selectors; ambiguity fails with the candidate list.
+setup:
+  operations:
+  - kind: lua
+    # Treasury for the joint witness (granary purchase), checked by the
+    # purchase probe; readback reports the balance.
+    lua: |
+      local t = Players[0]:GetTreasury()
+      t:ChangeGoldBalance(500 - t:GetGoldBalance())
+      print("OK|gold " .. t:GetGoldBalance())
+    readback: |
+      local g = Players[0]:GetTreasury():GetGoldBalance()
+      if g >= 500 then print("OK|gold " .. g) else print("ERR|gold " .. g) end
+  - kind: lua
+    # Urgent repair: pillage Gwangju's monument.
+    lua: |
+      local c = nil
+      for _, city in Players[0]:GetCities():Members() do
+        if Locale.Lookup(city:GetName()) == "Gwangju" then c = city end
+      end
+      if c == nil then print("ERR|Gwangju missing") return end
+      local b = GameInfo.Buildings["BUILDING_MONUMENT"].Index
+      if not c:GetBuildings():HasBuilding(b) then print("ERR|Gwangju has no monument") return end
+      c:GetBuildings():SetPillaged(b, true)
+      print("OK|pillaged|Gwangju|BUILDING_MONUMENT")
+    readback: |
+      local c = nil
+      for _, city in Players[0]:GetCities():Members() do
+        if Locale.Lookup(city:GetName()) == "Gwangju" then c = city end
+      end
+      local b = GameInfo.Buildings["BUILDING_MONUMENT"].Index
+      if c ~= nil and c:GetBuildings():IsPillaged(b) then
+        print("OK|repair_city|Gwangju|BUILDING_MONUMENT|pillaged")
+      else
+        print("ERR|Gwangju monument is not pillaged")
+      end
+  - kind: lua
+    # Measurement only: Gyeongju must show a housing shortfall and no granary.
+    lua: |
+      print("OK|measure housing")
+    readback: |
+      local c = nil
+      for _, city in Players[0]:GetCities():Members() do
+        if Locale.Lookup(city:GetName()) == "Gyeongju" then c = city end
+      end
+      if c == nil then print("ERR|Gyeongju missing") return end
+      local housing = c:GetGrowth():GetHousing()
+      local pop = c:GetPopulation()
+      local granary = c:GetBuildings():HasBuilding(GameInfo.Buildings["BUILDING_GRANARY"].Index)
+      if housing - pop < 1 and not granary then
+        print("OK|housing_city|Gyeongju|housing " .. housing .. "|pop " .. pop)
+      else
+        print("ERR|Gyeongju housing " .. housing .. " pop " .. pop .. " granary " .. tostring(granary))
+      end
+  assertions:
+  - id: housing-unresolved
+    value: false
+    predicate: {kind: housing_resolved, cities: ["${housing_city.id}"],
+                remedy_buildings: [BUILDING_GRANARY], minimum_surplus: 1}
+  - id: repair-not-queued
+    value: false
+    predicate: {kind: active_production, cities: ["${repair_city.id}"],
+                items: [BUILDING_MONUMENT], repair: true}
+  - id: district-not-committed
+    value: false
+    predicate: {kind: district_committed, cities: ["${district_city.id}"],
+                district_types: [DISTRICT_CAMPUS],
+                tiles: ["${district_site.xy}", "${replacement_site.xy}"]}
+  - id: protected-farm-present
+    value: true
+    predicate: {kind: tile_matches, tiles: ["${protected_asset.xy}"],
+                fields: {improvement: IMPROVEMENT_FARM, pillaged: false}}
+
+survey:
+  queries:
+  - {tool: get_overview, arguments: {}}
+  - {tool: get_cities, arguments: {}}
+  - {tool: get_city_production, arguments: {city_id: 65536}}
+  - {tool: get_city_production, arguments: {city_id: 196610}}
+  - {tool: get_district_advisor, arguments: {city_id: 131073, district_type: DISTRICT_CAMPUS}}
+  - {tool: get_map_area, arguments: {x: 67, y: 24, radius: 2}}
+  - {tool: get_purchasable_tiles, arguments: {city_id: 131073}}
+  required_facts:
+  - {id: housing-visible, source: get_cities, pattern: "Gyeongju \\(pop \\d+\\).*Housing \\d+"}
+  - {id: pillaged-building-visible, source: get_cities, pattern: "PILLAGED: .*MONUMENT"}
+  - {id: granary-purchasable, source: get_city_production, pattern: "GRANARY"}
+  - {id: monument-repair-listed, source: get_city_production, pattern: "MONUMENT"}
+  - {id: campus-sites-ranked, source: get_district_advisor, pattern: "\\(\\d+,\\s*\\d+\\)"}
+  - {id: farms-visible, source: get_map_area, pattern: "(?i)farm"}
+
+bindings:
+- name: housing_city
+  resolves: city
+  selector: {owner: 0, name: Gyeongju}
+- name: district_city
+  resolves: city
+  selector: {owner: 0, name: Jeonju}
+- name: repair_city
+  resolves: city
+  selector: {owner: 0, name: Gwangju}
+- name: district_site
+  # Accepted site that displaces nothing: owned, unimproved, featureless,
+  # no resource, within the Jeonju ring.
+  resolves: tile
+  selector: {owner: 0, improvement: NONE, district: NONE, resource: NONE, feature: NONE,
+             area: [[66, 23], [67, 23], [68, 23], [66, 24], [68, 24], [66, 25], [67, 25],
+                    [68, 25]]}
+- name: replacement_site
+  # Accepted productive replacement: a plains farm whose loss the campus outweighs.
+  resolves: tile
+  selector: {owner: 0, improvement: IMPROVEMENT_FARM, terrain: TERRAIN_PLAINS,
+             resource: NONE, district: NONE,
+             area: [[66, 22], [67, 22], [68, 22], [65, 23], [66, 23], [67, 23], [68, 23],
+                    [69, 23], [65, 24], [66, 24], [68, 24], [69, 24], [65, 25], [66, 25],
+                    [67, 25], [68, 25], [69, 25], [66, 26], [67, 26], [68, 26]]}
+- name: protected_asset
+  # Unacceptable displacement: a grassland farm (higher food) near Jeonju.
+  resolves: tile
+  selector: {owner: 0, improvement: IMPROVEMENT_FARM, terrain: TERRAIN_GRASS,
+             resource: NONE, district: NONE,
+             area: [[66, 22], [67, 22], [68, 22], [65, 23], [66, 23], [67, 23], [68, 23],
+                    [69, 23], [65, 24], [66, 24], [68, 24], [69, 24], [65, 25], [66, 25],
+                    [67, 25], [68, 25], [69, 25], [66, 26], [67, 26], [68, 26]]}
+
+coverage_rule:
+  include_owned_tiles: true
+  area_radius: 1
+  tracked_target_bindings: []
+
+objectives:
+- id: address-housing
+  rungs:
+  - points: 2
+    predicate: {kind: active_production, cities: ["${housing_city.id}"],
+                items: [BUILDING_GRANARY], repair: false}
+  - points: 4
+    predicate: {kind: housing_resolved, cities: ["${housing_city.id}"],
+                remedy_buildings: [BUILDING_GRANARY], minimum_surplus: 1}
+- id: commit-district
+  rungs:
+  - points: 4
+    predicate: {kind: district_committed, cities: ["${district_city.id}"],
+                district_types: [DISTRICT_CAMPUS],
+                tiles: ["${district_site.xy}", "${replacement_site.xy}"]}
+- id: initiate-repair
+  rungs:
+  - points: 4
+    predicate: {kind: active_production, cities: ["${repair_city.id}"],
+                items: [BUILDING_MONUMENT], repair: true}
+
+harms:
+- id: destructive-placement
+  loss_key: productive_asset
+  objective_id: commit-district
+  weight: 4
+  weight_reason: ""
+  timing: event
+  priority: 0
+  predicate: {kind: asset_displaced, tiles: ["${protected_asset.xy}", "${replacement_site.xy}"],
+              asset_fields: {improvement: IMPROVEMENT_FARM}}
+  # Displacing the plains farm for a committed campus there is accepted.
+  compensation:
+  - timing: final
+    predicate: {kind: district_committed, cities: ["${district_city.id}"],
+                district_types: [DISTRICT_CAMPUS], tiles: ["${replacement_site.xy}"]}
+
+probes:
+- {id: purchase-granary, tool: purchase_item, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${housing_city.id}", item_type: BUILDING,
+                             item_name: BUILDING_GRANARY}}
+- {id: queue-granary, tool: set_city_production, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${housing_city.id}", item_type: BUILDING,
+                             item_name: BUILDING_GRANARY}}
+- {id: campus-at-clean-site, tool: set_city_production, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
+                             item_name: DISTRICT_CAMPUS, target_x: "${district_site.x}",
+                             target_y: "${district_site.y}"}}
+- {id: campus-at-replacement-site, tool: set_city_production, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
+                             item_name: DISTRICT_CAMPUS, target_x: "${replacement_site.x}",
+                             target_y: "${replacement_site.y}"}}
+- {id: campus-on-protected-farm, tool: set_city_production, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
+                             item_name: DISTRICT_CAMPUS, target_x: "${protected_asset.x}",
+                             target_y: "${protected_asset.y}"}}
+- {id: queue-monument-repair, tool: set_city_production, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${repair_city.id}", item_type: BUILDING,
+                             item_name: BUILDING_MONUMENT}}
+- {id: campus-on-city-centre-rejected, tool: set_city_production, expect: rejected,
+   restore: true,
+   arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
+                             item_name: DISTRICT_CAMPUS, target_x: "${district_city.x}",
+                             target_y: "${district_city.y}"}}
+- {id: purchase-district-rejected, tool: purchase_item, expect: rejected, restore: true,
+   arguments_from_bindings: {city_id: "${district_city.id}", item_type: DISTRICT,
+                             item_name: DISTRICT_CAMPUS}}
+
+archive:
+  name: PLAN3_CITY_A1_V{version}
+  path: benchmarks/saves/plan3-city-a1-v{version}.Civ6Save
+outputs:
+  position: benchmarks/positions/plan3-city-a1-v{version}.json
+  provenance_authoring: benchmarks/provenance/plan3-city-a1-v{version}-authoring.json
+  provenance_packet: benchmarks/provenance/plan3-city-a1-v{version}.json
+  scripts_dir: benchmarks/scripts/plan3-city-a1-v{version}
+  validation_dir: benchmarks/validation/plan3-city-a1-v{version}
+
+# Script templates hold calls only; expectations live in the separate cases.
+scripts:
+- script_id: observe
+  batches:
+  - calls:
+    - {name: get_overview, arguments: {}}
+    - {name: get_cities, arguments: {}}
+  - calls:
+    - {name: get_city_production, arguments: {city_id: "${housing_city.id}"}}
+    - {name: get_district_advisor, arguments: {city_id: "${district_city.id}",
+                                               district_type: DISTRICT_CAMPUS}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: joint-full
+  batches:
+  - calls:
+    - {name: purchase_item, arguments: {city_id: "${housing_city.id}", item_type: BUILDING,
+                                        item_name: BUILDING_GRANARY}}
+    - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
+                                              item_name: DISTRICT_CAMPUS,
+                                              target_x: "${district_site.x}",
+                                              target_y: "${district_site.y}"}}
+    - {name: set_city_production, arguments: {city_id: "${repair_city.id}", item_type: BUILDING,
+                                              item_name: BUILDING_MONUMENT}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: alternative-full
+  # The accepted productive replacement site, in a different order.
+  batches:
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${repair_city.id}", item_type: BUILDING,
+                                              item_name: BUILDING_MONUMENT}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
+                                              item_name: DISTRICT_CAMPUS,
+                                              target_x: "${replacement_site.x}",
+                                              target_y: "${replacement_site.y}"}}
+  - calls:
+    - {name: purchase_item, arguments: {city_id: "${housing_city.id}", item_type: BUILDING,
+                                        item_name: BUILDING_GRANARY}}
+    - {name: finish_trial, arguments: {}}
+- script_id: housing-partial
+  batches:
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${housing_city.id}", item_type: BUILDING,
+                                              item_name: BUILDING_GRANARY}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: uncredited-preparation
+  # Survey and queue a builder in the district city: preparation, no commitment.
+  batches:
+  - calls:
+    - {name: get_district_advisor, arguments: {city_id: "${district_city.id}",
+                                               district_type: DISTRICT_CAMPUS}}
+    - {name: get_purchasable_tiles, arguments: {city_id: "${district_city.id}"}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: UNIT,
+                                              item_name: UNIT_BUILDER}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: destructive-placement
+  batches:
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
+                                              item_name: DISTRICT_CAMPUS,
+                                              target_x: "${protected_asset.x}",
+                                              target_y: "${protected_asset.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: mixed-gain-loss
+  batches:
+  - calls:
+    - {name: purchase_item, arguments: {city_id: "${housing_city.id}", item_type: BUILDING,
+                                        item_name: BUILDING_GRANARY}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
+                                              item_name: DISTRICT_CAMPUS,
+                                              target_x: "${protected_asset.x}",
+                                              target_y: "${protected_asset.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: queue-overwrite
+  # Commit at the replacement site (farm displaced, compensated while
+  # committed), then overwrite the queue: the commitment credit and the
+  # compensation vanish, the past displacement stays.
+  batches:
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${repair_city.id}", item_type: BUILDING,
+                                              item_name: BUILDING_MONUMENT}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: DISTRICT,
+                                              item_name: DISTRICT_CAMPUS,
+                                              target_x: "${replacement_site.x}",
+                                              target_y: "${replacement_site.y}"}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${district_city.id}", item_type: UNIT,
+                                              item_name: UNIT_BUILDER}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: repeat-undo
+  # Repeat: a second granary purchase is rejected. Undo: the repair is queued
+  # and then replaced.
+  batches:
+  - calls:
+    - {name: purchase_item, arguments: {city_id: "${housing_city.id}", item_type: BUILDING,
+                                        item_name: BUILDING_GRANARY}}
+  - calls:
+    - {name: purchase_item, arguments: {city_id: "${housing_city.id}", item_type: BUILDING,
+                                        item_name: BUILDING_GRANARY}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${repair_city.id}", item_type: BUILDING,
+                                              item_name: BUILDING_MONUMENT}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${repair_city.id}", item_type: UNIT,
+                                              item_name: UNIT_BUILDER}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+
+cases:
+- case_id: null-discovery
+  script_id: observe
+  tags: [null_discovery]
+  expected:
+    score: {gross_credit: 0, harm_total: 0, net_credit: 0, primary_score: 0.0}
+    endpoints: []
+    ledger: []
+- case_id: joint-full
+  script_id: joint-full
+  tags: [joint_full]
+  expected:
+    score: {gross_credit: 12, harm_total: 0, net_credit: 12, primary_score: 1.0}
+    endpoints:
+    - {id: protected-farm-kept, value: true,
+       predicate: {kind: tile_matches, tiles: ["${protected_asset.xy}"],
+                   fields: {improvement: IMPROVEMENT_FARM}}}
+    ledger: []
+- case_id: alternative-full
+  script_id: alternative-full
+  tags: [alternative_full, accepted_replacement]
+  expected:
+    score: {gross_credit: 12, harm_total: 0, net_credit: 12, primary_score: 1.0}
+    endpoints:
+    - {id: replacement-farm-displaced, value: false,
+       predicate: {kind: tile_matches, tiles: ["${replacement_site.xy}"],
+                   fields: {improvement: IMPROVEMENT_FARM}}}
+    ledger: []
+- case_id: housing-partial
+  script_id: housing-partial
+  tags: [housing_partial]
+  expected:
+    score: {gross_credit: 2, harm_total: 0, net_credit: 2, primary_score: 0.16666666666666666}
+    endpoints: []
+    ledger: []
+- case_id: uncredited-preparation
+  script_id: uncredited-preparation
+  tags: [uncredited_preparation]
+  expected:
+    score: {gross_credit: 0, harm_total: 0, net_credit: 0, primary_score: 0.0}
+    endpoints: []
+    ledger: []
+- case_id: destructive-placement
+  script_id: destructive-placement
+  tags: [destructive_placement, harm_only]
+  expected:
+    score: {gross_credit: 0, harm_total: 4, net_credit: -4, primary_score: -0.3333333333333333}
+    endpoints:
+    - {id: protected-farm-lost, value: false,
+       predicate: {kind: tile_matches, tiles: ["${protected_asset.xy}"],
+                   fields: {improvement: IMPROVEMENT_FARM}}}
+    ledger: []
+- case_id: mixed-gain-loss
+  script_id: mixed-gain-loss
+  tags: [mixed_gain_loss]
+  expected:
+    score: {gross_credit: 4, harm_total: 4, net_credit: 0, primary_score: 0.0}
+    endpoints: []
+    ledger: []
+- case_id: queue-overwrite
+  script_id: queue-overwrite
+  tags: [queue_overwrite]
+  expected:
+    score: {gross_credit: 4, harm_total: 4, net_credit: 0, primary_score: 0.0}
+    endpoints: []
+    ledger: []
+- case_id: repeat-undo
+  script_id: repeat-undo
+  tags: [repeat_undo]
+  declared_rejections:
+  - {step: 1, tool_name: purchase_item}
+  expected:
+    score: {gross_credit: 4, harm_total: 0, net_credit: 4, primary_score: 0.3333333333333333}
+    endpoints: []
+    ledger: []

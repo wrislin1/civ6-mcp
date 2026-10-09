@@ -1,0 +1,220 @@
+"""Offline contract of the three Part 1 authoring recipes (no game contact).
+
+The recipes declare binding rules, setup/probe operations, rubric shapes,
+discovery queries, script/case templates and versioned output paths; their
+concrete live IDs/coordinates are outputs of the survey/apply/probe stages.
+"""
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+from civ_mcp.arena import registry
+from civ_mcp.arena.benchmark_agent import FINISH_TRIAL_TOOL_NAME
+from civ_mcp.arena.benchmark_authoring import load_recipe
+from civ_mcp.arena.benchmark_manifest_v2 import load_toolset
+
+REPO = Path(__file__).resolve().parents[2]
+FAMILIES = ("builder", "city", "tactical")
+HARM_MAXIMA = {"builder": 8, "city": 4, "tactical": 4}
+REQUIRED_TAGS = {
+    "builder": {"null_discovery", "joint_full", "alternative_full", "partial_repair",
+                "partial_resource", "partial_food", "closer_only", "escort_loss",
+                "escort_legitimate", "new_exposure", "covered_route",
+                "temporary_exposure_repaired", "mixed_gain_loss", "harm_only", "repeat_undo",
+                "final_charge"},
+    "city": {"null_discovery", "joint_full", "alternative_full", "housing_partial",
+             "uncredited_preparation", "destructive_placement", "accepted_replacement",
+             "mixed_gain_loss", "harm_only", "queue_overwrite", "repeat_undo"},
+    "tactical": {"null_discovery", "joint_full", "alternative_full", "meaningful_damage",
+                 "reinforcement_partial", "closer_only", "covered_rescue",
+                 "initial_exposure_null", "military_loss", "accepted_compensation",
+                 "mixed_gain_loss", "harm_only", "repeat_undo"},
+}
+
+
+def _path(family: str) -> Path:
+    return REPO / "benchmarks" / "recipes" / f"plan3-{family}-a1.yaml"
+
+
+def _raw(family: str) -> dict:
+    return yaml.safe_load(_path(family).read_text(encoding="utf-8"))
+
+
+def _load_variant(tmp_path: Path, doc: dict):
+    path = tmp_path / "variant.yaml"
+    path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    return load_recipe(path, root=REPO)
+
+
+def test_three_recipes_share_surface_and_finite_score_contract():
+    maxima = {"builder": 8, "city": 4, "tactical": 4}
+    for family, harm_max in maxima.items():
+        recipe = load_recipe(Path(f"benchmarks/recipes/plan3-{family}-a1.yaml"))
+        assert recipe["toolset_id"] == "plan3-part1-v1"
+        assert recipe["positive_maximum"] == 12
+        assert recipe["harm_maximum"] == harm_max
+        assert recipe["max_steps"] == 15
+        assert recipe["predecessor"] is None
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_recipe_loads_with_repo_root_and_common_identity(family):
+    recipe = load_recipe(_path(family), root=REPO)
+    assert recipe["recipe_id"] == f"plan3-{family}-a1"
+    assert recipe["family"] == family
+    assert recipe["scenario_id"] == f"{family}-a1"
+    assert recipe["version"] == 1
+    assert recipe["substitution_reason"] is None and recipe["material_change"] is None
+    assert recipe["base_save_identity"] == {
+        "name": "SEONDEOK 100 400 BC",
+        "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+        "turn": 100, "seed": 1881300077, "civ_type": "CIVILIZATION_KOREA"}
+    assert recipe["player_id"] == 0
+
+
+def test_recipes_share_the_frozen_35_tool_identity():
+    identities = set()
+    for family in FAMILIES:
+        recipe = load_recipe(_path(family), root=REPO)
+        toolset = load_toolset(REPO / recipe["toolset_path"])
+        assert len(toolset["game_tools"]) == 35
+        identities.add(json.dumps(toolset["identity"], sort_keys=True))
+    assert len(identities) == 1
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_three_four_point_objectives_and_finite_harm_scope(family):
+    recipe = load_recipe(_path(family), root=REPO)
+    objectives = recipe["objectives"]
+    assert len(objectives) == 3
+    assert [max(r["points"] for r in o["rungs"]) for o in objectives] == [4, 4, 4]
+    groups: dict[str, int] = {}
+    for harm in recipe["harms"]:
+        served = next(o for o in objectives if o["id"] == harm["objective_id"])
+        assert harm["weight"] == max(r["points"] for r in served["rungs"])
+        assert harm["weight_reason"] == ""
+        groups[harm["loss_key"]] = max(groups.get(harm["loss_key"], 0), harm["weight"])
+    assert sum(groups.values()) == recipe["harm_maximum"] == HARM_MAXIMA[family]
+
+
+def test_output_naming_is_versioned_and_distinct_per_family():
+    seen: set[str] = set()
+    for family in FAMILIES:
+        recipe = load_recipe(_path(family), root=REPO)
+        paths = [recipe["archive"]["path"], *recipe["outputs"].values()]
+        for template in [recipe["archive"]["name"], *paths]:
+            assert "{version}" in template
+            assert template.format(version=1) != template.format(version=2)
+            assert template.format(version=1) not in seen
+            seen.add(template.format(version=1))
+        # Nothing is published yet: version 1 outputs are created, never overwritten.
+        assert not any((REPO / p.format(version=1)).exists() for p in paths)
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_every_required_live_case_tag_is_declared(family):
+    recipe = load_recipe(_path(family), root=REPO)
+    tags = {tag for case in recipe["cases"] for tag in case["tags"]}
+    assert REQUIRED_TAGS[family] <= tags
+    assert all(case["tags"] for case in recipe["cases"])
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_scripts_use_only_frozen_tools_and_end_with_finish(family):
+    recipe = load_recipe(_path(family), root=REPO)
+    tools = set(load_toolset(REPO / recipe["toolset_path"])["game_tools"])
+    for script in recipe["scripts"]:
+        calls = [c for batch in script["batches"] for c in batch["calls"]]
+        assert calls[-1]["name"] == FINISH_TRIAL_TOOL_NAME
+        assert all(c["name"] in tools for c in calls[:-1])
+    null = next(c for c in recipe["cases"] if "null_discovery" in c["tags"])
+    script = next(s for s in recipe["scripts"] if s["script_id"] == null["script_id"])
+    for batch in script["batches"]:
+        for call in batch["calls"]:
+            if call["name"] != FINISH_TRIAL_TOOL_NAME:
+                assert call["name"].startswith("get_")
+                assert registry.TOOL_REGISTRY[call["name"]].verb == ""
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_raw_lua_only_in_setup_operations(family, tmp_path):
+    doc = _raw(family)
+    assert doc["setup"]["operations"]
+    doc["scripts"][0]["batches"][0]["calls"][0]["arguments"]["lua"] = "print(1)"
+    with pytest.raises(ValueError, match="raw Lua"):
+        _load_variant(tmp_path, doc)
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_trivially_true_positive_rung_is_rejected(family, tmp_path):
+    doc = _raw(family)
+    name = next(b["name"] for b in doc["bindings"] if b["resolves"] in ("tile", "city"))
+    doc["objectives"][0]["rungs"][0]["predicate"] = {
+        "kind": "tile_matches", "tiles": ["${%s.xy}" % name], "fields": {"owner": 0}}
+    with pytest.raises(ValueError, match="initially true"):
+        _load_variant(tmp_path, doc)
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_missing_discoverability_source_is_rejected(family, tmp_path):
+    doc = _raw(family)
+    del doc["survey"]["required_facts"][0]["source"]
+    with pytest.raises(ValueError, match="source"):
+        _load_variant(tmp_path, doc)
+    doc = _raw(family)
+    doc["survey"]["required_facts"][0]["source"] = "get_great_people"
+    with pytest.raises(ValueError, match="source"):
+        _load_variant(tmp_path, doc)
+    doc = _raw(family)
+    doc["survey"]["required_facts"] = []
+    with pytest.raises(ValueError, match="required_facts"):
+        _load_variant(tmp_path, doc)
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_ambiguous_binding_rule_is_rejected(family, tmp_path):
+    doc = _raw(family)
+    twin = copy.deepcopy(doc["bindings"][0])
+    twin["name"] = "twin"
+    doc["bindings"].append(twin)
+    with pytest.raises(ValueError, match="ambiguous"):
+        _load_variant(tmp_path, doc)
+
+
+def test_mutually_incompatible_objectives_are_rejected(tmp_path):
+    doc = _raw("builder")
+    food = next(o for o in doc["objectives"] if o["id"] == "improve-food")
+    food["rungs"][-1]["predicate"] = {
+        "kind": "tile_matches", "tiles": ["${resource_site.xy}"],
+        "fields": {"improvement": "IMPROVEMENT_FARM"}}
+    with pytest.raises(ValueError, match="incompatible"):
+        _load_variant(tmp_path, doc)
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_case_scores_follow_the_rubric_structure(family):
+    recipe = load_recipe(_path(family), root=REPO)
+    by_tag: dict[str, dict] = {}
+    for case in recipe["cases"]:
+        for tag in case["tags"]:
+            by_tag.setdefault(tag, case["expected"]["score"])
+    assert by_tag["joint_full"]["primary_score"] == 1.0
+    assert by_tag["alternative_full"]["primary_score"] == 1.0
+    assert by_tag["null_discovery"]["primary_score"] == 0.0
+    assert by_tag["harm_only"]["net_credit"] == -4
+    assert by_tag["harm_only"]["primary_score"] == -4 / 12
+    for case in recipe["cases"]:
+        score = case["expected"]["score"]
+        assert {"gross_credit", "harm_total", "net_credit", "primary_score"} <= score.keys()
+        assert score["net_credit"] == score["gross_credit"] - score["harm_total"]
+        assert score["primary_score"] == score["net_credit"] / 12
+        assert 0 <= score["harm_total"] <= recipe["harm_maximum"]
+        assert 0 <= score["gross_credit"] <= 12
+    if family == "builder":
+        # Both distinct four-point harms fire: the full -8/12 deduction.
+        assert any(c["expected"]["score"]["harm_total"] == 8 for c in recipe["cases"])

@@ -85,7 +85,8 @@ RECIPE = {
     },
     "survey": {
         "queries": [{"tool": "get_units", "arguments": {}}],
-        "required_facts": [{"id": "builder-visible", "pattern": "UNIT_BUILDER"}],
+        "required_facts": [{"id": "builder-visible", "pattern": "UNIT_BUILDER",
+                            "source": "get_units"}],
     },
     "bindings": [
         {"name": "builder", "selector": {"owner": 0, "type": "UNIT_BUILDER"}, "resolves": "unit"},

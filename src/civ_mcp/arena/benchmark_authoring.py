@@ -350,7 +350,14 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
                          f"{ctx}.selector.{key} must be a scalar")
         names.append(binding["name"])
     _require(len(names) == len(set(names)), "recipe.bindings has duplicate names")
-    dummy = {name: dict(_DUMMY_BINDING) for name in names}
+    rules: dict[str, str] = {}
+    for binding in bindings:
+        rule = json.dumps([binding["resolves"], binding["selector"]], sort_keys=True)
+        _require(rule not in rules,
+                 f"ambiguous binding rule: {binding['name']!r} and {rules.get(rule)!r} "
+                 "share the same selector")
+        rules[rule] = binding["name"]
+    dummy ={name: dict(_DUMMY_BINDING) for name in names}
     kinds = {b["name"]: b["resolves"] for b in bindings}
 
     setup = raw["setup"]
@@ -376,11 +383,16 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
                  f"{ctx}.tool {query['tool']!r} is an action tool; survey queries must be "
                  "read-only (they also run on the archived start before save)")
         _require(isinstance(query["arguments"], dict), f"{ctx}.arguments must be a mapping")
-    _require(isinstance(survey["required_facts"], list), "recipe.survey.required_facts must be a list")
+    _require(isinstance(survey["required_facts"], list) and bool(survey["required_facts"]),
+             "recipe.survey.required_facts must be a non-empty list")
+    query_tools = {query["tool"] for query in survey["queries"]}
     for i, fact in enumerate(survey["required_facts"]):
         ctx = f"recipe.survey.required_facts[{i}]"
-        _check_keys(fact, {"id", "pattern"}, ctx)
+        _check_keys(fact, {"id", "pattern", "source"}, ctx)
         _require(_is_str(fact["id"]) and _is_str(fact["pattern"]), f"{ctx} fields must be strings")
+        _require(fact["source"] in query_tools,
+                 f"{ctx}.source {fact['source']!r} must name a survey query tool "
+                 f"({sorted(query_tools)}) as its discoverability source")
         try:
             re.compile(fact["pattern"])
         except re.error as exc:
@@ -406,6 +418,8 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
              f"objective maxima sum to {positive}, not positive_maximum {raw['positive_maximum']}")
     harm = sum(_group_maxima(rubric).values())
     _require(harm == harm_max, f"harm group maxima sum to {harm}, not harm_maximum {harm_max}")
+    _check_compatible_objectives(raw["objectives"])
+    _check_rungs_nontrivial(rubric)
 
     probes = raw["probes"]
     _require(isinstance(probes, list) and bool(probes), "recipe.probes must be a non-empty list")
@@ -466,6 +480,71 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
         validate_case_expected(substitute_bindings(case["expected"], dummy))
         case_ids.append(case["case_id"])
     _require(len(case_ids) == len(set(case_ids)), "recipe.cases has duplicate case_id")
+
+
+def _tile_claims(predicate: dict[str, Any]) -> list[tuple[str, str]]:
+    """(tile key, improvement) for every ``tile_matches`` leaf naming an improvement."""
+    if predicate.get("kind") in ("all", "any"):
+        return [c for child in predicate["predicates"] for c in _tile_claims(child)]
+    if predicate.get("kind") != "tile_matches" or "improvement" not in predicate["fields"]:
+        return []
+    return [(json.dumps(tile), predicate["fields"]["improvement"]) for tile in predicate["tiles"]]
+
+
+def _check_compatible_objectives(objectives: list[dict[str, Any]]) -> None:
+    """No tile (template or literal) may be claimed by two objectives with
+    different improvements: such maxima are individually feasible but
+    mutually exclusive."""
+    claims: dict[str, tuple[str, str]] = {}
+    for obj in objectives:
+        for rung in obj["rungs"]:
+            for tile, improvement in _tile_claims(rung["predicate"]):
+                other = claims.setdefault(tile, (obj["id"], improvement))
+                _require(other[0] == obj["id"] or other[1] == improvement,
+                         f"incompatible objectives {other[0]!r} and {obj['id']!r} claim tile "
+                         f"{json.loads(tile)} with {other[1]} and {improvement}")
+
+
+def _dummy_initial_state() -> dict[str, Any]:
+    """A neutral complete state at the dummy binding (every entity is id 0 at
+    0,0): a civilian unit, a visible hostile target, a city with an empty
+    queue and no buildings, and an unimproved zero-yield tile."""
+    yields = {"food": 0, "production": 0, "gold": 0, "science": 0, "culture": 0, "faith": 0}
+    return {
+        "player_id": 0,
+        "units": [{"owner": 0, "id": 0, "unit_index": 0, "type": "UNIT_DUMMY",
+                   "role": "civilian", "x": 0, "y": 0, "hp": 100, "max_hp": 100,
+                   "moves": 0, "charges": 0}],
+        "targets": [{"owner": 0, "id": 0, "tracked": True, "role": "combat", "hostile": True,
+                     "visible": True, "status": "alive_visible", "x": 0, "y": 0,
+                     "hp": 100, "max_hp": 100}],
+        "cities": [{"owner": 0, "id": 0, "name": "DUMMY", "x": 0, "y": 0, "population": 1,
+                    "housing": 0, "buildings": [], "districts": [],
+                    "queue": {"item_kind": "NONE", "item_type": "NONE", "repair": False,
+                              "target_x": None, "target_y": None}}],
+        "tiles": [{"x": 0, "y": 0, "owner": 0, "terrain": "NONE", "feature": "NONE",
+                   "resource": "NONE", "improvement": "NONE", "pillaged": False,
+                   "district": "NONE", "visible": True, "yields": yields}],
+        "resources": [],
+        "row_counts": {"identity": 1, "unit": 1, "target": 1, "city": 1, "building": 0,
+                       "district": 0, "queue": 1, "tile": 1, "resource": 0},
+    }
+
+
+def _check_rungs_nontrivial(rubric: dict[str, Any]) -> None:
+    """Offline counterpart of `validate_rubric`'s live check: no positive rung
+    (under dummy bindings) may already hold at a neutral initial state."""
+    from civ_mcp.arena.benchmark_state import BenchmarkStateError
+    state = _dummy_initial_state()
+    for obj in rubric["objectives"]:
+        for ri, rung in enumerate(obj["rungs"]):
+            try:
+                held = evaluate_predicate(rung["predicate"], initial=state, final=state)
+            except BenchmarkStateError as exc:
+                raise ValueError(f"objective {obj['id']!r} rung {ri} cannot be evaluated "
+                                 f"offline: {exc}") from exc
+            _require(not held, f"objective {obj['id']!r} rung {ri} is initially true at the "
+                     "neutral dummy state (structurally trivial)")
 
 
 def load_recipe(path: Path, *, root: Path | None = None) -> dict[str, Any]:
@@ -896,9 +975,11 @@ def _required_facts(recipe: dict[str, Any], observations: list[tuple[str, dict[s
     facts = []
     for fact in recipe["survey"]["required_facts"]:
         pattern = re.compile(fact["pattern"])
-        in_cap = [p for p, d in observations if pattern.search(d["result_capped"])]
-        in_full = [p for p, d in observations if pattern.search(d["result_full"])]
-        facts.append({"id": fact["id"], "pattern": fact["pattern"], "discoverable": bool(in_cap),
+        sources = [(p, d) for p, d in observations if d["tool"] == fact["source"]]
+        in_cap = [p for p, d in sources if pattern.search(d["result_capped"])]
+        in_full = [p for p, d in sources if pattern.search(d["result_full"])]
+        facts.append({"id": fact["id"], "pattern": fact["pattern"], "source": fact["source"],
+                      "discoverable": bool(in_cap),
                       "observations": in_cap, "beyond_cap_only": bool(in_full) and not in_cap})
     return facts
 
