@@ -12,6 +12,12 @@ persistent strategy and long-horizon evaluation. See the
 [decision record and paper-derived research inputs](../../research/2026-10-09-victory-strategy-research-direction.md).
 This changes follow-on prioritization, not the active Part 1 implementation contract.
 
+**Implementation status (2026-10-09):** the offline half of Part 1 (Tasks 1–18) is implemented,
+reviewed and merged to `main` (`71b3ec6`); the live phase (timing probe, preflight record, three
+authoring sessions, exit gate) has not started. The next session starts from the
+[live-phase handoff](../../handoffs/2026-10-09-plan-3-part-1-live-phase.md) and the
+[live runbook](../../research/arena-benchmark-plan-3-part-1-live-runbook.md).
+
 **Brainstorm follow-up (2026-10-08):** the design sections for Part 1 were approved in conversation.
 The [Part 1 authoring and scoring spec](../specs/2026-10-08-arena-benchmark-plan-3-part-1-design.md)
 records those decisions and the delta roadmap for Parts 2 and 3. The six written-review amendments
