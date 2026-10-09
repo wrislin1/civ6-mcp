@@ -6,6 +6,27 @@
       "drain_by_hosts": [
         "home-llm"
       ],
+      "gpu_indexes": [],
+      "host_id": "home-llm",
+      "id": "home-cpu-von",
+      "kind": "systemone",
+      "modes": [
+        "decision"
+      ],
+      "port": 11451,
+      "units": [
+        "von.service"
+      ],
+      "urls": {
+        "host_loopback": "http://127.0.0.1:11451/v1",
+        "lan": "http://192.168.20.146:11451/v1"
+      }
+    },
+    {
+      "acquisition": "direct",
+      "drain_by_hosts": [
+        "home-llm"
+      ],
       "gpu_indexes": [
         0
       ],
@@ -291,6 +312,29 @@
         "riz-llm"
       ],
       "gpu_indexes": [
+        1
+      ],
+      "host_id": "riz-llm",
+      "id": "riz-gpu1-kev",
+      "kind": "systemone",
+      "modes": [
+        "decision"
+      ],
+      "port": 11451,
+      "units": [
+        "kev.service"
+      ],
+      "urls": {
+        "host_loopback": "http://127.0.0.1:11451/v1",
+        "lan": "http://192.168.20.196:11451/v1"
+      }
+    },
+    {
+      "acquisition": "direct",
+      "drain_by_hosts": [
+        "riz-llm"
+      ],
+      "gpu_indexes": [
         0,
         1
       ],
@@ -392,6 +436,6 @@
   "source": {
     "generator": "tools/scripts/gen-configs.py",
     "manifest": "models.yaml",
-    "models_yaml_sha256": "88a4d350cfe7023b4e57eee03e5c5c2d541fb8227454cbc8102ac1e8094c11c0"
+    "models_yaml_sha256": "a2db0c7d870776bc02888d48419e45c2938b15ecf0b590599cb0395c6d153d3f"
   }
 }
