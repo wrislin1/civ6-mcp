@@ -344,7 +344,10 @@ def _tiles(cx, cy, radius, hostile_at):
         x=x, y=y, terrain="TERRAIN_GRASS", feature="FEATURE_FOREST" if i % 3 else None,
         resource="RESOURCE_HORSES" if i % 2 else "RESOURCE_WHEAT", is_hills=True,
         is_river=True, is_coastal=True,
-        improvement="IMPROVEMENT_FARM" if i % 2 == 0 else "IMPROVEMENT_PASTURE",
+        # Farms, hills mines and pastures: the city family's Seowon sites and
+        # protected/replacement assets are mines, the builder family's are farms.
+        improvement=("IMPROVEMENT_FARM" if i % 2 == 0
+                     else "IMPROVEMENT_MINE" if i % 4 == 1 else "IMPROVEMENT_PASTURE"),
         owner_id=0, owner_name="Korea", yields=(3, 2, 1, 1, 1, 1),
         resource_class="bonus", route_type=0, movement_cost=3,
         own_units=["BUILDER", "SWORDSMAN"] if i == 0 else None,
