@@ -1,48 +1,23 @@
 """Plan 3 Part 1 acceptance gate (spec section 11), offline.
 
-`check_part1_packet` evaluates one family's assembled gate packet against a
-fixed table of named requirements; `check_part1_gate` combines the three
-family packets with the offline preflight. Neither returns a bare Boolean:
-each requirement reports `{passed, evidence, detail}`, where `evidence` lists
-the repository-relative paths it read. Missing or malformed data fails the
-requirement that needs it; it never raises.
+`check_part1_packet` evaluates one family against a fixed table of named
+requirements. It takes either a finish-packet PATH, resolved from raw files
+by `benchmark_part1_evidence.load_gate_evidence`, or an already-derived view
+(unit tests). `check_part1_gate` combines the three families with the offline
+preflight and the current checkout's identities. Neither returns a bare
+Boolean: each requirement reports `{passed, evidence, detail}`, where
+`evidence` lists the repository-relative paths it read. Missing or malformed
+data fails the requirement that needs it; it never raises.
 
-Gate packet shape (assembled from an attempt's stage records, validation
-reports, journals and indices; every `evidence` value is a repository path):
-
-    position_id, family, scenario_id, code_identity, contract_identity,
-    toolset_identity, expected_state_sha256, pilot_informed
-    verify        {evidence, cycles_completed, digests[12]}
-    menu_check    {evidence, loader_confirmed, reconnect, digest_matches,
-                   identity_matches}
-    restore       {evidence, reloaded, reconnect, digest}
-    objectives    [{id, rungs[points...]}]          declared_harms [harm ids]
-    cases         [{case_id, tags, live, evidence, passed, error, script_sha256,
-                    actor_kind, counting, pilot_informed, primary_score,
-                    gross_credit, harm_total, objective_credits{id: points},
-                    harms[{id, fired, compensated}], negative_for[harm ids],
-                    capture_records[{complete, duration_s, io{lua_executions}}],
-                    validation_failures[], declared_rejections[],
-                    undefined_support[]}]
-    null          {evidence, gross_credit, harm_total, primary_score,
-                   initial_digest, final_digest, steps[{before, after}],
-                   observation_calls, discoverability[{id, discoverable}],
-                   capture_scope, capture_records[], actor_kind, counting,
-                   pilot_informed}
-    attempts      [{scenario_id, attempt_dir, status, duration_s,
-                    journal{path, sha256}, evidence_index{path, sha256},
-                    substitution{predecessor, reason, material_change}|null}]
-    offline_audit {evidence, membership_matches, trial_count, uncredited_count}
-    positive_control_probe {path, sha256}   (Task 17 probe provenance)
-    evidence_index {path, sha256}
-    measured_parameters [{name, value, evidence[paths]}]
-
-Cases with `live: false` are offline robustness fixtures (schema errors,
-timeouts, actor separation); they are reported but never count as live
-witnesses and need no live reload or capture records.
+Every case in a validation run is a live witness. Offline robustness
+fixtures (snapshot incompleteness, wrong identity, malformed predicates,
+unsupported tools, capture timeout, external cancellation, scripted records
+rejected from model aggregates) are the pytest node IDs in
+`OFFLINE_FIXTURES`, checked statically in the code checkout.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import math
@@ -52,8 +27,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 from civ_mcp.arena.benchmark_capture_probe import REQUIRED_SAMPLES, capture_implementation_digest
+from civ_mcp.arena.benchmark_contract_v2 import implementation_fingerprint
+from civ_mcp.arena.benchmark_part1_evidence import load_gate_evidence
 
-__all__ = ["FAMILIES", "PACKET_REQUIREMENTS", "check_part1_gate", "check_part1_packet"]
+__all__ = ["FAMILIES", "HARM_COUNTERPART_TAGS", "OFFLINE_FIXTURES", "PACKET_REQUIREMENTS",
+           "REQUIRED_LIVE_TAGS", "check_part1_gate", "check_part1_packet", "probe_problems",
+           "scenario_durations"]
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -67,11 +46,50 @@ HISTORICAL_UNCREDITED = 117
 # Tags a closer-but-not-eligible (zero partial credit) case may carry.
 CLOSER_TAGS = ("closer_only", "uncredited_preparation")
 
+REQUIRED_LIVE_TAGS: dict[str, tuple[str, ...]] = {
+    "builder": ("null_discovery", "joint_full", "alternative_full", "partial_repair",
+                "partial_resource", "partial_food", "closer_only", "escort_loss",
+                "escort_legitimate", "new_exposure", "covered_route",
+                "temporary_exposure_repaired", "mixed_gain_loss", "harm_only", "repeat_undo",
+                "final_charge"),
+    "city": ("null_discovery", "joint_full", "alternative_full", "housing_partial",
+             "uncredited_preparation", "destructive_placement", "accepted_replacement",
+             "mixed_gain_loss", "harm_only", "queue_overwrite", "repeat_undo"),
+    "tactical": ("null_discovery", "joint_full", "alternative_full", "meaningful_damage",
+                 "reinforcement_partial", "closer_only", "covered_rescue",
+                 "initial_exposure_null", "military_loss", "accepted_compensation",
+                 "mixed_gain_loss", "harm_only", "repeat_undo"),
+}
+# The legitimate-action / accepted-compensation case tags that witness each
+# declared harm NOT being charged.
+HARM_COUNTERPART_TAGS: dict[str, tuple[str, ...]] = {
+    "escort-loss": ("escort_legitimate",),
+    "new-exposure": ("covered_route", "temporary_exposure_repaired"),
+    "destructive-placement": ("accepted_replacement",),
+    "military-loss": ("accepted_compensation",),
+}
+OFFLINE_FIXTURES: dict[str, str] = {
+    "snapshot_incompleteness": "tests/arena/test_benchmark_state_v2.py::"
+                               "test_dropped_row_is_incomplete_even_with_matching_shape",
+    "wrong_identity": "tests/arena/test_benchmark_report_v2.py::"
+                      "test_identity_drift_is_detected_from_states_not_validation_status",
+    "malformed_predicate": "tests/arena/test_benchmark_predicates_v2.py::"
+                           "test_unknown_kind_in_unvisited_any_branch_raises",
+    "unsupported_tool": "tests/arena/test_benchmark_scripted_runner.py::"
+                        "test_script_naming_a_tool_outside_the_toolset_is_refused_before_any_trial",
+    "capture_timeout": "tests/arena/test_benchmark_capture.py::"
+                       "test_local_capture_timeout_is_capture_failure_not_cancellation",
+    "external_cancellation": "tests/arena/test_benchmark_agent.py::"
+                             "test_external_cancel_during_capture_propagates_through_real_agent",
+    "scripted_rejected_from_aggregates": "tests/arena/test_benchmark_report_v2.py::"
+                                         "test_scripted_trials_cannot_enter_model_comparisons",
+}
+
 Result = tuple[bool, list[str], str]
 
 
 class _Missing(Exception):
-    """Required packet data is absent or malformed."""
+    """Required evidence is absent or malformed."""
 
 
 def _need(node: Any, *path: Any) -> Any:
@@ -97,36 +115,43 @@ def _evidence(node: Any) -> list[str]:
     return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
 
 
+def _paths(cases: list[dict[str, Any]]) -> list[str]:
+    return [e for c in cases for e in _evidence(c)]
+
+
 def _number(value: Any) -> bool:
     return type(value) in (int, float) and math.isfinite(value)
 
 
-def _live(packet: dict[str, Any]) -> list[dict[str, Any]]:
-    return [c for c in _list(packet, "cases") if isinstance(c, dict) and c.get("live") is True]
+def _live(p: dict[str, Any]) -> list[dict[str, Any]]:
+    return [c for c in _list(p, "cases") if isinstance(c, dict) and c.get("live") is True]
 
 
-def _tagged(packet: dict[str, Any], *tags: str) -> list[dict[str, Any]]:
-    return [c for c in _live(packet) if set(tags) & set(c.get("tags") or [])]
+def _passed(p: dict[str, Any]) -> list[dict[str, Any]]:
+    return [c for c in _live(p) if c.get("passed") is True]
 
 
-def _deducted(case: dict[str, Any]) -> set[str]:
-    return {h.get("id") for h in case.get("harms") or []
-            if h.get("fired") is True and h.get("compensated") is not True}
+def _tagged(cases: list[dict[str, Any]], *tags: str) -> list[dict[str, Any]]:
+    return [c for c in cases if set(tags) & set(c.get("tags") or [])]
 
 
-def _capture_problems(records: Any, where: str) -> list[str]:
-    if not isinstance(records, list) or not records:
-        return [f"{where}: no capture records"]
+def _charged(case: dict[str, Any]) -> set[str]:
+    return {h.get("id") for h in case.get("harms") or [] if h.get("status") == "charged"}
+
+
+def _capture_problems(summary: Any, where: str) -> list[str]:
+    """A trial's capture summary: every capture complete, single-execution, <= 2.0 s."""
+    if not isinstance(summary, dict) or not summary.get("count"):
+        return [f"{where}: no capture summary"]
     problems = []
-    for i, r in enumerate(records):
-        io = r.get("io") if isinstance(r, dict) else None
-        duration = r.get("duration_s") if isinstance(r, dict) else None
-        if not isinstance(r, dict) or r.get("complete") is not True:
-            problems.append(f"{where}[{i}] incomplete")
-        elif not _number(duration) or duration > CAPTURE_LIMIT_S:
-            problems.append(f"{where}[{i}] duration {duration!r} exceeds {CAPTURE_LIMIT_S} s")
-        elif not isinstance(io, dict) or io.get("lua_executions") != 1:
-            problems.append(f"{where}[{i}] not a single Lua execution")
+    if not _number(summary.get("max_s")) or summary["max_s"] > CAPTURE_LIMIT_S:
+        problems.append(f"{where}: max capture {summary.get('max_s')!r} s exceeds "
+                        f"{CAPTURE_LIMIT_S} s")
+    if summary.get("all_single_execution") is not True or \
+            summary.get("lua_executions_total") != summary.get("count"):
+        problems.append(f"{where}: not exactly one Lua execution per capture")
+    if summary.get("unavailable"):
+        problems.append(f"{where}: unavailable capture fields {sorted(summary['unavailable'])}")
     return problems
 
 
@@ -135,10 +160,19 @@ def _verdict(problems: list[str], ok_detail: str) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# Requirement checkers: (packet, root) -> (ok, evidence paths, detail)
+# Requirement checkers: (view, code_root) -> (ok, evidence paths, detail)
 # ---------------------------------------------------------------------------
 
-def _twelve_cycle_verify(p: dict[str, Any], root: Path) -> Result:
+def _finish_packet_resolved(p: dict[str, Any], code_root: Path) -> Result:
+    resolution = _need(p, "resolution")
+    problems = _list(resolution, "problems")
+    packet = resolution.get("finish_packet") or {}
+    ok, detail = _verdict([str(x) for x in problems], "every finish-packet reference resolved "
+                                                      "and hash-correct")
+    return ok and bool(packet), [packet["path"]] if packet else [], detail
+
+
+def _twelve_cycle_verify(p: dict[str, Any], code_root: Path) -> Result:
     verify = _need(p, "verify")
     digests = _list(verify, "digests")
     expected = _need(p, "expected_state_sha256")
@@ -149,80 +183,104 @@ def _twelve_cycle_verify(p: dict[str, Any], root: Path) -> Result:
         f"{sum(d == expected for d in digests)} match the expected state")
 
 
-def _menu_recovery_verified(p: dict[str, Any], root: Path) -> Result:
+def _menu_recovery_verified(p: dict[str, Any], code_root: Path) -> Result:
     menu = _need(p, "menu_check")
     checks = {k: menu.get(k) is True for k in ("loader_confirmed", "digest_matches",
                                                "identity_matches")}
     checks["reconnect"] = bool(menu.get("reconnect"))
-    failed = sorted(k for k, ok in checks.items() if not ok)
-    ok, detail = _verdict([f"{k} not confirmed" for k in failed],
+    ok, detail = _verdict([f"{k} not confirmed" for k, good in sorted(checks.items()) if not good],
                           "loader, reconnect, identity and digest confirmed")
     return ok, _evidence(menu), detail
 
 
 def _full(p: dict[str, Any], tag: str) -> list[dict[str, Any]]:
-    return [c for c in _tagged(p, tag) if c.get("primary_score") == 1.0 and c.get("passed") is True]
+    return [c for c in _tagged(_passed(p), tag) if c.get("primary_score") == 1.0]
 
 
-def _joint_full_case(p: dict[str, Any], root: Path) -> Result:
+def _joint_full_case(p: dict[str, Any], code_root: Path) -> Result:
     cases = _full(p, "joint_full")
-    return bool(cases), [e for c in _tagged(p, "joint_full") for e in _evidence(c)], (
-        f"{len(cases)} live joint-full case(s) at primary 1.0")
+    return bool(cases), _paths(_tagged(_live(p), "joint_full")), (
+        f"{len(cases)} passed live joint-full case(s) at primary 1.0")
 
 
-def _alternative_full_case(p: dict[str, Any], root: Path) -> Result:
+def _alternative_full_case(p: dict[str, Any], code_root: Path) -> Result:
     joint = {c.get("script_sha256") for c in _full(p, "joint_full")}
     alts = [c for c in _full(p, "alternative_full")
             if c.get("script_sha256") and c.get("script_sha256") not in joint]
-    return bool(alts), [e for c in _tagged(p, "alternative_full") for e in _evidence(c)], (
-        f"{len(alts)} live alternative full-score case(s) with a script digest different "
+    return bool(alts), _paths(_tagged(_live(p), "alternative_full")), (
+        f"{len(alts)} passed live alternative full-score case(s) whose script digest differs "
         f"from every joint-full script")
 
 
-def _intermediate_rungs_covered(p: dict[str, Any], root: Path) -> Result:
-    live = [c for c in _live(p) if c.get("passed") is True]
+def _required_live_tags(p: dict[str, Any], code_root: Path) -> Result:
+    family = _need(p, "family")
+    if family not in REQUIRED_LIVE_TAGS:
+        return False, [], f"unknown family {family!r}"
+    passed = _passed(p)
+    missing = [t for t in REQUIRED_LIVE_TAGS[family] if not _tagged(passed, t)]
+    ok, detail = _verdict([f"no passed live case tagged {t}" for t in missing],
+                          f"all {len(REQUIRED_LIVE_TAGS[family])} {family} tags witnessed")
+    return ok, _paths(passed), detail
+
+
+def _intermediate_rungs_covered(p: dict[str, Any], code_root: Path) -> Result:
+    passed = _passed(p)
     missing = []
     for objective in _list(p, "objectives"):
         rungs = _list(objective, "rungs")
         for points in rungs:
-            if points == max(rungs):
-                continue
-            if not any((c.get("objective_credits") or {}).get(objective["id"]) == points
-                       for c in live):
+            if points != max(rungs) and not any(
+                    (c.get("objective_credits") or {}).get(objective["id"]) == points
+                    for c in passed):
                 missing.append(f"{objective['id']}@{points}")
-    return not missing, [e for c in live for e in _evidence(c)], (
+    return not missing, _paths(passed), (
         f"uncovered rungs: {missing}" if missing else "every intermediate rung witnessed live")
 
 
-def _closer_only_zero(p: dict[str, Any], root: Path) -> Result:
-    cases = _tagged(p, *CLOSER_TAGS)
-    bad = [c.get("case_id") for c in cases if c.get("gross_credit") != 0 or c.get("passed") is not True]
-    ok = bool(cases) and not bad
-    return ok, [e for c in cases for e in _evidence(c)], (
+def _closer_only_zero(p: dict[str, Any], code_root: Path) -> Result:
+    cases = _tagged(_live(p), *CLOSER_TAGS)
+    bad = [c.get("case_id") for c in cases
+           if c.get("gross_credit") != 0 or c.get("passed") is not True]
+    return bool(cases) and not bad, _paths(cases), (
         f"{len(cases)} closer/preparation case(s); nonzero or failed: {bad}")
 
 
-def _harm_positive_cases(p: dict[str, Any], root: Path) -> Result:
+def _harm_positive_cases(p: dict[str, Any], code_root: Path) -> Result:
     declared = _list(p, "declared_harms")
-    live = [c for c in _live(p) if c.get("passed") is True]
-    missing = [h for h in declared if not any(h in _deducted(c) for c in live)]
-    ok = bool(declared) and not missing
-    return ok, [e for c in live if _deducted(c) for e in _evidence(c)], (
-        f"declared {declared}; no firing case for {missing}")
+    passed = _passed(p)
+    missing = [h for h in declared if not any(h in _charged(c) for c in passed)]
+    return bool(declared) and not missing, _paths([c for c in passed if _charged(c)]), (
+        f"declared {declared}; no passed case charging {missing}")
 
 
-def _harm_negative_cases(p: dict[str, Any], root: Path) -> Result:
+def _harm_negative_cases(p: dict[str, Any], code_root: Path) -> Result:
     declared = _list(p, "declared_harms")
-    live = [c for c in _live(p) if c.get("passed") is True]
-    found = {h: [c for c in live if h in (c.get("negative_for") or []) and h not in _deducted(c)]
-             for h in declared}
-    missing = [h for h, cases in found.items() if not cases]
-    ok = bool(declared) and not missing
-    return ok, [e for cases in found.values() for c in cases for e in _evidence(c)], (
-        f"declared {declared}; no legitimate/compensated case for {missing}")
+    passed = _passed(p)
+    problems, used = [], []
+    for harm in declared:
+        tags = HARM_COUNTERPART_TAGS.get(harm)
+        if not tags:
+            problems.append(f"{harm}: no preregistered counterpart tag")
+            continue
+        found = [c for c in _tagged(passed, *tags) if harm not in _charged(c)]
+        used += found
+        if not found:
+            problems.append(f"{harm}: no passed {list(tags)} case with the harm not charged")
+    ok, detail = _verdict(problems, f"every declared harm {declared} has an uncharged "
+                                    f"legitimate/compensated counterpart")
+    return ok and bool(declared), _paths(used), detail
 
 
-def _null_digest_chain(p: dict[str, Any], root: Path) -> Result:
+def _harm_only_negative(p: dict[str, Any], code_root: Path) -> Result:
+    cases = _tagged(_live(p), "harm_only")
+    bad = [c.get("case_id") for c in cases
+           if not (c.get("passed") is True and c.get("gross_credit") == 0
+                   and _number(c.get("primary_score")) and c["primary_score"] < 0)]
+    return bool(cases) and not bad, _paths(cases), (
+        f"{len(cases)} harm-only case(s); not (passed, gross 0, primary < 0): {bad}")
+
+
+def _null_digest_chain(p: dict[str, Any], code_root: Path) -> Result:
     null = _need(p, "null")
     steps = _list(null, "steps")
     initial, final = null.get("initial_digest"), null.get("final_digest")
@@ -243,7 +301,7 @@ def _null_digest_chain(p: dict[str, Any], root: Path) -> Result:
     return ok, _evidence(null), detail
 
 
-def _null_observation_calls(p: dict[str, Any], root: Path) -> Result:
+def _null_observation_calls(p: dict[str, Any], code_root: Path) -> Result:
     null = _need(p, "null")
     calls = null.get("observation_calls")
     facts = null.get("discoverability")
@@ -260,33 +318,41 @@ def _null_observation_calls(p: dict[str, Any], root: Path) -> Result:
     return ok, _evidence(null), detail
 
 
-def _null_capture_timing(p: dict[str, Any], root: Path) -> Result:
+def _null_capture_timing(p: dict[str, Any], code_root: Path) -> Result:
     null = _need(p, "null")
-    problems = _capture_problems(null.get("capture_records"), "null")
+    problems = _capture_problems(null.get("capture"), "null")
     if null.get("capture_scope") != "full":
         problems.append(f"capture_scope={null.get('capture_scope')!r}, full scope required")
-    ok, detail = _verdict(problems, f"{len(null.get('capture_records') or [])} complete full-scope "
-                                    f"records <= {CAPTURE_LIMIT_S} s")
+    ok, detail = _verdict(problems, f"{(null.get('capture') or {}).get('count')} full-scope "
+                                    f"captures, max <= {CAPTURE_LIMIT_S} s, single execution")
     return ok, _evidence(null), detail
 
 
-def _capture_records_complete(p: dict[str, Any], root: Path) -> Result:
+def _capture_records_complete(p: dict[str, Any], code_root: Path) -> Result:
     live = _live(p)
-    problems = [x for c in live for x in _capture_problems(c.get("capture_records"),
-                                                          str(c.get("case_id")))]
-    ok, detail = _verdict(problems, f"{len(live)} live cases, every capture complete, single "
-                                    f"execution, <= {CAPTURE_LIMIT_S} s")
-    return ok and bool(live), [e for c in live for e in _evidence(c)], detail
+    problems = [x for c in live for x in _capture_problems(c.get("capture"), str(c.get("case_id")))]
+    ok, detail = _verdict(problems, f"{len(live)} live trials, every capture single-execution "
+                                    f"and <= {CAPTURE_LIMIT_S} s")
+    return ok and bool(live), _paths(live), detail
 
 
-def _final_restore_verified(p: dict[str, Any], root: Path) -> Result:
+def _final_restore_verified(p: dict[str, Any], code_root: Path) -> Result:
     restore = _need(p, "restore")
     expected = _need(p, "expected_state_sha256")
     ok = restore.get("reloaded") is True and bool(restore.get("reconnect")) \
         and restore.get("digest") == expected
-    return ok, _evidence(restore), (f"reloaded={restore.get('reloaded')}, reconnect="
-                                    f"{bool(restore.get('reconnect'))}, digest "
-                                    f"{'matches' if restore.get('digest') == expected else 'differs'}")
+    return ok, _evidence(restore), (
+        f"reloaded={restore.get('reloaded')}, reconnect={bool(restore.get('reconnect'))}, "
+        f"digest {'matches' if restore.get('digest') == expected else 'differs'}")
+
+
+def _report_regeneration_recorded(p: dict[str, Any], code_root: Path) -> Result:
+    regen = _need(p, "report_regeneration")
+    ok = regen.get("reports_identical") is True and regen.get("validation_sha256_matches") is True
+    return ok, _evidence(regen), (
+        f"reports_identical={regen.get('reports_identical')}, validation.json matches the "
+        f"finish packet and validate record: {regen.get('validation_sha256_matches')} "
+        f"(Task 22 re-verifies in a temporary checkout)")
 
 
 def _ref_ok(ref: Any) -> bool:
@@ -294,26 +360,26 @@ def _ref_ok(ref: Any) -> bool:
         and isinstance(ref.get("sha256"), str)
 
 
-def _failed_attempt_history(p: dict[str, Any], root: Path) -> Result:
+def _failed_attempt_history(p: dict[str, Any], code_root: Path) -> Result:
     attempts = _list(p, "attempts")
     problems = []
-    for i, a in enumerate(attempts):
+    for a in attempts:
         if not _ref_ok(a.get("journal")):
-            problems.append(f"attempt {i} ({a.get('status')}) has no journal")
+            problems.append(f"{a.get('attempt_dir')}: no authoring journal")
         if not _ref_ok(a.get("evidence_index")):
-            problems.append(f"attempt {i} ({a.get('status')}) is not indexed")
-    if not any(a.get("status") == "passed" and a.get("scenario_id") == p.get("scenario_id")
+            problems.append(f"{a.get('attempt_dir')}: not indexed (finish or abandon it)")
+    if not any(a.get("status") == "passed" and p.get("scenario_id") in (a.get("scenario_ids") or [])
                for a in attempts):
         problems.append("no passed attempt for the packet scenario")
     paths = [a[k]["path"] for a in attempts for k in ("journal", "evidence_index")
              if _ref_ok(a.get(k))]
     failed = sum(a.get("status") != "passed" for a in attempts)
-    ok, detail = _verdict(problems, f"{len(attempts)} attempts ({failed} failed), all "
+    ok, detail = _verdict(problems, f"{len(attempts)} attempt dirs ({failed} failed), all "
                                     f"journaled and indexed")
     return ok and bool(attempts), paths, detail
 
 
-def _offline_audit(p: dict[str, Any], root: Path) -> Result:
+def _offline_audit(p: dict[str, Any], code_root: Path) -> Result:
     audit = _need(p, "offline_audit")
     ok = audit.get("membership_matches") is True and \
         audit.get("uncredited_count") == HISTORICAL_UNCREDITED and \
@@ -324,11 +390,7 @@ def _offline_audit(p: dict[str, Any], root: Path) -> Result:
                                   f"{HISTORICAL_TRIALS} trials")
 
 
-def _read_json(root: Path, rel: str) -> Any:
-    return json.loads((root / rel).read_text(encoding="utf-8"))
-
-
-def probe_problems(doc: Any) -> list[str]:
+def probe_problems(doc: Any, *, code_root: Path | None = None) -> list[str]:
     """Why a Task 17 probe provenance record cannot be relied on (empty if sound)."""
     if not isinstance(doc, dict):
         return ["probe record is not an object"]
@@ -337,14 +399,15 @@ def probe_problems(doc: Any) -> list[str]:
         problems.append("probe verdict did not pass")
     if doc.get("samples") != REQUIRED_SAMPLES:
         problems.append(f"samples={doc.get('samples')!r}, {REQUIRED_SAMPLES} required")
-    current = capture_implementation_digest(_REPO_ROOT)
+    current = capture_implementation_digest(code_root or _REPO_ROOT)
     if doc.get("capture_implementation_sha256") != current:
         problems.append(f"capture implementation {doc.get('capture_implementation_sha256')!r} "
                         f"!= current {current}")
     return problems
 
 
-def _positive_control_timing_probe(p: dict[str, Any], root: Path) -> Result:
+def _positive_control_timing_probe(p: dict[str, Any], code_root: Path,
+                                   root: Path) -> Result:
     ref = _need(p, "positive_control_probe")
     if not _ref_ok(ref):
         raise _Missing("positive_control_probe is not a {path, sha256} reference")
@@ -353,8 +416,8 @@ def _positive_control_timing_probe(p: dict[str, Any], root: Path) -> Result:
         return False, [ref["path"]], "probe provenance file missing"
     problems = []
     if hashlib.sha256(path.read_bytes()).hexdigest() != ref["sha256"]:
-        problems.append("probe provenance sha256 differs from the packet reference")
-    problems += probe_problems(_read_json(root, ref["path"]))
+        problems.append("probe provenance sha256 differs from the reference")
+    problems += probe_problems(json.loads(path.read_text(encoding="utf-8")), code_root=code_root)
     ok, detail = _verdict(problems, "passing 20-sample probe under the current capture "
                                     "implementation")
     return ok, [ref["path"]], detail
@@ -367,14 +430,14 @@ def _safe(rel: Any) -> bool:
 
 
 def _references(node: Any) -> list[tuple[str, str | None]]:
-    """Every (path, sha256-or-None) the packet references."""
+    """Every (path, sha256-or-None) the view references."""
     found: list[tuple[str, str | None]] = []
     if isinstance(node, dict):
         if isinstance(node.get("path"), str) and isinstance(node.get("sha256"), str):
             found.append((node["path"], node["sha256"]))
         found += [(e, None) for e in _evidence(node)]
         for key, value in node.items():
-            if key not in ("evidence",):
+            if key != "evidence":
                 found += _references(value)
     elif isinstance(node, list):
         for item in node:
@@ -392,7 +455,7 @@ def _git_tracked(root: Path, paths: list[str]) -> set[str]:
     return {p for p in out.stdout.decode("utf-8").split("\0") if p}
 
 
-def _tracked_evidence_inventory(p: dict[str, Any], root: Path) -> Result:
+def _tracked_evidence_inventory(p: dict[str, Any], code_root: Path, root: Path) -> Result:
     index_ref = _need(p, "evidence_index")
     if not _ref_ok(index_ref):
         raise _Missing("evidence_index is not a {path, sha256} reference")
@@ -404,11 +467,10 @@ def _tracked_evidence_inventory(p: dict[str, Any], root: Path) -> Result:
     index_path = root / index_ref["path"]
     if index_path.is_file():
         try:
-            index = json.loads(index_path.read_text(encoding="utf-8"))
-            for entry in index.get("files", []):
+            for entry in json.loads(index_path.read_text(encoding="utf-8")).get("files", []):
                 rel, sha = entry.get("path"), entry.get("sha256")
                 if expected.get(rel) not in (None, sha):
-                    problems.append(f"{rel}: index and packet digests disagree")
+                    problems.append(f"{rel}: index and view digests disagree")
                 expected[rel] = sha
         except (ValueError, AttributeError):
             problems.append(f"{index_ref['path']}: unreadable index")
@@ -420,19 +482,16 @@ def _tracked_evidence_inventory(p: dict[str, Any], root: Path) -> Result:
         elif sha is not None and hashlib.sha256((root / rel).read_bytes()).hexdigest() != sha:
             problems.append(f"{rel}: sha256 differs")
     safe = [rel for rel in expected if _safe(rel)]
-    tracked = _git_tracked(root, safe)
-    problems += [f"{rel}: not Git-tracked" for rel in sorted(set(safe) - tracked)]
+    problems += [f"{rel}: not Git-tracked" for rel in sorted(set(safe) - _git_tracked(root, safe))]
     ok, detail = _verdict(problems, f"{len(expected)} referenced/indexed files present, "
                                     f"hash-correct and Git-tracked")
     return ok, [index_ref["path"]], detail
 
 
-def _no_model_provenance(p: dict[str, Any], root: Path) -> Result:
+def _no_model_provenance(p: dict[str, Any], code_root: Path) -> Result:
     records = [("null", _need(p, "null")), *((str(c.get("case_id")), c) for c in _list(p, "cases"))]
-    problems = [] if p.get("pilot_informed") is False else ["packet pilot_informed is not False"]
+    problems = [] if p.get("pilot_informed") is False else ["position pilot_informed is not False"]
     for name, rec in records:
-        if rec.get("live") is False:
-            continue
         if rec.get("actor_kind") != "scripted":
             problems.append(f"{name}: actor_kind={rec.get('actor_kind')!r}")
         if rec.get("counting") is not False:
@@ -444,16 +503,15 @@ def _no_model_provenance(p: dict[str, Any], root: Path) -> Result:
     return ok, [e for _, rec in records for e in _evidence(rec)], detail
 
 
-def _measured_parameters_frozen(p: dict[str, Any], root: Path) -> Result:
+def _measured_parameters_frozen(p: dict[str, Any], code_root: Path) -> Result:
     params = _list(p, "measured_parameters")
-    bad = [str(m.get("name")) for m in params
-           if not _number(m.get("value")) or not _evidence(m)]
+    bad = [str(m.get("name")) for m in params if not _number(m.get("value")) or not _evidence(m)]
     return not bad, [e for m in params for e in _evidence(m)], (
         f"without frozen value or probe evidence: {bad}" if bad else
         f"{len(params)} measured parameter(s) frozen with probe evidence")
 
 
-def _rejections_declared(p: dict[str, Any], root: Path) -> Result:
+def _rejections_declared(p: dict[str, Any], code_root: Path) -> Result:
     problems = []
     for c in _live(p):
         declared = {(d.get("step"), d.get("tool_name")) for d in c.get("declared_rejections") or []}
@@ -463,94 +521,102 @@ def _rejections_declared(p: dict[str, Any], root: Path) -> Result:
                 problems.append(f"{c.get('case_id')}: undeclared rejection at step "
                                 f"{f.get('step')} ({f.get('tool_name')})")
     ok, detail = _verdict(problems, "every rejected_operation matches a declared rejection")
-    return ok, [e for c in _live(p) for e in _evidence(c)], detail
+    return ok, _paths(_live(p)), detail
 
 
-def scenario_durations(packet: dict[str, Any]) -> dict[str, float | None]:
-    """Per-scenario elapsed seconds (max over its attempts); None when unrecorded."""
-    out: dict[str, float | None] = {}
-    for a in _list(packet, "attempts"):
-        sid = str(a.get("scenario_id"))
-        value = a.get("duration_s")
-        if not _number(value) or sid in out and out[sid] is None:
-            out[sid] = None
-        else:
-            out[sid] = max(value, out.get(sid) or 0.0)
-    return out
+def scenario_durations(view: dict[str, Any]) -> dict[str, float | None]:
+    """Journal-recorded elapsed seconds per scenario; None when unrecorded."""
+    return {str(s.get("scenario_id")): (s.get("duration_s") if _number(s.get("duration_s"))
+                                        else None)
+            for s in _list(view, "scenarios")}
 
 
-def _scenario_duration(p: dict[str, Any], root: Path) -> Result:
-    attempts = _list(p, "attempts")
+def _scenario_duration(p: dict[str, Any], code_root: Path) -> Result:
+    scenarios = _list(p, "scenarios")
     durations = scenario_durations(p)
     problems = [f"{sid}: duration not recorded" for sid, d in durations.items() if d is None]
+    if not durations:
+        problems.append("no journaled scenario")
     if len(durations) > MAX_SCENARIOS:
         problems.append(f"{len(durations)} scenarios exceed {MAX_SCENARIOS - 1} substitution")
     final = durations.get(str(p.get("scenario_id")))
     if final is not None and final > SCENARIO_LIMIT_S:
         problems.append(f"{p.get('scenario_id')}: {final} s exceeds {SCENARIO_LIMIT_S} s")
     if len(durations) > 1:
-        sub = next((a.get("substitution") for a in attempts
-                    if a.get("scenario_id") == p.get("scenario_id")
-                    and isinstance(a.get("substitution"), dict)), None)
-        if not sub or not all(sub.get(k) for k in ("predecessor", "reason", "material_change")) \
-                or sub.get("predecessor") not in durations:
+        own = next((s for s in scenarios if s.get("scenario_id") == p.get("scenario_id")), {})
+        if not all(own.get(k) for k in ("predecessor", "reason", "material_change")) \
+                or own.get("predecessor") not in durations:
             problems.append("substitute lacks a declared predecessor, reason and material change")
     total = sum(d for d in durations.values() if d is not None)
     detail = f"scenarios {durations}; family total {total:g} s"
     if problems:
         detail = "; ".join(problems) + f" ({detail})"
-    return not problems, [a["journal"]["path"] for a in attempts if _ref_ok(a.get("journal"))], \
-        detail
+    return not problems, sorted({s["journal"] for s in scenarios if s.get("journal")}), detail
 
 
-def _no_undefined_predicate_support(p: dict[str, Any], root: Path) -> Result:
-    problems = []
-    for c in _live(p):
-        support = c.get("undefined_support")
-        if not isinstance(support, list):
-            problems.append(f"{c.get('case_id')}: undefined_support not recorded")
-        elif support:
-            problems.append(f"{c.get('case_id')}: {support}")
-        if c.get("error"):
-            problems.append(f"{c.get('case_id')}: errored ({c.get('error')})")
-    ok, detail = _verdict(problems, "no primary or compensation predicate relied on an "
-                                    "undefined yield/lifecycle/queue value")
-    return ok, [e for c in _live(p) for e in _evidence(c)], detail
+def _no_undefined_predicate_support(p: dict[str, Any], code_root: Path) -> Result:
+    live = _live(p)
+    errored = [f"{c.get('case_id')}: {c.get('error')}" for c in live if c.get("error") is not None]
+    ok, detail = _verdict(errored, "satisfied by construction: the v2 predicate layer raises "
+                                   "BenchmarkStateError on any undefined yield/lifecycle/queue "
+                                   "value, which validation records as a case error; no live "
+                                   "case errored")
+    return ok and bool(live), _paths(live), detail
 
 
-def _live_vs_offline_cases_distinguished(p: dict[str, Any], root: Path) -> Result:
+def _live_vs_offline_cases_distinguished(p: dict[str, Any], code_root: Path) -> Result:
     cases = _list(p, "cases")
-    problems = [f"{c.get('case_id')}: live flag missing" for c in cases
-                if not isinstance(c.get("live"), bool)]
-    problems += [f"{c.get('case_id')}: offline case has no evidence" for c in cases
-                 if c.get("live") is False and not _evidence(c)]
-    offline = [c.get("case_id") for c in cases if c.get("live") is False]
-    ok, detail = _verdict(problems, f"{len(cases) - len(offline)} live, offline fixtures "
-                                    f"{offline}")
-    return ok, [e for c in cases if c.get("live") is False for e in _evidence(c)], detail
+    problems = [f"{c.get('case_id')}: not marked live" for c in cases if c.get("live") is not True]
+    ok, detail = _verdict(problems, f"{len(cases)} validation-run cases are live witnesses; "
+                                    f"offline fixtures are pytest node IDs")
+    return ok, [], detail
 
 
-def _validation_cases_passed(p: dict[str, Any], root: Path) -> Result:
+def _defined_tests(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def _offline_fixture_inventory(p: dict[str, Any], code_root: Path) -> Result:
+    problems, files = [], set()
+    for kind, node in OFFLINE_FIXTURES.items():
+        rel, name = node.split("::")
+        files.add(rel)
+        path = code_root / rel
+        if not path.is_file() or name not in _defined_tests(path):
+            problems.append(f"{kind}: {node} not found")
+    ok, detail = _verdict(problems, f"{len(OFFLINE_FIXTURES)} offline robustness tests present")
+    return ok, sorted(files), detail
+
+
+def _validation_cases_passed(p: dict[str, Any], code_root: Path) -> Result:
     live = _live(p)
     bad = [c.get("case_id") for c in live if c.get("passed") is not True]
-    return bool(live) and not bad, [e for c in live for e in _evidence(c)], (
+    return bool(live) and not bad, _paths(live), (
         f"failed live cases: {bad}" if bad else f"{len(live)} live cases passed")
 
 
-PACKET_REQUIREMENTS: tuple[tuple[str, Callable[[dict[str, Any], Path], Result]], ...] = (
+_Checker = Callable[..., Result]
+_NEEDS_ROOT = {"positive_control_timing_probe", "tracked_evidence_inventory"}
+
+PACKET_REQUIREMENTS: tuple[tuple[str, _Checker], ...] = (
+    ("finish_packet_resolved", _finish_packet_resolved),
     ("twelve_cycle_verify", _twelve_cycle_verify),
     ("menu_recovery_verified", _menu_recovery_verified),
     ("joint_full_case", _joint_full_case),
     ("alternative_full_case", _alternative_full_case),
+    ("required_live_tags", _required_live_tags),
     ("intermediate_rungs_covered", _intermediate_rungs_covered),
     ("closer_only_zero", _closer_only_zero),
     ("harm_positive_cases", _harm_positive_cases),
     ("harm_negative_cases", _harm_negative_cases),
+    ("harm_only_negative", _harm_only_negative),
     ("null_digest_chain", _null_digest_chain),
     ("null_observation_calls", _null_observation_calls),
     ("null_capture_timing", _null_capture_timing),
     ("capture_records_complete", _capture_records_complete),
     ("final_restore_verified", _final_restore_verified),
+    ("report_regeneration_recorded", _report_regeneration_recorded),
     ("failed_attempt_history", _failed_attempt_history),
     ("offline_audit", _offline_audit),
     ("positive_control_timing_probe", _positive_control_timing_probe),
@@ -561,30 +627,45 @@ PACKET_REQUIREMENTS: tuple[tuple[str, Callable[[dict[str, Any], Path], Result]],
     ("scenario_duration", _scenario_duration),
     ("no_undefined_predicate_support", _no_undefined_predicate_support),
     ("live_vs_offline_cases_distinguished", _live_vs_offline_cases_distinguished),
+    ("offline_fixture_inventory", _offline_fixture_inventory),
     ("validation_cases_passed", _validation_cases_passed),
 )
 
 
-def check_part1_packet(packet: dict[str, Any], *, root: Path | None = None) -> dict[str, Any]:
-    """Evaluate every Part 1 packet requirement; `root` holds the evidence files."""
+def check_part1_packet(packet: dict[str, Any] | str | Path, *, root: Path | None = None,
+                       code_root: Path | None = None) -> dict[str, Any]:
+    """Evaluate every Part 1 requirement.
+
+    `packet` is a finish-packet path (resolved from raw files under `root`)
+    or an already-derived view. `root` holds the evidence; `code_root` is the
+    checkout whose capture implementation and tests are current."""
     root = Path(os.path.abspath(root or _REPO_ROOT))
+    code_root = Path(os.path.abspath(code_root or _REPO_ROOT))
+    if isinstance(packet, (str, Path)):
+        view = load_gate_evidence(Path(packet), root=root)
+    else:
+        view = packet if isinstance(packet, dict) else {}
     requirements: dict[str, dict[str, Any]] = {}
     for name, checker in PACKET_REQUIREMENTS:
         try:
-            ok, evidence, detail = checker(packet if isinstance(packet, dict) else {}, root)
-        except (_Missing, ValueError, TypeError, AttributeError, KeyError, OSError) as exc:
+            args = (view, code_root, root) if name in _NEEDS_ROOT else (view, code_root)
+            ok, evidence, detail = checker(*args)
+        except (_Missing, ValueError, TypeError, AttributeError, KeyError, OSError,
+                SyntaxError) as exc:
             ok, evidence, detail = False, [], f"missing or malformed evidence: {exc}"
         requirements[name] = {"passed": bool(ok), "evidence": sorted(set(evidence)),
                               "detail": detail}
     failed = [name for name, entry in requirements.items() if not entry["passed"]]
-    return {"position_id": packet.get("position_id") if isinstance(packet, dict) else None,
-            "passed": not failed, "failed_requirements": failed, "requirements": requirements}
+    return {"position_id": view.get("position_id"), "family": view.get("family"),
+            "passed": not failed, "failed_requirements": failed,
+            "requirements": requirements, "view": view}
 
 
-def check_part1_gate(packets: list[dict[str, Any]], preflight: dict[str, Any], *,
-                     root: Path | None = None) -> dict[str, Any]:
-    """All three families passed under one code/toolset/contract identity and
-    a passing preflight bound to the same positive-control probe."""
+def check_part1_gate(packets: list[dict[str, Any] | str | Path], preflight: dict[str, Any], *,
+                     root: Path | None = None, code_root: Path | None = None) -> dict[str, Any]:
+    """All three families passed under one code/toolset/contract identity that
+    is the current checkout's, with a passing preflight bound to the same probe."""
+    code_root = Path(os.path.abspath(code_root or _REPO_ROOT))
     failed: list[str] = []
     details: dict[str, str] = {}
 
@@ -593,10 +674,10 @@ def check_part1_gate(packets: list[dict[str, Any]], preflight: dict[str, Any], *
             failed.append(name)
         details[name] = "; ".join(filter(None, (details.get(name), why)))
 
-    families: dict[str, Any] = {}
+    results = [check_part1_packet(p, root=root, code_root=code_root) for p in packets]
     by_family: dict[str, list[dict[str, Any]]] = {}
-    for packet in packets:
-        by_family.setdefault(str(packet.get("family")), []).append(packet)
+    for result in results:
+        by_family.setdefault(str(result["family"]), []).append(result)
     for family in FAMILIES:
         if len(by_family.get(family, [])) != 1:
             fail("family_coverage", f"{family}: {len(by_family.get(family, []))} packets")
@@ -607,33 +688,42 @@ def check_part1_gate(packets: list[dict[str, Any]], preflight: dict[str, Any], *
     if preflight.get("passed") is not True or pre_failed:
         fail("preflight_passed", f"preflight failed: {pre_failed}")
     code = preflight.get("code_identity")
-    toolsets = {r.get("family"): r.get("toolset_identity") for r in preflight.get("recipes", [])}
+    current_code = implementation_fingerprint(code_root)
+    if code != current_code:
+        fail("code_identity_current", f"preflight code identity {code!r} != current checkout "
+                                      f"{current_code}")
     probe = preflight.get("probe") or {}
+    current_capture = capture_implementation_digest(code_root)
+    if probe.get("capture_implementation_sha256") != current_capture:
+        fail("capture_identity_current", f"preflight probe capture digest "
+                                         f"{probe.get('capture_implementation_sha256')!r} != "
+                                         f"current {current_capture}")
     if probe.get("present") is not True:
         fail("probe_binding", "preflight has no positive-control probe")
+    toolsets = {r.get("family"): r.get("toolset_identity") for r in preflight.get("recipes", [])}
 
+    families: dict[str, Any] = {}
     for family, group in sorted(by_family.items()):
-        for packet in group:
-            result = check_part1_packet(packet, root=root)
-            durations = {}
+        for result in group:
+            view = result.pop("view")
             try:
-                durations = scenario_durations(packet)
+                durations = scenario_durations(view)
             except _Missing:
-                pass
+                durations = {}
             families[family] = {
-                "position_id": packet.get("position_id"), "passed": result["passed"],
+                "position_id": result["position_id"], "passed": result["passed"],
                 "failed_requirements": result["failed_requirements"],
                 "requirements": result["requirements"], "scenario_durations": durations,
                 "family_total_s": sum(d for d in durations.values() if d is not None)}
             if not result["passed"]:
                 fail("packets_passed", f"{family}: {result['failed_requirements']}")
             for key in ("code_identity", "contract_identity"):
-                if not code or packet.get(key) != code:
-                    fail("identity_match", f"{family}: {key} {packet.get(key)!r} != preflight "
+                if not code or view.get(key) != code:
+                    fail("identity_match", f"{family}: {key} {view.get(key)!r} != preflight "
                                            f"code identity {code!r}")
-            if packet.get("toolset_identity") != toolsets.get(family) or not toolsets.get(family):
+            if not toolsets.get(family) or view.get("toolset_identity") != toolsets.get(family):
                 fail("identity_match", f"{family}: toolset identity differs from preflight")
-            ref = packet.get("positive_control_probe") or {}
+            ref = view.get("positive_control_probe") or {}
             if (ref.get("path"), ref.get("sha256")) != (probe.get("path"), probe.get("sha256")):
                 fail("probe_binding", f"{family}: probe reference differs from preflight")
     return {"passed": not failed, "failed_requirements": failed, "details": details,

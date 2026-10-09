@@ -90,6 +90,7 @@ from civ_mcp.arena.benchmark_manifest_v2 import (
     validate_case_expected,
     validate_v2_document,
 )
+from civ_mcp.arena.benchmark_part1_evidence import PREFLIGHT_OUTPUT, PROBE_PROVENANCE
 from civ_mcp.arena.benchmark_part1_gate import (
     check_part1_gate,
     check_part1_packet,
@@ -141,8 +142,6 @@ BASE_EXPORT_DIR = "benchmark_runs/plan3-part1/bases"
 AUDIT_FIXTURE = "tests/arena/fixtures/builder_uncredited_audit_v1.json"
 PREFLIGHT_PYTEST = "benchmark_runs/plan3-part1/preflight/pytest.txt"
 PREFLIGHT_PYTEST_RESULT = "benchmark_runs/plan3-part1/preflight/pytest-result.json"
-PREFLIGHT_OUTPUT = "benchmarks/provenance/plan3-part1-offline-preflight.json"
-PROBE_PROVENANCE = "benchmarks/provenance/plan3-part1-capture-probe.json"
 EPISODE_WALL_S = 300
 
 
@@ -1942,7 +1941,7 @@ def _bind_probe(path: Path, root: Path) -> tuple[dict[str, Any], list[str]]:
     if not path.is_file():
         return {"present": False}, ["probe provenance file missing"]
     doc = json.loads(path.read_text(encoding="utf-8"))
-    problems = probe_problems(doc)
+    problems = probe_problems(doc, code_root=root)
     return {"present": True, "path": _portable(path, root), "sha256": _sha256_file(path),
             "verdict": doc.get("verdict"), "samples": doc.get("samples"),
             "capture_implementation_sha256": doc.get("capture_implementation_sha256"),
@@ -2074,11 +2073,10 @@ def main(argv: list[str] | None = None) -> int:
             print(args.output)
             return 0 if result["passed"] else 1
         if args.command == "gate":
-            packets = [json.loads(p.read_text(encoding="utf-8")) for p in args.packets]
             pre_path = args.preflight or _REPO_ROOT / PREFLIGHT_OUTPUT
             pre_doc = (json.loads(pre_path.read_text(encoding="utf-8")) if pre_path.is_file()
                        else {"passed": False, "failed_requirements": ["preflight_missing"]})
-            result = check_part1_gate(packets, pre_doc, root=_REPO_ROOT)
+            result = check_part1_gate(list(args.packets), pre_doc, root=_REPO_ROOT)
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_bytes(_json_bytes(result))
             print(args.output)

@@ -73,7 +73,7 @@ and must regenerate byte-identically.
 - **Coverage:** the recipe's `coverage_rule` (owned tiles when `include_owned_tiles`, every tile within
   `area_radius` in x and y of each bound tile, and the tracked target units) is resolved once and frozen in
   the position; it is a comparison identity.
-- **Contract/code identity:** `implementation_fingerprint` over the 30 fingerprint dependencies listed in
+- **Contract/code identity:** `implementation_fingerprint` over the 31 fingerprint dependencies listed in
   `instrument-v2.yaml` (the v2 construction; never equal to, or presented as, the v1 scorer fingerprint).
   It is recorded as each position's `contract_identity`, in every validation suite, and as the offline
   preflight's `code_identity`; the gate requires all of them to match.
@@ -83,15 +83,61 @@ and must regenerate byte-identically.
 
 ## Acceptance gate
 
-`check_part1_packet` evaluates each family packet against named requirements (twelve-cycle verify, menu
-recovery, joint and materially different alternative full scores, intermediate rungs, closer-only zero,
-positive and negative case for every harm, null digest chain / observation calls / full-scope capture
-timing, capture completeness, final restore, failed-attempt history, the 117-record offline audit, the
-positive-control timing probe, tracked evidence inventory, no-model provenance, frozen measured parameters,
-declared rejections, scenario duration, no undefined predicate support, live-versus-offline case marking,
-passed validation cases). `check_part1_gate` requires all three families to pass under one code, contract
-and toolset identity and a passing offline preflight bound to the same probe. Each output names failed
-requirements with the evidence paths read.
+The gate reads **raw evidence only**. `load_gate_evidence` (`benchmark_part1_evidence.py`) resolves each
+family's immutable finish packet: it verifies the sha256 of the position, authoring input, journal,
+evidence index and every `validation.json`, then derives identities from the position and validation lock,
+stage verdicts from the attempt's stage records, case scores/harms/digests from the derived reports,
+capture cost and coverage from the raw trials, durations from the authoring journals, and the attempt list
+by enumerating every attempt directory of the family under `benchmark_runs/plan3-part1/` (an attempt with
+stage records but no `evidence-index.json` fails). Claims the packet makes about itself are ignored.
+
+`check_part1_packet` then evaluates named requirements: finish-packet resolution, twelve-cycle verify, menu
+recovery, joint and materially different alternative full scores, the family's required live tags,
+intermediate rungs, closer-only zero, a charged case and an uncharged counterpart for every harm, a
+harm-only case with gross 0 and primary < 0, the null digest chain / observation calls / full-scope capture
+timing, capture completeness, final restore, report regeneration, failed-attempt history, the 117-record
+offline audit, the positive-control timing probe, tracked evidence inventory, no-model provenance, frozen
+measured parameters, declared rejections, scenario duration, no undefined predicate support (by
+construction: the v2 predicate layer raises on any undefined value and validation records that as a case
+error, so a passed case with no error relied on none), live case marking, the offline fixture inventory and
+passed validation cases. `check_part1_gate` requires all three families to pass under one code, contract
+and toolset identity that equals the **current checkout's** `implementation_fingerprint`, a preflight
+whose probe capture digest equals the current `capture_implementation_digest`, and a passing preflight
+bound to the same probe. Each output names failed requirements with the evidence paths read.
+
+### Required live case tags (each on at least one passed live case)
+
+| family | tags |
+|---|---|
+| builder | `null_discovery`, `joint_full`, `alternative_full`, `partial_repair`, `partial_resource`, `partial_food`, `closer_only`, `escort_loss`, `escort_legitimate`, `new_exposure`, `covered_route`, `temporary_exposure_repaired`, `mixed_gain_loss`, `harm_only`, `repeat_undo`, `final_charge` |
+| city | `null_discovery`, `joint_full`, `alternative_full`, `housing_partial`, `uncredited_preparation`, `destructive_placement`, `accepted_replacement`, `mixed_gain_loss`, `harm_only`, `queue_overwrite`, `repeat_undo` |
+| tactical | `null_discovery`, `joint_full`, `alternative_full`, `meaningful_damage`, `reinforcement_partial`, `closer_only`, `covered_rescue`, `initial_exposure_null`, `military_loss`, `accepted_compensation`, `mixed_gain_loss`, `harm_only`, `repeat_undo` |
+
+Harm counterparts (a passed case with one of these tags where the harm is **not** charged):
+`escort-loss` ← `escort_legitimate`; `new-exposure` ← `covered_route` or `temporary_exposure_repaired`;
+`destructive-placement` ← `accepted_replacement`; `military-loss` ← `accepted_compensation`. A harm with
+no preregistered counterpart fails the gate.
+
+### Offline robustness fixtures (pytest node IDs, required to exist)
+
+| case | node ID |
+|---|---|
+| snapshot incompleteness | `tests/arena/test_benchmark_state_v2.py::test_dropped_row_is_incomplete_even_with_matching_shape` |
+| wrong identity | `tests/arena/test_benchmark_report_v2.py::test_identity_drift_is_detected_from_states_not_validation_status` |
+| malformed predicate | `tests/arena/test_benchmark_predicates_v2.py::test_unknown_kind_in_unvisited_any_branch_raises` |
+| unsupported tool | `tests/arena/test_benchmark_scripted_runner.py::test_script_naming_a_tool_outside_the_toolset_is_refused_before_any_trial` |
+| capture timeout | `tests/arena/test_benchmark_capture.py::test_local_capture_timeout_is_capture_failure_not_cancellation` |
+| external cancellation | `tests/arena/test_benchmark_agent.py::test_external_cancel_during_capture_propagates_through_real_agent` |
+| scripted rejected from model aggregates | `tests/arena/test_benchmark_report_v2.py::test_scripted_trials_cannot_enter_model_comparisons` |
+
+These run in the full suite that the preflight binds; the gate checks they still exist in the checkout.
+
+### Report regeneration
+
+The gate requires the validate stage record to show `reports_identical: true` (reports rebuilt twice from
+the retained lock and raw trials, byte-identical) and the on-disk `validation.json` to hash to the value in
+both the finish packet and the validate record. Task 22's regeneration from a temporary checkout of the
+staged candidate tree is the release-time re-verification.
 
 ## Amendments during live work
 

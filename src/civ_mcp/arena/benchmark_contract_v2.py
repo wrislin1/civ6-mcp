@@ -33,6 +33,7 @@ FINGERPRINT_DEPENDENCIES: tuple[str, ...] = tuple(
             "src/civ_mcp/arena/benchmark_ledger.py",
             "src/civ_mcp/arena/benchmark_lifecycle.py",
             "src/civ_mcp/arena/benchmark_manifest_v2.py",
+            "src/civ_mcp/arena/benchmark_part1_evidence.py",
             "src/civ_mcp/arena/benchmark_part1_gate.py",
             "src/civ_mcp/arena/benchmark_position.py",
             "src/civ_mcp/arena/benchmark_predicates_v2.py",
