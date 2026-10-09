@@ -226,3 +226,22 @@ async def test_write_path_unchanged(monkeypatch, clock):
     conn, wire = make_conn(monkeypatch, clock, ok_responses())
     assert await conn.execute_write("print(1)") == ["BEGIN|x", "END|y"]
     assert wire.sends == ["CMD:2:print(1)"]
+
+
+async def test_execute_mutation_targets_gamecore_and_never_retries(monkeypatch, clock):
+    conn, wire = make_conn(monkeypatch, clock, ok_responses())
+    lines = await conn.execute_mutation("UnitManager.InitUnit(0, 'UNIT_WARRIOR', 1, 1)")
+    assert lines == ["BEGIN|x", "END|y"]
+    assert wire.sends == [f"CMD:{conn.gamecore_index}:UnitManager.InitUnit(0, 'UNIT_WARRIOR', 1, 1)"]
+
+    conn, wire = make_conn(monkeypatch, clock,
+                           [asyncio.IncompleteReadError(b"", 8)] + ok_responses())
+    reconnects = []
+
+    async def fake_reconnect():
+        reconnects.append(1)
+
+    monkeypatch.setattr(conn, "reconnect", fake_reconnect)
+    with pytest.raises(asyncio.IncompleteReadError):
+        await conn.execute_mutation("print(1)")
+    assert len(wire.sends) == 1 and reconnects == []

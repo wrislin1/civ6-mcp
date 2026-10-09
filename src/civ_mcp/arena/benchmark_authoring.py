@@ -94,6 +94,7 @@ from civ_mcp.arena.benchmark_manifest_v2 import (
     validate_case_expected,
     validate_v2_document,
 )
+from civ_mcp.arena.benchmark_capture_probe import clipped_square_area, query_grid_size
 from civ_mcp.arena.benchmark_part1_evidence import PREFLIGHT_OUTPUT, PROBE_PROVENANCE
 from civ_mcp.arena.benchmark_part1_gate import (
     check_part1_gate,
@@ -765,6 +766,8 @@ class LiveOps:
     restart_and_load: Callable[[str], Awaitable[str]]
     reconnect: Callable[[Any], Awaitable[Any]]
     clocks: tuple[Callable[[], float], Callable[[], float]] = (time.time, time.monotonic)
+    # `(width, height)` of the loaded map: coverage squares are clipped to it.
+    grid_size: Callable[[Any], Awaitable[tuple[int, int]]] = query_grid_size
 
 
 def production_ops() -> LiveOps:
@@ -954,17 +957,15 @@ def resolve_bindings(bindings: list[dict[str, Any]], state: dict[str, Any]) -> d
     return resolved
 
 
-def _coverage(recipe: dict[str, Any], bindings: dict[str, Any]) -> dict[str, Any]:
+def _coverage(recipe: dict[str, Any], bindings: dict[str, Any],
+              grid: tuple[int, int]) -> dict[str, Any]:
+    """The frozen v2 coverage: a square of `area_radius` around every bound
+    tile, clipped to the map `grid` on all four edges by the same helper the
+    timing probe uses (an off-grid area tile fails every capture)."""
     rule = recipe["coverage_rule"]
-    radius = rule["area_radius"]
-    area: set[tuple[int, int]] = set()
-    for value in bindings.values():
-        if "x" in value and "y" in value:
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    x, y = value["x"] + dx, value["y"] + dy
-                    if x >= 0 and y >= 0:
-                        area.add((x, y))
+    anchors = [(value["x"], value["y"]) for value in bindings.values()
+               if "x" in value and "y" in value]
+    area = clipped_square_area(anchors, rule["area_radius"], grid=grid)
     tracked = []
     for name in rule["tracked_target_bindings"]:
         pair = bindings[name].get("pair")
@@ -1033,12 +1034,15 @@ async def _replay(ctx: _Context, connection: Any, out: dict[str, Any]) -> None:
     operations = out.setdefault("operations", [])
     for index, op in enumerate(recipe["setup"]["operations"]):
         ctx.check(f"setup-{index}")
-        result = list(await connection.execute_write(op["lua"]))
+        # Setup Lua calls GameCore mutation APIs (UnitManager, ImprovementBuilder,
+        # treasury/city mutators) that the InGame UI context does not expose; the
+        # verified v1 authoring journals ran every mutation in `gamecore`.
+        result = list(await connection.execute_mutation(op["lua"]))
         readback = list(await connection.execute_read(op["readback"]))
         ok = not _lines_have_error(result) and _readback_ok(readback)
-        operations.append({"index": index, "lua": op["lua"], "result": result,
-                           "readback_lua": op["readback"], "readback": readback,
-                           "readback_ok": ok})
+        operations.append({"index": index, "context": "gamecore", "lua": op["lua"],
+                           "result": result, "readback_lua": op["readback"],
+                           "readback": readback, "readback_ok": ok})
         if not ok:
             raise StageFailure(f"setup operation {index} readback failed: {readback}")
     resolution = _resolution_coverage(recipe)
@@ -1047,7 +1051,10 @@ async def _replay(ctx: _Context, connection: Any, out: dict[str, Any]) -> None:
     out["resolution_state_sha256"] = digest_state_v2(candidates)
     bindings = resolve_bindings(recipe["bindings"], candidates)
     out["bindings"] = bindings
-    coverage = _coverage(recipe, bindings)
+    ctx.check("grid-size")
+    grid = tuple(int(v) for v in await ctx.ops.grid_size(connection))
+    out["grid"] = list(grid)
+    coverage = _coverage(recipe, bindings, grid)
     out["coverage"] = coverage
     state = await _capture(ctx, connection, coverage)
     out["state"] = state
@@ -1175,6 +1182,7 @@ async def _replay_stage(ctx: _Context, label: str) -> dict[str, Any]:
 async def _stage_apply(ctx: _Context) -> None:
     replay = await _replay_stage(ctx, "apply")
     ctx.evidence["bindings"] = replay["bindings"]
+    ctx.evidence["grid"] = replay["grid"]
     ctx.evidence["coverage"] = replay["coverage"]
     if not replay["assertions_passed"]:
         failed = [a["id"] for a in replay["assertions"] if not a["passed"]]

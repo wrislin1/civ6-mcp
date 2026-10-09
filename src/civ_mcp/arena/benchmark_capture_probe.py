@@ -39,7 +39,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Sequence
+from typing import Any, Awaitable, Callable, Iterable, Sequence
 
 from civ_mcp.arena.benchmark_capture import CaptureTelemetry, capture_bounded
 from civ_mcp.arena.benchmark_contract_v2 import (
@@ -194,6 +194,32 @@ def capture_implementation_digest(root: Path) -> str:
 # Scope
 # ---------------------------------------------------------------------------
 
+def clipped_square_area(
+    anchors: Iterable[Sequence[int]],
+    radius: int,
+    *,
+    grid: Sequence[int],
+) -> set[tuple[int, int]]:
+    """Every grid tile within an offset-coordinate square of `radius` around
+    each anchor -- a superset of the hex radius, clipped to ``grid`` (width,
+    height) on all four edges.
+
+    The v2 query errors (``AREA_PLOT_NOT_FOUND``) on any area tile the map
+    does not have, so every coverage builder (timing probe, authoring) must
+    clip through this one function: an anchor near the east or south edge
+    otherwise produces tiles past the grid and no capture can succeed.
+    """
+    width, height = int(grid[0]), int(grid[1])
+    area: set[tuple[int, int]] = set()
+    for ax, ay in anchors:
+        ax, ay = int(ax), int(ay)
+        for x in range(ax - radius, ax + radius + 1):
+            for y in range(ay - radius, ay + radius + 1):
+                if 0 <= x < width and 0 <= y < height:
+                    area.add((x, y))
+    return area
+
+
 def build_probe_scope(
     v1_state: dict[str, Any],
     relevant_tiles: Sequence[Sequence[int]],
@@ -212,12 +238,8 @@ def build_probe_scope(
     width, height = int(grid[0]), int(grid[1])
     anchors = sorted({(int(row["x"]), int(row["y"]))
                       for key in ("cities", "units") for row in v1_state.get(key, [])})
-    area: set[tuple[int, int]] = {(int(x), int(y)) for x, y in relevant_tiles}
-    for ax, ay in anchors:
-        for x in range(ax - radius, ax + radius + 1):
-            for y in range(ay - radius, ay + radius + 1):
-                if 0 <= x < width and 0 <= y < height:
-                    area.add((x, y))
+    area = {(int(x), int(y)) for x, y in relevant_tiles}
+    area |= clipped_square_area(anchors, radius, grid=(width, height))
     scope = {
         "include_owned_tiles": True,
         "area": [list(p) for p in sorted(area)],
@@ -266,7 +288,8 @@ class ProbeOps:
     disconnect: Callable[[Any], Awaitable[None]]
 
 
-async def _query_grid_size(conn: Any) -> tuple[int, int]:
+async def query_grid_size(conn: Any) -> tuple[int, int]:
+    """One untimed GameCore read of ``Map.GetGridSize()`` as ``(width, height)``."""
     from civ_mcp.lua._helpers import SENTINEL
     lines = await conn.execute_read(
         f'local w, h = Map.GetGridSize()\nprint("GRID|" .. w .. "|" .. h)\nprint("{SENTINEL}")'
@@ -313,7 +336,7 @@ def production_ops() -> ProbeOps:
     return ProbeOps(
         connect=connect, deploy=deploy, reload=reload_position,
         dismiss_popups=dismiss_blocking_popups, capture_v1=capture_canonical_state,
-        capture_v2=capture_state_v2, grid_size=_query_grid_size, disconnect=disconnect,
+        capture_v2=capture_state_v2, grid_size=query_grid_size, disconnect=disconnect,
     )
 
 

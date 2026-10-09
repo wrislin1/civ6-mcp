@@ -171,6 +171,20 @@ class GameConnection:
         await self._ensure_game_states()
         return await self._execute_and_collect(self.ingame_index, lua_code, timeout)
 
+    async def execute_mutation(self, lua_code: str, timeout: float = 5.0) -> list[str]:
+        """Execute state-changing Lua in the GameCore context (authoring setup).
+
+        GameCore owns the mutation APIs that the InGame UI context never
+        exposes (``UnitManager``, ``ImprovementBuilder``, treasury and city
+        mutators). A dead socket propagates instead of reconnecting: a
+        mutation is never silently re-sent, so a readback can attribute every
+        change to exactly one request.
+        """
+        await self._ensure_game_states()
+        return await self._execute_and_collect(
+            self.gamecore_index, lua_code, timeout, retry_on_disconnect=False
+        )
+
     async def execute_in_state(
         self, state_index: int, lua_code: str, timeout: float = 5.0
     ) -> list[str]:

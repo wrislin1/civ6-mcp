@@ -239,7 +239,13 @@ class FakeConn:
         self.ops = ops
 
     async def execute_write(self, lua, timeout=5.0):
+        # InGame UI context: never the right place for a setup mutation.
         self.ops.calls.append(("write", lua))
+        return list(self.ops.write_lines)
+
+    async def execute_mutation(self, lua, timeout=5.0):
+        # GameCore context: the only context whose APIs can mutate the world.
+        self.ops.calls.append(("mutation", lua))
         self.ops.setup_applied = True
         return list(self.ops.write_lines)
 
@@ -276,6 +282,7 @@ class FakeOps:
         self.after_restart_builder_xy: tuple[int, int] | None = None
         self.validation_inputs: list[tuple] = []
         self.journal_open_at_connect: list[bool] = []
+        self.grid = (100, 60)
 
     def tool_result(self, name: str) -> str:
         if self.setup_applied and name in self.setup_tool_results:
@@ -348,6 +355,10 @@ class FakeOps:
     async def reconnect(self, conn):
         self.calls.append(("reconnect",))
 
+    async def grid_size(self, conn):
+        self.calls.append(("grid_size",))
+        return self.grid
+
     async def run_validation(self, suite_path, run_dir):
         self.validation_inputs.append((Path(suite_path), Path(run_dir)))
         self.calls.append(("run_validation",))
@@ -402,7 +413,7 @@ class FakeOps:
             build_reports=self.build_reports, capture_state_v2=self.capture_state_v2,
             capture_position=self.capture_position, verify_position=self.verify_position,
             restart_and_load=self.restart_and_load, reconnect=self.reconnect,
-            clocks=(self.wall, self.mono))
+            clocks=(self.wall, self.mono), grid_size=self.grid_size)
 
 
 @pytest.fixture
@@ -476,13 +487,18 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     assert apply["status"] == "passed", apply.get("error")
     since = rig.calls_since(mark)
     assert since[1:3] == [("load", BASE_NAME), ("reconnect",)]
-    assert since.index(("load", BASE_NAME)) < since.index(("write", "PLACE_BUILDER"))
+    assert since.index(("load", BASE_NAME)) < since.index(("mutation", "PLACE_BUILDER"))
     assert ("export", BASE_NAME,
             f"{WSL_WINDOWS_REPO}/benchmark_runs/plan3-part1/bases/{BASE_SHA}.Civ6Save",
             BASE_SHA) in since
     resolved = apply["evidence"]["bindings"]
     assert resolved["builder"]["pair"] == [0, 65536]
     assert resolved["site"]["xy"] == [12, 10]
+    # Setup Lua runs in GameCore (the only context exposing mutation APIs), never InGame.
+    assert not any(c[0] == "write" for c in since)
+    (mutations,) = (rig.attempt / "mutations").glob("*-apply.json")
+    (operation,) = json.loads(mutations.read_text())["operations"]
+    assert operation["context"] == "gamecore" and operation["lua"] == "PLACE_BUILDER"
 
     # probe: frozen registry tools, each from a fresh base replay.
     mark = rig.marks()
@@ -492,7 +508,7 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     assert rig.tools[1][1] == {"unit_index": 1, "improvement_name": "IMPROVEMENT_FARM"}
     since = rig.calls_since(mark)
     assert since.count(("load", BASE_NAME)) == 2
-    assert since.count(("write", "PLACE_BUILDER")) == 2
+    assert since.count(("mutation", "PLACE_BUILDER")) == 2
 
     # archive: replay, save, export to the Windows checkout, publish locally.
     mark = rig.marks()
@@ -502,7 +518,7 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     kinds = [c[0] for c in since]
     archive_rel = "benchmarks/saves/test-builder-a1-v1.Civ6Save"
     export = ("export", "TEST_BUILDER_A1_V1", f"{WSL_WINDOWS_REPO}/{archive_rel}", None)
-    assert kinds.index("load") < kinds.index("write") < kinds.index("save") \
+    assert kinds.index("load") < kinds.index("mutation") < kinds.index("save") \
         < since.index(export) < kinds.index("publish")
     local = tmp_path / archive_rel
     assert archive["evidence"]["export_sha256"] == archive["evidence"]["publish_sha256"] \
@@ -639,7 +655,7 @@ async def test_base_load_error_fails_before_any_setup_mutation(tmp_path, tool_lo
     record = await rig.run("apply")
     assert record["status"] == "failed"
     assert "base load" in record["error"]
-    assert not any(c[0] == "write" for c in rig.calls_since(mark))
+    assert not any(c[0] == "mutation" for c in rig.calls_since(mark))
     assert list((rig.attempt / "mutations").glob("*.json"))
 
 
@@ -651,7 +667,7 @@ async def test_base_identity_mismatch_fails_before_any_setup_mutation(tmp_path, 
     record = await rig.run("apply")
     assert record["status"] == "failed"
     assert "identity" in record["error"]
-    assert not any(c[0] == "write" for c in rig.calls_since(mark))
+    assert not any(c[0] == "mutation" for c in rig.calls_since(mark))
 
 
 async def test_menu_check_fails_on_recovery_loader_error(tmp_path, tool_log):
@@ -1222,3 +1238,20 @@ async def test_archive_refuses_without_probe_measurement(tmp_path, tool_log, mon
     record = await rig.run("archive")
     assert record["status"] == "failed"
     assert "no passing probe measurement" in record["error"]
+
+
+async def test_coverage_is_clipped_to_the_map_grid_on_every_edge(tmp_path, tool_log):
+    """A binding within `area_radius` of the east or south edge must not put
+    off-map tiles into the coverage: the v2 query errors on any such tile and
+    no capture of the scenario could ever succeed."""
+    rig = Rig(tmp_path, tool_log)
+    rig.ops.grid = (13, 11)  # builder (10,10) and site (12,10) sit by the east/south edges
+    assert (await rig.run("survey"))["status"] == "passed"
+    apply = await rig.run("apply")
+    assert apply["status"] == "passed", apply.get("error")
+    assert apply["evidence"]["grid"] == [13, 11]
+    area = {tuple(p) for p in apply["evidence"]["coverage"]["area"]}
+    assert all(0 <= x < 13 and 0 <= y < 11 for x, y in area)
+    assert {(12, 10), (11, 9), (9, 9)} <= area
+    assert not {(13, 10), (12, 11), (13, 11)} & area
+    assert ("grid_size",) in rig.ops.calls
