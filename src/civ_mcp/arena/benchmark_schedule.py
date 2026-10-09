@@ -81,6 +81,25 @@ class TrialSpec:
     seed: int
 
 
+@dataclasses.dataclass(frozen=True)
+class ScriptedTrialSpec:
+    """One scheduled scripted-validation trial (version-2 evidence).
+
+    A script is not a model: `model`, `seed` and `pair_id` are fixed `None`
+    so a scripted trial can never impersonate a model endpoint, claim seed
+    control or join an ABBA pair. `compile_schedule` never produces these;
+    `benchmark_scripted_runner` builds the ordered schedule from a
+    validation suite."""
+    index: int
+    position_id: str
+    arm_id: str
+    script_id: str
+    case_id: str
+    model: None = None
+    seed: None = None
+    pair_id: None = None
+
+
 def _validate_order(order: str) -> None:
     if order not in SUPPORTED_ORDERS:
         raise ValueError(
