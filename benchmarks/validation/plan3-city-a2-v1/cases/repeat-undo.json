@@ -1,0 +1,31 @@
+{
+  "case_id": "repeat-undo",
+  "declared_rejections": [
+    {
+      "step": 1,
+      "tool_name": "purchase_item"
+    }
+  ],
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 4,
+      "harm_total": 0,
+      "net_credit": 4,
+      "primary_score": 0.3333333333333333
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-city-a2-v1.json",
+    "sha256": "5619d998eb0d913c73af5ec18d6bdb586c75d77e59fc0aae2fb2407eae9e8b8a"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-city-a2-v1/repeat-undo.json",
+    "sha256": "71cfc9b1329a5b5860be7385da12588066e22b7c2510daca0e7c52bde493e68f"
+  },
+  "tags": [
+    "repeat_undo"
+  ]
+}

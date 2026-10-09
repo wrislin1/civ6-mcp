@@ -1,0 +1,25 @@
+{
+  "case_id": "housing-partial",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 2,
+      "harm_total": 0,
+      "net_credit": 2,
+      "primary_score": 0.16666666666666666
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-city-a2-v1.json",
+    "sha256": "5619d998eb0d913c73af5ec18d6bdb586c75d77e59fc0aae2fb2407eae9e8b8a"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-city-a2-v1/housing-partial.json",
+    "sha256": "f77b42907ee491a3261f5e75fd947d84239bb30ce376384e49a5fde802fe9c40"
+  },
+  "tags": [
+    "housing_partial"
+  ]
+}

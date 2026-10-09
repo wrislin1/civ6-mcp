@@ -1,0 +1,57 @@
+[
+  {
+    "arguments": {},
+    "result_capped": "Turn 100 | Korea (Seondeok) | Score: 321 | Prince\nGold: 500 (+23/turn) | Income: 42 | Maintenance: -19 (units: 6) | Science: 33.5 | Culture: 15.4 | Faith: 120 | Favor: 149 (+4/turn)\nResearch: Apprenticeship | Civic: Recorded History\nCities: 5 | Population: 29 | Units: 12 — 3 Scout, 2 Apostle, 2 Builder, 2 Swordsman, 2 Archer, 1 Trader\nExplored: 40% of land (1179/2914 tiles)\nReligion: Custom Religion (6/7 slots)\nVictory: Domination, Culture, Religious, Diplomatic only (disabled: Science)\nEra: Classical Era | Score: 74 (Dark: 59, Golden: 73) -> GOLDEN AGE\nRankings: Korea 321 > Maya 175 > Phoenicia 157 > Nubia 139 > Arabia 138 > Ottomans 138 > Georgia 133",
+    "result_char_cap": 1500,
+    "tool": "get_overview"
+  },
+  {
+    "arguments": {},
+    "result_capped": "5 cities:\n  Gyeongju (pop 12) at (72,26) — Food 42 Prod 37 Gold 24 Sci 15 Cul 7 | Housing 15 Amenities 13 | Growth: 10/139 food (6t, +18.0/t) | Building: nothing | Walls 100/100 Garrison 200/200 Def:35 Gar:none [id:65536]\n    Districts: WONDER(73,26) WONDER(71,25) HOLY_SITE(75,26) SEOWON(73,29) WONDER(74,26)\n    Buildings: PALACE, GRANARY, SHRINE, WALLS, WATER_MILL, TEMPLE, HANGING_GARDENS, MAHABODHI_TEMPLE, TEMPLE_ARTEMIS\n    Needs builder: COPPER, 23, COPPER, 23, COAL, 25, DIAMONDS, 27 (unimproved)\n  Jeonju (pop 7) at (67,24) — Food 22 Prod 18 Gold 5 Sci 4 Cul 4 | Housing 6 Amenities 7 | Growth: 7/77 food (33t, +8.0/t) | Building: DISTRICT_ENCAMPMENT (3 turns) | Walls 100/100 Garrison 200/200 Def:40 Gar:SWORDSMAN [id:131073]\n    !! SLOW GROWTH: 33 turns to next pop — needs farm, granary, or trade route\n    Districts: HOLY_SITE(67,25) WONDER(66,23) ENCAMPMENT(68,22)\n    Buildings: MONUMENT, SHRINE, WALLS, WATER_MILL, TEMPLE, STONEHENGE\n    Needs builder: NITER, 23, COPPER, 23, DIAMONDS, 24, ALUMINUM, 25 (unimproved)\n  Gwangju (pop 4) at (70,22) — Food 12 Prod 7 Gold 7 Sci 6 Cul 1 | Housing 6 Amenities 5 | Growth: 40/44 food (1t, +4.0/t) | Building: BUILDING_GRANARY (1 turns) | HP:200/200 Def:29 Gar:ARCHER [id:196610]\n    Districts: HOLY_SITE(69,24) SEOWON(72,23)\n    Buildings: MONUMENT, WATER_MILL\n    !! PILLAGED: MONUMENT (repair via set_city_production)\n    Needs builder: IRON, 19, CATTLE, 19, IVORY, 20, STONE, 21, COPPER, 23, COPPER, 23, DIAMONDS, 24, ALUMINUM, 25, COAL, ",
+    "result_char_cap": 1500,
+    "tool": "get_cities"
+  },
+  {
+    "arguments": {
+      "city_id": 131073
+    },
+    "result_capped": "Units:\n  UNIT_SETTLER (cost 80, 12 turns, buy: 560g)\n  UNIT_BUILDER (cost 50, 5 turns, buy: 205g)\n  UNIT_MISSIONARY (cost 75, 5 turns, buy: 300g)\n  UNIT_APOSTLE (cost 200, 13 turns, buy: 920g)\n  UNIT_GURU (cost 120, 7 turns, buy: 480g)\n  UNIT_SCOUT (cost 30, 2 turns, buy: 120g)\n  UNIT_WARRIOR (cost 40, 3 turns, buy: 160g)\n  UNIT_ARCHER (cost 60, 4 turns, buy: 240g)\n  UNIT_SPEARMAN (cost 65, 4 turns, buy: 260g)\n  UNIT_HEAVY_CHARIOT (cost 65, 4 turns, buy: 260g)\n  UNIT_BATTERING_RAM (cost 65, 4 turns, buy: 260g)\n  UNIT_HORSEMAN (cost 80, 5 turns, buy: 320g)\nBuildings:\n  BUILDING_GRANARY (cost 65, 4 turns, buy: 260g)\n  BUILDING_STUPA (cost 190, 11 turns, buy: 760g)\n  BUILDING_ORACLE (cost 290, 15 turns)\nDistricts:\n  DISTRICT_ENCAMPMENT (cost 54, 3 turns)\n  DISTRICT_HARBOR (cost 54, 9 turns)\n  DISTRICT_COMMERCIAL_HUB (cost 54, 9 turns)\n  DISTRICT_ENTERTAINMENT_COMPLEX (cost 54, 9 turns)\n  DISTRICT_THEATER (cost 54, 9 turns)\n  DISTRICT_SEOWON (cost 27, 5 turns)\n  DISTRICT_GOVERNMENT (cost 30, 5 turns)\n  DISTRICT_PRESERVE (cost 54, 9 turns)\n  DISTRICT_DIPLOMATIC_QUARTER (cost 30, 5 turns)\nProjects:\n  PROJECT_ENHANCE_DISTRICT_HOLY_SITE (cost 25, 6 turns)",
+    "result_char_cap": 1500,
+    "tool": "get_city_production"
+  },
+  {
+    "arguments": {
+      "city_id": 196610
+    },
+    "result_capped": "Units:\n  UNIT_SETTLER (cost 80, 29 turns, buy: 560g)\n  UNIT_BUILDER (cost 50, 11 turns, buy: 205g)\n  UNIT_SCOUT (cost 30, 5 turns, buy: 120g)\n  UNIT_WARRIOR (cost 40, 6 turns, buy: 160g)\n  UNIT_ARCHER (cost 60, 9 turns, buy: 240g)\n  UNIT_SPEARMAN (cost 65, 10 turns, buy: 260g)\n  UNIT_HEAVY_CHARIOT (cost 65, 10 turns, buy: 260g)\n  UNIT_BATTERING_RAM (cost 65, 10 turns, buy: 260g)\n  UNIT_HORSEMAN (cost 80, 12 turns, buy: 320g)\nBuildings:\n  BUILDING_MONUMENT (cost 60, 3 turns, buy: 240g)\n  BUILDING_GRANARY (cost 65, 1 turns, buy: 260g)\n  BUILDING_LIBRARY (cost 90, 13 turns, buy: 360g)\n  BUILDING_SHRINE (cost 70, 10 turns, buy: 280g)\n  BUILDING_WALLS (cost 80, 12 turns, buy: 160g)\n  BUILDING_ORACLE (cost 290, 37 turns)\n  BUILDING_ETEMENANKI (cost 220, 28 turns)\nDistricts:\n  DISTRICT_ENCAMPMENT (cost 54, 23 turns)\n  DISTRICT_HARBOR (cost 54, 23 turns)\n  DISTRICT_COMMERCIAL_HUB (cost 54, 23 turns)\n  DISTRICT_ENTERTAINMENT_COMPLEX (cost 54, 23 turns)\n  DISTRICT_THEATER (cost 54, 23 turns)\n  DISTRICT_GOVERNMENT (cost 30, 13 turns)\n  DISTRICT_PRESERVE (cost 54, 23 turns)\n  DISTRICT_DIPLOMATIC_QUARTER (cost 30, 13 turns)\nProjects:\n  PROJECT_ENHANCE_DISTRICT_HOLY_SITE (cost 25, 15 turns)\n  PROJECT_ENHANCE_DISTRICT_CAMPUS (cost 25, 15 turns)\nRepairs (pillaged — queue to fix):\n  BUILDING_MONUMENT [REPAIR] (cost 60, 3 turns)",
+    "result_char_cap": 1500,
+    "tool": "get_city_production"
+  },
+  {
+    "arguments": {
+      "city_id": 131073,
+      "district_type": "DISTRICT_SEOWON"
+    },
+    "result_capped": "DISTRICT_SEOWON placement options (3 tiles):\n  #1 (67,23) Adj: +0 (no adjacency) — Grassland (Hills) Hills\n  #2 (68,24) Adj: +0 (no adjacency) — Grassland (Hills) Hills Woods\n  #3 (67,22) Adj: +0 (no adjacency) — Grassland (Hills) Hills",
+    "result_char_cap": 1500,
+    "tool": "get_district_advisor"
+  },
+  {
+    "arguments": {
+      "radius": 2,
+      "x": 67,
+      "y": 24
+    },
+    "result_capped": "25 tiles:\n  (65,22): COAST {F:1 P:0 G:1}\n  (66,22): PLAINS Coast {F:1 P:1} (owned by Korea)\n  (67,22): GRASS_HILLS Hills River (MINE) {F:2 P:1} (owned by Korea) [mv:2]\n  (68,22): GRASS_HILLS Hills River [ENCAMPMENT] {F:0 P:0} (owned by Korea) [mv:2]\n  (69,22): PLAINS River {F:1 P:1} (owned by Korea)\n  (65,23): COAST {F:1 P:0 G:1}\n  (66,23): GRASS River Coast (Road) [WONDER] {F:0 P:0} (owned by Korea)\n  (67,23): GRASS_HILLS Hills [STONE] River (QUARRY) {F:2 P:2} (owned by Korea) [mv:2]\n  (68,23): GRASS_HILLS Hills [IRON*] (MINE) {F:2 P:1 S:1} (owned by Korea) [mv:2]\n  (69,23): GRASS River (FARM) {F:2 P:0} (owned by Korea)\n  (65,24): COAST {F:1 P:0 G:1}\n  (66,24): GRASS FOREST River Coast {F:2 P:1} (owned by Korea) [mv:2]\n  (67,24): GRASS_HILLS Hills [DIAMONDS+] River (Road) [CITY_CENTER] {F:2 P:1 G:3} (owned by Korea) [my: SWORDSMAN]\n  (68,24): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3]\n  (69,24): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)\n  (65,25): COAST {F:1 P:0 G:1}\n  (66,25): GRASS FOREST River Coast {F:2 P:1} (owned by Korea) [mv:2]\n  (67,25): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)\n  (68,25): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (69,25): GRASS FOREST {F:2 P:1} [mv:2]\n  (65,26): COAST {F:1 P:3 G:1}\n  (66,26): PLAINS JUNGLE River Coast {F:3 P:2} (owned by Korea) [mv:2]\n  (67,26): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (68,26): PLAINS JUNGLE River {F:3 P:2} (owned by Korea) [mv:2]\n  (69,26): PLAINS JU",
+    "result_char_cap": 1500,
+    "tool": "get_map_area"
+  },
+  {
+    "arguments": {
+      "city_id": 131073
+    },
+    "result_capped": "13 purchasable tiles:\n  (65,21): 140g — Desert [Ivory+]\n  (65,27): 140g — Plains [Bananas]\n  (65,25): 90g — Coast and Lake\n  (65,23): 90g — Coast and Lake\n  (65,24): 90g — Coast and Lake\n  (65,26): 140g — Coast and Lake\n  (65,22): 140g — Coast and Lake\n  (66,21): 140g — Plains\n  (69,26): 140g — Plains\n  (68,27): 140g — Grassland\n  (67,27): 140g — Grassland\n  (69,25): 140g — Grassland\n  (67,21): 140g — Plains",
+    "result_char_cap": 1500,
+    "tool": "get_purchasable_tiles"
+  }
+]

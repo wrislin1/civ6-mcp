@@ -1,0 +1,106 @@
+{
+  "code_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
+  "failed_requirements": [],
+  "full_suite_result": {
+    "code_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
+    "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
+    "duration_s": 195.382,
+    "errors": 0,
+    "exit_code": 0,
+    "failed": 0,
+    "finished": "2026-10-09T17:43:40.823238+00:00",
+    "git_head": "f9728c550311984ac0c462e0da2dffbe8d90b818",
+    "output": {
+      "path": "benchmark_runs/plan3-part1/preflight/pytest.txt",
+      "sha256": "3fe76779304f49f72db3f7a68b3ffe5930c84f747f51d1713bfbe96c4977968e"
+    },
+    "passed": true,
+    "present": true,
+    "problems": [],
+    "result": {
+      "path": "benchmark_runs/plan3-part1/preflight/pytest-result.json",
+      "sha256": "2c21c432f57285a3170639c2da3dcfe62a7c1b478d6bc7f13891806827123771"
+    },
+    "started": "2026-10-09T17:40:25.440771+00:00",
+    "tests_passed": 4055
+  },
+  "historical_audit": {
+    "affected_trial_count": 64,
+    "fixture": "tests/arena/fixtures/builder_uncredited_audit_v1.json",
+    "fixture_sha256": "3f7a2830be3cd06f34c246d46ec466838f8292ec82d0d750fffbc0ffc814a135",
+    "inputs_sha256": "b5ec4307a8460cef737e9b893f82028a3b75f38d0e7ef9552317a09b79ee5dac",
+    "membership_matches": true,
+    "result_sha256": "5f2806e8dde31a6c676a97f605b3291f83a6d5f3aa67686d4fb9bb9ab09be118",
+    "trial_count": 96,
+    "uncredited_count": 117
+  },
+  "passed": true,
+  "probe": {
+    "capture_implementation_sha256": "3ca9fb606f4f3a6a9edfe51478c46f90f6454e04a7c51b7272ae38d73fb92a15",
+    "evidence_index_path": "benchmark_runs/plan3-part1/capture-probe-4/evidence-index.json",
+    "evidence_index_sha256": "27889a7f6b1bf35540d4c794ae53c58be878c2da4ec61a21e4e11d4941266700",
+    "limitations": [
+      "timing proven only for the recorded scope",
+      "no visible hostile targets at the positive control: TARGET rows not timed"
+    ],
+    "path": "benchmarks/provenance/plan3-part1-capture-probe.json",
+    "present": true,
+    "problems": [],
+    "samples": 20,
+    "sha256": "5f810d6c4835ffb30ab0eef0c78f42e8dc366dfd8b3a8ef429598f2e2a293788",
+    "verdict": {
+      "passed": true,
+      "reasons": []
+    }
+  },
+  "recipes": [
+    {
+      "family": "builder",
+      "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+      "recipe_id": "plan3-builder-a1",
+      "scenario_id": "builder-a1",
+      "sha256": "0d3e224cc647e50a629d1a2208de4de0580fc13212caf7c4e4eae8a1d86c94a6",
+      "toolset_id": "plan3-part1-v1",
+      "toolset_identity": {
+        "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+        "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+      },
+      "version": 1
+    },
+    {
+      "family": "city",
+      "path": "benchmarks/recipes/plan3-city-a2.yaml",
+      "recipe_id": "plan3-city-a2",
+      "scenario_id": "city-a2",
+      "sha256": "aba6b0a558094669b6dca0e4c39d95035f238cc2c15291107b3a3eb058ab243c",
+      "toolset_id": "plan3-part1-v1",
+      "toolset_identity": {
+        "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+        "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+      },
+      "version": 1
+    },
+    {
+      "family": "tactical",
+      "path": "benchmarks/recipes/plan3-tactical-a1.yaml",
+      "recipe_id": "plan3-tactical-a1",
+      "scenario_id": "tactical-a1",
+      "sha256": "fa6ea054f7238bcd8a6c98c75dd938e9c893dd34f2bfadda5cb7c61c04f918bd",
+      "toolset_id": "plan3-part1-v1",
+      "toolset_identity": {
+        "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+        "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+      },
+      "version": 1
+    }
+  ],
+  "schema_identity": {
+    "manifest_sha256": "81a2767386849806b586db59448b9e4551b767226c43623776611de00bb0b682",
+    "predicates_sha256": "b55639873055747f425015aa1f01bd6a6bfe4948b3a0e51551e049e41eb0f345",
+    "schema_version": "2.0.0",
+    "scorer_sha256": "413680bc6adc8d55a55b8719130ba0c2097a758d0d6c1d5804c9930bc9212151",
+    "state_sha256": "40486fb2f7202aad429983f0c9735f70a081428ae1ca4174a8653a739e88b438"
+  },
+  "schema_version": "2.0.0",
+  "toolkit_identity": "fb4a4b22ca7d1773ac390f96c7d7e2bbd7eec54f437fa64f80d2f22d827379c4"
+}

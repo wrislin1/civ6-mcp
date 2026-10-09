@@ -1,0 +1,43 @@
+{
+  "case_id": "destructive-placement",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "protected-quarry-lost",
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_QUARRY"
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              23
+            ]
+          ]
+        },
+        "value": false
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 0,
+      "harm_total": 4,
+      "net_credit": -4,
+      "primary_score": -0.3333333333333333
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-city-a2-v1.json",
+    "sha256": "5619d998eb0d913c73af5ec18d6bdb586c75d77e59fc0aae2fb2407eae9e8b8a"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-city-a2-v1/destructive-placement.json",
+    "sha256": "84ca7541c5b2ce1fa2d8ebfe179d99cb2a307849c05fefec42bdb8a1fe00dd52"
+  },
+  "tags": [
+    "destructive_placement",
+    "harm_only"
+  ]
+}

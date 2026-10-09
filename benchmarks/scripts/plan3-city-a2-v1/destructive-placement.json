@@ -1,0 +1,28 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {
+            "city_id": 131073,
+            "item_name": "DISTRICT_SEOWON",
+            "item_type": "DISTRICT",
+            "target_x": 67,
+            "target_y": 23
+          },
+          "name": "set_city_production"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "destructive-placement"
+}

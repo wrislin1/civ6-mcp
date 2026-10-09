@@ -1,0 +1,25 @@
+{
+  "case_id": "uncredited-preparation",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 0,
+      "harm_total": 0,
+      "net_credit": 0,
+      "primary_score": 0.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-city-a2-v1.json",
+    "sha256": "5619d998eb0d913c73af5ec18d6bdb586c75d77e59fc0aae2fb2407eae9e8b8a"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-city-a2-v1/uncredited-preparation.json",
+    "sha256": "9cf4b1a9d625abc0cd750ad39f94e78a51a97c230c2e28581a286ed1b5cf3812"
+  },
+  "tags": [
+    "uncredited_preparation"
+  ]
+}

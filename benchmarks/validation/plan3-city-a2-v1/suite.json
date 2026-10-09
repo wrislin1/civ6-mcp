@@ -1,0 +1,56 @@
+{
+  "actor_kind": "scripted",
+  "cases": [
+    {
+      "path": "cases/null-discovery.json",
+      "sha256": "4cc0b4141c16f90c15ca7fc815e22f704c808a752d99738064b88cd13e26cf72"
+    },
+    {
+      "path": "cases/joint-full.json",
+      "sha256": "b6284565b8d387a878d753c2758242a1685220c1822652bbb823e51a858e4ea9"
+    },
+    {
+      "path": "cases/alternative-full.json",
+      "sha256": "0bdd8735b372bd2fce48a03eaa935e814c1b705dacca7d3bd7ae1fdabab661a5"
+    },
+    {
+      "path": "cases/housing-partial.json",
+      "sha256": "d0fbad1adc5559c6b4c359799095351742fb3e316bfd2575c5be6b443e3c2351"
+    },
+    {
+      "path": "cases/uncredited-preparation.json",
+      "sha256": "9c387c383a4b71d544cc561bb64d4c5825e29200e17fda6873023a59c1b6751b"
+    },
+    {
+      "path": "cases/destructive-placement.json",
+      "sha256": "eb0c6822a2eb62f01d61c53cfe040dbd095296032b3b0c3dfe6faaa620ffee97"
+    },
+    {
+      "path": "cases/mixed-gain-loss.json",
+      "sha256": "8292748325402c3ea46b96d4ebd163886a4e83ad770858d2be249cd10e1d9888"
+    },
+    {
+      "path": "cases/queue-overwrite.json",
+      "sha256": "4ff340983c2e31b52d18c40f5033be4823a9567a20665a766811cfb9e3400e71"
+    },
+    {
+      "path": "cases/repeat-undo.json",
+      "sha256": "3da3ff8d62fe676bf411575a49075c90a1c6dee1914ac9a8614a61822244ea39"
+    }
+  ],
+  "contract_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
+  "counting": false,
+  "episode_wall_s": 300,
+  "max_steps": 15,
+  "position": {
+    "path": "../../positions/plan3-city-a2-v1.json",
+    "sha256": "5619d998eb0d913c73af5ec18d6bdb586c75d77e59fc0aae2fb2407eae9e8b8a"
+  },
+  "result_char_cap": 1500,
+  "schema_version": "2.0.0",
+  "suite_id": "plan3-city-a2-v1-validation",
+  "toolset_identity": {
+    "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+    "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+  }
+}

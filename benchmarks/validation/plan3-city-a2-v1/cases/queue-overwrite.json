@@ -1,0 +1,25 @@
+{
+  "case_id": "queue-overwrite",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 4,
+      "harm_total": 4,
+      "net_credit": 0,
+      "primary_score": 0.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-city-a2-v1.json",
+    "sha256": "5619d998eb0d913c73af5ec18d6bdb586c75d77e59fc0aae2fb2407eae9e8b8a"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-city-a2-v1/queue-overwrite.json",
+    "sha256": "eaa50de6e56801f20aba1d5a341508c2173d2aa8889fe0b4ac956705662b98d5"
+  },
+  "tags": [
+    "queue_overwrite"
+  ]
+}
