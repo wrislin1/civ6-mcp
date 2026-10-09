@@ -40,6 +40,7 @@ FINGERPRINT_DEPENDENCIES: tuple[str, ...] = tuple(
             "src/civ_mcp/arena/benchmark_state.py",
             "src/civ_mcp/arena/benchmark_state_v2.py",
             "src/civ_mcp/arena/benchmark_store.py",
+            "src/civ_mcp/arena/benchmark_validation.py",
             "src/civ_mcp/arena/registry.py",
             "src/civ_mcp/connection.py",
             "src/civ_mcp/game_launcher.py",
