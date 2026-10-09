@@ -1,9 +1,17 @@
-# Handoff: SystemOne decision-model servers (Clef-Flash + Laya)
+# Handoff: SystemOne decision-model servers
+
+**Research status, 2026-10-09:** the broad Civ decision-model comparison and its consumer
+implementation are on hold following the user's Emerald screen and prioritization update.
+The next Civ design focuses on persistent victory strategy. See the
+[evidence and research direction](../research/2026-10-09-victory-strategy-research-direction.md).
+This document retains operational reference material; the integration work below is conditional
+on a future scoped use case. The October 9 addendum extends the original two-server record to
+Clef-Flash, Kev-9B, Laya and CPU-hosted Von.
 
 Date: 2026-10-08. Source of truth for the infra side is the brothereye repo
 (`services/clef/`, `models.yaml`, `infra/registry/endpoints.json`), main `9455ddc3`.
 This file is for the civ6-mcp session on the gaming PC: what exists, how to call it,
-and what civ6-mcp still has to build.
+and the requirements retained for any future civ6-mcp consumer.
 
 ## What is live
 
@@ -158,7 +166,9 @@ barbarian-threat noul: 0.81 vs 0.49 (essentially undecided). Flash tracks the 27
 direction with flatter distributions. Laya answered the same records sensibly but its
 confidence scale is different (see protocol section).
 
-## civ6-mcp work still owed
+## Deferred civ6-mcp integration work
+
+The following requirements apply if integration is resumed; they are not a current work queue.
 
 1. **Decision-model backend class** in the arena, keyed on registry kind `systemone`,
    using `registry.systemone_url(...)`. Request and answer dataclasses matching the
@@ -174,16 +184,25 @@ confidence scale is different (see protocol section).
 
 ## civ6-mcp consumer design requirements
 
-The server handoff above supersedes the earlier assumption that local Clef deployment is outstanding and the blanket exclusion of Laya. It records local Clef-Flash and Laya services plus a hosted Clef 27B reference. These are candidates for a separately preregistered architecture comparison, not additions to the five-model screen or Stage 3 injections. The library freeze and same-menu LLM control still apply. No decision-model request, including a warm-up, may use a library position during Part 1.
+The server handoff supersedes the earlier assumption that local Clef deployment is outstanding and the blanket exclusion of Laya. Together with the October 9 addendum, it records four local services plus a hosted Clef 27B reference. The broad architecture comparison is now on hold. If resumed, it needs its own preregistered design and same-menu LLM control; these endpoints are not additions to the five-model screen or Stage 3 injections. No decision-model request, including a warm-up, may use a library position during Part 1.
 
 Repository checks confirm `Registry.systemone_endpoint_ids()` and `Registry.systemone_url()` already exist, and `openai_url()` rejects these endpoints. The arena's `endpoint_registry.resolve_gateway()` and `benchmark_backend.probe_health()` remain chat-specific; the latter calls `backend.chat(...)`. There is no arena SystemOne backend yet. Keep this transport separation in the benchmark scripted actor and runner; a decision response must not be fabricated into a `Reply` or tool-call batch.
 
-| Local endpoint | Registry host / GPU | Decision URL | Server behavior recorded in the handoff |
+| Local endpoint | Registry host / compute | Decision URL | Server behavior recorded in the handoff |
 |---|---|---|---|
 | `riz-gpu1-clef` | `riz-llm` / 1 | `http://192.168.20.196:11450/v1/systemone` | Clef-Flash lazy-loads a child worker; about 28s cold versus 0.2s warm, 600s idle unload, `/ready` and `/unload`. |
 | `home-gpu1-laya` | `home-llm` / 1 | `http://192.168.20.146:11450/v1/systemone` | Laya preloads three checkpoints, unloads after ten idle minutes, and has a separate batch route. |
+| `riz-gpu1-kev` | `riz-llm` / GPU 1 | `http://192.168.20.196:11451/v1/systemone` | Kev-9B; shares GPU 1 with Clef and evicts it before loading. See the addendum for `/permute`, `/separate` and usage semantics. |
+| `home-cpu-von` | `home-llm` / CPU | `http://192.168.20.146:11451/v1/systemone` | Von 1.3 through OpenVINO; no GPU/VRAM admission requirement. English-only, raw noul mode. |
 
-The separate design and implementation plan must cover these concrete dependencies:
+Any resumed design must incorporate the addendum's Clef/Kev mutual eviction, residency blocks,
+CPU-only Von admission, all four health shapes and differing output-token semantics. The user
+also reports that the GPU-1 lease can now stop and restore `kev.service`; verify lease and
+residency behavior when admitting an actual workload. Warm-up `/unload` transitions still need
+fresh conflict evidence. The illustrative latencies in this handoff are infrastructure smoke measurements,
+not measurements of the Emerald workload or predictions for Civ.
+
+If resumed, the separate design and implementation plan must cover these concrete dependencies:
 
 1. **Decision transport and identity.** Build a dedicated typed request/answer backend for `state` and `questions`, keyed by registry kind `systemone` and resolved with `systemone_url(..., network="lan")`. Preserve `choice`, `noul`, and ordered `score` answer shapes, question IDs, raw probabilities, usage and Laya routing/abstention fields. Pin the requested and actually routed checkpoint: Laya's generic `model` field is not by itself evidence of checkpoint identity. Keep unsupported seed control unavailable. Do not route these endpoints through LiteLLM or the OpenAI chat adapter. Local and hosted transports can share protocol types, but hosted URL, authentication and response-envelope handling differ.
 2. **Health and protocol admission.** For local servers, request root `/health` and require JSON `status == "ok"`; never send `/v1/chat/completions`, whose reported 404 is expected. Health proves server availability, not a loaded model or valid decisions. A synthetic, non-library SystemOne probe must additionally validate answer shape, selected option membership, probability coverage/range and model/routing identity. Preserve distinct configuration/protocol errors (including 422), capacity/load/worker errors (503), and inference timeout (504); none is a scored game decision. The current chat admission probe stays intact for chat models.
@@ -227,6 +246,7 @@ telemetry record either).
 reference hosted Clef 27B): choice agreement Clef-Flash 5/5, Kev-9B 3/5, Laya 2/5, Von 2/5.
 Kev is as decisive as the 27B (invoice overdue 1.00, barbarian threat noul 0.75 vs Flash's
 0.49) but picks differently on both Civ records (Warrior over Library; surprise war over
-pressure). Laya and Von both chose Settler on the city-build record. For the arena this
-means: Clef-Flash is the local model that tracks the strongest reference; Kev is the local
-model that commits hardest; the two encoders are the low-latency floor, not contenders.
+pressure). Laya and Von both chose Settler on the city-build record. These are agreement
+and protocol observations from five records; they establish neither correctness of the hosted
+reference nor a Civ model ranking. The broad comparison is on hold under the research decision
+linked above. Suitability for any future narrow workload requires its own evidence.

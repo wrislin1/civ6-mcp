@@ -2,7 +2,15 @@
 
 Written 2026-10-08 at the close of Plan 2, for a fresh session that will run `superpowers:brainstorming`
 on Plan 3 of the arena benchmark. Read this first, then the design and the findings it points to. Nothing
-here is a decision; it is the state of the world and the questions a brainstorm has to answer.
+in the original handoff is a decision; it records the state of the world and questions for the
+brainstorm. Dated follow-ups below record subsequent decisions.
+
+**Research direction update (2026-10-09):** the user reports that Claude is implementing Part 1.
+The primary research objective is sustained pursuit of a self-chosen victory condition. The broad
+SystemOne comparison is on hold following the Emerald screen; the next design should develop
+persistent strategy and long-horizon evaluation. See the
+[decision record and paper-derived research inputs](../../research/2026-10-09-victory-strategy-research-direction.md).
+This changes follow-on prioritization, not the active Part 1 implementation contract.
 
 **Brainstorm follow-up (2026-10-08):** the design sections for Part 1 were approved in conversation.
 The [Part 1 authoring and scoring spec](../specs/2026-10-08-arena-benchmark-plan-3-part-1-design.md)
@@ -10,7 +18,7 @@ records those decisions and the delta roadmap for Parts 2 and 3. The six written
 were incorporated on 2026-10-08. The [Part 1 implementation plan](2026-10-08-arena-benchmark-plan-3-part-1.md)
 is the execution handoff; its review revision separates the work into 22 tasks, pins tracked historical
 evidence, and adds cancellation-safe single-query capture and a positive-control timing gate. Software
-implementation and live authoring have not started.
+implementation and live authoring had not started at that October 8 handoff.
 The handoff below retains the pre-brainstorm questions and evidence.
 
 ## 1. Where things stand
@@ -119,7 +127,12 @@ These are carried from Plan 2 evidence; none is settled.
 - Huge-map load ≈ 90 s; a 24-trial block ≈ 30–55 min (Gemma ≈ 33 min, Qwen ≈ 56 min); twelve-cycle verify ≈ 25 min.
 - Full operational playbook: `tools/skills/civ6-arena-live/SKILL.md` ("Benchmark runner sessions").
 
-## 5. A consumer of the held-out library: the decision-model experiment
+## 5. Deferred library consumer: decision-model experiment (on hold)
+
+**2026-10-09 status:** this proposal is retained for a possible future scoped use case. The
+user's current direction prioritizes persistent victory strategy and puts the broad comparison
+on hold. The constraints below remain applicable if it is resumed; they do not queue backend
+implementation or a new library experiment.
 
 Codex research (2026-10-08, `~/.claude/research/2026-10-08-civ6-decision-model-practicality.md`, reviewed by
 Claude the same day) proposes a bounded builder-selector experiment: code builds a candidate menu of complete
@@ -139,7 +152,7 @@ code executes and verifies. The review's load-bearing points, all of which bind 
 **Infrastructure update (2026-10-08):** the [SystemOne server handoff](../../handoffs/2026-10-08-systemone-decision-servers.md)
 at `02f0176` records local Clef-Flash on riz-llm GPU1, Laya on home-llm GPU1, and a hosted Clef 27B reference.
 Registry resolution is already vendored; the arena decision backend and protocol-specific admission are
-still owed. The [Part 1 implementation plan](2026-10-08-arena-benchmark-plan-3-part-1.md) carries those
+deferred consumer requirements. The [Part 1 implementation plan](2026-10-08-arena-benchmark-plan-3-part-1.md) carries those
 requirements by linking to the consumer-design section of the server handoff. Laya is now an available evaluation candidate; stronger
 27B probabilities and the small Flash parity sample are not evidence of benchmark quality. The
 same-menu control, objective-blind public observations, all-nine freeze and held-out restrictions remain.
