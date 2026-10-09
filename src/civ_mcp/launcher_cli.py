@@ -42,6 +42,15 @@ def _build_parser() -> argparse.ArgumentParser:
     install.add_argument("--sha256", required=True, help="expected sha256 of the archive")
     install.add_argument("--json", action="store_true", help="emit a single JSON result object")
 
+    export = commands.add_parser(
+        "export-save",
+        help="archive a stable native save to a new path without overwriting",
+    )
+    export.add_argument("--name", required=True, help="save basename in the save directory")
+    export.add_argument("--destination", required=True, help="archive path to create")
+    export.add_argument("--sha256", default=None, help="optional expected sha256 of the save")
+    export.add_argument("--json", action="store_true", help="emit a single JSON result object")
+
     boot_health = commands.add_parser(
         "boot-health",
         help="poll the native Profile.csv for evidence the game booted cleanly",
@@ -114,6 +123,26 @@ def _install_save(args: argparse.Namespace) -> int:
         print(json.dumps(payload))
     elif payload["ok"]:
         print(f"Installed {payload['save_name']} -> {payload['dest_path']}")
+    else:
+        print(payload["error"], file=sys.stderr)
+
+    return 0 if payload["ok"] else 1
+
+
+def _export_save(args: argparse.Namespace) -> int:
+    """Export a native save; same one-JSON-object contract as ``_install_save``."""
+    try:
+        result = game_launcher.export_benchmark_save(
+            args.name, args.destination, expected_sha256=args.sha256
+        )
+        payload: dict = {"ok": True, **result}
+    except Exception as exc:
+        payload = {"ok": False, "error": str(exc)}
+
+    if args.json:
+        print(json.dumps(payload))
+    elif payload["ok"]:
+        print(f"Exported {payload['save_name']} -> {payload['dest_path']}")
     else:
         print(payload["error"], file=sys.stderr)
 
@@ -248,6 +277,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "install-save":
             return _install_save(args)
+
+        if args.command == "export-save":
+            return _export_save(args)
 
         if args.command == "boot-health":
             return _boot_health(args)

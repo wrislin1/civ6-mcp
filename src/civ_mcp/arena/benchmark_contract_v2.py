@@ -24,6 +24,7 @@ FINGERPRINT_DEPENDENCIES: tuple[str, ...] = tuple(
             "src/civ_mcp/arena/action_metrics.py",
             "src/civ_mcp/arena/benchmark_agent.py",
             "src/civ_mcp/arena/benchmark_audit.py",
+            "src/civ_mcp/arena/benchmark_authoring_journal.py",
             "src/civ_mcp/arena/benchmark_capture.py",
             "src/civ_mcp/arena/benchmark_contract_v2.py",
             "src/civ_mcp/arena/benchmark_deploy.py",

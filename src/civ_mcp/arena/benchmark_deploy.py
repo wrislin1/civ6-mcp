@@ -29,6 +29,8 @@ log = logging.getLogger(__name__)
 # deadline, so a slow-but-honest native timeout is reported by the native
 # side's structured failure rather than getting killed by the bridge first.
 _DEPLOY_BRIDGE_TIMEOUT_S = 60.0
+# The native export waits up to 30 s for a stable save before copying.
+_EXPORT_BRIDGE_TIMEOUT_S = 90.0
 _BOOT_HEALTH_BRIDGE_MARGIN_S = 30.0
 
 
@@ -172,6 +174,40 @@ def deploy_via_windows(
         expected_sha256=expected_sha256,
         raw=payload,
     )
+
+
+def export_via_windows(
+    name: str,
+    destination: str,
+    expected_sha256: str | None = None,
+    *,
+    timeout: float = _EXPORT_BRIDGE_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Archive a native save through the native ``export-save`` command.
+
+    The native side never overwrites ``destination``; an identical existing
+    archive comes back with ``existed: True``. The caller still re-hashes the
+    archive through its mounted path before trusting it.
+    """
+    argv = [
+        "export-save",
+        "--name", name,
+        "--destination", _windows_path(destination),
+        "--json",
+    ]
+    if expected_sha256 is not None:
+        argv += ["--sha256", expected_sha256]
+    payload = _run_bridge(argv, timeout=timeout)
+
+    if not payload.get("ok"):
+        raise DeploymentVerificationError(
+            f"export_benchmark_save failed on Windows: {payload.get('error')}"
+        )
+    if expected_sha256 is not None and payload.get("sha256") != expected_sha256:
+        raise DeploymentVerificationError(
+            f"exported sha256 {payload.get('sha256')} != expected {expected_sha256}"
+        )
+    return payload
 
 
 def check_boot_health_via_windows(

@@ -3306,6 +3306,144 @@ def deploy_benchmark_save(source, save_name: str, expected_sha256: str) -> dict:
     }
 
 
+_STABLE_POLL_S = 1.0
+_EXPORT_TIMEOUT_S = 30.0
+_SAVE_EXTENSION = ".Civ6Save"
+
+
+def _export_save_basename(name: str) -> str:
+    """Validate a save basename (spaces allowed) and append the extension."""
+    basename = name if name.endswith(_SAVE_EXTENSION) else f"{name}{_SAVE_EXTENSION}"
+    stem = basename[: -len(_SAVE_EXTENSION)]
+    if (
+        not stem.strip()
+        or any(ch in name for ch in ("/", "\\", ":", "\0"))
+        or ".." in name
+    ):
+        raise ValueError(f"unsafe save name {name!r}: must be a plain basename")
+    return basename
+
+
+def _wait_for_stable_save(
+    path: str,
+    *,
+    timeout_s: float,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> tuple[int, int]:
+    """Return ``(size, mtime_ns)`` once ``path`` is non-empty and unchanged
+    across two polls ``_STABLE_POLL_S`` apart; ``TimeoutError`` otherwise.
+
+    A ``Network.SaveGame`` result is written asynchronously, so a file that
+    merely exists may still be partial -- it is never read as final until
+    its size and mtime stop moving.
+    """
+    deadline = clock() + timeout_s
+    previous: tuple[int, int] | None = None
+    while True:
+        try:
+            st = os.stat(path)
+            signature: tuple[int, int] | None = (
+                (st.st_size, st.st_mtime_ns) if st.st_size > 0 else None
+            )
+        except FileNotFoundError:
+            signature = None
+        if signature is not None and signature == previous:
+            return signature
+        previous = signature
+        if clock() >= deadline:
+            raise TimeoutError(f"save {path} not complete and stable after {timeout_s}s")
+        sleep(_STABLE_POLL_S)
+
+
+def export_benchmark_save(
+    name: str,
+    destination: str,
+    *,
+    expected_sha256: str | None = None,
+    timeout_s: float = _EXPORT_TIMEOUT_S,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict:
+    """Archive a native save from ``SINGLE_SAVE_DIR`` without overwriting.
+
+    Runs on the native Windows side (the export twin of
+    ``deploy_benchmark_save``). Waits for a complete, stable source file,
+    copies it to a temp file beside ``destination``, verifies the source and
+    copy digests agree and the source did not change meanwhile, then
+    publishes with ``os.link`` -- which fails rather than replacing an
+    existing path. An existing destination is accepted only when its digest
+    is identical (``existed: True``); a differing one raises ``ValueError``
+    and is left untouched.
+    """
+    basename = _export_save_basename(name)
+    source_path = os.path.join(SINGLE_SAVE_DIR, basename)
+    dest_path = str(destination)
+    signature = _wait_for_stable_save(
+        source_path, timeout_s=timeout_s, sleep=sleep, clock=clock
+    )
+
+    def _source_unchanged() -> None:
+        st = os.stat(source_path)
+        if (st.st_size, st.st_mtime_ns) != signature:
+            raise ValueError(f"source save {source_path} changed during export")
+
+    tmp = tempfile.NamedTemporaryFile(
+        dir=os.path.dirname(os.path.abspath(dest_path)),
+        prefix=".export.",
+        suffix=".tmp",
+        delete=False,
+    )
+    try:
+        with open(source_path, "rb") as src:
+            for chunk in iter(lambda: src.read(_HASH_CHUNK_SIZE), b""):
+                tmp.write(chunk)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        _source_unchanged()
+
+        source_sha256 = _sha256_file(source_path)
+        copy_sha256 = _sha256_file(tmp.name)
+        _source_unchanged()
+        if source_sha256 != copy_sha256:
+            raise ValueError(
+                f"copy hash mismatch for {source_path}: "
+                f"source {source_sha256}, copy {copy_sha256}"
+            )
+        if expected_sha256 is not None and copy_sha256 != expected_sha256:
+            raise ValueError(
+                f"source hash mismatch for {source_path}: "
+                f"expected {expected_sha256}, got {copy_sha256}"
+            )
+
+        existed = False
+        try:
+            os.link(tmp.name, dest_path)
+        except FileExistsError:
+            existed = True
+        if existed:
+            archived_sha256 = _sha256_file(dest_path)
+            if archived_sha256 != copy_sha256:
+                raise ValueError(
+                    f"archive at {dest_path} differs from {source_path}: "
+                    f"existing {archived_sha256}, new {copy_sha256}"
+                )
+    finally:
+        tmp.close()
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+
+    return {
+        "save_name": basename,
+        "source_path": source_path,
+        "dest_path": dest_path,
+        "sha256": copy_sha256,
+        "size": signature[0],
+        "existed": existed,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Boot health
 # ---------------------------------------------------------------------------
