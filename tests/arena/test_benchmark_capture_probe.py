@@ -7,6 +7,7 @@ mutation, untimed scope survey) rather than only its verdict.
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import shutil
@@ -103,11 +104,12 @@ def _write_position(tmp_path: Path, **overrides) -> Path:
     return path
 
 
-def _v2_state(coverage: dict, *, turn: int = 100, player_id: int = 0, gold: int = 95) -> dict:
+def _v2_state(coverage: dict, *, turn: int = 100, player_id: int = 0, gold: int = 95,
+              targets: list | None = None) -> dict:
     return {
         "wire_version": "2.0.0", "civ_type": "CIVILIZATION_KOREA", "seed": 1881300077,
         "turn": turn, "active_player": 0, "player_id": player_id, "gold": gold, "faith": 119,
-        "units": [], "targets": [], "cities": [], "tiles": [], "resources": [],
+        "units": [], "targets": list(targets or []), "cities": [], "tiles": [], "resources": [],
         "coverage": coverage, "row_counts": {"identity": 1, "unit": 0, "tile": 0},
     }
 
@@ -124,7 +126,7 @@ class FakeConn:
 class FakeOps:
     """Counts every operation; each behaviour is overridable per test."""
 
-    def __init__(self, *, verified=True, v1_states=None, v2=None, io=None):
+    def __init__(self, *, verified=True, v1_states=None, v2=None, io=None, hostiles=None):
         self.calls: list[str] = []
         self.conn = FakeConn()
         self.verified = verified
@@ -133,7 +135,9 @@ class FakeOps:
         self.v2 = v2
         self.io = io if io is not None else {"pre_drain_s": 0.1, "post_drain_s": 0.05,
                                              "lua_executions": 1}
-        self.v2_calls = 0
+        self.hostiles = list(hostiles or [])
+        self.discovery_coverage: dict | None = None
+        self.v2_calls = 0  # timed sample captures (the first v2 call is discovery)
         self.coverages: list[dict] = []
 
     def bundle(self) -> probe.ProbeOps:
@@ -169,6 +173,12 @@ class FakeOps:
         return (128, 80)
 
     async def capture_v2(self, conn, player_id, coverage, *, io_timing=None):
+        if self.discovery_coverage is None:  # the probe's untimed discovery capture
+            self.calls.append("capture_v2_discovery")
+            self.discovery_coverage = coverage
+            if io_timing is not None:
+                io_timing.update(self.io)
+            return _v2_state(coverage, targets=self.hostiles)
         self.calls.append("capture_v2")
         index = self.v2_calls
         self.v2_calls += 1
@@ -206,7 +216,9 @@ async def test_probe_passes_with_one_v2_execution_per_sample_and_no_mutation(tmp
     assert ops.v2_calls == 20 and ops.calls.count("capture_v2") == 20
     assert ops.conn.writes == 0
     assert ops.calls[:5] == ["deploy", "connect", "reload", "popups", "capture_v1"]
-    assert ops.calls[5] == "grid_size"  # untimed survey precedes every timed capture
+    assert ops.calls[5:7] == ["grid_size", "capture_v2_discovery"]  # untimed survey
+    assert len([c for c in ops.calls if c.startswith("capture_v2")]) == 21
+    assert summary["setup"]["survey"]["timed_sample"] is False
     assert ops.calls[-2:] == ["capture_v1", "disconnect"]
     assert all(c == summary["scope"] for c in ops.coverages)
     assert summary["samples"] == 20 and len(summary["rows"]) == 20
@@ -307,7 +319,7 @@ async def test_failed_samples_are_recorded_with_reasons(tmp_path):
 
     ops = FakeOps(v2=flaky)
     summary, out = await _run(tmp_path, ops)
-    assert ops.v2_calls == 20
+    assert ops.v2_calls == 20 and ops.discovery_coverage is not None
     assert summary["verdict"]["passed"] is False
     assert "incomplete" in _codes(summary)
     sample = json.loads((out / "samples" / "005.json").read_text())
@@ -320,6 +332,62 @@ async def test_nineteen_samples_cannot_pass(tmp_path):
     summary, _ = await _run(tmp_path, FakeOps(), samples=19)
     assert summary["verdict"]["passed"] is False
     assert _codes(summary) == ["sample_count"]
+
+
+# ---------------------------------------------------------------------------
+# Tracked hostile discovery
+# ---------------------------------------------------------------------------
+
+HOSTILE = {"owner": 63, "id": 9, "tracked": False, "role": "military", "hostile": True,
+           "visible": True, "status": "alive_visible", "x": 70, "y": 23, "hp": 100,
+           "max_hp": 100}
+
+
+async def test_visible_hostile_is_discovered_untimed_and_tracked_in_samples(tmp_path):
+    ops = FakeOps(hostiles=[HOSTILE])
+    summary, _ = await _run(tmp_path, ops)
+    assert summary["verdict"]["passed"] is True
+    assert summary["scope"]["tracked_targets"] == [[63, 9]]
+    assert ops.discovery_coverage["tracked_targets"] == []
+    assert all(c["tracked_targets"] == [[63, 9]] for c in ops.coverages)
+    assert ops.v2_calls == 20 and ops.calls.count("capture_v2_discovery") == 1
+    assert len([c for c in ops.calls if c.startswith("capture_v2")]) == 21
+    survey = summary["setup"]["survey"]
+    assert survey["op"] == "capture_v2_target_discovery" and survey["timed_sample"] is False
+    assert survey["lua_executions"] == 1 and survey["tracked_targets"] == [[63, 9]]
+    assert summary["samples"] == 20 and summary["telemetry_summary"]["count"] == 20
+    assert summary["scope_info"]["tracked_count"] == 1
+    assert summary["limitations"] == ["timing proven only for the recorded scope"]
+
+
+async def test_no_hostiles_records_the_untimed_target_limitation(tmp_path):
+    summary, _ = await _run(tmp_path, FakeOps())
+    assert summary["scope"]["tracked_targets"] == []
+    assert summary["limitations"] == [
+        "timing proven only for the recorded scope",
+        "no visible hostile targets at the positive control: TARGET rows not timed",
+    ]
+
+
+async def test_failed_discovery_aborts_without_samples(tmp_path):
+    ops = FakeOps()
+
+    async def broken(*_a, **_k):
+        raise probe.BenchmarkStateError("boom")
+
+    bundle = dataclasses.replace(ops.bundle(), capture_v2=broken)
+    summary = await probe.probe_capture(_write_position(tmp_path), samples=20,
+                                        output_dir=tmp_path / "out", ops=bundle)
+    assert "survey_failed" in _codes(summary) and summary["samples"] == 0
+    assert "target discovery did not run: TARGET rows not timed" in summary["limitations"]
+
+
+def test_only_visible_hostiles_are_tracked():
+    friendly = dict(HOSTILE, owner=5, id=1, hostile=False)
+    unseen = dict(HOSTILE, owner=62, id=2, visible=False)
+    other = dict(HOSTILE, owner=61, id=3)
+    state = {"targets": [HOSTILE, friendly, unseen, other]}
+    assert probe.discover_tracked_targets(state) == [[61, 3], [63, 9]]
 
 
 # ---------------------------------------------------------------------------
@@ -339,8 +407,7 @@ def test_scope_is_deterministic_and_keeps_every_relevant_tile():
     for tile in relevant:
         assert list(tile) in area
     assert scope_a["include_owned_tiles"] is True
-    assert scope_a["tracked_targets"] == []
-    assert info_a["tracked_targets_source"]
+    assert scope_a["tracked_targets"] == []  # filled later by untimed discovery
     # Radius-3 neighbourhood of a city, clipped to the grid.
     assert [75, 29] in area and [72, 26] in area
     assert all(0 <= x < 128 and 0 <= y < 80 for x, y in area)
@@ -393,8 +460,11 @@ async def test_output_dir_with_existing_evidence_is_refused(tmp_path):
     assert ops.calls == []
 
 
+CONTRACT = "src/civ_mcp/arena/benchmark_contract_v2.py"
+
+
 def _copy_capture_files(tmp_path: Path) -> Path:
-    for rel in probe.CAPTURE_IMPLEMENTATION_FILES:
+    for rel in (*probe.CAPTURE_IMPLEMENTATION_FILES, CONTRACT):
         dest = tmp_path / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / rel, dest)
@@ -412,7 +482,6 @@ def test_capture_implementation_digest_is_stable_and_tracks_each_file(tmp_path):
         "src/civ_mcp/connection.py",
         "src/civ_mcp/tuner_client.py",
         "src/civ_mcp/arena/benchmark_state.py",
-        "src/civ_mcp/arena/benchmark_contract_v2.py",
     }
     for rel in probe.CAPTURE_IMPLEMENTATION_FILES:
         target = root / rel
@@ -421,6 +490,43 @@ def test_capture_implementation_digest_is_stable_and_tracks_each_file(tmp_path):
         assert probe.capture_implementation_digest(root) != baseline, rel
         target.write_bytes(original)
     assert probe.capture_implementation_digest(root) == baseline
+
+
+def test_fingerprint_list_growth_does_not_change_capture_digest(tmp_path):
+    root = _copy_capture_files(tmp_path / "copy")
+    baseline = probe.capture_implementation_digest(REPO)
+    contract = root / CONTRACT
+    text = contract.read_text()
+    anchor = '            "src/civ_mcp/arena/benchmark_capture.py",\n'
+    assert anchor in text
+    contract.write_text(text.replace(
+        anchor, anchor + '            "src/civ_mcp/arena/some_future_module.py",\n'))
+    assert contract.read_text() != text
+    assert probe.capture_implementation_digest(root) == baseline
+
+
+def test_canonical_hash_source_change_changes_capture_digest(tmp_path):
+    root = _copy_capture_files(tmp_path / "copy")
+    baseline = probe.capture_implementation_digest(REPO)
+    contract = root / CONTRACT
+    text = contract.read_text()
+    edited = text.replace('separators=(",", ":"),', 'separators=(",", ": "),', 1)
+    assert edited != text
+    contract.write_text(edited)
+    assert probe.capture_implementation_digest(root) != baseline
+    edited = text.replace("return hashlib.sha256(canonical_bytes(value)).hexdigest()",
+                          "return hashlib.sha256(canonical_bytes(value)).hexdigest()  # x", 1)
+    assert edited != text
+    contract.write_text(edited)
+    assert probe.capture_implementation_digest(root) != baseline
+
+
+def test_function_source_matches_inspect_getsource():
+    import inspect
+
+    path = REPO / CONTRACT
+    assert probe._function_source(path, "canonical_bytes") == inspect.getsource(c2.canonical_bytes)
+    assert probe._function_source(path, "document_digest") == inspect.getsource(c2.document_digest)
 
 
 def test_probe_module_is_a_fingerprint_dependency():

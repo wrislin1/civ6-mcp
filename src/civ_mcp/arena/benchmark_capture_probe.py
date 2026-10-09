@@ -6,7 +6,8 @@ is frozen. No model backend, no library archive and no game mutation are
 involved: the probe deploys and reloads the positive control through the
 production path, confirms its version-1 identity digest, freezes a
 representative v2 scope from that untimed v1 state (plus one untimed grid
-survey), runs exactly `samples` bounded v2 captures, and re-confirms the v1
+survey and one untimed v2 discovery capture that freezes visible hostiles as
+tracked targets), runs exactly `samples` bounded v2 captures, and re-confirms the v1
 identity afterwards.
 
 Every sample (including failures and their reasons) is written to
@@ -27,6 +28,7 @@ directory that already holds evidence).
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import dataclasses
 import hashlib
@@ -52,10 +54,10 @@ from civ_mcp.arena.benchmark_state import (
 )
 
 __all__ = [
-    "BenchmarkStateError", "CAPTURE_IMPLEMENTATION_FILES", "POSITIVE_CONTROL_ID",
-    "ProbeOps", "ProbeRefused", "REQUIRED_SAMPLES", "build_probe_scope",
-    "capture_implementation_digest", "gate_reasons", "main", "probe_capture",
-    "production_ops", "timing_probe_passes",
+    "BenchmarkStateError", "CAPTURE_IMPLEMENTATION_FILES", "CAPTURE_IMPLEMENTATION_FUNCTIONS",
+    "POSITIVE_CONTROL_ID", "ProbeOps", "ProbeRefused", "REQUIRED_SAMPLES", "build_probe_scope",
+    "capture_implementation_digest", "discover_tracked_targets", "gate_reasons", "main",
+    "probe_capture", "production_ops", "timing_probe_passes",
 ]
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -68,17 +70,25 @@ SCOPE_RADIUS = 3
 _IDENTITY_KEYS = ("turn", "player_id", "active_player")
 _IO_KEYS = ("connect_s", "lock_wait_s", "pre_drain_s", "response_wait_s", "post_drain_s")
 
-# Query, parser, capture wrapper, connection + tuner transport, numeric
-# normalisation and canonical hash: the code whose timing this probe measures.
+# Query, parser, capture wrapper, connection + tuner transport and numeric
+# normalisation: the code whose timing this probe measures. The canonical
+# hash lives in `benchmark_contract_v2.py`, which also holds the growing
+# `FINGERPRINT_DEPENDENCIES` list, so only its two hash functions are hashed
+# (see `CAPTURE_IMPLEMENTATION_FUNCTIONS`); appending a fingerprint
+# dependency must not invalidate a timing measurement.
 CAPTURE_IMPLEMENTATION_FILES: tuple[str, ...] = tuple(sorted((
     "src/civ_mcp/arena/benchmark_capture.py",
-    "src/civ_mcp/arena/benchmark_contract_v2.py",
     "src/civ_mcp/arena/benchmark_state.py",
     "src/civ_mcp/arena/benchmark_state_v2.py",
     "src/civ_mcp/connection.py",
     "src/civ_mcp/lua/benchmark_v2.py",
     "src/civ_mcp/tuner_client.py",
 )))
+_CONTRACT_V2_PATH = "src/civ_mcp/arena/benchmark_contract_v2.py"
+CAPTURE_IMPLEMENTATION_FUNCTIONS: tuple[str, ...] = (
+    "benchmark_contract_v2.canonical_bytes",
+    "benchmark_contract_v2.document_digest",
+)
 
 
 class _Abort(Exception):
@@ -147,15 +157,35 @@ def gate_reasons(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
 # Capture implementation identity
 # ---------------------------------------------------------------------------
 
+def _function_source(path: Path, name: str) -> str:
+    """Source of top-level function `name` in `path`: the same whole lines
+    `inspect.getsource` returns for it, read from `path` (not the imported
+    module) so a copied tree under another root is hashed as itself."""
+    text = path.read_text(encoding="utf-8")
+    for node in ast.parse(text).body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            start = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            lines = text.splitlines(keepends=True)
+            return "".join(lines[start - 1:node.end_lineno])
+    raise ValueError(f"capture implementation function missing: {path.name}:{name}")
+
+
 def capture_implementation_digest(root: Path) -> str:
-    """sha256 of the canonical sorted `[path, file sha256]` list of
-    `CAPTURE_IMPLEMENTATION_FILES` under `root`."""
+    """sha256 of the canonical sorted `[name, sha256]` list covering every
+    `CAPTURE_IMPLEMENTATION_FILES` file and the source of every
+    `CAPTURE_IMPLEMENTATION_FUNCTIONS` function under `root`."""
     entries = []
     for rel in CAPTURE_IMPLEMENTATION_FILES:
         path = Path(root) / rel
         if not path.is_file():
             raise ValueError(f"capture implementation file missing: {rel}")
         entries.append([rel, hashlib.sha256(path.read_bytes()).hexdigest()])
+    contract = Path(root) / _CONTRACT_V2_PATH
+    if not contract.is_file():
+        raise ValueError(f"capture implementation file missing: {_CONTRACT_V2_PATH}")
+    for qualified in CAPTURE_IMPLEMENTATION_FUNCTIONS:
+        source = _function_source(contract, qualified.rsplit(".", 1)[1])
+        entries.append([qualified, hashlib.sha256(source.encode("utf-8")).hexdigest()])
     return hashlib.sha256(canonical_bytes(sorted(entries))).hexdigest()
 
 
@@ -174,8 +204,9 @@ def build_probe_scope(
 
     Area: every in-grid tile within an offset-coordinate square of `radius`
     (a superset of the hex radius) around every owned city and unit, plus
-    every relevant tile (never clipped). Version-1 state carries no hostile
-    units, so `tracked_targets` is empty and `info` says why.
+    every relevant tile (never clipped). `tracked_targets` starts empty:
+    the v1 state carries no hostile units, so `probe_capture` fills it from
+    one untimed discovery capture (`discover_tracked_targets`).
     """
     width, height = int(grid[0]), int(grid[1])
     anchors = sorted({(int(row["x"]), int(row["y"]))
@@ -198,10 +229,22 @@ def build_probe_scope(
         "anchor_count": len(anchors),
         "relevant_tiles": sorted([int(x), int(y)] for x, y in relevant_tiles),
         "area_count": len(area),
-        "tracked_count": 0,
-        "tracked_targets_source": "none: the v1 identity state exposes no hostile units",
     }
     return scope, info
+
+
+def discover_tracked_targets(discovery_state: dict[str, Any]) -> list[list[int]]:
+    """Sorted `[owner, id]` of every visible hostile TARGET row in a v2 state
+    captured with `tracked_targets: []` (the v2 query emits visible hostiles
+    near the scope as untracked TARGET rows)."""
+    pairs = {(int(t["owner"]), int(t["id"])) for t in discovery_state.get("targets", [])
+             if t.get("hostile") is True and t.get("visible") is True}
+    return [list(p) for p in sorted(pairs)]
+
+
+_LIMIT_SCOPE = "timing proven only for the recorded scope"
+_LIMIT_NO_TARGETS = "no visible hostile targets at the positive control: TARGET rows not timed"
+_LIMIT_NO_DISCOVERY = "target discovery did not run: TARGET rows not timed"
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +439,29 @@ async def probe_capture(
         grid = await ops.grid_size(conn)  # untimed survey
         scope, scope_info = build_probe_scope(v1_initial, tiles, grid=grid)
 
+        # Untimed target discovery: one v2 capture with no tracked targets,
+        # never a sample and never inside capture_bounded.
+        survey_io: dict[str, Any] = {}
+        survey_started = time.monotonic()
+        try:
+            discovery = await ops.capture_v2(conn, position.player_id, scope,
+                                             io_timing=survey_io)
+        except Exception as exc:
+            raise _Abort("survey_failed",
+                         f"target discovery capture failed: {type(exc).__name__}: {exc}") from exc
+        tracked = discover_tracked_targets(discovery)
+        setup["survey"] = {
+            "op": "capture_v2_target_discovery",
+            "timed_sample": False,
+            "duration_s": time.monotonic() - survey_started,
+            "lua_executions": survey_io.get("lua_executions"),
+            "row_counts": discovery.get("row_counts"),
+            "tracked_targets": tracked,
+        }
+        scope = dict(scope, tracked_targets=tracked)
+        scope_info = dict(scope_info, tracked_count=len(tracked),
+                          tracked_targets_source="untimed v2 discovery capture: visible hostiles")
+
         invalid_rows: list[int] = []
         drifted: list[int] = []
         loop_started = time.monotonic()
@@ -478,6 +544,12 @@ async def probe_capture(
     telemetry_summary = clean.summary(episode_wall_s=loop_wall_s)
     telemetry_summary["excluded_invalid_records"] = excluded
 
+    limitations = [_LIMIT_SCOPE]
+    if "survey" not in setup:
+        limitations.append(_LIMIT_NO_DISCOVERY)
+    elif not setup["survey"]["tracked_targets"]:
+        limitations.append(_LIMIT_NO_TARGETS)
+
     summary = {
         "position_id": position.position_id,
         "archive_sha256": position.archive_sha256,
@@ -492,6 +564,7 @@ async def probe_capture(
         "telemetry_summary": telemetry_summary,
         "setup": setup,
         "verdict": {"passed": passed, "reasons": reasons},
+        "limitations": limitations,
         "capture_limit_s": CAPTURE_LIMIT_S,
         "capture_implementation_sha256": capture_implementation_digest(_REPO_ROOT),
         "code_identity": implementation_fingerprint(_REPO_ROOT),
