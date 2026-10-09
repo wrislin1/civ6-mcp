@@ -179,6 +179,39 @@ setup:
         end
       end
       if n ~= 1 then print("ERR|expected one escort at 73,30, found " .. n) end
+  - kind: lua
+    # Measurement only: the closer-only destination. Of the mine's (68,23) two
+    # hex neighbours outside both farm rings and city centres, (68,22) and
+    # (69,24), at least one must be eligible: owned, no district, featureless,
+    # passable land, holding no unit, and no hostile (barbarian or at war)
+    # within one tile. The closer_only_tile selector narrows to it (an
+    # ambiguous resolution fails with both candidates).
+    lua: |
+      print("OK|measure closer_only_tile")
+    readback: |
+      local diplo = Players[0]:GetDiplomacy()
+      local function hostileNear(x, y)
+        for i = 1, 63 do
+          local p = Players[i]
+          if p ~= nil and p:IsAlive() and (i == 63 or diplo:IsAtWarWith(i)) then
+            for _, u in p:GetUnits():Members() do
+              if Map.GetPlotDistance(x, y, u:GetX(), u:GetY()) <= 1 then return true end
+            end
+          end
+        end
+        return false
+      end
+      local found = 0
+      for _, t in ipairs({{68, 22}, {69, 24}}) do
+        local p = Map.GetPlot(t[1], t[2])
+        if p ~= nil and p:GetOwner() == 0 and p:GetDistrictType() < 0 and p:GetFeatureType() < 0
+            and not p:IsWater() and not p:IsImpassable() and p:GetUnitCount() == 0
+            and not hostileNear(t[1], t[2]) then
+          found = found + 1
+          print("OK|closer_only_tile|" .. t[1] .. "," .. t[2])
+        end
+      end
+      if found < 1 then print("ERR|no eligible closer-only tile next to 68,23") end
   assertions:
   - id: repair-site-pillaged
     value: true
@@ -242,6 +275,11 @@ bindings:
 - name: builder_food
   resolves: unit
   selector: {type: UNIT_BUILDER, role: civilian, charges: 1, x: 67, y: 24}
+- name: closer_only_tile
+  # Hex distance exactly 1 from the mine (68,23), outside both farm rings and
+  # every city centre; the setup readback proves it unoccupied and unthreatened.
+  resolves: tile
+  selector: {owner: 0, district: NONE, feature: NONE, area: [[68, 22], [69, 24]]}
 - name: escort
   resolves: unit
   selector: {type: UNIT_SWORDSMAN, role: combat, x: 73, y: 30}
@@ -338,6 +376,10 @@ probes:
    expect_pattern: "Reachable this turn",
    arguments_from_bindings: {unit_index: "${builder_food.unit_index}",
                              x: "${repair_site.x}", y: "${repair_site.y}"}}
+- {id: reach-closer-only, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
+                             x: "${closer_only_tile.x}", y: "${closer_only_tile.y}"}}
 - {id: reach-alt-food, tool: get_pathing_estimate, expect: ok, restore: true,
    expect_pattern: "Reachable this turn",
    arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
@@ -446,12 +488,13 @@ scripts:
   - calls:
     - {name: finish_trial, arguments: {}}
 - script_id: closer-only
-  # The Gwangju builder moves into Jeonju, next to the mine (closer, covered in
-  # a city) but not onto it.
+  # The Gwangju builder (hex distance 2 from the mine) stops on closer_only_tile
+  # (distance 1, unoccupied, not a scored tile, no hostile adjacent): closer to
+  # the repair but not on it, so no credit and no exposure.
   batches:
   - calls:
     - {name: move_unit, arguments: {unit_index: "${builder_repair.unit_index}",
-                                    x: "${builder_food.x}", y: "${builder_food.y}"}}
+                                    x: "${closer_only_tile.x}", y: "${closer_only_tile.y}"}}
   - calls:
     - {name: finish_trial, arguments: {}}
 - script_id: escort-loss

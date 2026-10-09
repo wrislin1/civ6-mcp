@@ -206,9 +206,31 @@ def test_builder_witness_legs_must_be_reachable_this_turn():
                      ("${builder_resource.unit_index}", "${resource_site.x}"),
                      ("${builder_food.unit_index}", "${food_site.x}"),
                      ("${builder_food.unit_index}", "${repair_site.x}"),
-                     ("${builder_repair.unit_index}", "${food_site_alt.x}")}
+                     ("${builder_repair.unit_index}", "${food_site_alt.x}"),
+                     ("${builder_repair.unit_index}", "${closer_only_tile.x}")}
     spawn = recipe["setup"]["operations"][1]
     assert "Map.GetPlotDistance" in spawn["readback"] and "d > 2" in spawn["readback"]
+
+
+def test_builder_closer_only_destination_is_strictly_closer_and_unscored():
+    from civ_mcp.arena.action_metrics import _hex_distance
+    recipe = load_recipe(_path("builder"), root=REPO)
+    selectors = {b["name"]: b["selector"] for b in recipe["bindings"]}
+    mine = (selectors["repair_site"]["x"], selectors["repair_site"]["y"])
+    start = (selectors["builder_repair"]["x"], selectors["builder_repair"]["y"])
+    area = [tuple(p) for p in selectors["closer_only_tile"]["area"]]
+    scored = {tuple(p) for name in ("food_site", "food_site_alt")
+              for p in selectors[name]["area"]} | {mine}
+    starts = {(selectors[n]["x"], selectors[n]["y"])
+              for n in ("builder_repair", "builder_resource", "builder_food")}
+    assert _hex_distance(start, mine) == 2
+    for tile in area:
+        assert _hex_distance(tile, mine) == 1
+        assert tile not in scored and tile not in starts
+    script = next(s for s in recipe["scripts"] if s["script_id"] == "closer-only")
+    (move,) = [c for b in script["batches"] for c in b["calls"] if c["name"] == "move_unit"]
+    assert move["arguments"] == {"unit_index": "${builder_repair.unit_index}",
+                                 "x": "${closer_only_tile.x}", "y": "${closer_only_tile.y}"}
 
 
 def test_city_housing_readback_bounds_the_shortfall_on_both_sides():
