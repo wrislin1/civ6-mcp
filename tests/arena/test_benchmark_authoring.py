@@ -74,7 +74,8 @@ RECIPE = {
     "max_steps": 15,
     "positive_maximum": 12,
     "harm_maximum": 4,
-    "base_save_identity": {"name": BASE_NAME, "sha256": BASE_SHA},
+    "base_save_identity": {"name": BASE_NAME, "sha256": BASE_SHA, "turn": 100, "seed": 7,
+                           "civ_type": "CIVILIZATION_KOREA"},
     "player_id": 0,
     "result_char_cap": 40,
     "setup": {
@@ -182,6 +183,20 @@ def test_recipe_rejects_tools_outside_frozen_toolset(tmp_path):
         load_recipe(write_recipe(tmp_path, doc), root=tmp_path)
 
 
+def test_recipe_rejects_action_tool_as_survey_query(tmp_path):
+    doc = _recipe()
+    doc["survey"]["queries"][0]["tool"] = "fortify_unit"
+    with pytest.raises(ValueError, match="read-only"):
+        load_recipe(write_recipe(tmp_path, doc), root=tmp_path)
+
+
+def test_recipe_requires_base_identity_fields(tmp_path):
+    doc = _recipe()
+    del doc["base_save_identity"]["seed"]
+    with pytest.raises(ValueError, match="seed"):
+        load_recipe(write_recipe(tmp_path, doc), root=tmp_path)
+
+
 def test_recipe_rejects_unknown_binding_reference(tmp_path):
     doc = _recipe()
     doc["probes"][0]["arguments_from_bindings"]["unit_index"] = "${ghost.unit_index}"
@@ -224,6 +239,7 @@ class FakeConn:
 
     async def execute_write(self, lua, timeout=5.0):
         self.ops.calls.append(("write", lua))
+        self.ops.setup_applied = True
         return list(self.ops.write_lines)
 
     async def execute_read(self, lua, timeout=5.0, **_kwargs):
@@ -246,11 +262,23 @@ class FakeOps:
         self.restore_builder_xy: tuple[int, int] | None = None
         self.saves = 0
         self.saved: dict[str, bytes] = {}
-        self.tool_results = {"get_units": "Units: UNIT_BUILDER (1) at 10,10",
+        # The base world has no builder; setup introduces it (and the task tile).
+        self.setup_applied = False
+        self.tool_results = {"get_units": "Units: UNIT_WARRIOR (2) at 9,9",
                              "improve_tile": "Started IMPROVEMENT_FARM",
                              "fortify_unit": "Error: civilians cannot fortify"}
+        self.setup_tool_results = {"get_units": "UNIT_BUILDER at 10,10 task 12,10"}
+        self.load_result = "Loaded"
+        self.restart_result = "Kill: ok | Launch: ok | Load: loaded"
+        self.identity: dict = {}
+        self.after_restart_builder_xy: tuple[int, int] | None = None
         self.validation_inputs: list[tuple] = []
         self.journal_open_at_connect: list[bool] = []
+
+    def tool_result(self, name: str) -> str:
+        if self.setup_applied and name in self.setup_tool_results:
+            return self.setup_tool_results[name]
+        return self.tool_results[name]
 
     # -- clocks
     def wall(self) -> float:
@@ -306,7 +334,17 @@ class FakeOps:
 
     async def load_game_save(self, conn, name):
         self.calls.append(("load", name))
-        return f"Loaded {name}"
+        self.setup_applied = False
+        return f"{self.load_result} {name}"
+
+    async def restart_and_load(self, name):
+        self.calls.append(("restart_and_load", name))
+        if self.after_restart_builder_xy is not None:
+            self.builder_xy = self.after_restart_builder_xy
+        return self.restart_result
+
+    async def reconnect(self, conn):
+        self.calls.append(("reconnect",))
 
     async def run_validation(self, suite_path, run_dir):
         self.validation_inputs.append((Path(suite_path), Path(run_dir)))
@@ -328,7 +366,7 @@ class FakeOps:
 
     def state(self, coverage) -> dict:
         tiles = [_tile(x, y) for x, y in sorted(tuple(p) for p in coverage["area"])]
-        return state_v2(units=[_builder(*self.builder_xy)], tiles=tiles)
+        return {**state_v2(units=[_builder(*self.builder_xy)], tiles=tiles), **self.identity}
 
     async def capture_state_v2(self, conn, player_id, coverage, *, io_timing=None):
         self.calls.append(("capture",))
@@ -361,6 +399,7 @@ class FakeOps:
             load_game_save=self.load_game_save, run_validation=self.run_validation,
             build_reports=self.build_reports, capture_state_v2=self.capture_state_v2,
             capture_position=self.capture_position, verify_position=self.verify_position,
+            restart_and_load=self.restart_and_load, reconnect=self.reconnect,
             clocks=(self.wall, self.mono))
 
 
@@ -375,7 +414,7 @@ def tool_log(monkeypatch):
         for name in TOOLS:
             async def call(gs, args, _name=name, **_context):
                 log.append((_name, dict(args), gs))
-                return ops.tool_results[_name]
+                return ops.tool_result(_name)
             monkeypatch.setitem(registry.TOOL_REGISTRY, name,
                                 dataclasses.replace(registry.TOOL_REGISTRY[name], call=call))
         return log
@@ -424,13 +463,17 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     assert rig.calls_since(mark)[:2] == [("connect",), ("load", BASE_NAME)]
     assert [t[0] for t in rig.tools] == ["get_units"]
     assert type(rig.tools[0][2]).__name__ == "GameState"
+    # The base has no builder: the fact is recorded for the base, not gated here.
+    (base_fact,) = survey["evidence"]["base_required_facts"]
+    assert base_fact["discoverable"] is False
+    assert survey["evidence"]["base_identity"]["matches"] is True
 
-    # apply: always reloads the identified base before any setup write.
+    # apply: always reloads the identified base, confirms it, then reconnects.
     mark = rig.marks()
     apply = await rig.run("apply")
     assert apply["status"] == "passed", apply.get("error")
     since = rig.calls_since(mark)
-    assert since[1] == ("load", BASE_NAME)
+    assert since[1:3] == [("load", BASE_NAME), ("reconnect",)]
     assert since.index(("load", BASE_NAME)) < since.index(("write", "PLACE_BUILDER"))
     assert ("export", BASE_NAME,
             f"{WSL_WINDOWS_REPO}/benchmark_runs/plan3-part1/bases/{BASE_SHA}.Civ6Save",
@@ -462,14 +505,24 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     local = tmp_path / archive_rel
     assert archive["evidence"]["export_sha256"] == archive["evidence"]["publish_sha256"] \
         == hashlib.sha256(local.read_bytes()).hexdigest()
+    # The archived start is observed (setup fact discoverable) before saving.
+    assert [t[0] for t in rig.tools[3:]] == ["get_units"]
+    (fact,) = archive["evidence"]["required_facts"]
+    assert fact["discoverable"] is True
+    assert all("/observations/archived-" in p for p in archive["evidence"]["archived_observations"])
 
     capture = await rig.run("capture")
     assert capture["status"] == "passed", capture.get("error")
     authoring_input = tmp_path / "benchmarks/provenance/test-builder-a1-v1-authoring.json"
     frozen = json.loads(authoring_input.read_text())
     assert frozen["archive_sha256"] == archive["evidence"]["export_sha256"]
-    assert frozen["base_save_identity"] == {"name": BASE_NAME, "sha256": BASE_SHA}
+    assert frozen["base_save_identity"] == RECIPE["base_save_identity"]
     assert frozen["capture"]["digest"] == capture["evidence"]["captured_state_sha256"]
+    validation_dir = tmp_path / "benchmarks/validation/test-builder-a1-v1"
+    public = json.loads((validation_dir / "public-observation.json").read_text())
+    assert [d["result_capped"] for d in public] == ["UNIT_BUILDER at 10,10 task 12,10"]
+    position = json.loads((tmp_path / "benchmarks/positions/test-builder-a1-v1.yaml").read_text())
+    assert position["public_task_tiles"] == [[12, 10]]
     # Scripts carry no expectations; cases are separate documents.
     script = json.loads((tmp_path / "benchmarks/scripts/test-builder-a1-v1/observe.json").read_text())
     assert set(script) == {"schema_version", "script_id", "batches"}
@@ -485,9 +538,13 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     menu = await rig.run("menu-check")
     assert menu["status"] == "passed", menu.get("error")
     since = rig.calls_since(mark)
-    assert ("load", "TEST_BUILDER_A1_V1") in since
-    assert not any(c[0] == "reload" for c in since)
+    kinds = [c[0] for c in since]
+    assert ("restart_and_load", "TEST_BUILDER_A1_V1") in since
+    assert kinds.index("restart_and_load") < kinds.index("connect") < kinds.index("reconnect")
+    assert not any(k in ("reload", "load") for k in kinds)
+    assert menu["evidence"]["loader_result"] == rig.ops.restart_result
     assert menu["evidence"]["digest_matches"] is True
+    assert menu["evidence"]["identity_matches"] is True
 
     mark = rig.marks()
     validate = await rig.run("validate")
@@ -517,18 +574,132 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     assert stage_status(rig.attempt) == {s: "passed" for s in authoring.STAGES}
 
 
-async def test_survey_fact_beyond_cap_fails_and_keeps_observation(tmp_path, tool_log):
+async def test_setup_fact_beyond_cap_at_archived_start_blocks_archive(tmp_path, tool_log):
     rig = Rig(tmp_path, tool_log)
-    rig.ops.tool_results["get_units"] = "x" * 45 + " UNIT_BUILDER"
-    record = await rig.run("survey")
+    rig.ops.setup_tool_results["get_units"] = "x" * 45 + " UNIT_BUILDER"
+    await rig.run_through("probe")
+    mark = rig.marks()
+    record = await rig.run("archive")
     assert record["status"] == "failed"
     assert "builder-visible" in record["error"]
-    (obs,) = sorted((rig.attempt / "observations").glob("*.json"))
+    assert not any(c[0] in ("save", "publish") or (c[0] == "export" and c[1] != BASE_NAME)
+                   for c in rig.calls_since(mark))
+    (obs,) = sorted((rig.attempt / "observations").glob("archived-*.json"))
     saved = json.loads(obs.read_text())
     assert saved["result_full"].endswith("UNIT_BUILDER")
     assert saved["result_capped"] == "x" * 40
-    with pytest.raises(ValueError, match="survey"):
+    with pytest.raises(ValueError, match="archive"):
+        await rig.run("capture")
+
+
+async def test_base_load_error_fails_before_any_setup_mutation(tmp_path, tool_log):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("survey")
+    rig.ops.load_result = "Error: save not found"
+    mark = rig.marks()
+    record = await rig.run("apply")
+    assert record["status"] == "failed"
+    assert "base load" in record["error"]
+    assert not any(c[0] == "write" for c in rig.calls_since(mark))
+    assert list((rig.attempt / "mutations").glob("*.json"))
+
+
+async def test_base_identity_mismatch_fails_before_any_setup_mutation(tmp_path, tool_log):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("survey")
+    rig.ops.identity = {"turn": 101}
+    mark = rig.marks()
+    record = await rig.run("apply")
+    assert record["status"] == "failed"
+    assert "identity" in record["error"]
+    assert not any(c[0] == "write" for c in rig.calls_since(mark))
+
+
+async def test_menu_check_fails_on_recovery_loader_error(tmp_path, tool_log):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("verify")
+    rig.ops.restart_result = "Kill: ok | Launch: ok | Load: Error: save not found"
+    record = await rig.run("menu-check")
+    assert record["status"] == "failed"
+    assert record["evidence"]["loader_result"] == rig.ops.restart_result
+    with pytest.raises(ValueError, match="menu-check"):
+        await rig.run("validate")
+
+
+async def test_menu_check_fails_when_state_after_recovery_differs(tmp_path, tool_log):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("verify")
+    rig.ops.after_restart_builder_xy = (11, 11)
+    record = await rig.run("menu-check")
+    assert record["status"] == "failed"
+    assert record["evidence"]["digest_matches"] is False
+
+
+async def test_clock_expiring_during_stage_records_failed_with_evidence(tmp_path, tool_log):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("capture")
+    original = rig.ops.verify_position
+
+    async def slow_verify(position, cycles, *, capture_state, digest):
+        result = await original(position, cycles, capture_state=capture_state, digest=digest)
+        rig.ops.now += 10_801
+        return result
+
+    rig.ops.verify_position = slow_verify
+    record = await rig.run("verify")
+    assert record["status"] == "failed"
+    assert record["error"].startswith("clock_expired")
+    assert record["evidence"]["result"]["ok"] is True
+    on_disk = json.loads(next((rig.attempt / "stages").glob("*-verify.json")).read_text())
+    assert on_disk["status"] == "failed"
+    journal = json.loads((rig.attempt / "authoring-journal.json").read_text())
+    (scenario,) = journal["families"]["builder"]["scenarios"]
+    assert scenario["expired"] is True
+
+
+async def test_abandon_indexes_failed_attempt_and_closes_journal(tmp_path, tool_log):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("survey")
+    rig.ops.readback_lines = ["ERR|no builder"]
+    assert (await rig.run("apply"))["status"] == "failed"
+    record = authoring.abandon_attempt(rig.recipe_path, attempt_dir=rig.attempt,
+                                       reason="setup readback cannot pass",
+                                       ops=rig.ops.live_ops(), root=tmp_path)
+    assert record["status"] == "abandoned"
+    assert (rig.attempt / "evidence-index.json").is_file()
+    journal = json.loads((rig.attempt / "authoring-journal.json").read_text())
+    (scenario,) = journal["families"]["builder"]["scenarios"]
+    assert scenario["status"] == "failed"
+    paths = evidence_files(tmp_path / "benchmark_runs" / "plan3-part1", repo_root=tmp_path)
+    assert "benchmark_runs/plan3-part1/builder-a1/evidence-index.json" in paths
+    assert any("/mutations/" in p for p in paths)
+    with pytest.raises(ValueError, match="closed"):
         await rig.run("apply")
+
+
+async def test_abandon_indexes_an_expired_attempt(tmp_path, tool_log):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("survey")
+    rig.ops.now += 10_801
+    assert (await rig.run("apply"))["status"] == "failed"
+    record = authoring.abandon_attempt(rig.recipe_path, attempt_dir=rig.attempt,
+                                       reason="clock expired", ops=rig.ops.live_ops(),
+                                       root=tmp_path)
+    assert record["evidence"]["expired_before"] is True
+    evidence_files(tmp_path / "benchmark_runs" / "plan3-part1", repo_root=tmp_path)
+
+
+async def test_evidence_files_rejects_unindexed_attempt(tmp_path, tool_log):
+    await _finished(tmp_path, tool_log)
+    # A sibling attempt (another scenario) that ran a stage but was never closed.
+    sibling = Rig(tmp_path, tool_log)
+    sibling.attempt = tmp_path / "benchmark_runs" / "plan3-part1" / "city-a1"
+    sibling.ops.attempt_dir = sibling.attempt
+    sibling.recipe_path = write_recipe(tmp_path, _recipe(family="city", scenario_id="city-a1"),
+                                       name="test-city-a1")
+    assert (await sibling.run("survey"))["status"] == "passed"
+    with pytest.raises(ValueError, match="unindexed_attempt: benchmark_runs/plan3-part1/city-a1"):
+        evidence_files(tmp_path / "benchmark_runs" / "plan3-part1", repo_root=tmp_path)
 
 
 async def test_failed_readback_blocks_probe_and_archive(tmp_path, tool_log):

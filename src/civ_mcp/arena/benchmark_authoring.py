@@ -18,12 +18,20 @@ Stage outputs live in the attempt directory and are never overwritten:
 
     authoring-journal.json        persistent clock (Task 14)
     stages/NNN-<stage>.json       one record per run or invalidation
-    observations/NNN-survey-II.json  full + capped public tool results
+    observations/NNN-survey-II.json  full + capped public tool results (base)
+    observations/archived-NNN-II.json  the same queries at the archived start
     samples/NNN-<stage>-state.json   private v2 captures (never observations)
     mutations/NNN-<label>.json    base replay, setup requests/readback, bindings
     probes/NNN-<probe-id>.json    legality probes, including failures
     validation/<position-id>/<suite-id>/   Task 13 run directory
-    evidence-index.json           written by `finish` after the journal closes
+    evidence-index.json           written by `finish` after the journal closes,
+                                  or by `abandon` for a failed/abandoned attempt
+
+Every base load is confirmed: a failed loader result is refused, the
+connection is re-established, and the loaded identity (turn, seed, civ,
+player) must equal the recipe's `base_save_identity` before any setup Lua.
+`menu-check` uses the crash-recovery `restart_and_load` path and requires the
+post-load identity and v2 digest to equal the position's expected state.
 
 `survey`, `apply` and `probe` may repeat under the same clock; repeating one
 records an `invalidated` record for every downstream stage. Every archive
@@ -39,6 +47,7 @@ Offline commands (never connect to the game):
     uv run python -m civ_mcp.arena.benchmark_authoring STAGE --recipe PATH --attempt-dir PATH
     uv run python -m civ_mcp.arena.benchmark_authoring preflight --recipes PATH... --output PATH
     uv run python -m civ_mcp.arena.benchmark_authoring evidence-files --root PATH --output PATH
+    uv run python -m civ_mcp.arena.benchmark_authoring abandon --recipe PATH --attempt-dir PATH --reason TEXT
 """
 from __future__ import annotations
 
@@ -88,6 +97,7 @@ __all__ = [
     "STAGES",
     "STAGE_PREREQUISITES",
     "LiveOps",
+    "abandon_attempt",
     "evidence_files",
     "load_recipe",
     "main",
@@ -107,6 +117,7 @@ STAGE_PREREQUISITES = {
 }
 STAGES: tuple[str, ...] = tuple(STAGE_PREREQUISITES)
 REPEATABLE_STAGES = frozenset({"survey", "apply", "probe"})
+ABANDON = "abandon"
 
 JOURNAL_FILE = "authoring-journal.json"
 INDEX_FILE = "evidence-index.json"
@@ -301,8 +312,12 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
     _require(_is_int(raw["result_char_cap"]) and raw["result_char_cap"] > 0,
              "recipe.result_char_cap must be a positive integer")
     base = raw["base_save_identity"]
-    _check_keys(base, {"name", "sha256"}, "recipe.base_save_identity")
+    _check_keys(base, {"name", "sha256", "turn", "seed", "civ_type"}, "recipe.base_save_identity")
     _require(_is_str(base["name"]), "recipe.base_save_identity.name must be a non-empty string")
+    _require(_is_int(base["turn"]) and base["turn"] >= 0,
+             "recipe.base_save_identity.turn must be a non-negative integer")
+    _require(_is_int(base["seed"]), "recipe.base_save_identity.seed must be an integer")
+    _require(_is_str(base["civ_type"]), "recipe.base_save_identity.civ_type must be a non-empty string")
     _require(isinstance(base["sha256"], str) and bool(_HEX64.match(base["sha256"])),
              "recipe.base_save_identity.sha256 must be 64 lowercase hex characters")
 
@@ -357,6 +372,9 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
         ctx = f"recipe.survey.queries[{i}]"
         _check_keys(query, {"tool", "arguments"}, ctx)
         _require(query["tool"] in tools, f"{ctx}.tool {query['tool']!r} is not in the frozen toolset")
+        _require(registry.TOOL_REGISTRY[query["tool"]].verb == "",
+                 f"{ctx}.tool {query['tool']!r} is an action tool; survey queries must be "
+                 "read-only (they also run on the archived start before save)")
         _require(isinstance(query["arguments"], dict), f"{ctx}.arguments must be a mapping")
     _require(isinstance(survey["required_facts"], list), "recipe.survey.required_facts must be a list")
     for i, fact in enumerate(survey["required_facts"]):
@@ -478,7 +496,7 @@ def _stage_records(attempt_dir: Path) -> list[dict[str, Any]]:
     records = []
     for path in directory.iterdir():
         match = _STAGE_FILE.match(path.name)
-        if match and match.group(2) in STAGE_PREREQUISITES:
+        if match and (match.group(2) in STAGE_PREREQUISITES or match.group(2) == ABANDON):
             records.append(json.loads(path.read_text(encoding="utf-8")))
     return sorted(records, key=lambda r: r["sequence"])
 
@@ -506,7 +524,9 @@ class LiveOps:
     `connect()` returns a connected FireTuner connection. `deploy(archive,
     save_name, sha256)` installs a repo-relative archive; `reload(conn,
     save_name) -> bool` is the production confirmed reload; `load_game_save`
-    is the tiered loader whose frontend tier is the crash-recovery menu path.
+    is the tiered in-session loader (base replays); `restart_and_load(name)`
+    is the crash-recovery path (kill, relaunch, frontend menu load);
+    `reconnect(conn)` re-establishes a connection after any load.
     `export_save`/`publish_archive` are the native export and WSL copy;
     `capture_position`/`verify_position` are `benchmark_position`'s and own
     their connection. `clocks` is ``(wall_clock, monotonic)`` for the journal.
@@ -525,6 +545,8 @@ class LiveOps:
     capture_state_v2: Callable[..., Awaitable[dict[str, Any]]]
     capture_position: Callable[..., Awaitable[dict[str, Any]]]
     verify_position: Callable[..., Awaitable[dict[str, Any]]]
+    restart_and_load: Callable[[str], Awaitable[str]]
+    reconnect: Callable[[Any], Awaitable[Any]]
     clocks: tuple[Callable[[], float], Callable[[], float]] = (time.time, time.monotonic)
 
 
@@ -552,7 +574,13 @@ def production_ops() -> LiveOps:
     async def run_validation(suite_path: Path, run_dir: Path) -> dict[str, Any]:
         return await benchmark_validation.run_validation(suite_path, run_dir)
 
+    async def reconnect(connection: Any) -> None:
+        await connection.reconnect()
+
+    from civ_mcp.game_launcher import restart_and_load
+
     return LiveOps(
+        restart_and_load=restart_and_load, reconnect=reconnect,
         connect=connect, deploy=deploy_via_windows, reload=reload,
         dismiss_popups=dismiss_blocking_popups, export_save=export_via_windows,
         publish_archive=publish_archive_copy, save_game=game_lifecycle.save_game,
@@ -602,8 +630,9 @@ class _Context:
     def note_file(self, path: Path) -> None:
         self.files.append({"path": self.rel(path), "sha256": _sha256_file(path)})
 
-    def write_evidence(self, kind: str, name: str, doc: Any) -> Path:
-        path = self.attempt_dir / kind / f"{self.sequence:03d}-{name}.json"
+    def write_evidence(self, kind: str, name: str, doc: Any, *,
+                       filename: str | None = None) -> Path:
+        path = self.attempt_dir / kind / (filename or f"{self.sequence:03d}-{name}.json")
         _write_new(path, _json_bytes(doc))
         self.note_file(path)
         return path
@@ -612,10 +641,10 @@ class _Context:
         return {"path": self.rel(self.recipe_path), "sha256": _sha256_file(self.recipe_path),
                 "recipe_id": self.recipe["recipe_id"], "version": self.recipe["version"]}
 
-    def write_record(self, stage: str, status: str, *, sequence: int | None = None,
+    def build_record(self, stage: str, status: str, *, sequence: int | None = None,
                      error: str | None = None, evidence: dict[str, Any] | None = None,
                      files: list[dict[str, str]] | None = None,
-                     extra: dict[str, Any] | None = None) -> dict[str, Any]:
+                     extra: dict[str, Any] | None = None) -> tuple[dict[str, Any], bytes, Path]:
         sequence = self.sequence if sequence is None else sequence
         record = {
             "schema_version": SCHEMA_VERSION, "sequence": sequence, "stage": stage,
@@ -624,9 +653,15 @@ class _Context:
             "files": files if files is not None else [], **(extra or {}),
         }
         path = self.attempt_dir / "stages" / f"{sequence:03d}-{stage}.json"
-        _write_new(path, _json_bytes(record))
+        return record, _json_bytes(record), path
+
+    def persist(self, record: dict[str, Any], data: bytes, path: Path) -> dict[str, Any]:
+        _write_new(path, data)
         self.records.append(record)
         return record
+
+    def write_record(self, stage: str, status: str, **kwargs: Any) -> dict[str, Any]:
+        return self.persist(*self.build_record(stage, status, **kwargs))
 
 
 def _next_sequence(records: list[dict[str, Any]]) -> int:
@@ -729,9 +764,19 @@ async def _capture(ctx: _Context, connection: Any, coverage: dict[str, Any]) -> 
 
 
 async def _load_and_verify_base(ctx: _Context, connection: Any, out: dict[str, Any]) -> None:
+    """Load the base, confirm the load, and prove the loaded game is the base.
+
+    A failed load string, a failed reconnect, a base file whose digest differs,
+    or a loaded identity (turn/seed/civ/player) that differs from the recipe's
+    base identity fails the stage before any setup mutation."""
     base = ctx.recipe["base_save_identity"]
     ctx.check("load-base")
-    out["base_load"] = await ctx.ops.load_game_save(connection, base["name"])
+    result = await ctx.ops.load_game_save(connection, base["name"])
+    out["base_load"] = result
+    if _load_failed(result):
+        raise StageFailure(f"base load of {base['name']!r} failed: {result}")
+    await ctx.ops.reconnect(connection)
+    out["base_reconnect"] = {"reconnected": True}
     destination = f"{WSL_WINDOWS_REPO}/{BASE_EXPORT_DIR}/{base['sha256']}.Civ6Save"
     export = await _maybe_await(ctx.ops.export_save(base["name"], destination,
                                                     expected_sha256=base["sha256"]))
@@ -739,6 +784,28 @@ async def _load_and_verify_base(ctx: _Context, connection: Any, out: dict[str, A
     if not isinstance(export, dict) or export.get("sha256") != base["sha256"]:
         raise StageFailure(f"base save {base['name']!r} does not hash to {base['sha256']}")
     out["base_popups"] = await ctx.ops.dismiss_popups(connection)
+    identity_state = await _capture(ctx, connection, _IDENTITY_COVERAGE)
+    observed = _identity(identity_state)
+    expected = {"turn": base["turn"], "seed": base["seed"], "civ_type": base["civ_type"],
+                "player_id": ctx.recipe["player_id"]}
+    out["base_identity"] = {"observed": observed, "expected": expected,
+                            "matches": observed == expected}
+    if observed != expected:
+        raise StageFailure(f"loaded game identity {observed} is not the base identity {expected}")
+
+
+_IDENTITY_COVERAGE = {"include_owned_tiles": False, "area": [], "tracked_targets": []}
+_LOAD_FAILURE_MARKERS = ("FAILED", "ABORTED", "WARNING:", "Error:", "not found")
+
+
+def _load_failed(result: Any) -> bool:
+    text = str(result or "").strip()
+    return (not text or text.lower().startswith("error")
+            or any(marker in text for marker in _LOAD_FAILURE_MARKERS))
+
+
+def _identity(state: dict[str, Any]) -> dict[str, Any]:
+    return {k: state.get(k) for k in ("turn", "seed", "civ_type", "player_id")}
 
 
 async def _replay(ctx: _Context, connection: Any, out: dict[str, Any]) -> None:
@@ -805,30 +872,27 @@ async def _dispatch(ctx: _Context, connection: Any, tool: str, arguments: dict[s
 # Stages
 # ---------------------------------------------------------------------------
 
-async def _stage_survey(ctx: _Context) -> None:
-    recipe = ctx.recipe
-    cap = recipe["result_char_cap"]
-    connection = await _connect(ctx)
-    try:
-        await _load_and_verify_base(ctx, connection, ctx.evidence)
-        private = await _capture(ctx, connection, _resolution_coverage(recipe))
-        path = ctx.write_evidence("samples", "survey-state", private)
-        ctx.evidence["private_state"] = {"path": ctx.rel(path),
-                                         "sha256": digest_state_v2(private)}
-        observations = []
-        for index, query in enumerate(recipe["survey"]["queries"]):
-            ctx.check(f"query-{index}")
-            full = await _dispatch(ctx, connection, query["tool"], dict(query["arguments"]))
-            capped = full[:cap]
-            doc = {"index": index, "tool": query["tool"], "arguments": query["arguments"],
-                   "result_char_cap": cap, "result_full": full, "result_capped": capped,
-                   "full_sha256": _sha256_bytes(full.encode()),
-                   "capped_sha256": _sha256_bytes(capped.encode())}
-            obs_path = ctx.write_evidence("observations", f"survey-{index:02d}", doc)
-            observations.append((ctx.rel(obs_path), doc))
-        ctx.evidence["observations"] = [p for p, _ in observations]
-    finally:
-        await _disconnect(connection)
+async def _observe(ctx: _Context, connection: Any, filename: Callable[[int], str]
+                   ) -> list[tuple[str, dict[str, Any]]]:
+    """Run `survey.queries` through registry dispatch; keep full and capped text."""
+    cap = ctx.recipe["result_char_cap"]
+    observations = []
+    for index, query in enumerate(ctx.recipe["survey"]["queries"]):
+        ctx.check(f"query-{index}")
+        full = await _dispatch(ctx, connection, query["tool"], dict(query["arguments"]))
+        capped = full[:cap]
+        doc = {"index": index, "tool": query["tool"], "arguments": query["arguments"],
+               "result_char_cap": cap, "result_full": full, "result_capped": capped,
+               "full_sha256": _sha256_bytes(full.encode()),
+               "capped_sha256": _sha256_bytes(capped.encode())}
+        path = ctx.write_evidence("observations", "", doc, filename=filename(index))
+        observations.append((ctx.rel(path), doc))
+    return observations
+
+
+def _required_facts(recipe: dict[str, Any], observations: list[tuple[str, dict[str, Any]]]
+                    ) -> list[dict[str, Any]]:
+    """Each fact is discoverable only if it matches within the CAPPED text."""
     facts = []
     for fact in recipe["survey"]["required_facts"]:
         pattern = re.compile(fact["pattern"])
@@ -836,11 +900,29 @@ async def _stage_survey(ctx: _Context) -> None:
         in_full = [p for p, d in observations if pattern.search(d["result_full"])]
         facts.append({"id": fact["id"], "pattern": fact["pattern"], "discoverable": bool(in_cap),
                       "observations": in_cap, "beyond_cap_only": bool(in_full) and not in_cap})
-    ctx.evidence["required_facts"] = facts
-    missing = [f["id"] for f in facts if not f["discoverable"]]
-    if missing:
-        raise StageFailure(f"required facts not discoverable within the {cap}-character "
-                           f"result cap: {missing}")
+    return facts
+
+
+async def _stage_survey(ctx: _Context) -> None:
+    """Candidate discovery on the unmodified base.
+
+    Required facts are recorded here for the base but gate only in `archive`,
+    where the queries run on the replayed scenario start (setup-introduced
+    facts cannot exist in the base)."""
+    recipe = ctx.recipe
+    connection = await _connect(ctx)
+    try:
+        await _load_and_verify_base(ctx, connection, ctx.evidence)
+        private = await _capture(ctx, connection, _resolution_coverage(recipe))
+        path = ctx.write_evidence("samples", "survey-state", private)
+        ctx.evidence["private_state"] = {"path": ctx.rel(path),
+                                         "sha256": digest_state_v2(private)}
+        observations = await _observe(
+            ctx, connection, lambda i: f"{ctx.sequence:03d}-survey-{i:02d}.json")
+        ctx.evidence["observations"] = [p for p, _ in observations]
+    finally:
+        await _disconnect(connection)
+    ctx.evidence["base_required_facts"] = _required_facts(recipe, observations)
 
 
 async def _replay_stage(ctx: _Context, label: str) -> dict[str, Any]:
@@ -938,6 +1020,16 @@ async def _stage_archive(ctx: _Context) -> None:
             raise StageFailure("setup assertions failed before archive")
         ctx.evidence.update(bindings=replay["bindings"], coverage=replay["coverage"],
                             state_sha256=replay["state_sha256"])
+        # Observe the archived start exactly as an actor would, before saving.
+        observations = await _observe(
+            ctx, connection, lambda i: f"archived-{ctx.sequence:03d}-{i:02d}.json")
+        ctx.evidence["archived_observations"] = [p for p, _ in observations]
+        facts = _required_facts(recipe, observations)
+        ctx.evidence["required_facts"] = facts
+        missing = [f["id"] for f in facts if not f["discoverable"]]
+        if missing:
+            raise StageFailure(f"required facts not discoverable at the archived start within "
+                               f"the {recipe['result_char_cap']}-character result cap: {missing}")
         ctx.check("save")
         ok, message = await ctx.ops.save_game(connection, names["name"])
         ctx.evidence["save_ack"] = {"ok": ok, "message": message}
@@ -981,13 +1073,26 @@ def _ref(path: Path, base_dir: Path) -> dict[str, str]:
     return {"path": os.path.relpath(path, base_dir), "sha256": _sha256_file(path)}
 
 
-def _public_observation(ctx: _Context) -> list[dict[str, Any]]:
-    survey = ctx.latest("survey")
+def _public_observation(ctx: _Context, archive: dict[str, Any]) -> list[dict[str, Any]]:
+    """The capped archived-start observations: what an actor sees at the start."""
     docs = []
-    for rel in survey["evidence"]["observations"]:
+    for rel in archive["archived_observations"]:
         doc = json.loads((ctx.root / rel).read_text(encoding="utf-8"))
         docs.append({k: doc[k] for k in ("tool", "arguments", "result_char_cap", "result_capped")})
     return docs
+
+
+def _public_task_tiles(recipe: dict[str, Any], bindings: dict[str, Any],
+                       observation: list[dict[str, Any]]) -> list[list[int]]:
+    """Tile bindings whose ``x,y`` appears in the capped archived observations."""
+    text = "\n".join(doc["result_capped"] for doc in observation)
+    tiles = []
+    for name, value in sorted(bindings.items()):
+        if _binding_kind(recipe, name) != "tile":
+            continue
+        if re.search(rf"(?<!\d){value['x']}\s*,\s*{value['y']}(?!\d)", text):
+            tiles.append(list(value["xy"]))
+    return tiles
 
 
 def _materialise(ctx: _Context, names: dict[str, str], archive: dict[str, Any],
@@ -1004,8 +1109,9 @@ def _materialise(ctx: _Context, names: dict[str, str], archive: dict[str, Any],
                                  bindings)
     validate_rubric(rubric, state)
 
+    observation = _public_observation(ctx, archive)
     observation_path = validation_dir / "public-observation.json"
-    _write_immutable(observation_path, _json_bytes(_public_observation(ctx)))
+    _write_immutable(observation_path, _json_bytes(observation))
     position_dir = position_path.parent
     position = {
         "schema_version": SCHEMA_VERSION, "position_id": names["position_id"],
@@ -1020,8 +1126,7 @@ def _materialise(ctx: _Context, names: dict[str, str], archive: dict[str, Any],
         "contract_identity": contract_identity, "rubric": rubric,
         "provenance": _ref(authoring_path, position_dir),
         "public_observation": _ref(observation_path, position_dir),
-        "public_task_tiles": [b["xy"] for n, b in sorted(bindings.items())
-                              if _binding_kind(recipe, n) == "tile"],
+        "public_task_tiles": _public_task_tiles(recipe, bindings, observation),
         "pilot_informed": False,
     }
     validate_v2_document(position, kind="position")
@@ -1146,7 +1251,8 @@ def _position_stub(ctx: _Context, capture: dict[str, Any]) -> SimpleNamespace:
         archive_sha256=capture["archive_sha256"], game_save_name=position["game_save_name"],
         player_id=position["player_id"],
         relevant_tiles=[tuple(p) for p in position["coverage"]["area"]],
-        expected_state_sha256=position["expected_state_sha256"], coverage=position["coverage"])
+        expected_state_sha256=position["expected_state_sha256"], coverage=position["coverage"],
+        expected_identity=_identity(position["expected_state"]))
 
 
 async def _stage_verify(ctx: _Context) -> None:
@@ -1167,26 +1273,41 @@ async def _stage_verify(ctx: _Context) -> None:
 
 
 async def _stage_menu_check(ctx: _Context) -> None:
+    """Crash-recovery load of the exact archive, positively confirmed.
+
+    `restart_and_load` kills and relaunches the game and loads through the
+    frontend menu; the stage then needs a non-failure loader result, a fresh
+    re-established connection, and a post-load state whose identity and v2
+    digest equal the position's expected state."""
     capture = ctx.latest("capture")["evidence"]
     stub = _position_stub(ctx, capture)
     ctx.check("deploy")
     ctx.evidence["deploy"] = _plain(await _maybe_await(ctx.ops.deploy(
         stub.archive, stub.game_save_name, stub.archive_sha256)))
+    ctx.check("restart-and-load")
+    result = await ctx.ops.restart_and_load(stub.game_save_name)
+    ctx.evidence["loader"] = "restart_and_load"
+    ctx.evidence["loader_result"] = result
+    if _load_failed(result):
+        raise StageFailure(f"crash-recovery load failed: {result}")
     connection = await _connect(ctx)
     try:
-        ctx.check("menu-load")
-        ctx.evidence["loader_result"] = await ctx.ops.load_game_save(connection,
-                                                                     stub.game_save_name)
+        await ctx.ops.reconnect(connection)
+        ctx.evidence["reconnect"] = {"fresh_connection": True, "reconnected": True}
         ctx.evidence["popups"] = await ctx.ops.dismiss_popups(connection)
         state = await _capture(ctx, connection, stub.coverage)
     finally:
         await _disconnect(connection)
     digest = digest_state_v2(state)
+    observed_identity = _identity(state)
     ctx.evidence.update(observed_state_sha256=digest,
                         expected_state_sha256=stub.expected_state_sha256,
-                        digest_matches=digest == stub.expected_state_sha256)
-    if not ctx.evidence["digest_matches"]:
-        raise StageFailure("menu recovery load did not reproduce the expected state digest")
+                        digest_matches=digest == stub.expected_state_sha256,
+                        observed_identity=observed_identity,
+                        expected_identity=stub.expected_identity,
+                        identity_matches=observed_identity == stub.expected_identity)
+    if not (ctx.evidence["digest_matches"] and ctx.evidence["identity_matches"]):
+        raise StageFailure("crash-recovery load did not reproduce the expected state")
 
 
 def _plain(value: Any) -> Any:
@@ -1259,30 +1380,39 @@ _STAGE_FUNCS = {
 }
 
 
-def _complete(ctx: _Context) -> dict[str, Any]:
-    """After the journal closes: write the evidence index, then the packet."""
-    capture = ctx.latest("capture")["evidence"]
-    validate = ctx.latest("validate")["evidence"]
-    names = _archive_names(ctx.recipe, capture["version"])
+def _write_index(ctx: _Context, external: list[Path], *,
+                 position_id: str | None) -> dict[str, str]:
+    """Inventory every attempt file plus referenced inputs; never itself."""
     index_path = ctx.attempt_dir / INDEX_FILE
     entries: dict[str, str] = {}
     for path in sorted(ctx.attempt_dir.rglob("*")):
         rel = ctx.rel(path)
         if path.is_file() and path != index_path and not _is_transient(rel):
             entries[rel] = _sha256_file(path)
-    external = [ctx.recipe_path, ctx.root / ctx.recipe["toolset_path"],
-                ctx.root / capture["archive_path"], ctx.root / capture["position_path"],
+    referenced = [ctx.root / ref["path"] for record in ctx.records
+                  for ref in record.get("files", [])]
+    for path in [ctx.recipe_path, ctx.root / ctx.recipe["toolset_path"], *external, *referenced]:
+        if path.is_file():
+            entries[ctx.rel(path)] = _sha256_file(path)
+    index = {"schema_version": SCHEMA_VERSION, "scenario_id": ctx.scenario_id,
+             "position_id": position_id, "attempt_dir": ctx.rel(ctx.attempt_dir),
+             "files": [{"path": p, "sha256": s} for p, s in sorted(entries.items())]}
+    data = _json_bytes(index)
+    _write_new(index_path, data)
+    return {"path": ctx.rel(index_path), "sha256": _sha256_bytes(data)}
+
+
+def _complete(ctx: _Context) -> dict[str, Any]:
+    """After the journal closes: write the evidence index, then the packet."""
+    capture = ctx.latest("capture")["evidence"]
+    validate = ctx.latest("validate")["evidence"]
+    names = _archive_names(ctx.recipe, capture["version"])
+    external = [ctx.root / capture["archive_path"], ctx.root / capture["position_path"],
                 ctx.root / capture["authoring_input"]["path"],
                 ctx.root / capture["public_observation"], ctx.root / capture["suite_path"],
                 *(ctx.root / p for p in capture["scripts"]),
                 *(ctx.root / p for p in capture["cases"])]
-    for path in external:
-        entries[ctx.rel(path)] = _sha256_file(path)
-    index = {"schema_version": SCHEMA_VERSION, "scenario_id": ctx.scenario_id,
-             "position_id": capture["position_id"], "attempt_dir": ctx.rel(ctx.attempt_dir),
-             "files": [{"path": p, "sha256": s} for p, s in sorted(entries.items())]}
-    index_bytes = _json_bytes(index)
-    _write_new(index_path, index_bytes)
+    index_ref = _write_index(ctx, external, position_id=capture["position_id"])
     journal_path = ctx.attempt_dir / JOURNAL_FILE
     packet = {
         "schema_version": SCHEMA_VERSION, "position_id": capture["position_id"],
@@ -1292,12 +1422,26 @@ def _complete(ctx: _Context) -> dict[str, Any]:
         "validation_runs": [{"suite_id": capture["suite_id"], "run_dir": validate["run_dir"],
                              "validation_sha256": validate.get("validation_sha256")}],
         "journal": {"path": ctx.rel(journal_path), "sha256": _sha256_file(journal_path)},
-        "evidence_index": {"path": ctx.rel(index_path), "sha256": _sha256_bytes(index_bytes)},
+        "evidence_index": index_ref,
     }
     packet_path = ctx.root / names["provenance_packet"]
     _write_immutable(packet_path, _json_bytes(packet))
-    return {"evidence_index": packet["evidence_index"],
+    return {"evidence_index": index_ref,
             "packet": {"path": ctx.rel(packet_path), "sha256": _sha256_file(packet_path)}}
+
+
+def _prepare(recipe_path: Path, attempt_dir: Path, root: Path | None
+             ) -> tuple[dict[str, Any], Path, Path, Path, list[dict[str, Any]]]:
+    root = Path(os.path.abspath(root or _REPO_ROOT))
+    recipe_path = Path(os.path.abspath(recipe_path))
+    attempt_dir = Path(os.path.abspath(attempt_dir))
+    recipe = load_recipe(recipe_path, root=root)
+    _rel(attempt_dir, root)
+    _rel(recipe_path, root)
+    records = _stage_records(attempt_dir)
+    if (attempt_dir / INDEX_FILE).exists() or any(r["stage"] == ABANDON for r in records):
+        raise ValueError(f"attempt {attempt_dir} is closed (indexed or abandoned)")
+    return recipe, root, recipe_path, attempt_dir, records
 
 
 async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Path,
@@ -1307,17 +1451,13 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
 
     Raises `ValueError` without writing anything when the transition is not
     allowed. A stage whose gate fails, or whose clock expired, is recorded
-    as ``failed`` with every piece of evidence gathered so far.
+    as ``failed`` with every piece of evidence gathered so far. The journal
+    records the stage before the stage record is written, so a clock that
+    expires at the end turns the record into ``failed`` (``clock_expired``).
     """
     if stage not in STAGE_PREREQUISITES:
         raise ValueError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
-    root = Path(os.path.abspath(root or _REPO_ROOT))
-    recipe_path = Path(os.path.abspath(recipe_path))
-    attempt_dir = Path(os.path.abspath(attempt_dir))
-    recipe = load_recipe(recipe_path, root=root)
-    _rel(attempt_dir, root)
-    _rel(recipe_path, root)
-    records = _stage_records(attempt_dir)
+    recipe, root, recipe_path, attempt_dir, records = _prepare(recipe_path, attempt_dir, root)
     statuses = {s: r["status"] for s, r in _latest(records).items()}
     validate_stage_transition(stage, statuses)
     if stage == "finish":
@@ -1345,32 +1485,81 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
         except ValueError as exc:
             if "expired" not in str(exc):
                 raise
-            return ctx.write_record(stage, "failed", error=str(exc))
+            return ctx.write_record(stage, "failed", error=f"clock_expired: {exc}")
+        error = None
         try:
             await _STAGE_FUNCS[stage](ctx)
         except Exception as exc:  # noqa: BLE001 -- every failure is retained evidence
-            record = ctx.write_record(stage, "failed", error=f"{type(exc).__name__}: {exc}",
-                                      evidence=ctx.evidence, files=ctx.files)
-            _journal_stage(ctx, record, passed=False)
-            return record
-        record = ctx.write_record(stage, "passed", evidence=ctx.evidence, files=ctx.files)
-        _journal_stage(ctx, record, passed=True)
-        if stage == "finish":
+            error = f"{type(exc).__name__}: {exc}"
+        record = _journal_then_persist(ctx, error)
+        if stage == "finish" and record["status"] == "passed":
             journal.finish(scenario_id=recipe["scenario_id"], passed=True)
             completion = _complete(ctx)
             return {**record, "completion": completion}
         return record
 
 
-def _journal_stage(ctx: _Context, record: dict[str, Any], *, passed: bool) -> None:
-    path = ctx.attempt_dir / "stages" / f"{record['sequence']:03d}-{record['stage']}.json"
-    evidence = {"record": ctx.rel(path), "sha256": _sha256_file(path)}
+def _journal_then_persist(ctx: _Context, error: str | None) -> dict[str, Any]:
+    """Journal the stage first, then write the matching stage record."""
+    passed = error is None
+    built = ctx.build_record(ctx.stage, "passed" if passed else "failed", error=error,
+                             evidence=ctx.evidence, files=ctx.files)
+    evidence = {"record": ctx.rel(built[2]), "sha256": _sha256_bytes(built[1])}
     try:
-        ctx.journal.record_stage(scenario_id=ctx.scenario_id, stage=record["stage"],
+        ctx.journal.record_stage(scenario_id=ctx.scenario_id, stage=ctx.stage,
                                  evidence=evidence, passed=passed)
-    except ValueError:
-        if passed:
+    except ValueError as exc:
+        if "expired" not in str(exc):
             raise
+        if passed:
+            # The journal has flagged the clock expired: the stage cannot
+            # count, but every piece of its evidence is retained.
+            built = ctx.build_record(ctx.stage, "failed", error=f"clock_expired: {exc}",
+                                     evidence=ctx.evidence, files=ctx.files,
+                                     extra={"journal_stage_entry": {**evidence, "passed": True}})
+    return ctx.persist(*built)
+
+
+def abandon_attempt(recipe_path: Path, *, attempt_dir: Path, reason: str,
+                    ops: LiveOps | None = None, root: Path | None = None) -> dict[str, Any]:
+    """Close a failed or abandoned attempt: terminal record, failed journal, index.
+
+    Never connects to the game. An attempt whose journal is already
+    terminal-failed (e.g. an expired clock) is indexed as well; a passed
+    or never-started attempt is refused."""
+    if not (isinstance(reason, str) and reason.strip()):
+        raise ValueError("abandon requires a non-empty reason")
+    recipe, root, recipe_path, attempt_dir, records = _prepare(recipe_path, attempt_dir, root)
+    if not (attempt_dir / JOURNAL_FILE).is_file():
+        raise ValueError(f"attempt {attempt_dir} has no authoring journal to abandon")
+    wall, monotonic = ops.clocks if ops is not None else (time.time, time.monotonic)
+    ctx = _Context(recipe=recipe, recipe_path=recipe_path, attempt_dir=attempt_dir, root=root,
+                   ops=ops, stage=ABANDON, sequence=_next_sequence(records), records=records)
+    with AuthoringJournal(attempt_dir / JOURNAL_FILE, wall_clock=wall,
+                          monotonic=monotonic) as journal:
+        ctx.journal = journal
+        before = journal.record(recipe["scenario_id"])
+        if before["status"] == "passed":
+            raise ValueError(f"scenario {recipe['scenario_id']!r} already passed")
+        evidence = {"reason": reason, "journal_status_before": before["status"],
+                    "expired_before": before["expired"],
+                    "latest_status": stage_status(attempt_dir)}
+        built = ctx.build_record(ABANDON, "abandoned", error=reason, evidence=evidence)
+        if before["status"] == "open":
+            journal_evidence = {"record": ctx.rel(built[2]), "sha256": _sha256_bytes(built[1])}
+            for close in (
+                lambda: journal.record_stage(scenario_id=ctx.scenario_id, stage=ABANDON,
+                                             evidence=journal_evidence, passed=False),
+                lambda: journal.finish(scenario_id=ctx.scenario_id, passed=False),
+            ):
+                try:
+                    close()
+                except ValueError as exc:
+                    if "expired" not in str(exc):
+                        raise
+        record = ctx.persist(*built)
+    index_ref = _write_index(ctx, [], position_id=None)
+    return {**record, "evidence_index": index_ref}
 
 
 # ---------------------------------------------------------------------------
@@ -1394,9 +1583,14 @@ def evidence_files(root: Path, *, repo_root: Path | None = None) -> list[str]:
     root = Path(os.path.abspath(root))
     root_rel = _rel(root, repo_root)
     indices = sorted(root.rglob(INDEX_FILE))
-    if not indices:
-        raise ValueError(f"no {INDEX_FILE} under {root}")
     problems: list[str] = []
+    attempts = sorted({p.parent.parent for p in root.rglob("stages/*.json")})
+    for attempt in attempts:
+        if not (attempt / INDEX_FILE).is_file():
+            problems.append(f"unindexed_attempt: {_rel(attempt, repo_root)} has stage records "
+                            f"but no {INDEX_FILE} (finish or abandon it)")
+    if not indices and not problems:
+        raise ValueError(f"no {INDEX_FILE} under {root}")
     listed: dict[str, str] = {}
     index_rels = []
     for index_path in indices:
@@ -1516,8 +1710,18 @@ def main(argv: list[str] | None = None) -> int:
     files = sub.add_parser("evidence-files", help="offline evidence inventory/closure check")
     files.add_argument("--root", type=Path, required=True)
     files.add_argument("--output", type=Path, required=True)
+    abandon = sub.add_parser(ABANDON, help="close a failed attempt and index its evidence")
+    abandon.add_argument("--recipe", type=Path, required=True)
+    abandon.add_argument("--attempt-dir", type=Path, required=True)
+    abandon.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == ABANDON:
+            record = abandon_attempt(args.recipe, attempt_dir=args.attempt_dir,
+                                     reason=args.reason)
+            print(json.dumps({"stage": record["stage"], "status": record["status"],
+                              "evidence_index": record["evidence_index"]}))
+            return 0
         if args.command == "preflight":
             result = preflight(args.recipes)
             args.output.parent.mkdir(parents=True, exist_ok=True)
