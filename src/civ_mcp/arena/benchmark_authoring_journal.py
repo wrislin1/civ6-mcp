@@ -30,9 +30,20 @@ AUTHORING_LIMIT_S = 10_800
 
 
 def elapsed_authoring_seconds(started_unix_s, now_unix_s, recorded_elapsed_s):
-    if now_unix_s < started_unix_s + recorded_elapsed_s:
-        raise ValueError("authoring clock moved backwards")
+    """Wall-clock elapsed seconds, never below what was already recorded.
+
+    A wall clock that steps backwards (NTP correction, a WSL clock jump after
+    host sleep) cannot shorten the budget -- the recorded value wins -- and it
+    must not strand the attempt either: raising here would make every later
+    checkpoint, `finish` and `abandon` fail until the clock catches up. The
+    anomaly is journaled by `_advance` instead.
+    """
     return max(recorded_elapsed_s, now_unix_s - started_unix_s)
+
+
+def clock_regression_seconds(started_unix_s, now_unix_s, recorded_elapsed_s) -> float:
+    """How far `now` sits behind the last recorded wall position (0 when it does not)."""
+    return max(0.0, started_unix_s + recorded_elapsed_s - now_unix_s)
 
 
 def _read_journal(path: Path) -> dict[str, Any]:
@@ -208,9 +219,15 @@ class AuthoringJournal:
     def _advance(self, record: dict[str, Any], label: str) -> float:
         """Advance ``record``'s clock in place; returns new elapsed seconds."""
         elapsed, wall_elapsed, now, _ = self._current_elapsed(record)
+        regression = clock_regression_seconds(record["started_unix_s"], now,
+                                              record["wall_elapsed_s"])
         record["recorded_elapsed_s"] = elapsed
         record["wall_elapsed_s"] = wall_elapsed
-        record["checkpoints"].append({"label": label, "unix_s": now, "elapsed_s": elapsed})
+        checkpoint = {"label": label, "unix_s": now, "elapsed_s": elapsed}
+        if regression > 0:
+            # Visible in evidence; the budget itself is unaffected (never shortened).
+            checkpoint["clock_backwards_s"] = regression
+        record["checkpoints"].append(checkpoint)
         if elapsed > AUTHORING_LIMIT_S:
             record["expired"] = True
         return now

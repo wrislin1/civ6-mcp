@@ -828,10 +828,18 @@ class _Context:
     journal: AuthoringJournal | None = None
     evidence: dict[str, Any] = dataclasses.field(default_factory=dict)
     files: list[dict[str, str]] = dataclasses.field(default_factory=list)
+    _toolset: dict[str, Any] | None = dataclasses.field(default=None, repr=False)
 
     @property
     def scenario_id(self) -> str:
         return self.recipe["scenario_id"]
+
+    def toolset(self) -> dict[str, Any]:
+        """The recipe's resolved toolset, loaded once per stage: every survey
+        query and legality probe dispatches through it while the clock runs."""
+        if self._toolset is None:
+            self._toolset = load_toolset(self.root / self.recipe["toolset_path"])
+        return self._toolset
 
     def rel(self, path: Path) -> str:
         return _rel(path, self.root)
@@ -1087,9 +1095,8 @@ async def _disconnect(connection: Any) -> None:
 
 async def _dispatch(ctx: _Context, connection: Any, tool: str, arguments: dict[str, Any]) -> str:
     from civ_mcp.game_state import GameState
-    toolset = load_toolset(ctx.root / ctx.recipe["toolset_path"])
     return await registry.dispatch(GameState(connection), tool, arguments,
-                                   allowed=tuple(toolset["game_tools"]))
+                                   allowed=tuple(ctx.toolset()["game_tools"]))
 
 
 # ---------------------------------------------------------------------------

@@ -1255,3 +1255,25 @@ async def test_coverage_is_clipped_to_the_map_grid_on_every_edge(tmp_path, tool_
     assert {(12, 10), (11, 9), (9, 9)} <= area
     assert not {(13, 10), (12, 11), (13, 11)} & area
     assert ("grid_size",) in rig.ops.calls
+
+
+async def test_toolset_is_resolved_once_per_stage_not_per_dispatch(tmp_path, tool_log,
+                                                                   monkeypatch):
+    """Survey queries and legality probes run while the authoring clock
+    ticks; the toolset YAML is parsed once per stage, not once per dispatch."""
+    recipe = _recipe()
+    recipe["survey"]["queries"] = [{"tool": "get_units", "arguments": {}}] * 3
+    rig = Rig(tmp_path, tool_log, recipe)
+    real = authoring.load_toolset
+    loads: list[Path] = []
+
+    def counting(path):
+        loads.append(Path(path))
+        return real(path)
+
+    monkeypatch.setattr(authoring, "load_toolset", counting)
+    survey = await rig.run("survey")
+    assert survey["status"] == "passed", survey.get("error")
+    assert [t[0] for t in rig.tools] == ["get_units"] * 3
+    # One load validates the recipe (load_recipe), one serves every dispatch.
+    assert len(loads) == 2

@@ -130,6 +130,22 @@ def test_loss_on_error_returning_action_is_audited_with_error_shape():
     assert mutation_records(t, progress, task_tiles=[], declared_losses=harms) == []
 
 
+@pytest.mark.parametrize("result", [
+    "ERROR: RuntimeError('socket closed after dispatch')",  # agent's wrapper for a raise
+    "ERR:STACKING_CONFLICT|Cannot purchase",                # engine refusal
+    "Move|BLOCKED",                                         # pipe-delimited refusal
+])
+def test_loss_on_any_non_success_result_shape_is_not_a_successful_mutation(result):
+    """`SingleTurnAgent` records upper-case `ERROR: ...` when a dispatch raises
+    after changing state; the audit uses the shared classifier, so no
+    rejection shape is ever emitted as an `ok` uncredited mutation."""
+    t = delete_warrior_trial(result=result)
+    progress, harms = audit(t)
+    (loss,) = audit_losses(t, harms)
+    assert loss["result_shape"] == "error" and loss["lifecycle"] == "lost"
+    assert mutation_records(t, progress, task_tiles=[], declared_losses=harms) == []
+
+
 def test_mutation_records_require_declared_losses():
     t = delete_warrior_trial()
     progress, _ = audit(t)

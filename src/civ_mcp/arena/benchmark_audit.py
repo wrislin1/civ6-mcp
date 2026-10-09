@@ -28,7 +28,6 @@ from civ_mcp.arena.benchmark_ledger import build_ledger, measured_delta
 from civ_mcp.arena.benchmark_report import score_trial
 from civ_mcp.arena.benchmark_lifecycle import classify_lifecycle, complete_rows, player_id
 
-_ERROR_PREFIX = "Error:"
 _NO_IMPROVEMENT = (None, "NONE")
 
 
@@ -37,8 +36,15 @@ _NO_IMPROVEMENT = (None, "NONE")
 # ---------------------------------------------------------------------------
 
 def _result_shape(step: dict[str, Any]) -> str:
+    """``ok`` for a result the shared classifier calls a success; ``error`` for
+    every other shape -- the game's title-case ``Error:``/``ERR:``/``|BLOCKED``
+    rejections and the agent's upper-case ``ERROR: ...`` wrapper for a
+    dispatch that raised after changing state. A non-string result (never a
+    dispatched call) is ``error`` too: it is not a successful mutation."""
     result = step.get("tool_result_full")
-    return "error" if isinstance(result, str) and result.startswith(_ERROR_PREFIX) else "ok"
+    if not isinstance(result, str):
+        return "error"
+    return "ok" if classify_result(result) == "success" else "error"
 
 
 def _tiles_by_xy(state: dict[str, Any]) -> dict[tuple[Any, Any], dict[str, Any]]:

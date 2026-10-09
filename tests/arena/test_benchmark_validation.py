@@ -572,6 +572,36 @@ def test_missing_evidence_is_recorded_per_case_and_exits_distinctly(
         assert (run_dir / "reports" / case_id / "report.json").is_file()
 
 
+def test_missing_evidence_while_building_a_report_is_recorded_per_case(
+        tmp_path, monkeypatch, capsys):
+    """Report construction resolves recorded evidence too (e.g. a declared
+    `unit_lost` harm over a unit that vanished without lifecycle evidence);
+    such a failure is one case's `missing_evidence`, not an aborted run."""
+    _production(monkeypatch, World())
+    suite = write_two_cases(tmp_path / "docs", PASSING_EXPECTED, PASSING_EXPECTED)
+    real = validation.build_trial_report
+
+    def unresolvable(trial, position):
+        if trial["case_id"] == "fortify-case":
+            raise BenchmarkStateError("unit [0, 9] vanished without lifecycle evidence")
+        return real(trial, position)
+
+    monkeypatch.setattr(validation, "build_trial_report", unresolvable)
+    run_dir = tmp_path / "run"
+    assert main(["run", "--suite", str(suite), "--run-dir", str(run_dir)]) == 2
+
+    result = json.loads((run_dir / "validation.json").read_text(encoding="utf-8"))
+    assert result["passed"] is False and result["errored"] is True
+    errored, evaluated = result["cases"]
+    assert errored["case_id"] == "fortify-case" and errored["passed"] is False
+    assert errored["error"] == {"kind": "missing_evidence",
+                                "message": "unit [0, 9] vanished without lifecycle evidence"}
+    assert errored["report_sha256"] is None and errored["mismatches"] == {}
+    assert not (run_dir / "reports" / "fortify-case").exists()
+    assert evaluated["case_id"] == "second-case" and evaluated["passed"] is True
+    assert (run_dir / "reports" / "second-case" / "report.json").is_file()
+
+
 def test_cli_run_exits_nonzero_when_a_case_fails(tmp_path, monkeypatch, capsys):
     _production(monkeypatch, World())
     expected = copy.deepcopy(PASSING_EXPECTED)

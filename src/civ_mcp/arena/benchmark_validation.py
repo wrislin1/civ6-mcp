@@ -155,12 +155,23 @@ def _check_trial_case(trial: dict[str, Any], case_id: str, case_sha256: str) -> 
 # Validation run
 # ---------------------------------------------------------------------------
 
-def _evaluate(trial: dict[str, Any], case: dict[str, Any], report: dict[str, Any]
-              ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
-    """Mechanics, mismatches, and a missing-evidence error (never a False actual)."""
+def _evaluate(trial: dict[str, Any], case: dict[str, Any], position: dict[str, Any],
+              run_dir: Path
+              ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None, str | None]:
+    """Mechanics, mismatches, a missing-evidence error (never a False actual)
+    and the written report's digest.
+
+    Report construction resolves recorded evidence too -- a declared
+    `unit_lost` harm over an owned unit that vanished without lifecycle
+    evidence raises there, before any comparison -- so it sits inside the
+    same per-case handler as the comparison: one unanswerable case is
+    recorded as `missing_evidence` (report digest `None`) and the run still
+    reaches `validation.json`.
+    """
     mechanics = reconcile_mechanics(trial, case.get("declared_rejections", []))
     mismatches: dict[str, Any] = {}
     error = None
+    report_sha: str | None = None
     if not mechanics["passed"]:
         mismatches["mechanics"] = {
             "actual": {"validation_status": trial["validation_status"],
@@ -169,12 +180,14 @@ def _evaluate(trial: dict[str, Any], case: dict[str, Any], report: dict[str, Any
             "expected": {"declared_rejections": case.get("declared_rejections", [])},
             "source": {"trial": ["validation_failures"]}}
     try:
+        report = build_trial_report(trial, position)
+        report_sha = _write_report(run_dir, case["case_id"], report)
         comparison = check_case(report, case["expected"], trial=trial)
     except BenchmarkStateError as exc:
         error = {"kind": "missing_evidence", "message": str(exc)}
     else:
         mismatches.update(comparison["mismatches"])
-    return mechanics, mismatches, error
+    return mechanics, mismatches, error, report_sha
 
 
 async def run_validation(suite_path: Path, run_dir: Path, *,
@@ -197,9 +210,7 @@ async def run_validation(suite_path: Path, run_dir: Path, *,
     for trial in trials:
         case, case_sha = cases[trial["case_id"]]
         _check_trial_case(trial, case["case_id"], case_sha)
-        report = build_trial_report(trial, position)
-        report_sha = _write_report(run_dir, case["case_id"], report)
-        mechanics, mismatches, error = _evaluate(trial, case, report)
+        mechanics, mismatches, error, report_sha = _evaluate(trial, case, position, run_dir)
         results.append({"case_id": case["case_id"], "trial_index": trial["index"],
                         "passed": error is None and not mismatches, "mechanics": mechanics,
                         "mismatches": mismatches, "error": error,

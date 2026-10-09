@@ -73,11 +73,13 @@ def test_substitution_requires_a_failed_predecessor(tmp_path):
 # --- clock helper ---------------------------------------------------------
 
 
-def test_elapsed_helper_never_shortens_and_rejects_backwards_time():
+def test_elapsed_helper_never_shortens_and_tolerates_backwards_time():
     assert elapsed_authoring_seconds(100.0, 160.0, 30.0) == 60.0
     assert elapsed_authoring_seconds(100.0, 140.0, 40.0) == 40.0
-    with pytest.raises(ValueError, match="moved backwards"):
-        elapsed_authoring_seconds(100.0, 139.0, 40.0)
+    # A backwards wall clock keeps the recorded elapsed; nothing raises.
+    assert elapsed_authoring_seconds(100.0, 139.0, 40.0) == 40.0
+    assert journal_mod.clock_regression_seconds(100.0, 139.0, 40.0) == 1.0
+    assert journal_mod.clock_regression_seconds(100.0, 140.0, 40.0) == 0.0
 
 
 # --- clock persistence and restart ----------------------------------------
@@ -140,7 +142,9 @@ def test_same_process_monotonic_progress_counts_even_if_wall_clock_lags(tmp_path
         assert len(journal.record("builder-a1")["checkpoints"]) == 3
 
 
-def test_backward_wall_clock_is_rejected_not_shortened(tmp_path):
+def test_backward_wall_clock_is_journaled_not_shortened_and_never_strands(tmp_path):
+    """A wall clock stepping back (NTP, WSL clock jump) must neither shorten the
+    budget nor make the attempt impossible to checkpoint, finish or abandon."""
     clock = FakeClock()
     path = tmp_path / "attempts.json"
     with _open(path, clock) as journal:
@@ -148,13 +152,20 @@ def test_backward_wall_clock_is_rejected_not_shortened(tmp_path):
         clock.advance(1000)
         journal.checkpoint(scenario_id="builder-a1")
         clock.wall -= 500
-        with pytest.raises(ValueError, match="moved backwards"):
-            journal.record_stage(scenario_id="builder-a1", stage="survey", evidence={})
-        assert journal.record("builder-a1")["recorded_elapsed_s"] == 1000.0
+        journal.record_stage(scenario_id="builder-a1", stage="survey", evidence={})
+        record = journal.record("builder-a1")
+        assert record["recorded_elapsed_s"] == 1000.0  # never shortened
+        assert record["checkpoints"][-1]["clock_backwards_s"] == 500.0
+        assert record["stages"][0]["elapsed_s"] == 1000.0
+        clock.wall -= 100_000  # a large jump: still finishable
+        finished = journal.finish(scenario_id="builder-a1", passed=True)
+        assert finished["status"] == "passed"
+        assert finished["checkpoints"][-1]["clock_backwards_s"] == 100_500.0
 
     stored = json.loads(path.read_text())["families"]["builder"]["scenarios"][0]
     assert stored["recorded_elapsed_s"] == 1000.0
-    assert stored["stages"] == []
+    assert stored["status"] == "passed"
+    assert "clock_backwards_s" not in stored["checkpoints"][0]
 
 
 def test_clock_expires_at_limit_and_expiry_survives_reopen(tmp_path):
