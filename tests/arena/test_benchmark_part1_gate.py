@@ -328,6 +328,95 @@ def test_attempts_of_other_families_are_not_counted(packet_path, repo):
     assert _check(packet_path, repo)["passed"] is True
 
 
+ATTEMPT = "benchmark_runs/plan3-part1/builder-a1/attempt-1"
+
+
+def test_unindexed_post_finish_stage_record_is_not_used(packet_path, repo):
+    _write(repo, f"{ATTEMPT}/stages/020-verify.json", {
+        "schema_version": "2.0.0", "sequence": 20, "stage": "verify", "status": "passed",
+        "scenario_id": "builder-a1", "error": None, "files": [],
+        "evidence": {"result": {"ok": True, "cycles_completed": 12, "digests": ["z"] * 12}}})
+    _git(repo, "add", "-A")
+    view = load_gate_evidence(packet_path, root=repo)
+    assert view["verify"]["evidence"] == f"{ATTEMPT}/stages/006-verify.json"
+    assert view["verify"]["digests"] == [STATE] * 12
+    assert view["resolution"]["unindexed"] == [
+        f"unindexed_stage_record: {ATTEMPT}/stages/020-verify.json"]
+    result = _check(packet_path, repo)
+    assert result["failed_requirements"] == ["evidence_index_complete"]
+    assert "020-verify.json" in result["requirements"]["evidence_index_complete"]["detail"]
+
+
+def test_unindexed_attempt_file_fails_index_completeness(packet_path, repo):
+    _write(repo, f"{ATTEMPT}/validation/extra.json", {"x": 1})
+    _git(repo, "add", "-A")
+    assert _check(packet_path, repo)["failed_requirements"] == ["evidence_index_complete"]
+
+
+def test_altered_indexed_stage_record_is_not_used(packet_path, repo):
+    stage = repo / ATTEMPT / "stages/007-menu-check.json"
+    doc = json.loads(stage.read_text())
+    doc["evidence"]["digest_matches"] = True
+    doc["evidence"]["note"] = "edited after finish"
+    stage.write_text(json.dumps(doc))
+    view = load_gate_evidence(packet_path, root=repo)
+    assert "menu_check" not in view
+    assert any("007-menu-check.json: sha256 differs from the evidence index" in p
+               for p in view["resolution"]["problems"])
+    assert "menu_recovery_verified" in _check(packet_path, repo)["failed_requirements"]
+
+
+def test_malformed_sibling_journal_never_raises(packet_path, repo):
+    sibling = "benchmark_runs/plan3-part1/builder-a1/attempt-0"
+    (repo / sibling / "stages").mkdir(parents=True)
+    (repo / sibling / "stages/001-survey.json").write_text("{not json")
+    (repo / sibling / "authoring-journal.json").write_text("{not json")
+    result = _check(packet_path, repo)
+    assert result["passed"] is False
+    assert "finish_packet_resolved" in result["failed_requirements"]
+    assert "authoring-journal.json: unreadable" in \
+        result["requirements"]["finish_packet_resolved"]["detail"]
+
+
+def test_packet_path_outside_root_is_a_named_failure(packet_path, repo, tmp_path_factory):
+    outside = tmp_path_factory.mktemp("elsewhere") / "packet.json"
+    outside.write_bytes(packet_path.read_bytes())
+    result = _check(outside, repo)
+    assert "finish_packet_resolved" in result["failed_requirements"]
+    assert "outside the evidence root" in \
+        result["requirements"]["finish_packet_resolved"]["detail"]
+
+
+def test_malformed_validation_case_never_raises(packet_path, repo):
+    packet = json.loads(packet_path.read_text())
+    run = packet["validation_runs"][0]
+    rel = f"{run['run_dir']}/validation.json"
+    doc = json.loads((repo / rel).read_text())
+    doc["cases"][1]["trial_index"] = None
+    doc["cases"].append("not a case")
+    run["validation_sha256"] = _write(repo, rel, doc)["sha256"]
+    index_rel = packet["evidence_index"]["path"]
+    index = json.loads((repo / index_rel).read_text())
+    for entry in index["files"]:
+        if entry["path"] == rel:
+            entry["sha256"] = run["validation_sha256"]
+    packet["evidence_index"] = _write(repo, index_rel, index)
+    packet_path.write_text(json.dumps(packet))
+    _git(repo, "add", "-A")
+    result = _check(packet_path, repo)
+    assert "finish_packet_resolved" in result["failed_requirements"]
+    assert "trial_index None" in result["requirements"]["finish_packet_resolved"]["detail"]
+
+
+def test_loader_exception_becomes_a_named_failure(packet_path, repo, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("unexpected")
+    monkeypatch.setattr(gate, "load_gate_evidence", boom)
+    result = _check(packet_path, repo)
+    assert "finish_packet_resolved" in result["failed_requirements"]
+    assert "RuntimeError: unexpected" in result["requirements"]["finish_packet_resolved"]["detail"]
+
+
 # ---------------------------------------------------------------------------
 # Table-driven removals on the derived view
 # ---------------------------------------------------------------------------
@@ -411,6 +500,8 @@ def _unindex_attempt(v, repo):
 
 REMOVALS = [
     ("finish_packet_resolved", _set(["resolution", "problems"], ["x.json: sha256 differs"])),
+    ("evidence_index_complete", _set(["resolution", "unindexed"],
+                                     ["unindexed_stage_record: a/stages/020-verify.json"])),
     ("twelve_cycle_verify", _set(["verify", "digests"], [STATE] * 11)),
     ("twelve_cycle_verify", _set(["verify", "digests"], [STATE] * 11 + ["x"])),
     ("menu_recovery_verified", _set(["menu_check", "digest_matches"], False)),

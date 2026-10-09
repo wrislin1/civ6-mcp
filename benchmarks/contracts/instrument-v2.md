@@ -89,7 +89,11 @@ evidence index and every `validation.json`, then derives identities from the pos
 stage verdicts from the attempt's stage records, case scores/harms/digests from the derived reports,
 capture cost and coverage from the raw trials, durations from the authoring journals, and the attempt list
 by enumerating every attempt directory of the family under `benchmark_runs/plan3-part1/` (an attempt with
-stage records but no `evidence-index.json` fails). Claims the packet makes about itself are ignored.
+stage records but no `evidence-index.json` fails). Claims the packet makes about itself are ignored. Files of the
+attempt (stage records, validation results, locks, trials, reports, case documents) are read only when listed
+in the hash-verified `evidence-index.json` with a matching sha256; any file in the attempt directory absent
+from the index fails `evidence_index_complete`. The loader never raises: malformed or missing evidence fails
+`finish_packet_resolved` with the problem named.
 
 `check_part1_packet` then evaluates named requirements: finish-packet resolution, twelve-cycle verify, menu
 recovery, joint and materially different alternative full scores, the family's required live tags,

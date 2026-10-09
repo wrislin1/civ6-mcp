@@ -28,7 +28,7 @@ from typing import Any, Callable
 
 from civ_mcp.arena.benchmark_capture_probe import REQUIRED_SAMPLES, capture_implementation_digest
 from civ_mcp.arena.benchmark_contract_v2 import implementation_fingerprint
-from civ_mcp.arena.benchmark_part1_evidence import load_gate_evidence
+from civ_mcp.arena.benchmark_part1_evidence import UNINDEXED_PREFIXES, load_gate_evidence
 
 __all__ = ["FAMILIES", "HARM_COUNTERPART_TAGS", "OFFLINE_FIXTURES", "PACKET_REQUIREMENTS",
            "REQUIRED_LIVE_TAGS", "check_part1_gate", "check_part1_packet", "probe_problems",
@@ -165,11 +165,23 @@ def _verdict(problems: list[str], ok_detail: str) -> tuple[bool, str]:
 
 def _finish_packet_resolved(p: dict[str, Any], code_root: Path) -> Result:
     resolution = _need(p, "resolution")
-    problems = _list(resolution, "problems")
+    problems = [str(x) for x in _list(resolution, "problems")
+                if not str(x).startswith(UNINDEXED_PREFIXES)]
     packet = resolution.get("finish_packet") or {}
-    ok, detail = _verdict([str(x) for x in problems], "every finish-packet reference resolved "
-                                                      "and hash-correct")
-    return ok and bool(packet), [packet["path"]] if packet else [], detail
+    if not packet and not problems:
+        problems = ["finish packet not resolved"]
+    ok, detail = _verdict(problems, "every finish-packet reference resolved and hash-correct; "
+                                    "attempt files read only from the verified index")
+    return ok, [packet["path"]] if packet else [], detail
+
+
+def _evidence_index_complete(p: dict[str, Any], code_root: Path) -> Result:
+    resolution = _need(p, "resolution")
+    unindexed = _list(resolution, "unindexed")
+    index = p.get("evidence_index") or {}
+    ok, detail = _verdict([str(x) for x in unindexed],
+                          "every file in the attempt directory is in the immutable index")
+    return ok and bool(index), [index["path"]] if index else [], detail
 
 
 def _twelve_cycle_verify(p: dict[str, Any], code_root: Path) -> Result:
@@ -601,6 +613,7 @@ _NEEDS_ROOT = {"positive_control_timing_probe", "tracked_evidence_inventory"}
 
 PACKET_REQUIREMENTS: tuple[tuple[str, _Checker], ...] = (
     ("finish_packet_resolved", _finish_packet_resolved),
+    ("evidence_index_complete", _evidence_index_complete),
     ("twelve_cycle_verify", _twelve_cycle_verify),
     ("menu_recovery_verified", _menu_recovery_verified),
     ("joint_full_case", _joint_full_case),
@@ -642,7 +655,11 @@ def check_part1_packet(packet: dict[str, Any] | str | Path, *, root: Path | None
     root = Path(os.path.abspath(root or _REPO_ROOT))
     code_root = Path(os.path.abspath(code_root or _REPO_ROOT))
     if isinstance(packet, (str, Path)):
-        view = load_gate_evidence(Path(packet), root=root)
+        try:
+            view = load_gate_evidence(Path(packet), root=root)
+        except Exception as exc:  # noqa: BLE001 -- the gate never raises
+            view = {"resolution": {"finish_packet": None, "unindexed": [], "problems": [
+                f"loader raised {type(exc).__name__}: {exc}"]}}
     else:
         view = packet if isinstance(packet, dict) else {}
     requirements: dict[str, dict[str, Any]] = {}
