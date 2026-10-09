@@ -30,12 +30,14 @@ result_char_cap: 1500
 # declaration-turn combat sync) stands two tiles from Gongju; a settler stands
 # next to it, initially exposed (no own combat unit within one tile); a badly
 # wounded own warrior stands next to the attacker and dies if it attacks first.
-# Setup moves the garrisoned archer onto a land tile beside Gongju within two
-# tiles of the attacker: a land-combat unit on the city tile would block every
-# same-class purchase there (lua.cities: ERR:STACKING_CONFLICT), so the
-# reinforcement probes and witnesses need the slot free. The archer can still
-# shoot the attacker and still covers the city tile; the treasury buys a
-# reinforcement.
+# Setup moves the garrisoned archer off the city tile (a land-combat unit there
+# would block every same-class purchase: lua.cities ERR:STACKING_CONFLICT) onto
+# a land tile within two tiles of both Gongju and the attacker that does not
+# cover the settler; the rescued settler is covered by standing in the city
+# itself. Live 2026-10-09 (validate stage 010): Gongju's only land approaches
+# are forest and forest-hill tiles, so the settler must START beside the city
+# (one move into the centre) as well as beside the attacker. The treasury buys
+# a reinforcement.
 #
 # DAMAGE THRESHOLD: target_damaged.minimum_damage (40) is a provisional
 # placeholder declared in measured_parameters. Live 2026-10-09 (probe stage
@@ -60,17 +62,18 @@ setup:
   operations:
   - kind: lua
     # Joint layout, chosen before anything is placed (live 2026-10-09, apply
-    # stage 002: placing the attacker, archer, settler and warrior one after
-    # another left no tile for the warrior -- Gongju sits between mountains,
-    # the coast and Jerusalem, and the first attacker tile in scan order was
-    # the holy site at (72,17)). The attacker is the first passable, empty,
-    # district-free land tile at distance 2 from Gongju for which all three
-    # companions exist: the archer's tile beside Gongju within two tiles of
-    # the attacker (verified pattern: UnitManager.PlaceUnit + RestoreMovement),
-    # the settler's tile beside the attacker with no own combat unit within
-    # one tile once the archer has moved, and the wounded warrior's tile
-    # beside the attacker at distance >= 2 from the settler. Measured on this
-    # base: attacker (72,21), archer (74,20), settler (73,22), warrior (71,21).
+    # stage 002 and validate stage 010): the attacker is the first passable,
+    # empty, district-free land tile at distance 2 from Gongju (scanned from
+    # the open south side) for which all three companions exist. The settler's
+    # tile touches both the attacker and the city (Gongju's approaches are
+    # forest and forest hills, so only an adjacent start reaches the centre in
+    # one move) and holds no own combat unit within one tile once the archer
+    # has moved. The archer's tile lies within two tiles of both the city and
+    # the attacker, off the centre, at distance >= 2 from the settler
+    # (verified pattern: UnitManager.PlaceUnit + RestoreMovement). The wounded
+    # warrior's tile touches the attacker at distance >= 2 from the settler.
+    # Measured on this base: attacker (73,21), settler (74,20), archer (72,21),
+    # warrior (74,22) or (73,22).
     lua: |
       local CX, CY = 73, 19
       local function free(p)
@@ -80,39 +83,42 @@ setup:
       local function same(p, q)
         return p ~= nil and q ~= nil and p:GetX() == q:GetX() and p:GetY() == q:GetY()
       end
+      local function dist(p, x, y) return Map.GetPlotDistance(p:GetX(), p:GetY(), x, y) end
       local archer = nil
       for _, v in Players[0]:GetUnits():Members() do
         if GameInfo.Units[v:GetType()].UnitType == "UNIT_ARCHER"
             and v:GetX() == CX and v:GetY() == CY then archer = v end
       end
       if archer == nil then print("ERR|no archer garrisoned in Gongju") return end
-      local function guarded(x, y, a)
+      local function guarded(s, a)
         for _, v in Players[0]:GetUnits():Members() do
           if v:GetID() ~= archer:GetID()
               and GameInfo.Units[v:GetType()].FormationClass ~= "FORMATION_CLASS_CIVILIAN"
-              and Map.GetPlotDistance(x, y, v:GetX(), v:GetY()) <= 1 then return true end
+              and dist(s, v:GetX(), v:GetY()) <= 1 then return true end
         end
-        return Map.GetPlotDistance(x, y, a:GetX(), a:GetY()) <= 1
+        return dist(s, a:GetX(), a:GetY()) <= 1
       end
       local P, A, S, W = nil, nil, nil, nil
-      for y = 16, 22 do
+      for y = 22, 16, -1 do
         for x = 70, 76 do
           local p = Map.GetPlot(x, y)
-          if P == nil and free(p) and Map.GetPlotDistance(x, y, CX, CY) == 2 then
-            local a = nil
-            for d = 0, 5 do
-              local q = Map.GetAdjacentPlot(CX, CY, d)
-              if a == nil and free(q) and Map.GetPlotDistance(q:GetX(), q:GetY(), x, y) <= 2 then a = q end
-            end
-            if a ~= nil then
-              for d1 = 0, 5 do
-                local s = Map.GetAdjacentPlot(x, y, d1)
-                if P == nil and free(s) and not same(s, a) and not guarded(s:GetX(), s:GetY(), a) then
-                  for d2 = 0, 5 do
-                    local w = Map.GetAdjacentPlot(x, y, d2)
-                    if P == nil and free(w) and not same(w, a) and not same(w, s)
-                        and Map.GetPlotDistance(w:GetX(), w:GetY(), s:GetX(), s:GetY()) >= 2 then
-                      P, A, S, W = p, a, s, w
+          if P == nil and free(p) and dist(p, CX, CY) == 2 then
+            for d1 = 0, 5 do
+              local s = Map.GetAdjacentPlot(x, y, d1)
+              if P == nil and free(s) and dist(s, CX, CY) == 1 then
+                for ry = 17, 21 do
+                  for rx = 71, 75 do
+                    local a = Map.GetPlot(rx, ry)
+                    if P == nil and free(a) and not same(a, s) and dist(a, CX, CY) <= 2
+                        and dist(a, x, y) <= 2 and dist(a, s:GetX(), s:GetY()) >= 2
+                        and not guarded(s, a) then
+                      for d2 = 0, 5 do
+                        local w = Map.GetAdjacentPlot(x, y, d2)
+                        if P == nil and free(w) and not same(w, a) and not same(w, s)
+                            and dist(w, s:GetX(), s:GetY()) >= 2 then
+                          P, A, S, W = p, a, s, w
+                        end
+                      end
                     end
                   end
                 end
@@ -153,7 +159,8 @@ setup:
       local na, on_city = 0, 0
       for _, v in Players[0]:GetUnits():Members() do
         local info = GameInfo.Units[v:GetType()]
-        if info.UnitType == "UNIT_ARCHER" and Map.GetPlotDistance(v:GetX(), v:GetY(), CX, CY) == 1 then
+        if info.UnitType == "UNIT_ARCHER" and Map.GetPlotDistance(v:GetX(), v:GetY(), CX, CY) >= 1
+            and Map.GetPlotDistance(v:GetX(), v:GetY(), CX, CY) <= 2 then
           na = na + 1
           if Map.GetPlotDistance(v:GetX(), v:GetY(), ax, ay) > 2 then
             print("ERR|archer beyond two tiles of the attacker")
@@ -164,7 +171,7 @@ setup:
           on_city = on_city + 1
         end
       end
-      if na ~= 1 then print("ERR|expected one archer beside Gongju, found " .. na) end
+      if na ~= 1 then print("ERR|expected one archer within two tiles of Gongju, found " .. na) end
       if on_city ~= 0 then print("ERR|a land combat unit still occupies Gongju's tile") end
       local sx, sy, ns = nil, nil, 0
       for _, v in Players[0]:GetUnits():Members() do
@@ -176,6 +183,7 @@ setup:
       end
       if ns ~= 1 then print("ERR|expected one settler, found " .. ns) return end
       if Map.GetPlotDistance(sx, sy, ax, ay) ~= 1 then print("ERR|settler is not beside the attacker") end
+      if Map.GetPlotDistance(sx, sy, CX, CY) ~= 1 then print("ERR|settler is not beside Gongju") end
       for _, v in Players[0]:GetUnits():Members() do
         local info = GameInfo.Units[v:GetType()]
         if info.FormationClass ~= "FORMATION_CLASS_CIVILIAN"
@@ -248,11 +256,12 @@ bindings:
   resolves: unit
   selector: {type: UNIT_WARRIOR, role: combat}
 - name: archer
-  # Relocated by setup: the one archer in Gongju's surrounding box, off the centre.
+  # Relocated by setup: the one archer on a land tile within two of Gongju, off
+  # the centre (Gwangju's garrison at (70,22) lies outside this area).
   resolves: unit
   selector: {type: UNIT_ARCHER, role: combat,
-             area: [[72, 18], [73, 18], [74, 18], [72, 19], [74, 19], [72, 20], [73, 20],
-                    [74, 20]]}
+             area: [[73, 18], [74, 20], [73, 20], [72, 17], [71, 19], [72, 20], [72, 21],
+                    [73, 21], [74, 21]]}
 - name: defended_city
   resolves: city
   selector: {owner: 0, name: Gongju}
@@ -313,6 +322,7 @@ probes:
    arguments_from_bindings: {unit_index: "${civilian.unit_index}",
                              x: "${defended_city.x}", y: "${defended_city.y}"}}
 - {id: civilian-pathing, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
    arguments_from_bindings: {unit_index: "${civilian.unit_index}",
                              x: "${defended_city.x}", y: "${defended_city.y}"}}
 - {id: purchase-spearman, tool: purchase_item, expect: ok, restore: true,
@@ -431,14 +441,17 @@ scripts:
   - calls:
     - {name: finish_trial, arguments: {}}
 - script_id: repeat-undo
-  # Repeat: a second archer shot is rejected. Undo: the reinforcement queue is replaced.
+  # Repeat: a second spearman purchase is rejected (500 gold buys one at 260).
+  # Undo: the reinforcement queue is replaced. (Live 2026-10-09: the frozen
+  # toolset answers an archer's second shot with success-shaped text rather
+  # than a rejection, so the repeat is a purchase.)
   batches:
   - calls:
-    - {name: attack_unit, arguments: {unit_index: "${archer.unit_index}",
-                                      x: "${attacker.x}", y: "${attacker.y}"}}
+    - {name: purchase_item, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
+                                        item_name: UNIT_SPEARMAN}}
   - calls:
-    - {name: attack_unit, arguments: {unit_index: "${archer.unit_index}",
-                                      x: "${attacker.x}", y: "${attacker.y}"}}
+    - {name: purchase_item, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
+                                        item_name: UNIT_SPEARMAN}}
   - calls:
     - {name: set_city_production, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
                                               item_name: UNIT_SPEARMAN}}
@@ -525,8 +538,8 @@ cases:
   script_id: repeat-undo
   tags: [repeat_undo]
   declared_rejections:
-  - {step: 1, tool_name: attack_unit}
+  - {step: 1, tool_name: purchase_item}
   expected:
-    score: {gross_credit: 2, harm_total: 0, net_credit: 2, primary_score: 0.16666666666666666}
+    score: {gross_credit: 4, harm_total: 0, net_credit: 4, primary_score: 0.3333333333333333}
     endpoints: []
     ledger: []
