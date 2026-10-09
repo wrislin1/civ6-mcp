@@ -94,7 +94,10 @@ fingerprint_dependencies:
   - src/civ_mcp/arena/benchmark_validation.py
   - src/civ_mcp/arena/registry.py
   - src/civ_mcp/connection.py
+  - src/civ_mcp/game_state.py
+  - src/civ_mcp/lua/benchmark.py
   - src/civ_mcp/lua/benchmark_v2.py
+  - src/civ_mcp/narrate.py
   - src/civ_mcp/tuner_client.py
 # Informational only (toolkit_identity); never gated for equality.
 toolkit_dependencies:

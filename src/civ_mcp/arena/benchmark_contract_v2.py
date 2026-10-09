@@ -17,8 +17,10 @@ from typing import Any
 # Repository-relative files whose bytes determine a score, a classification
 # or a piece of scored evidence: hashing/manifest, state capture and query,
 # predicates, lifecycle, scoring, ledger, audit, reports, validation, the
-# actor/scripted runners and schedule, store, tool registry, positions and
-# the FireTuner transport. A change here is a new `contract_identity`, and
+# actor/scripted runners and schedule, store, tool registry, GameState and
+# narration (the tool results the actor observes and the dispatch outcomes
+# that become evidence), positions, the v1 identity/digest query and the
+# FireTuner transport. A change here is a new `contract_identity`, and
 # every affected packet is revalidated (see benchmarks/contracts/
 # instrument-v2.md, "Amendments"). Sorted.
 FINGERPRINT_DEPENDENCIES: tuple[str, ...] = tuple(
@@ -46,7 +48,10 @@ FINGERPRINT_DEPENDENCIES: tuple[str, ...] = tuple(
             "src/civ_mcp/arena/benchmark_validation.py",
             "src/civ_mcp/arena/registry.py",
             "src/civ_mcp/connection.py",
+            "src/civ_mcp/game_state.py",
+            "src/civ_mcp/lua/benchmark.py",
             "src/civ_mcp/lua/benchmark_v2.py",
+            "src/civ_mcp/narrate.py",
             "src/civ_mcp/tuner_client.py",
         )
     )

@@ -67,7 +67,10 @@ def test_editing_a_dependency_changes_fingerprint(tmp_path, rel):
 
 @pytest.mark.parametrize("rel", ["src/civ_mcp/arena/benchmark_scoring_v2.py",
                                  "src/civ_mcp/arena/benchmark_schedule.py",
-                                 "src/civ_mcp/tuner_client.py"])
+                                 "src/civ_mcp/tuner_client.py",
+                                 "src/civ_mcp/game_state.py",
+                                 "src/civ_mcp/narrate.py",
+                                 "src/civ_mcp/lua/benchmark.py"])
 def test_editing_a_scoring_chain_module_changes_only_the_contract_identity(tmp_path, rel):
     root = _copy_tree(tmp_path)
     before = c2.implementation_fingerprint(root), c2.toolkit_fingerprint(root)
