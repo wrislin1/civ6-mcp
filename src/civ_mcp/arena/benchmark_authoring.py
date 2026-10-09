@@ -1343,21 +1343,31 @@ async def _stage_validate(ctx: _Context) -> None:
     ctx.check("restore")
     ctx.evidence["restore_deploy"] = _plain(await _maybe_await(ctx.ops.deploy(
         stub.archive, stub.game_save_name, stub.archive_sha256)))
+    restore: dict[str, Any] = {"reloaded": None, "reconnect": None, "digest": None}
+    ctx.evidence["restore"] = restore
     connection = await _connect(ctx)
     try:
         reloaded = await ctx.ops.reload(connection, stub.game_save_name)
-        ctx.evidence["restore_reload_verified"] = bool(reloaded)
+        restore["reloaded"] = reloaded is True
+        ctx.evidence["restore_reload_verified"] = reloaded is True
+        if reloaded is not True:
+            raise StageFailure(f"restore reload of {stub.game_save_name!r} was not verified "
+                               f"(reload returned {reloaded!r})")
+        # The in-place load invalidates the connection; the capture below
+        # never retries on disconnect, so re-establish it explicitly.
+        await ctx.ops.reconnect(connection)
+        restore["reconnect"] = {"reconnected": True}
         await ctx.ops.dismiss_popups(connection)
         state = await _capture(ctx, connection, stub.coverage)
     finally:
         await _disconnect(connection)
     digest = digest_state_v2(state)
+    restore["digest"] = digest
     ctx.evidence.update(restored_digest=digest, expected_state_sha256=stub.expected_state_sha256,
                         restored_digest_matches=digest == stub.expected_state_sha256)
     problems = [name for name, ok in (
         ("validation", result.get("passed") is True and not result.get("errored")),
         ("report regeneration", ctx.evidence["reports_identical"]),
-        ("restore reload", bool(reloaded)),
         ("restored digest", ctx.evidence["restored_digest_matches"])) if not ok]
     if problems:
         raise StageFailure(f"validate failed: {problems}")

@@ -260,6 +260,7 @@ class FakeOps:
         self.readback_lines = ["OK|builder at 10,10"]
         self.builder_xy = (10, 10)
         self.restore_builder_xy: tuple[int, int] | None = None
+        self.reload_verified = True
         self.saves = 0
         self.saved: dict[str, bytes] = {}
         # The base world has no builder; setup introduces it (and the task tile).
@@ -305,7 +306,7 @@ class FakeOps:
         self.calls.append(("reload", save_name))
         if self.restore_builder_xy is not None:
             self.builder_xy = self.restore_builder_xy
-        return True
+        return self.reload_verified
 
     async def dismiss_popups(self, conn):
         return "POPUPS|none"
@@ -551,6 +552,13 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     assert validate["status"] == "passed", validate.get("error")
     since = [c[0] for c in rig.calls_since(mark)]
     assert since.index("run_validation") < since.index("build_reports") < since.index("reload")
+    # The in-place restore reload is followed by a reconnect before the capture.
+    reload_at = since.index("reload")
+    assert since[reload_at + 1] == "reconnect"
+    assert since.index("capture", reload_at) > reload_at + 1
+    restore = validate["evidence"]["restore"]
+    assert restore["reloaded"] is True and restore["reconnect"] == {"reconnected": True}
+    assert restore["digest"] == validate["evidence"]["restored_digest"]
     suite_path, run_dir = rig.ops.validation_inputs[0]
     assert run_dir == rig.attempt / "validation" / "test-builder-a1-v1" / "test-builder-a1-v1-validation"
     assert validate["evidence"]["restored_digest_matches"] is True
@@ -772,6 +780,22 @@ async def test_finish_requires_final_restored_digest(tmp_path, tool_log):
     record = await rig.run("validate")
     assert record["status"] == "failed"
     assert record["evidence"]["restored_digest_matches"] is False
+    with pytest.raises(ValueError, match="validate"):
+        await rig.run("finish")
+
+
+async def test_unverified_restore_reload_fails_validate(tmp_path, tool_log):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("menu-check")
+    rig.ops.reload_verified = False
+    mark = rig.marks()
+    record = await rig.run("validate")
+    assert record["status"] == "failed"
+    assert "not verified" in record["error"]
+    assert record["evidence"]["restore"]["reloaded"] is False
+    since = [c[0] for c in rig.calls_since(mark)]
+    assert "reconnect" not in since[since.index("reload"):]
+    assert "capture" not in since[since.index("reload"):]
     with pytest.raises(ValueError, match="validate"):
         await rig.run("finish")
 
