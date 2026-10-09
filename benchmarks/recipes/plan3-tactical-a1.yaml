@@ -26,7 +26,7 @@ result_char_cap: 1500
 # garrisoned by a UNIT_ARCHER. The defended area below is Gongju's centre and
 # its surrounding box.
 #
-# Scenario: a wounded barbarian warrior (owner 63, always at war, so no
+# Scenario: a wounded barbarian warrior at 65 hp (owner 63, always at war, so no
 # declaration-turn combat sync) stands two tiles from Gongju; a settler stands
 # next to it, initially exposed (no own combat unit within one tile); a badly
 # wounded own warrior stands next to the attacker and dies if it attacks first.
@@ -37,8 +37,13 @@ result_char_cap: 1500
 # shoot the attacker and still covers the city tile; the treasury buys a
 # reinforcement.
 #
-# DAMAGE THRESHOLD: target_damaged.minimum_damage (25) is a provisional
-# placeholder declared in measured_parameters. The archive stage refuses to run
+# DAMAGE THRESHOLD: target_damaged.minimum_damage (40) is a provisional
+# placeholder declared in measured_parameters. Live 2026-10-09 (probe stage
+# 004): against a 50-hp attacker the archer (CS 30 with Volley) dealt ~52 and
+# killed it while the wounded warrior dealt 29, so the attacker now starts at
+# 65 hp (SetDamage(35)): the shot wounds it (~49), the warrior's melee (~26)
+# stays under the threshold, and shot plus melee still neutralise it in one
+# turn. The archive stage refuses to run
 # unless this attempt's measuring probes show the futile warrior's damage
 # strictly below it and the archer shot's damage strictly above it with the
 # attacker surviving; only then is the value frozen into the position rubric.
@@ -119,7 +124,7 @@ setup:
       if P == nil then print("ERR|no attacker tile at distance 2 from Gongju admits the layout") return end
       local att = UnitManager.InitUnit(63, "UNIT_WARRIOR", P:GetX(), P:GetY())
       if att == nil then print("ERR|barbarian spawn failed") return end
-      att:SetDamage(50)
+      att:SetDamage(35)
       UnitManager.PlaceUnit(archer, A:GetX(), A:GetY())
       UnitManager.RestoreMovement(archer)
       local st = UnitManager.InitUnit(0, "UNIT_SETTLER", S:GetX(), S:GetY())
@@ -261,7 +266,7 @@ objectives:
 - id: neutralise-attacker
   rungs:
   - points: 2
-    predicate: {kind: target_damaged, target: "${attacker.pair}", minimum_damage: 25}
+    predicate: {kind: target_damaged, target: "${attacker.pair}", minimum_damage: 40}
   - points: 4
     predicate: {kind: target_neutralised, target: "${attacker.pair}"}
 - id: rescue-civilian
@@ -313,17 +318,14 @@ probes:
 - {id: purchase-spearman, tool: purchase_item, expect: ok, restore: true,
    arguments_from_bindings: {city_id: "${defended_city.id}", item_type: UNIT,
                              item_name: UNIT_SPEARMAN}}
-- {id: purchase-swordsman, tool: purchase_item, expect: ok, restore: true,
-   arguments_from_bindings: {city_id: "${defended_city.id}", item_type: UNIT,
-                             item_name: UNIT_SWORDSMAN}}
 - {id: queue-spearman, tool: set_city_production, expect: ok, restore: true,
    arguments_from_bindings: {city_id: "${defended_city.id}", item_type: UNIT,
                              item_name: UNIT_SPEARMAN}}
-- {id: civilian-attack-rejected, tool: attack_unit, expect: rejected, restore: true,
-   arguments_from_bindings: {unit_index: "${civilian.unit_index}",
-                             x: "${attacker.x}", y: "${attacker.y}"}}
-- {id: civilian-fortify-rejected, tool: fortify_unit, expect: rejected, restore: true,
-   arguments_from_bindings: {unit_index: "${civilian.unit_index}"}}
+# Live 2026-10-09: the frozen toolset answers a settler's attack_unit with a
+# combat estimate and a settler's fortify_unit with "Unit is sleeping (this unit
+# type cannot fortify)" -- success-shaped, not domain rejections -- so the two
+# civilian-rejection probes were removed; the swordsman purchase was removed
+# because the base holds 10 of the 20 iron it needs (CANNOT_PURCHASE).
 
 archive:
   name: PLAN3_TACTICAL_A1_V{version}
@@ -364,7 +366,8 @@ scripts:
     - {name: finish_trial, arguments: {}}
 - script_id: alternative-full
   # The wounded warrior strikes first and may fall; the archer finishes the
-  # attacker (accepted compensation); a swordsman is bought instead.
+  # attacker (accepted compensation); the spearman is bought last (a swordsman
+  # needs 20 iron; the base holds 10).
   batches:
   - calls:
     - {name: move_unit, arguments: {unit_index: "${civilian.unit_index}",
@@ -377,7 +380,7 @@ scripts:
                                       x: "${attacker.x}", y: "${attacker.y}"}}
   - calls:
     - {name: purchase_item, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
-                                        item_name: UNIT_SWORDSMAN}}
+                                        item_name: UNIT_SPEARMAN}}
     - {name: finish_trial, arguments: {}}
 - script_id: meaningful-damage
   batches:
