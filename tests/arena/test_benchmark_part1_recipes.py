@@ -118,8 +118,10 @@ def test_output_naming_is_versioned_and_distinct_per_family():
             assert template.format(version=1) != template.format(version=2)
             assert template.format(version=1) not in seen
             seen.add(template.format(version=1))
-        # Nothing is published yet: version 1 outputs are created, never overwritten.
-        assert not any((REPO / p.format(version=1)).exists() for p in paths)
+    # Published outputs are immutable once the live archive stage creates them
+    # (live 2026-10-09: plan3-tactical-a1-v1 and plan3-city-a2-v1 exist), so
+    # their presence is no longer a defect; the archive stage itself refuses to
+    # reuse an existing archive path.
 
 
 @pytest.mark.parametrize("family", FAMILIES)
