@@ -1,15 +1,15 @@
 {
   "code_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
   "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
-  "duration_s": 192.742,
+  "duration_s": 195.382,
   "errors": 0,
   "exit_code": 0,
   "failed": 0,
-  "finished": "2026-10-09T16:35:51.273406+00:00",
-  "git_head": "ecec720748c958e4116fdef36dcf639d28fb38dc",
-  "git_head_note": "HEAD is the live-phase capture fix (GameCore district iteration and empty-queue string); the evidence commit that follows adds only these three force-added files, which are outside every fingerprint list",
-  "passed": 4053,
+  "finished": "2026-10-09T17:43:40.823238+00:00",
+  "git_head": "f9728c550311984ac0c462e0da2dffbe8d90b818",
+  "git_head_note": "HEAD is the live-phase launcher fix (WSL restart-and-load via the Windows bridge, a toolkit dependency: code identity unchanged); the evidence commit that follows adds only these three force-added files, which are outside every fingerprint list",
+  "passed": 4055,
   "skipped": 0,
-  "started": "2026-10-09T16:32:38.531584+00:00",
-  "summary_line": "4053 passed in 190.76s (0:03:10)"
+  "started": "2026-10-09T17:40:25.440771+00:00",
+  "summary_line": "4055 passed in 194.19s (0:03:14)"
 }

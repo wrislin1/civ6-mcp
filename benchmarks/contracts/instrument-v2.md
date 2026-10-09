@@ -212,3 +212,17 @@ Amendment procedure by kind of change:
   save-list enumeration after game launch (the frontend load tier's 30 s cancel landed after the
   late result had already fired `Network.LoadGame`; operator note, no code change), the second and
   third hit the two API differences above.
+- **2026-10-09, during the live phase, city family open (menu-check, city-a2 stage 014).** Toolkit
+  (no identity consequence: `game_launcher.py` is a toolkit dependency, `code_identity` stays
+  `08585538…`): the stage's crash-recovery loader called `game_launcher.restart_and_load` from WSL,
+  whose Linux branch cannot reach the Windows game (`pgrep`/`pkill`/a `steam` binary that does not
+  exist: `FileNotFoundError` before any game action). Under WSL with the Windows bridge present it
+  now delegates the whole kill / relaunch / menu-load sequence to the native
+  `civ6-launcher restart-and-load` in the Windows checkout and returns its result line unchanged
+  (commit `316d203`, amended). The full suite was re-run and the committed preflight evidence
+  regenerated under the unchanged identity; city-a2's capture and verify records stand and
+  menu-check re-runs. Recipes (no identity consequence): the city family's a1 was abandoned on the
+  live map (Jeonju is the only Seowon-capable city and offers two legal tiles) and the substitute
+  `plan3-city-a2` authors a third legal site (tile (67,22) granted to Jeonju and mined); its housing
+  shortfall moved from Gongju to Jeonju because Gongju's `get_cities` line falls past the
+  1500-character feed cap at the archived start.
