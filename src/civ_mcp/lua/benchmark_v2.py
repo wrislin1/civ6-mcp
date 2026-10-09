@@ -75,6 +75,13 @@ local function role(entry)
     if fc == "FORMATION_CLASS_SUPPORT" then return "support" end
     return "combat"
 end
+-- A unit killed this turn lingers in GameCore as a delayed-death row
+-- (position -9999,-9999, hp 0) until the engine disposes of it (live
+-- 2026-10-09): it is not a living unit and a tracked target found only as
+-- such a row is destroyed.
+local function alive(u)
+    return not u:IsDead() and not u:IsDelayedDeath()
+end
 
 local function capture()
     local p = Players[PID]
@@ -99,14 +106,16 @@ local function capture()
     -- UNIT: every owned unit
     local ownedXY = {{}}
     for _, u in p:GetUnits():Members() do
-        local entry = GameInfo.Units[u:GetType()]
-        if entry == nil then error("unknown unit type") end
-        local uid = u:GetID()
-        ownedXY[#ownedXY + 1] = {{u:GetX(), u:GetY()}}
-        emit("UNIT", {{int(PID), int(uid), int(uid % 65536), esc(entry.UnitType),
-            role(entry), int(u:GetX()), int(u:GetY()),
-            num(u:GetMaxDamage() - u:GetDamage()), num(u:GetMaxDamage()),
-            num(u:GetMovesRemaining()), int(u:GetBuildCharges() or 0)}})
+        if alive(u) then
+            local entry = GameInfo.Units[u:GetType()]
+            if entry == nil then error("unknown unit type") end
+            local uid = u:GetID()
+            ownedXY[#ownedXY + 1] = {{u:GetX(), u:GetY()}}
+            emit("UNIT", {{int(PID), int(uid), int(uid % 65536), esc(entry.UnitType),
+                role(entry), int(u:GetX()), int(u:GetY()),
+                num(u:GetMaxDamage() - u:GetDamage()), num(u:GetMaxDamage()),
+                num(u:GetMovesRemaining()), int(u:GetBuildCharges() or 0)}})
+        end
     end
 
     -- TARGET: every frozen tracked target, then visible nearby hostiles
@@ -124,7 +133,7 @@ local function capture()
         if op == nil then error("TRACKED_OWNER_NOT_FOUND") end
         local found = nil
         for _, u in op:GetUnits():Members() do
-            if u:GetID() == id then found = u end
+            if alive(u) and u:GetID() == id then found = u end
         end
         seen[owner .. ":" .. id] = true
         if found == nil then
@@ -144,7 +153,7 @@ local function capture()
             for _, u in Players[i]:GetUnits():Members() do
                 local key = i .. ":" .. u:GetID()
                 local ux, uy = u:GetX(), u:GetY()
-                if not seen[key] and plotVisible(ux, uy) then
+                if alive(u) and not seen[key] and plotVisible(ux, uy) then
                     local near = areaKey[ux .. "," .. uy] == true
                     for _, xy in ipairs(ownedXY) do
                         if not near and Map.GetPlotDistance(ux, uy, xy[1], xy[2]) <= 1 then

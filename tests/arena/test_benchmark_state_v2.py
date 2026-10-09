@@ -631,6 +631,23 @@ def test_query_treats_gamecore_empty_queue_string_as_no_production():
     assert 'cur ~= "NONE"' in q
 
 
+def test_query_skips_delayed_death_units_and_reads_them_as_destroyed():
+    """Live 2026-10-09 (tactical-a1 validate, stage 010): a unit killed in
+    combat lingers in GameCore for the rest of the turn as a delayed-death
+    row (``IsDelayedDeath()`` true, position -9999,-9999, hp 0). The capture
+    listed our dead warrior as an owned unit and the killed attacker as a
+    tracked target that is "alive, not visible", so no loss was charged and
+    no kill counted. Every owned-unit row, tracked-target lookup and hostile
+    scan must skip dead and delayed-death units; a tracked target found only
+    as such a row reads as destroyed."""
+    q = _query()
+    assert "IsDelayedDeath()" in q and "IsDead()" in q
+    assert q.count("local function alive(") == 1
+    assert "for _, u in p:GetUnits():Members() do\n        if alive(u) then" in q
+    assert "if alive(u) and u:GetID() == id then found = u end" in q
+    assert "if alive(u) and not seen[key] and plotVisible(ux, uy) then" in q
+
+
 def test_query_embeds_player_and_coverage_digest():
     q = _query()
     assert "local PID = 3\n" in q
