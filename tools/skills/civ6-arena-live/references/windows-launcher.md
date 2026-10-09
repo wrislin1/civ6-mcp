@@ -10,8 +10,11 @@ separate codebase.
 1. Run `tools/skills/civ6-arena-live/scripts/firetuner-owner-map.sh`. Resolve
    unintended owners by exact PID; never compete with an active arena or MCP
    server for FireTuner.
-2. After pushing WSL `main`, sync Windows with
-   `git -C /mnt/c/Users/wrisl/dev/civ6-mcp pull --ff-only`.
+2. Sync Windows to the WSL checkout's HEAD with
+   `tools/skills/civ6-arena-live/scripts/sync-windows-checkout.sh`. It fetches straight
+   from the WSL repo, fast-forward only, refuses a dirty Windows tree, and needs no
+   GitHub push. Benchmark archives deploy by repo-relative path resolved there, so run it
+   after every commit that adds a `benchmarks/saves/*.Civ6Save`.
 3. Run these from the WSL repo root:
 
    ```bash

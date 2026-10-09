@@ -8,6 +8,10 @@ description: Use when operating or debugging live civ6-mcp arena watcher runs on
 ## Overview
 
 Live arena operation has two separate states: the Civilization game turn state and the external watcher process state. Verify both before telling the user to end a turn or before claiming the game is safely back to the human.
+Claude loads this skill from `.claude/skills/civ6-arena-live` (gitignored). Keep that
+path a symlink to `tools/skills/civ6-arena-live`, as `.agents/skills/` already is: a
+copied directory there silently shadows every later edit (a July copy is what loaded on
+2026-10-09, without this file's benchmark sections).
 
 ## Environment
 
@@ -167,6 +171,16 @@ Run from the repo root:
 - `tools/skills/civ6-arena-live/scripts/stop-arena-watchers.sh`
 - `tools/skills/civ6-arena-live/scripts/windows-civ6-launcher.sh` — WSL entry
   point for native Windows `preflight`, `load`, and `restart-and-load`.
+- `tools/skills/civ6-arena-live/scripts/sync-windows-checkout.sh` — fast-forward the
+  Windows companion checkout from the WSL repo (no GitHub push); run after every
+  archive commit and before `capture`.
+- `tools/skills/civ6-arena-live/scripts/benchmark-stage.sh` and
+  `benchmark-family-chain.sh` — authoring stage runner with logging; the chain commits a
+  new archive and syncs Windows.
+- `tools/skills/civ6-arena-live/scripts/identity-impact.py` — fingerprint vs toolkit
+  classification of a change range, plus the current identities.
+- `tools/skills/civ6-arena-live/scripts/probe-gamecore-api.py` — live GameCore accessor
+  presence check (needs the free tuner slot and an in-world game).
 
 The stop script is dry-run by default; pass `--yes` to terminate matching watcher process groups.
 
@@ -283,3 +297,41 @@ computed from the live game turn — see "Resume budget accounting" above.
 - **`restart-and-load` works from a dead game** (Civ exited): it reports `Kill: Game is not running`, launches,
   OCR-selects the save, and classify-gates the Escape. Verify the canonical digest against the capture before
   rerunning anything.
+
+### Plan 3 authoring stages (learned 2026-10-09)
+
+- **GameCore is not InGame.** Setup ops and the v2 capture run in `GameCore_Tuner`, where
+  `CityDistricts` has no `Members()`, an empty build queue reads as the string `"NONE"`,
+  a killed unit lingers as a delayed-death row, and no build-charge setter exists. Every
+  family's first live contact failed on one of these. Before a scenario clock opens, run
+  `scripts/probe-gamecore-api.py` for every accessor the recipe relies on and check it
+  against [references/gamecore-api-surface.md](references/gamecore-api-surface.md).
+- **Commit the archive, sync Windows, then `capture`.** The bridge deploys the archive by
+  repo-relative path resolved in the Windows checkout. `scripts/sync-windows-checkout.sh`
+  fast-forwards it straight from the WSL repo, no GitHub push needed;
+  `scripts/benchmark-family-chain.sh` does this itself after a passing `archive` stage.
+- **Run stages through `scripts/benchmark-stage.sh`.** The authoring CLI configures no
+  logging, so a 10-20 min stage is silent. The wrapper adds INFO logging, drops the
+  per-command connection chatter, and tees a log under `benchmark_runs/logs/`, never
+  inside an attempt dir (`evidence_index_complete` rejects scratch there). It filters
+  with `grep -a`: a plain `grep -v` on this stream reports "binary file matches" once
+  and the tee'd log stays empty.
+- **Classify a fix before amending anything.** Only `FINGERPRINT_DEPENDENCIES` move
+  `code_identity` and force a family to repeat from `survey`; toolkit files
+  (`benchmark_authoring.py`, `game_launcher.py`, `game_lifecycle.py`, ...) never do.
+  `scripts/identity-impact.py <range>` classifies the changed files and prints the
+  current identities next to the preflight record. Misclassifying the launcher fix cost
+  an amended commit and a Windows checkout reset.
+- **A cold frontend save list stalls the game.** Right after launch, the tier-0
+  (frontend Lua) load's `UI.QuerySaveGameList` over ~300 OneDrive saves left the game
+  deaf to tuner commands for ~4.5 min, and the 30 s cancel landed after the late result
+  had already fired `Network.LoadGame` (probe 1 failed on the continue screen). Get
+  in-world first (bridge `press-escape` on the continue screen); every in-session reload
+  then takes the warm tier-1 path (~45 s). Never send ESC in-world: it toggles the pause
+  menu. The game answers the tuner at full speed while unfocused.
+- **Recipe facts.** Every required fact must be discoverable inside `result_char_cap`
+  (1500 chars) of the tool result that carries it, or `archive` fails on it. When several
+  selectors must agree on geometry (attacker, civilian, archer, escort), author one joint
+  layout setup op that scans for a consistent tile set and reads back every position;
+  independent selectors cannot see each other. Freeze damage thresholds from measured
+  probe shots, not from the combat table.
