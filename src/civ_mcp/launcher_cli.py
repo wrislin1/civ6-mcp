@@ -49,7 +49,19 @@ def _build_parser() -> argparse.ArgumentParser:
     export.add_argument("--name", required=True, help="save basename in the save directory")
     export.add_argument("--destination", required=True, help="archive path to create")
     export.add_argument("--sha256", default=None, help="optional expected sha256 of the save")
+    export.add_argument(
+        "--previous-signature", default=None, metavar="SIZE:MTIME_NS",
+        help="signature of the same-named save before the save request (from stat-save); "
+             "a file still carrying it is the stale predecessor, never the new save",
+    )
     export.add_argument("--json", action="store_true", help="emit a single JSON result object")
+
+    stat = commands.add_parser(
+        "stat-save",
+        help="report whether a native save exists and its size/mtime signature",
+    )
+    stat.add_argument("--name", required=True, help="save basename in the save directory")
+    stat.add_argument("--json", action="store_true", help="emit a single JSON result object")
 
     boot_health = commands.add_parser(
         "boot-health",
@@ -129,11 +141,23 @@ def _install_save(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def _parse_signature(text: str | None) -> tuple[int, int] | None:
+    """``SIZE:MTIME_NS`` -> ``(size, mtime_ns)``; ``None`` when absent."""
+    if text is None:
+        return None
+    try:
+        size, mtime_ns = text.split(":")
+        return int(size), int(mtime_ns)
+    except ValueError:
+        raise ValueError(f"--previous-signature must be SIZE:MTIME_NS, got {text!r}") from None
+
+
 def _export_save(args: argparse.Namespace) -> int:
     """Export a native save; same one-JSON-object contract as ``_install_save``."""
     try:
         result = game_launcher.export_benchmark_save(
-            args.name, args.destination, expected_sha256=args.sha256
+            args.name, args.destination, expected_sha256=args.sha256,
+            previous_signature=_parse_signature(args.previous_signature),
         )
         payload: dict = {"ok": True, **result}
     except Exception as exc:
@@ -143,6 +167,25 @@ def _export_save(args: argparse.Namespace) -> int:
         print(json.dumps(payload))
     elif payload["ok"]:
         print(f"Exported {payload['save_name']} -> {payload['dest_path']}")
+    else:
+        print(payload["error"], file=sys.stderr)
+
+    return 0 if payload["ok"] else 1
+
+
+def _stat_save(args: argparse.Namespace) -> int:
+    """Report a native save's existence and signature; one JSON object with ``--json``."""
+    try:
+        payload: dict = {"ok": True, **game_launcher.stat_benchmark_save(args.name)}
+    except Exception as exc:
+        payload = {"ok": False, "error": str(exc)}
+
+    if args.json:
+        print(json.dumps(payload))
+    elif payload["ok"]:
+        state = (f"{payload['size']} bytes, mtime_ns {payload['mtime_ns']}"
+                 if payload["exists"] else "absent")
+        print(f"{payload['save_name']}: {state}")
     else:
         print(payload["error"], file=sys.stderr)
 
@@ -280,6 +323,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "export-save":
             return _export_save(args)
+
+        if args.command == "stat-save":
+            return _stat_save(args)
 
         if args.command == "boot-health":
             return _boot_health(args)

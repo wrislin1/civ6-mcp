@@ -412,7 +412,7 @@ def test_export_save_command_prints_json_result_on_success(monkeypatch, capsys):
     }
     calls = []
 
-    def fake_export(name, destination, *, expected_sha256=None):
+    def fake_export(name, destination, *, expected_sha256=None, previous_signature=None):
         calls.append((name, destination, expected_sha256))
         return result
 
@@ -435,7 +435,7 @@ def test_export_save_command_prints_json_result_on_success(monkeypatch, capsys):
 
 
 def test_export_save_command_reports_failure_as_json(monkeypatch, capsys):
-    def boom(name, destination, *, expected_sha256=None):
+    def boom(name, destination, *, expected_sha256=None, previous_signature=None):
         assert expected_sha256 is None
         raise TimeoutError("save not stable after 30.0s")
 
@@ -451,3 +451,38 @@ def test_export_save_command_reports_failure_as_json(monkeypatch, capsys):
         "ok": False,
         "error": "save not stable after 30.0s",
     }
+
+
+def test_export_save_command_forwards_the_previous_signature(monkeypatch, capsys):
+    calls = []
+
+    def fake_export(name, destination, *, expected_sha256=None, previous_signature=None):
+        calls.append(previous_signature)
+        return {"save_name": "N.Civ6Save", "dest_path": destination}
+
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(launcher_cli.game_launcher, "export_benchmark_save", fake_export)
+    base = ["export-save", "--name", "N", "--destination", r"C:\o.Civ6Save", "--json"]
+    assert launcher_cli.main([*base, "--previous-signature", "5:1234"]) == 0
+    assert calls == [(5, 1234)]
+    assert launcher_cli.main([*base, "--previous-signature", "bogus"]) == 1
+    error = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert error["ok"] is False and "SIZE:MTIME_NS" in error["error"]
+    assert calls == [(5, 1234)]  # the malformed signature never reached the export
+
+
+def test_stat_save_command_prints_json_result(monkeypatch, capsys):
+    result = {"save_name": "X.Civ6Save", "source_path": r"C:\S\X.Civ6Save",
+              "exists": True, "size": 5, "mtime_ns": 1234}
+    monkeypatch.setattr(launcher_cli.sys, "platform", "win32")
+    monkeypatch.setattr(launcher_cli.game_launcher, "stat_benchmark_save",
+                        lambda name: {**result, "save_name": f"{name}.Civ6Save"})
+    assert launcher_cli.main(["stat-save", "--name", "X", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"ok": True, **result}
+
+    def boom(name):
+        raise ValueError("unsafe save name")
+
+    monkeypatch.setattr(launcher_cli.game_launcher, "stat_benchmark_save", boom)
+    assert launcher_cli.main(["stat-save", "--name", "../X", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out) == {"ok": False, "error": "unsafe save name"}

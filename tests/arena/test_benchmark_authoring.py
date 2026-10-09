@@ -319,9 +319,16 @@ class FakeOps:
     async def dismiss_popups(self, conn):
         return "POPUPS|none"
 
-    def export_save(self, name, destination, expected_sha256=None):
-        self.calls.append(("export", name, destination, expected_sha256))
-        assert destination.startswith(WSL_WINDOWS_REPO + "/")
+    def stat_save(self, name):
+        self.calls.append(("stat", name))
+        data = self.saved.get(name)
+        return {"exists": data is not None, "size": len(data) if data else None,
+                "mtime_ns": self.saves if data else None}
+
+    def export_save(self, name, destination, expected_sha256=None, *, previous_signature=None):
+        self.calls.append(("export", name, destination, expected_sha256, previous_signature))
+        # Exports land in the gitignored benchmark_runs tree of the Windows checkout.
+        assert destination.startswith(WSL_WINDOWS_REPO + "/benchmark_runs/plan3-part1/")
         sha = BASE_SHA if name == BASE_NAME else hashlib.sha256(self.saved[name]).hexdigest()
         if expected_sha256 is not None:
             assert expected_sha256 == sha
@@ -413,7 +420,8 @@ class FakeOps:
             build_reports=self.build_reports, capture_state_v2=self.capture_state_v2,
             capture_position=self.capture_position, verify_position=self.verify_position,
             restart_and_load=self.restart_and_load, reconnect=self.reconnect,
-            clocks=(self.wall, self.mono), grid_size=self.grid_size)
+            stat_save=self.stat_save, clocks=(self.wall, self.mono),
+            grid_size=self.grid_size)
 
 
 @pytest.fixture
@@ -490,7 +498,7 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     assert since.index(("load", BASE_NAME)) < since.index(("mutation", "PLACE_BUILDER"))
     assert ("export", BASE_NAME,
             f"{WSL_WINDOWS_REPO}/benchmark_runs/plan3-part1/bases/{BASE_SHA}.Civ6Save",
-            BASE_SHA) in since
+            BASE_SHA, None) in since
     resolved = apply["evidence"]["bindings"]
     assert resolved["builder"]["pair"] == [0, 65536]
     assert resolved["site"]["xy"] == [12, 10]
@@ -510,16 +518,22 @@ async def test_full_stage_order_with_fake_live_ops(tmp_path, tool_log):
     assert since.count(("load", BASE_NAME)) == 2
     assert since.count(("mutation", "PLACE_BUILDER")) == 2
 
-    # archive: replay, save, export to the Windows checkout, publish locally.
+    # archive: replay, stat the native save, save, export into the Windows
+    # checkout's gitignored staging tree, publish locally.
     mark = rig.marks()
     archive = await rig.run("archive")
     assert archive["status"] == "passed", archive.get("error")
     since = rig.calls_since(mark)
     kinds = [c[0] for c in since]
     archive_rel = "benchmarks/saves/test-builder-a1-v1.Civ6Save"
-    export = ("export", "TEST_BUILDER_A1_V1", f"{WSL_WINDOWS_REPO}/{archive_rel}", None)
-    assert kinds.index("load") < kinds.index("mutation") < kinds.index("save") \
-        < since.index(export) < kinds.index("publish")
+    staged = (f"{WSL_WINDOWS_REPO}/benchmark_runs/plan3-part1/exports/builder-a1/"
+              f"{archive['sequence']:03d}-test-builder-a1-v1.Civ6Save")
+    export = ("export", "TEST_BUILDER_A1_V1", staged, None, None)  # no stale save: nothing excluded
+    assert kinds.index("load") < kinds.index("mutation") < since.index(("stat", "TEST_BUILDER_A1_V1")) \
+        < kinds.index("save") < since.index(export) < kinds.index("publish")
+    assert since[kinds.index("publish")][1] == staged
+    assert archive["evidence"]["native_save_before"]["exists"] is False
+    assert archive["evidence"]["export_staging_path"] == staged
     local = tmp_path / archive_rel
     assert archive["evidence"]["export_sha256"] == archive["evidence"]["publish_sha256"] \
         == hashlib.sha256(local.read_bytes()).hexdigest()
@@ -1332,6 +1346,26 @@ async def test_coverage_is_clipped_to_the_map_grid_on_every_edge(tmp_path, tool_
     assert {(12, 10), (11, 9), (9, 9)} <= area
     assert not {(13, 10), (12, 11), (13, 11)} & area
     assert ("grid_size",) in rig.ops.calls
+
+
+async def test_archive_export_excludes_a_stale_same_name_native_save(tmp_path, tool_log):
+    """A failed earlier attempt leaves a same-named save in the game's save
+    directory; its pre-request signature is passed to the export so the stale
+    file is waited out rather than archived as the new save."""
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("probe")
+    rig.ops.saved["TEST_BUILDER_A1_V1"] = b"STALE"  # leftover of an earlier attempt
+    rig.ops.saves = 7
+    archive = await rig.run("archive")
+    assert archive["status"] == "passed", archive.get("error")
+    before = archive["evidence"]["native_save_before"]
+    assert before == {"exists": True, "size": 5, "mtime_ns": 7}
+    (export,) = [c for c in rig.ops.calls if c[0] == "export" and c[1] == "TEST_BUILDER_A1_V1"]
+    assert export[4] == (5, 7)
+    # The published archive is the new save, not the stale bytes.
+    local = tmp_path / "benchmarks/saves/test-builder-a1-v1.Civ6Save"
+    assert local.read_bytes() != b"STALE"
+    assert archive["evidence"]["export_sha256"] == hashlib.sha256(local.read_bytes()).hexdigest()
 
 
 async def test_toolset_is_resolved_once_per_stage_not_per_dispatch(tmp_path, tool_log,

@@ -3339,35 +3339,63 @@ def _export_save_basename(name: str) -> str:
     return basename
 
 
+def _save_signature(path: str) -> tuple[int, int] | None:
+    """``(size, mtime_ns)`` of a non-empty file at ``path``; ``None`` otherwise."""
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return (st.st_size, st.st_mtime_ns) if st.st_size > 0 else None
+
+
+def stat_benchmark_save(name: str) -> dict:
+    """Whether a native save ``name`` exists in ``SINGLE_SAVE_DIR`` and its
+    ``(size, mtime_ns)`` signature (runs on the native Windows side).
+
+    Taken *before* a ``Network.SaveGame`` request, the signature identifies
+    the stale same-named file an export must not mistake for the new save
+    (``export_benchmark_save(previous_signature=...)``).
+    """
+    basename = _export_save_basename(name)
+    source_path = os.path.join(SINGLE_SAVE_DIR, basename)
+    signature = _save_signature(source_path)
+    return {
+        "save_name": basename,
+        "source_path": source_path,
+        "exists": signature is not None,
+        "size": signature[0] if signature else None,
+        "mtime_ns": signature[1] if signature else None,
+    }
+
+
 def _wait_for_stable_save(
     path: str,
     *,
     timeout_s: float,
     sleep: Callable[[float], None],
     clock: Callable[[], float],
+    exclude: tuple[int, int] | None = None,
 ) -> tuple[int, int]:
     """Return ``(size, mtime_ns)`` once ``path`` is non-empty and unchanged
     across two polls ``_STABLE_POLL_S`` apart; ``TimeoutError`` otherwise.
 
     A ``Network.SaveGame`` result is written asynchronously, so a file that
     merely exists may still be partial -- it is never read as final until
-    its size and mtime stop moving.
+    its size and mtime stop moving. A file still carrying the ``exclude``
+    signature (the same-named save that existed before the save request) is
+    the stale predecessor, not the new save: it is waited out, never returned.
     """
     deadline = clock() + timeout_s
     previous: tuple[int, int] | None = None
     while True:
-        try:
-            st = os.stat(path)
-            signature: tuple[int, int] | None = (
-                (st.st_size, st.st_mtime_ns) if st.st_size > 0 else None
-            )
-        except FileNotFoundError:
-            signature = None
-        if signature is not None and signature == previous:
+        signature = _save_signature(path)
+        if signature is not None and signature == previous and signature != exclude:
             return signature
         previous = signature
         if clock() >= deadline:
-            raise TimeoutError(f"save {path} not complete and stable after {timeout_s}s")
+            what = ("still the pre-request save" if signature is not None and signature == exclude
+                    else "not complete and stable")
+            raise TimeoutError(f"save {path} {what} after {timeout_s}s")
         sleep(_STABLE_POLL_S)
 
 
@@ -3376,6 +3404,7 @@ def export_benchmark_save(
     destination: str,
     *,
     expected_sha256: str | None = None,
+    previous_signature: tuple[int, int] | None = None,
     timeout_s: float = _EXPORT_TIMEOUT_S,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
@@ -3389,13 +3418,16 @@ def export_benchmark_save(
     publishes with ``os.link`` -- which fails rather than replacing an
     existing path. An existing destination is accepted only when its digest
     is identical (``existed: True``); a differing one raises ``ValueError``
-    and is left untouched.
+    and is left untouched. ``previous_signature`` (from
+    ``stat_benchmark_save`` before the save request) names a stale same-named
+    save that must never be archived as the new one.
     """
     basename = _export_save_basename(name)
     source_path = os.path.join(SINGLE_SAVE_DIR, basename)
     dest_path = str(destination)
     signature = _wait_for_stable_save(
-        source_path, timeout_s=timeout_s, sleep=sleep, clock=clock
+        source_path, timeout_s=timeout_s, sleep=sleep, clock=clock,
+        exclude=tuple(previous_signature) if previous_signature else None,
     )
 
     def _source_unchanged() -> None:
@@ -3460,6 +3492,7 @@ def export_benchmark_save(
         "sha256": copy_sha256,
         "size": signature[0],
         "existed": existed,
+        "excluded_signature": list(previous_signature) if previous_signature else None,
     }
 
 

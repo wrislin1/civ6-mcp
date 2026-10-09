@@ -71,6 +71,7 @@ def test_export_copies_base_save_with_spaces_and_verifies_digest(saves, tmp_path
         "sha256": _sha(payload),
         "size": len(payload),
         "existed": False,
+        "excluded_signature": None,
     }
     assert [p.name for p in dest.parent.iterdir()] == ["base.Civ6Save"]
 
@@ -440,4 +441,96 @@ def test_publish_archive_copy_rejects_source_digest_mismatch(store):
             str(store.src / "a.Civ6Save"), str(dest), expected_sha256="0" * 64
         )
     assert list(store.dest.iterdir()) == []
+
+
+# --- stale same-name saves: stat before the request, exclude on export -------
+
+
+def test_stat_reports_absent_empty_and_present_saves(saves):
+    assert game_launcher.stat_benchmark_save("MISSING") == {
+        "save_name": "MISSING.Civ6Save",
+        "source_path": os.path.join(str(saves), "MISSING.Civ6Save"),
+        "exists": False, "size": None, "mtime_ns": None,
+    }
+    (saves / "EMPTY.Civ6Save").write_bytes(b"")  # a partial write is not a save yet
+    assert game_launcher.stat_benchmark_save("EMPTY")["exists"] is False
+    (saves / "HERE.Civ6Save").write_bytes(b"abc")
+    st = os.stat(saves / "HERE.Civ6Save")
+    assert game_launcher.stat_benchmark_save("HERE") == {
+        "save_name": "HERE.Civ6Save",
+        "source_path": os.path.join(str(saves), "HERE.Civ6Save"),
+        "exists": True, "size": 3, "mtime_ns": st.st_mtime_ns,
+    }
+    with pytest.raises(ValueError, match="unsafe save name"):
+        game_launcher.stat_benchmark_save("../HERE")
+
+
+def test_export_waits_out_a_stale_same_name_save_until_it_is_rewritten(saves, tmp_path):
+    """Network.SaveGame is fire-and-forget: a leftover save of the same name is
+    already 'stable'. With its pre-request signature excluded, the export
+    returns only the rewritten file."""
+    source = saves / "ARCHIVE.Civ6Save"
+    source.write_bytes(b"STALE")
+    stale = game_launcher.stat_benchmark_save("ARCHIVE")
+    fake = FakeTime()
+    rewrites = iter([None, None, b"FRESH", None, None, None])
+    later = stale["mtime_ns"] + 10 ** 9
+
+    def rewriting_sleep(seconds):
+        fake.sleep(seconds)
+        chunk = next(rewrites)
+        if chunk:  # the game finishes writing the new save (same size, later mtime)
+            source.write_bytes(chunk)
+            os.utime(source, ns=(later, later))
+
+    result = game_launcher.export_benchmark_save(
+        "ARCHIVE", str(tmp_path / "out.Civ6Save"),
+        previous_signature=(stale["size"], stale["mtime_ns"]),
+        sleep=rewriting_sleep, clock=fake.clock,
+    )
+    assert result["sha256"] == _sha(b"FRESH")
+    assert result["excluded_signature"] == [5, stale["mtime_ns"]]
+    assert (tmp_path / "out.Civ6Save").read_bytes() == b"FRESH"
+    assert len(fake.sleeps) == 4  # two polls saw the stale file and kept waiting
+
+
+def test_export_times_out_rather_than_archiving_the_stale_save(saves, tmp_path):
+    source = saves / "ARCHIVE.Civ6Save"
+    source.write_bytes(b"STALE")
+    stale = game_launcher.stat_benchmark_save("ARCHIVE")
+    fake = FakeTime()
+    with pytest.raises(TimeoutError, match="still the pre-request save"):
+        _export("ARCHIVE", tmp_path / "out.Civ6Save", fake=fake, timeout_s=3.0,
+                previous_signature=(stale["size"], stale["mtime_ns"]))
+    assert not (tmp_path / "out.Civ6Save").exists()
+    # Without the exclusion the same file is accepted at once (the former bug).
+    assert _export("ARCHIVE", tmp_path / "out.Civ6Save")["sha256"] == _sha(b"STALE")
+
+
+def test_export_via_windows_passes_the_previous_signature(monkeypatch, mounted):
+    (mounted.root / "x.Civ6Save").write_bytes(b"x")
+    calls = _fake_bridge(monkeypatch, {"ok": True, "sha256": _sha(b"x")})
+    benchmark_deploy.export_via_windows("NAME", "/mnt/c/arch/x.Civ6Save",
+                                        previous_signature=(5, 1234))
+    [cmd] = calls
+    assert cmd[cmd.index("--previous-signature") + 1] == "5:1234"
+
+
+def test_stat_via_windows_parses_the_native_verdict(monkeypatch):
+    payload = {"ok": True, "save_name": "X.Civ6Save", "source_path": r"C:\S\X.Civ6Save",
+               "exists": True, "size": 5, "mtime_ns": 1234}
+    calls = _fake_bridge(monkeypatch, payload)
+    assert benchmark_deploy.stat_via_windows("X") == payload
+    [cmd] = calls
+    assert cmd[2:] == ["stat-save", "--name", "X", "--json"]
+
+
+@pytest.mark.parametrize("payload", [
+    {"ok": False, "error": "unsafe save name '../X'"},
+    {"ok": True},  # no verdict at all
+])
+def test_stat_via_windows_raises_without_a_verdict(monkeypatch, payload):
+    _fake_bridge(monkeypatch, payload)
+    with pytest.raises(benchmark_deploy.DeploymentVerificationError):
+        benchmark_deploy.stat_via_windows("X")
 

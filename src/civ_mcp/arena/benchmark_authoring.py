@@ -168,6 +168,12 @@ JOURNAL_FILE = "authoring-journal.json"
 INDEX_FILE = "evidence-index.json"
 EVIDENCE_SCOPES = ("benchmark_runs/plan3-part1/", "benchmarks/")
 BASE_EXPORT_DIR = "benchmark_runs/plan3-part1/bases"
+# Native exports land here in the Windows checkout (gitignored, one path per
+# archive stage record), never at the archive's tracked benchmarks/saves path:
+# a tracked file created on the Windows side would block that checkout from
+# fast-forwarding to the commit that later adds the same file from WSL, and a
+# stage-unique path can never collide with a leftover of a failed attempt.
+EXPORT_STAGING_DIR = "benchmark_runs/plan3-part1/exports"
 AUDIT_FIXTURE = "tests/arena/fixtures/builder_uncredited_audit_v1.json"
 PREFLIGHT_PYTEST = "benchmark_runs/plan3-part1/preflight/pytest.txt"
 PREFLIGHT_PYTEST_RESULT = "benchmark_runs/plan3-part1/preflight/pytest-result.json"
@@ -765,6 +771,8 @@ class LiveOps:
     verify_position: Callable[..., Awaitable[dict[str, Any]]]
     restart_and_load: Callable[[str], Awaitable[str]]
     reconnect: Callable[[Any], Awaitable[Any]]
+    # Native save existence/signature before a save request (`stat_via_windows`).
+    stat_save: Callable[[str], Any]
     clocks: tuple[Callable[[], float], Callable[[], float]] = (time.time, time.monotonic)
     # `(width, height)` of the loaded map: coverage squares are clipped to it.
     grid_size: Callable[[Any], Awaitable[tuple[int, int]]] = query_grid_size
@@ -777,6 +785,7 @@ def production_ops() -> LiveOps:
         deploy_via_windows,
         export_via_windows,
         publish_archive_copy,
+        stat_via_windows,
     )
     from civ_mcp.arena.benchmark_runner import reload_position
     from civ_mcp.arena.benchmark_state_v2 import capture_state_v2
@@ -800,7 +809,7 @@ def production_ops() -> LiveOps:
     from civ_mcp.game_launcher import restart_and_load
 
     return LiveOps(
-        restart_and_load=restart_and_load, reconnect=reconnect,
+        restart_and_load=restart_and_load, reconnect=reconnect, stat_save=stat_via_windows,
         connect=connect, deploy=deploy_via_windows, reload=reload,
         dismiss_popups=dismiss_blocking_popups, export_save=export_via_windows,
         publish_archive=publish_archive_copy, save_game=game_lifecycle.save_game,
@@ -1360,19 +1369,30 @@ async def _stage_archive(ctx: _Context) -> None:
             raise StageFailure(f"required facts not discoverable at the archived start within "
                                f"the {recipe['result_char_cap']}-character result cap: {missing}")
         ctx.check("save")
+        # Network.SaveGame is fire-and-forget: a same-named save left by an
+        # earlier attempt would look complete and stable at once. Its signature
+        # is taken first so the export can wait it out instead of archiving it.
+        before = await _maybe_await(ctx.ops.stat_save(names["name"]))
+        if not isinstance(before, dict) or not isinstance(before.get("exists"), bool):
+            raise StageFailure(f"native save stat returned no verdict: {before!r}")
+        ctx.evidence["native_save_before"] = before
         ok, message = await ctx.ops.save_game(connection, names["name"])
         ctx.evidence["save_ack"] = {"ok": ok, "message": message}
         if not ok:
             raise StageFailure(f"save_game was not acknowledged: {message}")
     finally:
         await _disconnect(connection)
-    mounted = f"{windows_repo_root()}/{names['path']}"
-    export = await _maybe_await(ctx.ops.export_save(names["name"], mounted))
+    previous = (int(before["size"]), int(before["mtime_ns"])) if before["exists"] else None
+    staged = (f"{windows_repo_root()}/{EXPORT_STAGING_DIR}/{ctx.attempt_dir.name}/"
+              f"{ctx.sequence:03d}-{PurePosixPath(names['path']).name}")
+    export = await _maybe_await(ctx.ops.export_save(names["name"], staged,
+                                                    previous_signature=previous))
     ctx.evidence["export"] = export
+    ctx.evidence["export_staging_path"] = staged
     export_sha = export.get("sha256") if isinstance(export, dict) else None
     if not export_sha:
         raise StageFailure("native export returned no sha256")
-    publish = await _maybe_await(ctx.ops.publish_archive(mounted, str(local),
+    publish = await _maybe_await(ctx.ops.publish_archive(staged, str(local),
                                                          expected_sha256=export_sha))
     ctx.evidence["published"] = True
     ctx.evidence.update(export_sha256=export_sha, publish_sha256=publish.get("sha256"))

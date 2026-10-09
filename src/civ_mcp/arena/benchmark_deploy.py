@@ -203,23 +203,41 @@ def deploy_via_windows(
     )
 
 
+def stat_via_windows(name: str, *, timeout: float = _EXPORT_BRIDGE_TIMEOUT_S) -> dict[str, Any]:
+    """Native ``stat-save``: whether save ``name`` exists and its signature.
+
+    Taken before a ``Network.SaveGame`` request so the export that follows can
+    refuse the stale same-named file (``export_via_windows(previous_signature=...)``).
+    """
+    payload = _run_bridge(["stat-save", "--name", name, "--json"], timeout=timeout)
+    if not payload.get("ok") or not isinstance(payload.get("exists"), bool):
+        raise DeploymentVerificationError(
+            f"stat_benchmark_save failed on Windows: {payload.get('error') or payload!r}"
+        )
+    return payload
+
+
 def export_via_windows(
     name: str,
     destination: str,
     expected_sha256: str | None = None,
     *,
+    previous_signature: tuple[int, int] | None = None,
     timeout: float = _EXPORT_BRIDGE_TIMEOUT_S,
 ) -> dict[str, Any]:
     """Archive a native save through the native ``export-save`` command.
 
     ``destination`` must be a Windows-visible absolute path (``/mnt/<drive>/…``
-    or ``X:\\…``), e.g. under ``game_launcher.WSL_WINDOWS_REPO``; a WSL ext4 or
-    relative path would resolve to an unrelated location on the native side.
-    The native side never overwrites ``destination``; an identical existing
-    archive comes back with ``existed: True``. After a successful export the
-    archive is re-hashed here through its mounted path and must match the
-    native digest (and ``expected_sha256`` when given). Use
-    ``publish_archive_copy`` to place a verified copy into the WSL repo store.
+    or ``X:\\…``), e.g. under ``game_launcher.windows_repo_root()``; a WSL ext4
+    or relative path would resolve to an unrelated location on the native
+    side. The native side never overwrites ``destination``; an identical
+    existing archive comes back with ``existed: True``. After a successful
+    export the archive is re-hashed here through its mounted path and must
+    match the native digest (and ``expected_sha256`` when given).
+    ``previous_signature`` (``(size, mtime_ns)`` from ``stat_via_windows``
+    before the save request) names the stale same-named save that must never
+    be archived as the new one. Use ``publish_archive_copy`` to place a
+    verified copy into the WSL repo store.
     """
     if not (_MOUNTED_ABS.match(destination) or _WINDOWS_ABS.match(destination)):
         raise ValueError(
@@ -234,6 +252,9 @@ def export_via_windows(
     ]
     if expected_sha256 is not None:
         argv += ["--sha256", expected_sha256]
+    if previous_signature is not None:
+        size, mtime_ns = previous_signature
+        argv += ["--previous-signature", f"{int(size)}:{int(mtime_ns)}"]
     payload = _run_bridge(argv, timeout=timeout)
 
     if not payload.get("ok"):
