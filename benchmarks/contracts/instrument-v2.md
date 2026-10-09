@@ -100,7 +100,9 @@ evidence index and every `validation.json`, then derives identities from the pos
 stage verdicts from the attempt's stage records, case scores/harms/digests from the derived reports,
 capture cost and coverage from the raw trials, durations from the authoring journals, and the attempt list
 by enumerating every attempt directory of the family under `benchmark_runs/plan3-part1/` (an attempt with
-stage records but no `evidence-index.json` fails). Claims the packet makes about itself are ignored. Files of the
+stage records but no `evidence-index.json` fails; a substitute's imported predecessor must reference one of
+those journals byte-for-byte, and the stage CLI refuses attempt directories and predecessor journals
+anywhere else before the clock opens). Claims the packet makes about itself are ignored. Files of the
 attempt (stage records, validation results, locks, trials, reports, case documents) are read only when listed
 in the hash-verified `evidence-index.json` with a matching sha256; any file in the attempt directory absent
 from the index fails `evidence_index_complete`. The loader never raises: malformed or missing evidence fails
@@ -111,7 +113,9 @@ recovery, joint and materially different alternative full scores, the family's r
 intermediate rungs, closer-only zero, a charged case and an uncharged counterpart for every harm, a
 harm-only case with gross 0 and primary < 0, the null digest chain / observation calls / full-scope capture
 timing, capture completeness, final restore, report regeneration, failed-attempt history, the 117-record
-offline audit, the positive-control timing probe, tracked evidence inventory, no-model provenance, frozen
+offline audit, the positive-control timing probe (record digest, verdict, sample count and capture digest,
+plus its indexed raw samples, summary and index: present, hash-correct and Git-tracked), tracked evidence
+inventory, no-model provenance, frozen
 measured parameters, declared rejections, scenario duration, no undefined predicate support (by
 construction: the v2 predicate layer raises on any undefined value and validation records that as a case
 error, so a passed case with no error relied on none), live case marking, the offline fixture inventory and
@@ -174,3 +178,21 @@ Amendment procedure by kind of change:
   and remain valid. A toolkit change must not alter what any stage records as scored evidence — if it
   would, the module belongs in `fingerprint_dependencies` and the scoring-chain procedure applies.
 - `capture_implementation_digest` (the timing probe's binding) is separate and unaffected by either list.
+
+### Recorded amendments
+
+- **2026-10-09, before any live command (pre-live review).** Scoring-chain: `fingerprint_dependencies`
+  extended from 27 to 49 files with every `src/civ_mcp/lua/*.py` module `GameState` dispatches through
+  (their result strings are what the classifier and predicates parse), `connection.py` gained
+  `execute_mutation` (GameCore context for authoring setup, never re-sent), the loss audit classifies every
+  non-success result shape through the shared classifier, and validation records a report-construction
+  evidence failure per case. No packet existed; the full suite and the committed preflight evidence were
+  regenerated under the new `code_identity`. Toolkit (no identity consequence): authoring setup runs in
+  GameCore, coverage squares are grid-clipped, backwards wall clocks are journaled rather than fatal,
+  native exports stage under the Windows checkout's gitignored `benchmark_runs/plan3-part1/exports/` with a
+  pre-save `stat-save` signature excluding stale same-name saves, `finish` recovers a packet-only write
+  failure, attempt directories and predecessor journals are confined to `benchmark_runs/plan3-part1/`, the
+  gate verifies the timing probe's indexed raw evidence and imported predecessor references, and binding
+  selectors accept list values ("any of"). Recipes: the city family's housing objective moved to Gongju
+  (granary removed in setup) and its district objective became a hills-only Seowon over mine assets; the
+  tactical family relocates Gongju's archer off the city tile.
