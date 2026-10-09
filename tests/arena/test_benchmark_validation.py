@@ -508,6 +508,44 @@ def test_cli_run_and_report_exit_codes(tmp_path, monkeypatch, capsys):
     assert "script" in capsys.readouterr().err
 
 
+def write_two_cases(docs: Path, first: dict, second: dict) -> Path:
+    """A suite of two cases over the same position and script."""
+    suite_path = write_case(docs, first)
+    case = yaml.safe_load((docs / "case.yaml").read_text(encoding="utf-8"))
+    case["case_id"] = "second-case"
+    case["expected"] = copy.deepcopy(second)
+    second_path = _dump(docs / "case-2.yaml", case)
+    suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
+    suite["cases"].append({"path": "case-2.yaml", "sha256": _sha(second_path)})
+    return _dump(suite_path, suite)
+
+
+# Tile (50, 50) is outside the captured area: the predicate cannot be answered.
+UNCAPTURED = {"score": {}, "ledger": [], "endpoints": [{
+    "id": "far-tile", "value": False, "predicate": {
+        "kind": "tile_matches", "tiles": [[50, 50]], "fields": {"improvement": "NONE"}}}]}
+
+
+def test_missing_evidence_is_recorded_per_case_and_exits_distinctly(
+        tmp_path, monkeypatch, capsys):
+    _production(monkeypatch, World())
+    suite = write_two_cases(tmp_path / "docs", UNCAPTURED, PASSING_EXPECTED)
+    run_dir = tmp_path / "run"
+    assert main(["run", "--suite", str(suite), "--run-dir", str(run_dir)]) == 2
+
+    result = json.loads((run_dir / "validation.json").read_text(encoding="utf-8"))
+    assert result["passed"] is False and result["errored"] is True
+    errored, evaluated = result["cases"]
+    assert errored["case_id"] == "fortify-case" and errored["passed"] is False
+    assert errored["error"]["kind"] == "missing_evidence"
+    assert "50, 50" in errored["error"]["message"]
+    assert "far-tile" not in errored["mismatches"]
+    assert evaluated == {**evaluated, "case_id": "second-case", "passed": True,
+                         "error": None, "mismatches": {}}
+    for case_id in ("fortify-case", "second-case"):
+        assert (run_dir / "reports" / case_id / "report.json").is_file()
+
+
 def test_cli_run_exits_nonzero_when_a_case_fails(tmp_path, monkeypatch, capsys):
     _production(monkeypatch, World())
     expected = copy.deepcopy(PASSING_EXPECTED)
@@ -515,4 +553,5 @@ def test_cli_run_exits_nonzero_when_a_case_fails(tmp_path, monkeypatch, capsys):
     suite = write_case(tmp_path / "docs", expected)
     run_dir = tmp_path / "run"
     assert main(["run", "--suite", str(suite), "--run-dir", str(run_dir)]) == 1
-    assert json.loads((run_dir / "validation.json").read_text())["passed"] is False
+    result = json.loads((run_dir / "validation.json").read_text())
+    assert result["passed"] is False and result["errored"] is False

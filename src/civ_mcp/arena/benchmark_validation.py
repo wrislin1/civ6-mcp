@@ -5,7 +5,11 @@
 report, writes it, and only then compares the strictly validated case
 assertions against that derived report and the trial's recorded endpoints.
 A comparison never alters a report: nonpassing cases keep their actual
-reports and fail the command. `build_reports` re-derives every report from the
+reports and fail the command. A case whose recorded evidence cannot answer a
+predicate carries a `missing_evidence` error record (never a False actual);
+the other cases are still evaluated and `validation.json` is still written.
+`run` exits 0 when every case passed, 1 when a case failed, and 2 when any
+case errored or the run was refused. `build_reports` re-derives every report from the
 retained lock and raw trials, refusing changed code, scripts or cases.
 
     uv run python -m civ_mcp.arena.benchmark_validation run --suite PATH --run-dir PATH
@@ -25,6 +29,7 @@ from civ_mcp.arena.benchmark_contract_v2 import canonical_bytes, implementation_
 from civ_mcp.arena.benchmark_manifest_v2 import load_v2_document, validate_case_expected
 from civ_mcp.arena.benchmark_report_v2 import build_trial_report, render_report
 from civ_mcp.arena.benchmark_scripted_runner import ScriptedTransport, run_scripted_suite
+from civ_mcp.arena.benchmark_state import BenchmarkStateError
 from civ_mcp.arena.benchmark_store import BenchmarkStore, BenchmarkStoreError
 
 __all__ = ["build_reports", "check_case", "main", "reconcile_mechanics", "run_validation"]
@@ -150,11 +155,12 @@ def _check_trial_case(trial: dict[str, Any], case_id: str, case_sha256: str) -> 
 # Validation run
 # ---------------------------------------------------------------------------
 
-def _evaluate(trial: dict[str, Any], case: dict[str, Any],
-              report: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _evaluate(trial: dict[str, Any], case: dict[str, Any], report: dict[str, Any]
+              ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+    """Mechanics, mismatches, and a missing-evidence error (never a False actual)."""
     mechanics = reconcile_mechanics(trial, case.get("declared_rejections", []))
-    comparison = check_case(report, case["expected"], trial=trial)
-    mismatches = dict(comparison["mismatches"])
+    mismatches: dict[str, Any] = {}
+    error = None
     if not mechanics["passed"]:
         mismatches["mechanics"] = {
             "actual": {"validation_status": trial["validation_status"],
@@ -162,7 +168,13 @@ def _evaluate(trial: dict[str, Any], case: dict[str, Any],
                        "unobserved_rejections": mechanics["unobserved_rejections"]},
             "expected": {"declared_rejections": case.get("declared_rejections", [])},
             "source": {"trial": ["validation_failures"]}}
-    return mechanics, mismatches
+    try:
+        comparison = check_case(report, case["expected"], trial=trial)
+    except BenchmarkStateError as exc:
+        error = {"kind": "missing_evidence", "message": str(exc)}
+    else:
+        mismatches.update(comparison["mismatches"])
+    return mechanics, mismatches, error
 
 
 async def run_validation(suite_path: Path, run_dir: Path, *,
@@ -186,13 +198,15 @@ async def run_validation(suite_path: Path, run_dir: Path, *,
         _check_trial_case(trial, case["case_id"], case_sha)
         report = build_trial_report(trial, position)
         report_sha = _write_report(run_dir, case["case_id"], report)
-        mechanics, mismatches = _evaluate(trial, case, report)
+        mechanics, mismatches, error = _evaluate(trial, case, report)
         results.append({"case_id": case["case_id"], "trial_index": trial["index"],
-                        "passed": not mismatches, "mechanics": mechanics,
-                        "mismatches": mismatches, "report_sha256": report_sha})
+                        "passed": error is None and not mismatches, "mechanics": mechanics,
+                        "mismatches": mismatches, "error": error,
+                        "report_sha256": report_sha})
     result = {"suite_id": suite["suite_id"],
               "lock_sha256": _file_sha256(run_dir / BenchmarkStore.SESSION_FILE),
-              "passed": all(r["passed"] for r in results), "cases": results}
+              "passed": all(r["passed"] for r in results),
+              "errored": any(r["error"] is not None for r in results), "cases": results}
     _write(run_dir / VALIDATION_FILE, canonical_bytes(result))
     return result
 
@@ -260,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "run":
             result = asyncio.run(run_validation(args.suite, args.run_dir))
             print(args.run_dir / VALIDATION_FILE)
+            if result["errored"]:
+                return 2
             return 0 if result["passed"] else 1
         mapping = build_reports(args.run_dir)
         _write(args.output, canonical_bytes(mapping))
