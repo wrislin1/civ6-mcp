@@ -7,6 +7,7 @@ import ctypes
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import uuid
 from types import ModuleType, SimpleNamespace
@@ -536,8 +537,71 @@ def test_windows_save_scroll_targets_list_and_sends_wheel_step(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_restart_and_load_under_wsl_delegates_to_windows_bridge(monkeypatch):
+    """Live 2026-10-09 (city-a2 menu-check, stage 014): under WSL the kill /
+    launch / menu-load sequence cannot reach the Windows game at all (pgrep,
+    pkill and a `steam` binary that does not exist -- FileNotFoundError), so
+    the crash-recovery loader must run natively through the Windows
+    companion checkout's `civ6-launcher restart-and-load` and hand back its
+    result line unchanged. Nothing local may be killed or launched."""
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher, "_load_waiter_supported", lambda: True)
+    monkeypatch.setattr(game_launcher, "windows_repo_root", lambda: "/mnt/c/repo")
+
+    async def forbidden(*_a, **_k):
+        raise AssertionError("local kill/launch must not run under WSL")
+
+    monkeypatch.setattr(game_launcher, "kill_game", forbidden)
+    monkeypatch.setattr(game_launcher, "launch_game", forbidden)
+    monkeypatch.setattr(game_launcher, "load_save_from_menu", forbidden)
+    calls: list[tuple[list[str], dict]] = []
+    native = "Kill: Game killed. | Launch: Game launched. | Load: Loaded X: world ready, FireTuner port is open."
+
+    def fake_run(cmd, **kwargs):
+        calls.append((list(cmd), kwargs))
+        return subprocess.CompletedProcess(cmd, 0, stdout=(native + "\n").encode(), stderr=b"")
+
+    monkeypatch.setattr(game_launcher.subprocess, "run", fake_run)
+
+    result = await game_launcher.restart_and_load("PLAN3_CITY_A2_V1")
+
+    assert result == native
+    [(cmd, kwargs)] = calls
+    assert cmd[-2:] == ["restart-and-load", "PLAN3_CITY_A2_V1"]
+    assert cmd[0] == game_launcher._WSL_WINDOWS_PYTHON
+    assert kwargs["cwd"] == "/mnt/c/repo"
+    assert kwargs["timeout"] >= 600
+
+
+@pytest.mark.asyncio
+async def test_restart_and_load_under_wsl_reports_bridge_failure_as_warning(monkeypatch):
+    """A native failure line (stderr, exit 1) or a dead bridge must come back
+    as a string the stage machine's `_load_failed` classifies, never a
+    success-shaped line and never an exception."""
+    monkeypatch.setattr(game_launcher.sys, "platform", "linux")
+    monkeypatch.setattr(game_launcher, "_load_waiter_supported", lambda: True)
+    monkeypatch.setattr(game_launcher, "windows_repo_root", lambda: "/mnt/c/repo")
+
+    def failing_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout=b"", stderr=b"Kill: ok | Launch: ok | Load: FAILED: Could not find 'Single Player'\n")
+
+    monkeypatch.setattr(game_launcher.subprocess, "run", failing_run)
+    result = await game_launcher.restart_and_load("X")
+    assert "FAILED:" in result
+
+    def dead_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 0))
+
+    monkeypatch.setattr(game_launcher.subprocess, "run", dead_run)
+    result = await game_launcher.restart_and_load("X")
+    assert result.startswith("WARNING:")
+
+
+@pytest.mark.asyncio
 async def test_restart_and_load_preserves_fresh_launch_context(monkeypatch):
     load_calls: list[tuple[str | None, bool]] = []
+    monkeypatch.setattr(game_launcher, "_load_waiter_supported", lambda: False)  # native path
 
     async def fake_dismiss():
         return []

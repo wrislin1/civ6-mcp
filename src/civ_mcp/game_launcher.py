@@ -2064,6 +2064,56 @@ def _press_escape_windows_bridge() -> bool:
     return proc.returncode == 0
 
 
+_RESTART_BRIDGE_TIMEOUT_S = 900
+
+
+def _restart_and_load_windows_bridge(save_name: str) -> str:
+    """Run the native ``civ6-launcher restart-and-load`` in the Windows
+    companion checkout and return its result line.
+
+    Live 2026-10-09 (city-a2 menu-check, stage 014): under WSL this process
+    cannot reach the Windows game at all -- ``is_game_running`` uses pgrep,
+    the kill uses pkill and the launch needs a ``steam`` binary that does
+    not exist (FileNotFoundError) -- so the whole kill / relaunch / menu-load
+    sequence runs natively, where every step (taskkill, steam://run,
+    tasklist, WinRT OCR, Escape) is the proven route. The native CLI prints
+    the result line on stdout (exit 0) or, failure-shaped, on stderr (exit
+    1); either comes back unchanged so the caller's load-failure
+    classification sees the real wording. A dead bridge or a timeout is
+    reported as a WARNING line, never raised.
+    """
+    python_exe = os.environ.get("CIV6_WINDOWS_PYTHON", _WSL_WINDOWS_PYTHON)
+    bootstrap = os.environ.get("CIV6_WINDOWS_BOOTSTRAP", _WSL_WINDOWS_BOOTSTRAP)
+    win_bootstrap = bootstrap
+    if bootstrap.startswith("/mnt/") and len(bootstrap) > 7:
+        win_bootstrap = (
+            bootstrap[5].upper() + ":" + bootstrap[6:].replace("/", "\\")
+        )
+    try:
+        proc = subprocess.run(
+            [python_exe, win_bootstrap, "restart-and-load", save_name],
+            capture_output=True,
+            timeout=_RESTART_BRIDGE_TIMEOUT_S,
+            cwd=windows_repo_root(),
+        )
+    except Exception as exc:
+        log.warning("Windows bridge restart-and-load failed: %s", exc)
+        return f"WARNING: Windows bridge restart-and-load of '{save_name}' failed: {exc}"
+
+    def last_line(data: bytes) -> str:
+        lines = [ln.strip() for ln in data.decode("utf-8", errors="replace").splitlines()
+                 if ln.strip()]
+        return lines[-1] if lines else ""
+
+    out, err = last_line(proc.stdout), last_line(proc.stderr)
+    if proc.returncode == 0 and out:
+        return out
+    return err or out or (
+        f"WARNING: Windows bridge restart-and-load of '{save_name}' produced no result "
+        f"(exit {proc.returncode})"
+    )
+
+
 class FrontendLoadState(str, Enum):
     """Conservative classification of what the frontend currently shows.
 
@@ -3204,7 +3254,14 @@ async def restart_and_load(save_name: str | None = None) -> str:
 
     This is the recommended tool for recovering from game hangs.
     Takes 60-120 seconds total.
+
+    Under WSL with the Windows companion bridge present, the whole sequence
+    runs natively there (see ``_restart_and_load_windows_bridge``).
     """
+    if sys.platform == "linux" and _load_waiter_supported():
+        log.info("WSL: delegating restart-and-load of %r to the Windows bridge", save_name)
+        return await asyncio.to_thread(_restart_and_load_windows_bridge, save_name)
+
     results = []
 
     # Dismiss crash dialogs before kill — they block the process from exiting
