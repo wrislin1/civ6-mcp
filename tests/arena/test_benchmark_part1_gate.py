@@ -133,11 +133,19 @@ def _index(repo, attempt, externals=()):
                   {"files": [{"path": f, "sha256": _sha(repo, f)} for f in files]})
 
 
+PROBE_DIR = "benchmark_runs/plan3-part1/capture-probe"
+
+
 def _shared_files(repo):
+    # The probe's raw evidence: samples and summary, inventoried by its index.
+    sample = _write(repo, f"{PROBE_DIR}/samples/sample-000.json", {"duration_s": 0.4})
+    summary = _write(repo, f"{PROBE_DIR}/summary.json", {"samples": 20})
+    index = _write(repo, f"{PROBE_DIR}/evidence-index.json", {"files": [sample, summary]})
     _write(repo, PROBE_PATH, {
         "position_id": "builder-posctrl-v1", "samples": 20,
         "verdict": {"passed": True, "reasons": []},
-        "capture_implementation_sha256": CAPTURE, "evidence_index_sha256": "e" * 64,
+        "capture_implementation_sha256": CAPTURE,
+        "evidence_index_path": index["path"], "evidence_index_sha256": index["sha256"],
         "limitations": ["positive control only"]})
     _write(repo, PREFLIGHT_PATH, {"historical_audit": {
         "membership_matches": True, "trial_count": 96, "uncredited_count": 117}})
@@ -603,6 +611,40 @@ def test_probe_with_stale_capture_digest_fails(view, repo):
     assert _check(broken, repo)["failed_requirements"] == ["positive_control_timing_probe"]
 
 
+def test_probe_passes_only_with_its_indexed_raw_evidence_present_and_tracked(view, repo):
+    result = _check(view, repo)
+    assert result["passed"] is True, result["failed_requirements"]
+    probe = result["requirements"]["positive_control_timing_probe"]
+    assert set(probe["evidence"]) == {PROBE_PATH, f"{PROBE_DIR}/evidence-index.json",
+                                      f"{PROBE_DIR}/samples/sample-000.json",
+                                      f"{PROBE_DIR}/summary.json"}
+
+
+@pytest.mark.parametrize("damage", ["sample_missing", "sample_altered", "index_missing",
+                                    "index_altered", "index_untracked", "no_reference"])
+def test_probe_record_alone_cannot_pass_the_timing_gate(view, repo, damage):
+    """The provenance JSON is a claim; the gate must re-verify the raw samples,
+    summary and index it was derived from."""
+    sample, index = f"{PROBE_DIR}/samples/sample-000.json", f"{PROBE_DIR}/evidence-index.json"
+    if damage == "sample_missing":
+        (repo / sample).unlink()
+    elif damage == "sample_altered":
+        (repo / sample).write_text('{"duration_s": 0.1}')
+    elif damage == "index_missing":
+        (repo / index).unlink()
+    elif damage == "index_altered":
+        (repo / index).write_text('{"files": []}')
+    elif damage == "index_untracked":
+        _git(repo, "rm", "--cached", "-q", index)
+    else:
+        doc = json.loads((repo / PROBE_PATH).read_text())
+        del doc["evidence_index_path"]
+        view = copy.deepcopy(view)
+        view["positive_control_probe"] = _write(repo, PROBE_PATH, doc)
+        _git(repo, "add", "-A")
+    assert _check(view, repo)["failed_requirements"] == ["positive_control_timing_probe"]
+
+
 def test_substitute_passes_only_with_both_scenario_durations(repo):
     _predecessor(repo, "builder")
     path = _build(repo, substitute=True)
@@ -620,9 +662,10 @@ def test_substitute_journal_imported_predecessor_is_a_reference_not_an_attempt(r
     """A substitute begun in a fresh directory carries its failed predecessor
     by reference; the gate reads the predecessor from its own journal."""
     _predecessor(repo, "builder")
+    predecessor_journal = "benchmark_runs/plan3-part1/builder-a1/attempt-1/authoring-journal.json"
     copy_ = {**_scenario_record("builder-a1", "builder", status="failed", elapsed=99999.0),
-             "imported_from": {"journal": "benchmark_runs/plan3-part1/builder-a1/attempt-1/"
-                                          "authoring-journal.json", "sha256": "0" * 64}}
+             "imported_from": {"journal": predecessor_journal,
+                               "sha256": _sha(repo, predecessor_journal)}}
     path = _build(repo, substitute=True, imported=[copy_])
     result = _check(path, repo)
     assert result["passed"] is True, result["failed_requirements"]
@@ -630,6 +673,28 @@ def test_substitute_journal_imported_predecessor_is_a_reference_not_an_attempt(r
     (pred,) = [s for s in load_gate_evidence(path, root=repo)["scenarios"]
                if s["scenario_id"] == "builder-a1"]
     assert pred["journal"].endswith("builder-a1/attempt-1/authoring-journal.json")
+
+
+@pytest.mark.parametrize("imported_from", [
+    # Outside the scanned root: the predecessor's evidence and time would be uncounted.
+    {"journal": "benchmark_runs/elsewhere/builder-a1/authoring-journal.json"},
+    # Inside the root but not the bytes the substitute imported.
+    {"journal": "benchmark_runs/plan3-part1/builder-a1/attempt-1/authoring-journal.json",
+     "sha256": "0" * 64},
+])
+def test_imported_predecessor_must_be_a_scanned_journal_with_the_imported_digest(
+        repo, imported_from):
+    _predecessor(repo, "builder")
+    elsewhere = "benchmark_runs/elsewhere/builder-a1/authoring-journal.json"
+    _write(repo, elsewhere, {"schema_version": "2.0.0", "families": {}})
+    imported_from = {"sha256": _sha(repo, elsewhere), **imported_from}
+    copy_ = {**_scenario_record("builder-a1", "builder", status="failed", elapsed=99999.0),
+             "imported_from": imported_from}
+    path = _build(repo, substitute=True, imported=[copy_])
+    result = _check(path, repo)
+    assert "finish_packet_resolved" in result["failed_requirements"]
+    assert any("imported predecessor journal" in p
+               for p in load_gate_evidence(path, root=repo)["resolution"]["problems"])
 
 
 def test_substitute_without_declaration_fails(repo):

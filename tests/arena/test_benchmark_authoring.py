@@ -794,6 +794,55 @@ async def test_finish_is_idempotent_when_the_index_write_failed(tmp_path, tool_l
         await rig.run("finish")
 
 
+async def test_finish_recovers_when_only_the_packet_write_failed(tmp_path, tool_log,
+                                                                 monkeypatch):
+    """Index written, packet write failed: re-running `finish` reuses the
+    verified index and publishes the missing packet without live contact."""
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("validate")
+    real = authoring._write_immutable
+
+    def broken(path, data):
+        raise OSError("disk full")
+    monkeypatch.setattr(authoring, "_write_immutable", broken)
+    with pytest.raises(OSError, match="disk full"):
+        await rig.run("finish")
+    index_path = rig.attempt / "evidence-index.json"
+    index_bytes = index_path.read_bytes()
+    packet_path = tmp_path / "benchmarks" / "provenance" / "test-builder-a1-v1.json"
+    assert index_path.is_file() and not packet_path.exists()
+
+    monkeypatch.setattr(authoring, "_write_immutable", real)
+    mark = rig.marks()
+    record = await rig.run("finish")
+    assert record["status"] == "passed" and record["recovered"] is True
+    assert rig.calls_since(mark) == []  # no live contact on recovery
+    assert packet_path.is_file()
+    assert index_path.read_bytes() == index_bytes  # reused, never rewritten
+    packet = json.loads(packet_path.read_text())
+    assert packet["evidence_index"]["sha256"] == hashlib.sha256(index_bytes).hexdigest()
+    assert record["completion"]["packet"]["path"] == "benchmarks/provenance/test-builder-a1-v1.json"
+    assert packet["evidence_index"]["path"] == "benchmark_runs/plan3-part1/builder-a1/evidence-index.json"
+    assert len(list((rig.attempt / "stages").glob("*-finish.json"))) == 1
+    evidence_files(tmp_path / "benchmark_runs" / "plan3-part1", repo_root=tmp_path)
+    with pytest.raises(ValueError, match="closed"):
+        await rig.run("finish")
+
+
+async def test_finish_recovery_refuses_an_index_that_no_longer_matches(tmp_path, tool_log,
+                                                                       monkeypatch):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("validate")
+    monkeypatch.setattr(authoring, "_write_immutable",
+                        lambda path, data: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError, match="disk full"):
+        await rig.run("finish")
+    monkeypatch.undo()
+    (rig.attempt / "notes.json").write_text("{}")  # appeared after the index was written
+    with pytest.raises(ValueError, match="does not inventory the attempt's current files"):
+        await rig.run("finish")
+
+
 def _substitute_recipe() -> dict:
     return _recipe(recipe_id="test-builder-a2", scenario_id="builder-a2",
                    predecessor="builder-a1", substitution_reason="setup cannot pass",
@@ -826,7 +875,8 @@ async def test_substitute_in_fresh_attempt_dir_binds_the_sibling_predecessor_jou
 async def test_substitute_with_explicit_predecessor_journal_elsewhere(tmp_path, tool_log):
     first = await _failed_attempt_one(tmp_path, tool_log)
     path = write_recipe(tmp_path, _substitute_recipe(), name="test-builder-a2")
-    attempt = tmp_path / "benchmark_runs" / "plan3-part1-retry" / "builder-a2"
+    # Not a sibling of the predecessor's attempt dir, so no automatic discovery.
+    attempt = tmp_path / "benchmark_runs" / "plan3-part1" / "retry" / "builder-a2"
     with pytest.raises(ValueError, match="failed predecessor"):
         await run_authoring_stage(path, stage="survey", attempt_dir=attempt,
                                   ops=first.ops.live_ops(), root=tmp_path)
@@ -834,6 +884,33 @@ async def test_substitute_with_explicit_predecessor_journal_elsewhere(tmp_path, 
         path, stage="survey", attempt_dir=attempt, ops=first.ops.live_ops(), root=tmp_path,
         predecessor_journal=first.attempt / "authoring-journal.json")
     assert record["status"] == "passed", record.get("error")
+
+
+async def test_attempt_dir_and_predecessor_journal_must_live_under_the_gate_root(
+        tmp_path, tool_log):
+    """The gate scans only benchmark_runs/plan3-part1/: an attempt or a
+    predecessor journal anywhere else would be silently absent from it, so
+    authoring refuses both before the journal opens."""
+    first = await _failed_attempt_one(tmp_path, tool_log)
+    path = write_recipe(tmp_path, _substitute_recipe(), name="test-builder-a2")
+    outside = tmp_path / "benchmark_runs" / "plan3-part1-retry" / "builder-a2"
+    with pytest.raises(ValueError, match="attempt directory .* must live under "
+                                         "benchmark_runs/plan3-part1/"):
+        await run_authoring_stage(
+            path, stage="survey", attempt_dir=outside, ops=first.ops.live_ops(), root=tmp_path,
+            predecessor_journal=first.attempt / "authoring-journal.json")
+    assert not outside.exists()
+
+    elsewhere = tmp_path / "benchmark_runs" / "elsewhere" / "authoring-journal.json"
+    elsewhere.parent.mkdir(parents=True)
+    elsewhere.write_bytes((first.attempt / "authoring-journal.json").read_bytes())
+    attempt = first.attempt.parent / "builder-a2"
+    with pytest.raises(ValueError, match="predecessor journal .* must live under "
+                                         "benchmark_runs/plan3-part1/"):
+        await run_authoring_stage(path, stage="survey", attempt_dir=attempt,
+                                  ops=first.ops.live_ops(), root=tmp_path,
+                                  predecessor_journal=elsewhere)
+    assert not (attempt / "authoring-journal.json").exists()
 
 
 async def test_evidence_files_rejects_unindexed_attempt(tmp_path, tool_log):

@@ -429,10 +429,53 @@ def _positive_control_timing_probe(p: dict[str, Any], code_root: Path,
     problems = []
     if hashlib.sha256(path.read_bytes()).hexdigest() != ref["sha256"]:
         problems.append("probe provenance sha256 differs from the reference")
-    problems += probe_problems(json.loads(path.read_text(encoding="utf-8")), code_root=code_root)
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    problems += probe_problems(doc, code_root=code_root)
+    # The record's verdict is a claim; the indexed raw samples, summary and
+    # index it was derived from must still exist, hash-match and be tracked.
+    indexed, index_problems = _probe_evidence_files(doc, root)
+    problems += index_problems
+    evidence = [ref["path"], *indexed]
+    problems += [f"{rel}: not Git-tracked"
+                 for rel in sorted(set(evidence) - _git_tracked(root, evidence))]
     ok, detail = _verdict(problems, "passing 20-sample probe under the current capture "
-                                    "implementation")
-    return ok, [ref["path"]], detail
+                                    f"implementation; {len(indexed)} indexed raw evidence "
+                                    "files present, hash-correct and Git-tracked")
+    return ok, evidence, detail
+
+
+def _probe_evidence_files(doc: dict[str, Any], root: Path) -> tuple[list[str], list[str]]:
+    """The probe record's evidence index and every file it lists, verified
+    against the digests the record and the index carry."""
+    index_rel, index_sha = doc.get("evidence_index_path"), doc.get("evidence_index_sha256")
+    if not (_safe(index_rel) and isinstance(index_sha, str)):
+        return [], ["probe record has no safe evidence_index_path / evidence_index_sha256"]
+    files, problems = [index_rel], []
+    index_path = root / index_rel
+    if not index_path.is_file():
+        return files, [f"{index_rel}: missing"]
+    data = index_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != index_sha:
+        problems.append(f"{index_rel}: sha256 differs from the probe record")
+    try:
+        entries = json.loads(data).get("files", [])
+    except (ValueError, AttributeError):
+        return files, problems + [f"{index_rel}: unreadable index"]
+    if not entries:
+        problems.append(f"{index_rel}: indexes no files")
+    for entry in entries:
+        rel = entry.get("path") if isinstance(entry, dict) else None
+        sha = entry.get("sha256") if isinstance(entry, dict) else None
+        if not (_safe(rel) and isinstance(sha, str)):
+            problems.append(f"{index_rel}: malformed entry {entry!r}")
+            continue
+        files.append(rel)
+        file_path = root / rel
+        if not file_path.is_file():
+            problems.append(f"{rel}: missing")
+        elif hashlib.sha256(file_path.read_bytes()).hexdigest() != sha:
+            problems.append(f"{rel}: sha256 differs from the probe index")
+    return files, problems
 
 
 def _safe(rel: Any) -> bool:

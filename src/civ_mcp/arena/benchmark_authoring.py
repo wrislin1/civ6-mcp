@@ -95,7 +95,7 @@ from civ_mcp.arena.benchmark_manifest_v2 import (
     validate_v2_document,
 )
 from civ_mcp.arena.benchmark_capture_probe import clipped_square_area, query_grid_size
-from civ_mcp.arena.benchmark_part1_evidence import PREFLIGHT_OUTPUT, PROBE_PROVENANCE
+from civ_mcp.arena.benchmark_part1_evidence import ATTEMPTS_ROOT, PREFLIGHT_OUTPUT, PROBE_PROVENANCE
 from civ_mcp.arena.benchmark_part1_gate import (
     check_part1_gate,
     check_part1_packet,
@@ -1721,9 +1721,9 @@ _STAGE_FUNCS = {
 }
 
 
-def _write_index(ctx: _Context, external: list[Path], *,
-                 position_id: str | None) -> dict[str, str]:
-    """Inventory every attempt file plus referenced inputs; never itself."""
+def _index_document(ctx: _Context, external: list[Path], *,
+                    position_id: str | None) -> dict[str, Any]:
+    """Inventory every attempt file plus referenced inputs; never the index itself."""
     index_path = ctx.attempt_dir / INDEX_FILE
     entries: dict[str, str] = {}
     for path in sorted(ctx.attempt_dir.rglob("*")):
@@ -1735,25 +1735,56 @@ def _write_index(ctx: _Context, external: list[Path], *,
     for path in [ctx.recipe_path, ctx.root / ctx.recipe["toolset_path"], *external, *referenced]:
         if path.is_file():
             entries[ctx.rel(path)] = _sha256_file(path)
-    index = {"schema_version": SCHEMA_VERSION, "scenario_id": ctx.scenario_id,
-             "position_id": position_id, "attempt_dir": ctx.rel(ctx.attempt_dir),
-             "files": [{"path": p, "sha256": s} for p, s in sorted(entries.items())]}
-    data = _json_bytes(index)
+    return {"schema_version": SCHEMA_VERSION, "scenario_id": ctx.scenario_id,
+            "position_id": position_id, "attempt_dir": ctx.rel(ctx.attempt_dir),
+            "files": [{"path": p, "sha256": s} for p, s in sorted(entries.items())]}
+
+
+def _write_index(ctx: _Context, external: list[Path], *,
+                 position_id: str | None) -> dict[str, str]:
+    """Write the (new, immutable) evidence index; returns its reference."""
+    index_path = ctx.attempt_dir / INDEX_FILE
+    data = _json_bytes(_index_document(ctx, external, position_id=position_id))
     _write_new(index_path, data)
     return {"path": ctx.rel(index_path), "sha256": _sha256_bytes(data)}
 
 
-def _complete(ctx: _Context) -> dict[str, Any]:
-    """After the journal closes: write the evidence index, then the packet."""
+def _existing_index(ctx: _Context, external: list[Path], *,
+                    position_id: str | None) -> dict[str, str]:
+    """The index an earlier `_complete` wrote, accepted for reuse only when it
+    inventories exactly what a fresh index would (nothing appeared or changed
+    in the attempt since); otherwise the completion cannot be recovered."""
+    index_path = ctx.attempt_dir / INDEX_FILE
+    data = index_path.read_bytes()
+    if data != _json_bytes(_index_document(ctx, external, position_id=position_id)):
+        raise ValueError(f"{ctx.rel(index_path)} does not inventory the attempt's current "
+                         "files; the completion cannot be recovered from it")
+    return {"path": ctx.rel(index_path), "sha256": _sha256_bytes(data)}
+
+
+def _complete(ctx: _Context, *, reuse_index: bool = False) -> dict[str, Any]:
+    """After the journal closes: write the evidence index, then the packet.
+
+    With ``reuse_index`` (completion recovery) an index that already exists
+    is verified and reused instead of rewritten, so a packet write that
+    failed after the index succeeded can still be published; an attempt whose
+    packet already exists is closed.
+    """
     capture = ctx.latest("capture")["evidence"]
     validate = ctx.latest("validate")["evidence"]
     names = _archive_names(ctx.recipe, capture["version"])
+    packet_path = ctx.root / names["provenance_packet"]
     external = [ctx.root / capture["archive_path"], ctx.root / capture["position_path"],
                 ctx.root / capture["authoring_input"]["path"],
                 ctx.root / capture["public_observation"], ctx.root / capture["suite_path"],
                 *(ctx.root / p for p in capture["scripts"]),
                 *(ctx.root / p for p in capture["cases"])]
-    index_ref = _write_index(ctx, external, position_id=capture["position_id"])
+    if (ctx.attempt_dir / INDEX_FILE).exists():
+        if not reuse_index or packet_path.exists():
+            raise ValueError(f"attempt {ctx.attempt_dir} is closed (indexed or abandoned)")
+        index_ref = _existing_index(ctx, external, position_id=capture["position_id"])
+    else:
+        index_ref = _write_index(ctx, external, position_id=capture["position_id"])
     journal_path = ctx.attempt_dir / JOURNAL_FILE
     packet = {
         "schema_version": SCHEMA_VERSION, "position_id": capture["position_id"],
@@ -1765,24 +1796,39 @@ def _complete(ctx: _Context) -> dict[str, Any]:
         "journal": {"path": ctx.rel(journal_path), "sha256": _sha256_file(journal_path)},
         "evidence_index": index_ref,
     }
-    packet_path = ctx.root / names["provenance_packet"]
     _write_immutable(packet_path, _json_bytes(packet))
     return {"evidence_index": index_ref,
             "packet": {"path": ctx.rel(packet_path), "sha256": _sha256_file(packet_path)}}
 
 
+def _require_under_attempts_root(rel: str, what: str) -> None:
+    """The Part 1 gate scans only `ATTEMPTS_ROOT`: an attempt directory or a
+    predecessor journal anywhere else would be silently absent from the gate
+    (its evidence, elapsed time and failed-predecessor history uncounted)."""
+    parts = PurePosixPath(rel).parts
+    root_parts = PurePosixPath(ATTEMPTS_ROOT).parts
+    if parts[:len(root_parts)] != root_parts or len(parts) <= len(root_parts):
+        raise ValueError(f"{what} {rel!r} must live under {ATTEMPTS_ROOT}/ "
+                         "(the Part 1 gate scans only that root)")
+
+
 def _prepare(recipe_path: Path, attempt_dir: Path, root: Path | None, *,
-             unindexed_abandon_ok: bool = False
+             unindexed_abandon_ok: bool = False, indexed_finish_ok: bool = False
              ) -> tuple[dict[str, Any], Path, Path, Path, list[dict[str, Any]]]:
+    """Load and place the attempt. A closed attempt (indexed or abandoned)
+    is refused, except: `abandon` may re-run on an abandoned-but-unindexed
+    attempt, and `finish` may re-run on an indexed one so a packet write that
+    failed after the index succeeded can be recovered (`_complete`)."""
     root = Path(os.path.abspath(root or _REPO_ROOT))
     recipe_path = Path(os.path.abspath(recipe_path))
     attempt_dir = Path(os.path.abspath(attempt_dir))
     recipe = load_recipe(recipe_path, root=root)
-    _rel(attempt_dir, root)
+    _require_under_attempts_root(_rel(attempt_dir, root), "attempt directory")
     _rel(recipe_path, root)
     records = _stage_records(attempt_dir)
     abandoned = any(r["stage"] == ABANDON for r in records)
-    if (attempt_dir / INDEX_FILE).exists() or (abandoned and not unindexed_abandon_ok):
+    indexed = (attempt_dir / INDEX_FILE).exists()
+    if (abandoned and not unindexed_abandon_ok) or (indexed and (abandoned or not indexed_finish_ok)):
         raise ValueError(f"attempt {attempt_dir} is closed (indexed or abandoned)")
     return recipe, root, recipe_path, attempt_dir, records
 
@@ -1817,10 +1863,11 @@ def find_predecessor_journal(attempt_dir: Path, family: str, predecessor: str) -
 
 def _recover_completion(ctx: _Context, journal: AuthoringJournal,
                         latest: dict[str, Any]) -> dict[str, Any] | None:
-    """A passed journal whose index/packet write failed: redo only `_complete`."""
+    """A passed journal whose index and/or packet write failed: redo only
+    `_complete`, reusing an index that was already written."""
     if journal.record(ctx.scenario_id)["status"] != "passed":
         return None
-    completion = _complete(ctx)
+    completion = _complete(ctx, reuse_index=True)
     return {**latest, "completion": completion, "recovered": True}
 
 
@@ -1844,7 +1891,8 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
     """
     if stage not in STAGE_PREREQUISITES:
         raise ValueError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
-    recipe, root, recipe_path, attempt_dir, records = _prepare(recipe_path, attempt_dir, root)
+    recipe, root, recipe_path, attempt_dir, records = _prepare(
+        recipe_path, attempt_dir, root, indexed_finish_ok=(stage == "finish"))
     statuses = {s: r["status"] for s, r in _latest(records).items()}
     validate_stage_transition(stage, statuses)
     if stage == "finish":
@@ -1862,6 +1910,8 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
             recovered = _recover_completion(ctx, journal, _latest(records)["finish"])
         if recovered is not None:
             return recovered
+    if (attempt_dir / INDEX_FILE).exists():
+        raise ValueError(f"attempt {attempt_dir} is closed (indexed or abandoned)")
     if stage not in REPEATABLE_STAGES and statuses.get(stage) == "passed":
         raise ValueError(f"{stage} already passed; repeat survey/apply/probe to revise it")
 
@@ -1875,6 +1925,8 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
     if predecessor_journal is not None:
         predecessor_journal = Path(os.path.abspath(predecessor_journal))
         predecessor_ref = _rel(predecessor_journal, root)
+        # Refused before the journal opens: the gate would never see it there.
+        _require_under_attempts_root(predecessor_ref, "predecessor journal")
     attempt_dir.mkdir(parents=True, exist_ok=True)
     if stage in REPEATABLE_STAGES:
         _invalidate_downstream(ctx)

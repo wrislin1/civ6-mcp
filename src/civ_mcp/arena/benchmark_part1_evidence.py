@@ -205,6 +205,8 @@ def _attempts(resolver: _Resolver, family: str) -> tuple[list[dict[str, Any]],
     base = resolver.root / ATTEMPTS_ROOT
     dirs = sorted({p.parent for p in base.rglob("stages") if p.is_dir()}) if base.is_dir() else []
     attempts, scenarios = [], {}
+    scanned: dict[str, dict[str, str] | None] = {}  # journal path -> {path, sha256}
+    imports: list[tuple[str, Any]] = []  # (importing journal, its imported_from reference)
     for directory in dirs:
         rel = _rel(directory, resolver.root)
         found, journal = _sibling_family(resolver, rel)
@@ -214,6 +216,10 @@ def _attempts(resolver: _Resolver, family: str) -> tuple[list[dict[str, Any]],
         if found != family:
             continue
         journal_rel = f"{rel}/{JOURNAL_FILE}"
+        scanned[journal_rel] = resolver.ref(journal_rel)
+        imports += [(journal_rel, e.get("imported_from")) for e in _items(
+            _dict(_dict(_dict(journal).get("families")).get(family)).get("scenarios"))
+            if isinstance(e, dict) and e.get("imported_from")]
         index_ref = resolver.ref(f"{rel}/{INDEX_FILE}")
         if index_ref is not None:
             listed = {e.get("path"): e.get("sha256") for e in _items(
@@ -243,6 +249,16 @@ def _attempts(resolver: _Resolver, family: str) -> tuple[list[dict[str, Any]],
             "scenario_ids": sorted({str(e.get("scenario_id")) for e in entries}),
             "status": ("passed" if any(e.get("status") == "passed" for e in entries)
                        else "failed")})
+    # An imported predecessor is excluded above because its own journal is its
+    # evidence -- which holds only when that journal is one of the scanned
+    # attempt journals, byte-identical to what the substitute imported.
+    for journal_rel, imported in imports:
+        ref = scanned.get(str(_dict(imported).get("journal")))
+        if ref is None or ref.get("sha256") != _dict(imported).get("sha256"):
+            resolver.problem(
+                f"{journal_rel}: imported predecessor journal "
+                f"{_dict(imported).get('journal')!r} (sha256 {_dict(imported).get('sha256')!r}) "
+                f"is not a scanned attempt journal under {ATTEMPTS_ROOT}/ with that digest")
     return attempts, sorted(scenarios.values(), key=lambda s: (
         s.get("attempt") if isinstance(s.get("attempt"), int) else 0, str(s["scenario_id"])))
 
