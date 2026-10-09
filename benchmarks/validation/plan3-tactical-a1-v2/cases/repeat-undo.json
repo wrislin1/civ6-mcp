@@ -1,0 +1,31 @@
+{
+  "case_id": "repeat-undo",
+  "declared_rejections": [
+    {
+      "step": 1,
+      "tool_name": "purchase_item"
+    }
+  ],
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 4,
+      "harm_total": 0,
+      "net_credit": 4,
+      "primary_score": 0.3333333333333333
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v2.json",
+    "sha256": "4d5f720b79dca5f24270076ecc5346c6f68f74d6d40398d9a8fba0057bf8170b"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v2/repeat-undo.json",
+    "sha256": "84e99fa06ab0a2a532a32a37fb33e562db09f837a0fccfeed9539a0daa23d515"
+  },
+  "tags": [
+    "repeat_undo"
+  ]
+}

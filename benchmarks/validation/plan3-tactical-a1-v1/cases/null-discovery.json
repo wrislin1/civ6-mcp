@@ -1,0 +1,60 @@
+{
+  "case_id": "null-discovery",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "attacker-alive",
+        "predicate": {
+          "kind": "target_neutralised",
+          "target": [
+            63,
+            16908390
+          ]
+        },
+        "value": false
+      },
+      {
+        "id": "still-exposed",
+        "predicate": {
+          "kind": "civilian_exposed",
+          "unit": [
+            0,
+            1769484
+          ]
+        },
+        "value": true
+      },
+      {
+        "id": "initial_exposure_null",
+        "predicate": {
+          "kind": "new_civilian_exposure",
+          "unit": [
+            0,
+            1769484
+          ]
+        },
+        "value": false
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 0,
+      "harm_total": 0,
+      "net_credit": 0,
+      "primary_score": 0.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v1.json",
+    "sha256": "0fbfcd0e657339d4c4b44a27f98d973ce2e09a9a4c14547b610d66db4ffa3a98"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v1/observe.json",
+    "sha256": "f8ed2265a9fe99fe9b872fb31423532aafa56660c8d93b3fe9967b6623204519"
+  },
+  "tags": [
+    "null_discovery",
+    "initial_exposure_null"
+  ]
+}

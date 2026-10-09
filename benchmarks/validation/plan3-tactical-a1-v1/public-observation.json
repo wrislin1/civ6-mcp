@@ -1,0 +1,48 @@
+[
+  {
+    "arguments": {},
+    "result_capped": "Turn 100 | Korea (Seondeok) | Score: 321 | Prince\nGold: 500 (+23/turn) | Income: 42 | Maintenance: -19 (units: 6) | Science: 33.5 | Culture: 17.4 | Faith: 120 | Favor: 149 (+4/turn)\nResearch: Apprenticeship | Civic: Recorded History\nCities: 5 | Population: 29 | Units: 14 — 3 Scout, 2 Builder, 2 Archer, 2 Swordsman, 2 Apostle, 1 Trader, 1 Settler, 1 Warrior\nExplored: 40% of land (1179/2914 tiles)\nReligion: Custom Religion (6/7 slots)\nVictory: Domination, Culture, Religious, Diplomatic only (disabled: Science)\nEra: Classical Era | Score: 74 (Dark: 59, Golden: 73) -> GOLDEN AGE\nRankings: Korea 321 > Maya 175 > Phoenicia 157 > Nubia 139 > Arabia 138 > Ottomans 138 > Georgia 133",
+    "result_char_cap": 1500,
+    "tool": "get_overview"
+  },
+  {
+    "arguments": {},
+    "result_capped": "14 units:\n  Scout (UNIT_SCOUT) at (103,37) — CS:10 moves 3/3 [id:196608, idx:0]\n  Builder (UNIT_BUILDER) at (72,30) — moves 4/4 charges:2 [id:1507329, idx:1]\n  Scout (UNIT_SCOUT) at (59,36) — CS:10 moves 3/3 [id:262146, idx:2]\n  Swordsman (UNIT_SWORDSMAN) at (73,30) — CS:35 moves 2/2 [id:1376259, idx:3]\n  Scout (UNIT_SCOUT) at (88,61) — CS:10 moves 3/3 [HP: 80/100] [id:393220, idx:4]\n  Archer (UNIT_ARCHER) at (70,22) — CS:15 RS:25 moves 2/2 [id:720901, idx:5]\n  Trader (UNIT_TRADER) at (70,17) — moves 2/2 [id:1179654, idx:6]\n  Swordsman (UNIT_SWORDSMAN) at (67,24) — CS:35 moves 2/2 [id:1441799, idx:7]\n  Archer (UNIT_ARCHER) at (74,20) — CS:15 RS:25 moves 2/2 [id:851976, idx:8]\n    >> CAN ATTACK: UNIT_WARRIOR@72,21(65hp)\n  Apostle (UNIT_APOSTLE) at (75,26) — moves 4/4 charges:3 [CUSTOM_12] [id:1638409, idx:9]\n  Builder (UNIT_BUILDER) at (73,20) — moves 4/4 charges:3 [id:1572874, idx:10]\n    >> Can build: IMPROVEMENT_LUMBER_MILL\n    >> AVAILABLE NOW: improve_tile with {\"unit_index\": 10, \"improvement_name\": \"IMPROVEMENT_LUMBER_MILL\"}\n  Apostle (UNIT_APOSTLE) at (72,26) — moves 4/4 charges:3 [CUSTOM_12] [id:1703947, idx:11]\n  Settler (UNIT_SETTLER) at (73,22) — moves 2/2 [id:1769484, idx:12]\n  Warrior (UNIT_WARRIOR) at (71,21) — CS:20 moves 2/2 [HP: 20/100] [id:1835021, idx:13]\n    >> CAN ATTACK: UNIT_WARRIOR@72,21(65hp)",
+    "result_char_cap": 1500,
+    "tool": "get_units"
+  },
+  {
+    "arguments": {},
+    "result_capped": "5 cities:\n  Gyeongju (pop 12) at (72,26) — Food 42 Prod 37 Gold 24 Sci 15 Cul 7 | Housing 15 Amenities 13 | Growth: 10/139 food (6t, +18.0/t) | Building: nothing | Walls 100/100 Garrison 200/200 Def:35 Gar:none [id:65536]\n    Districts: WONDER(73,26) WONDER(71,25) HOLY_SITE(75,26) SEOWON(73,29) WONDER(74,26)\n    Buildings: PALACE, GRANARY, SHRINE, WALLS, WATER_MILL, TEMPLE, HANGING_GARDENS, MAHABODHI_TEMPLE, TEMPLE_ARTEMIS\n    Needs builder: COPPER, 23, COPPER, 23, COAL, 25, DIAMONDS, 27 (unimproved)\n  Jeonju (pop 7) at (67,24) — Food 23 Prod 18 Gold 5 Sci 4 Cul 4 | Housing 8 Amenities 7 | Growth: 7/77 food (15t, +9.0/t) | Building: DISTRICT_ENCAMPMENT (3 turns) | Walls 100/100 Garrison 200/200 Def:40 Gar:SWORDSMAN [id:131073]\n    Districts: HOLY_SITE(67,25) WONDER(66,23) ENCAMPMENT(68,22)\n    Buildings: MONUMENT, GRANARY, SHRINE, WALLS, WATER_MILL, TEMPLE, STONEHENGE\n    Needs builder: NITER, 23, COPPER, 23, DIAMONDS, 24, ALUMINUM, 25 (unimproved)\n  Gwangju (pop 4) at (70,22) — Food 12 Prod 7 Gold 7 Sci 6 Cul 3 | Housing 6 Amenities 5 | Growth: 40/44 food (1t, +4.0/t) | Building: BUILDING_GRANARY (1 turns) | HP:200/200 Def:29 Gar:ARCHER [id:196610]\n    Districts: HOLY_SITE(69,24) SEOWON(72,23)\n    Buildings: MONUMENT, WATER_MILL\n    Needs builder: IRON, 19, CATTLE, 19, IVORY, 20, STONE, 21, COPPER, 23, COPPER, 23, DIAMONDS, 24, ALUMINUM, 25, COAL, 25 (unimproved)\n  Gongju (pop 5) at (73,19) — Food 11 Prod 8 Gold 1 Sci 8 Cul 4 | Housing 6 Amenities 6 | Growth: 7/55 food (78t,",
+    "result_char_cap": 1500,
+    "tool": "get_cities"
+  },
+  {
+    "arguments": {
+      "radius": 3,
+      "x": 73,
+      "y": 19
+    },
+    "result_capped": "47 tiles:\n  (70,16): GRASS River (Road) [HOLY_SITE] {F:0 P:0} (owned by Jerusalem [City-State]) **[Jerusalem ARCHER]**\n  (71,16): PLAINS_MOUNTAIN River {F:0 P:0} (owned by Jerusalem [City-State])\n  (72,16): GRASS FOREST Coast {F:2 P:1} [mv:2]\n  (73,16): COAST {F:1 P:0 G:1}\n  (74,16): COAST [fog]\n  (75,16): OCEAN [fog]\n  (70,17): PLAINS_HILLS Hills River (Road) [CITY_CENTER] {F:1 P:2} (owned by Jerusalem [City-State]) [my: TRADER] **[Jerusalem WARRIOR]**\n  (71,17): PLAINS_MOUNTAIN River {F:0 P:0} (owned by Jerusalem [City-State])\n  (72,17): GRASS Coast (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)\n  (73,17): COAST {F:1 P:0 G:1}\n  (74,17): COAST {F:1 P:0 G:1}\n  (75,17): OCEAN {F:1 P:0}\n  (70,18): PLAINS (FARM PILLAGED) (Road) {F:0 P:1} (owned by Jerusalem [City-State])\n  (71,18): PLAINS_HILLS Hills [DIAMONDS+] (MINE) {F:0 P:2 G:3} (owned by Jerusalem [City-State]) [mv:2]\n  (72,18): GRASS_MOUNTAIN {F:0 P:0}\n  (73,18): GRASS FOREST Coast {F:2 P:1} (owned by Korea) [mv:2]\n  (74,18): COAST {F:1 P:0 G:1} (owned by Korea)\n  (75,18): COAST [FISH] {F:2 P:0 G:1} (owned by Korea)\n  (76,18): COAST {F:1 P:0 G:1}\n  (70,19): PLAINS (Road) {F:0 P:1}\n  (71,19): PLAINS_HILLS Hills [IRON*] {F:0 P:2 S:1} (owned by Korea) [mv:2]\n  (72,19): PLAINS_MOUNTAIN {F:0 P:0} (owned by Korea)\n  (73,19): GRASS [CATTLE] Coast (Road) [CITY_CENTER] {F:3 P:0} (owned by Korea)\n  (74,19): COAST {F:1 P:0 G:1} (owned by Korea)\n  (75,19): COAST {F:1 P:0 G:1}\n  (76,19): COAST [fog]\n  (70,20): PLAINS [IVORY+] (Road) {F:",
+    "result_char_cap": 1500,
+    "tool": "get_map_area"
+  },
+  {
+    "arguments": {
+      "radius": 1,
+      "x": "${attacker.x}",
+      "y": "${attacker.y}"
+    },
+    "result_capped": "9 tiles:\n  (71,20): PLAINS {F:0 P:1} **[Jerusalem HORSEMAN]**\n  (72,20): PLAINS_HILLS Hills (Road) [SEOWON] {F:0 P:0} (owned by Korea)\n  (73,20): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3] [my: BUILDER]\n  (71,21): GRASS [STONE] River {F:2 P:1} (owned by Korea) [my: WARRIOR]\n  (72,21): GRASS {F:2 P:0} **[Barbarian WARRIOR]**\n  (73,21): GRASS FLOODPLAINS_GRASSLAND River {F:2 P:0}\n  (71,22): GRASS_HILLS Hills River {F:2 P:1} (owned by Korea) [mv:2]\n  (72,22): GRASS River {F:2 P:0} **[Jerusalem WARRIOR]**\n  (73,22): GRASS FLOODPLAINS_GRASSLAND River {F:2 P:0} [my: SETTLER]",
+    "result_char_cap": 1500,
+    "tool": "get_map_area"
+  },
+  {
+    "arguments": {
+      "city_id": 262147
+    },
+    "result_capped": "Units:\n  UNIT_SETTLER (cost 80, 25 turns, buy: 560g)\n  UNIT_BUILDER (cost 50, 10 turns, buy: 205g)\n  UNIT_SCOUT (cost 30, 4 turns, buy: 120g)\n  UNIT_WARRIOR (cost 40, 5 turns, buy: 160g)\n  UNIT_GALLEY (cost 65, 9 turns, buy: 260g)\n  UNIT_ARCHER (cost 60, 8 turns, buy: 240g)\n  UNIT_SPEARMAN (cost 65, 9 turns, buy: 260g)\n  UNIT_HEAVY_CHARIOT (cost 65, 9 turns, buy: 260g)\n  UNIT_BATTERING_RAM (cost 65, 9 turns, buy: 260g)\n  UNIT_HORSEMAN (cost 80, 10 turns, buy: 320g)\nBuildings:\n  BUILDING_LIBRARY (cost 90, 12 turns, buy: 360g)\n  BUILDING_SHRINE (cost 70, 9 turns, buy: 280g)\n  BUILDING_WALLS (cost 80, 5 turns, buy: 160g)\n  BUILDING_ORACLE (cost 290, 32 turns)\nDistricts:\n  DISTRICT_ENCAMPMENT (cost 54, 20 turns)\n  DISTRICT_HARBOR (cost 54, 20 turns)\n  DISTRICT_COMMERCIAL_HUB (cost 54, 20 turns)\n  DISTRICT_ENTERTAINMENT_COMPLEX (cost 54, 20 turns)\n  DISTRICT_THEATER (cost 54, 20 turns)\n  DISTRICT_GOVERNMENT (cost 30, 12 turns)\n  DISTRICT_PRESERVE (cost 54, 20 turns)\n  DISTRICT_DIPLOMATIC_QUARTER (cost 30, 12 turns)\nProjects:\n  PROJECT_ENHANCE_DISTRICT_HOLY_SITE (cost 25, 13 turns)\n  PROJECT_ENHANCE_DISTRICT_CAMPUS (cost 25, 13 turns)",
+    "result_char_cap": 1500,
+    "tool": "get_city_production"
+  }
+]

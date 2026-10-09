@@ -1,0 +1,25 @@
+{
+  "case_id": "mixed-gain-loss",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 4,
+      "harm_total": 4,
+      "net_credit": 0,
+      "primary_score": 0.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v2.json",
+    "sha256": "4d5f720b79dca5f24270076ecc5346c6f68f74d6d40398d9a8fba0057bf8170b"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v2/mixed-gain-loss.json",
+    "sha256": "ad4ce8997d5b595386552f43fb95564fbad869aa2706d953653db99c621144a0"
+  },
+  "tags": [
+    "mixed_gain_loss"
+  ]
+}

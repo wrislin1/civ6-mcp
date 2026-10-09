@@ -1,0 +1,25 @@
+{
+  "case_id": "reinforcement-partial",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 2,
+      "harm_total": 0,
+      "net_credit": 2,
+      "primary_score": 0.16666666666666666
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v1.json",
+    "sha256": "0fbfcd0e657339d4c4b44a27f98d973ce2e09a9a4c14547b610d66db4ffa3a98"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v1/reinforcement-partial.json",
+    "sha256": "6f66348c0c8c177e2201e560b6c31425617e9f2d51745256a7c606f4b7ecda09"
+  },
+  "tags": [
+    "reinforcement_partial"
+  ]
+}

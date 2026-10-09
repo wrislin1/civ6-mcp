@@ -1,0 +1,58 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 8,
+            "x": 73,
+            "y": 21
+          },
+          "name": "attack_unit"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 13,
+            "x": 73,
+            "y": 21
+          },
+          "name": "attack_unit"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 12,
+            "x": 73,
+            "y": 19
+          },
+          "name": "move_unit"
+        },
+        {
+          "arguments": {
+            "city_id": 262147,
+            "item_name": "UNIT_SPEARMAN",
+            "item_type": "UNIT"
+          },
+          "name": "purchase_item"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "joint-full"
+}

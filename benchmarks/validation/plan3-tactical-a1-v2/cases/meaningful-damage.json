@@ -1,0 +1,25 @@
+{
+  "case_id": "meaningful-damage",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 2,
+      "harm_total": 0,
+      "net_credit": 2,
+      "primary_score": 0.16666666666666666
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v2.json",
+    "sha256": "4d5f720b79dca5f24270076ecc5346c6f68f74d6d40398d9a8fba0057bf8170b"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v2/meaningful-damage.json",
+    "sha256": "417bc7a84ed05de68b5126437ceb73d0162d93b1047733facedee3354e6a3e7a"
+  },
+  "tags": [
+    "meaningful_damage"
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "actor_kind": "scripted",
+  "cases": [
+    {
+      "path": "cases/null-discovery.json",
+      "sha256": "3a7e096835b0ea5b809f5c5459e8f4204e1a4e35dc0ca4b5ba670c025e02437e"
+    },
+    {
+      "path": "cases/joint-full.json",
+      "sha256": "26359ada498c83acacfc25cd389c9ceac016cb99def70702624c87c82ec9c519"
+    },
+    {
+      "path": "cases/alternative-full.json",
+      "sha256": "6680b829c18ff1e76d1a18250dc02f523c04f0f9115cb7eb0897c81f088995d0"
+    },
+    {
+      "path": "cases/meaningful-damage.json",
+      "sha256": "2a0b606348421ded4151af5a826fc1290e95c8d03749f2ba7532d5a7450df507"
+    },
+    {
+      "path": "cases/reinforcement-partial.json",
+      "sha256": "0f12886069bc00c31648d6926f5e772806b7c4b49c016a20ad4e81d04cc8cb69"
+    },
+    {
+      "path": "cases/closer-only.json",
+      "sha256": "fe649748993b4639d080c3307bd98e32d1aafe2b356b28ecfbbdd53e09a644d9"
+    },
+    {
+      "path": "cases/covered-rescue.json",
+      "sha256": "e2290734f055c64b4bedf0179d85c15c28a5772d51ca3b8cbbb7702a710e7f36"
+    },
+    {
+      "path": "cases/military-loss.json",
+      "sha256": "4475f1188fe28f9d8b77d2b024666504956e177a6dace971c27e177651794ca3"
+    },
+    {
+      "path": "cases/mixed-gain-loss.json",
+      "sha256": "af593dd1b3968fdaf92f1cbc94ad0b8d678612d7bc3292d41e5f6494264259b7"
+    },
+    {
+      "path": "cases/repeat-undo.json",
+      "sha256": "49152528a0e1f27091fa271f7bcde284415636cc30b5ab13abf5c4f0a26124f8"
+    }
+  ],
+  "contract_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
+  "counting": false,
+  "episode_wall_s": 300,
+  "max_steps": 15,
+  "position": {
+    "path": "../../positions/plan3-tactical-a1-v1.json",
+    "sha256": "0fbfcd0e657339d4c4b44a27f98d973ce2e09a9a4c14547b610d66db4ffa3a98"
+  },
+  "result_char_cap": 1500,
+  "schema_version": "2.0.0",
+  "suite_id": "plan3-tactical-a1-v1-validation",
+  "toolset_identity": {
+    "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+    "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+  }
+}

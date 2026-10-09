@@ -1,0 +1,26 @@
+{
+  "case_id": "military-loss",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 0,
+      "harm_total": 4,
+      "net_credit": -4,
+      "primary_score": -0.3333333333333333
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v2.json",
+    "sha256": "4d5f720b79dca5f24270076ecc5346c6f68f74d6d40398d9a8fba0057bf8170b"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v2/military-loss.json",
+    "sha256": "72f2b5d6b1ec8434b73b86b4fea3bb91cac8376d57547c5e9c28c4118e0353b4"
+  },
+  "tags": [
+    "military_loss",
+    "harm_only"
+  ]
+}

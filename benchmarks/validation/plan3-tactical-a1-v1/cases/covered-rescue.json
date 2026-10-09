@@ -1,0 +1,25 @@
+{
+  "case_id": "covered-rescue",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 4,
+      "harm_total": 0,
+      "net_credit": 4,
+      "primary_score": 0.3333333333333333
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v1.json",
+    "sha256": "0fbfcd0e657339d4c4b44a27f98d973ce2e09a9a4c14547b610d66db4ffa3a98"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v1/covered-rescue.json",
+    "sha256": "c25d65bec6ab024e0aa054572c93e4a855a0438210202de2ad7c2e1ae568d3c9"
+  },
+  "tags": [
+    "covered_rescue"
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "get_overview"
+        },
+        {
+          "arguments": {},
+          "name": "get_units"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "radius": 2,
+            "x": 73,
+            "y": 21
+          },
+          "name": "get_map_area"
+        },
+        {
+          "arguments": {
+            "city_id": 262147
+          },
+          "name": "get_city_production"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "observe"
+}

@@ -1,0 +1,62 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {
+            "city_id": 262147,
+            "item_name": "UNIT_SPEARMAN",
+            "item_type": "UNIT"
+          },
+          "name": "purchase_item"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "city_id": 262147,
+            "item_name": "UNIT_SPEARMAN",
+            "item_type": "UNIT"
+          },
+          "name": "purchase_item"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "city_id": 262147,
+            "item_name": "UNIT_SPEARMAN",
+            "item_type": "UNIT"
+          },
+          "name": "set_city_production"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "city_id": 262147,
+            "item_name": "UNIT_BUILDER",
+            "item_type": "UNIT"
+          },
+          "name": "set_city_production"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "repeat-undo"
+}

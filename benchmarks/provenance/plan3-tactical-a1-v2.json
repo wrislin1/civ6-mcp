@@ -1,0 +1,29 @@
+{
+  "authoring_input": {
+    "path": "benchmarks/provenance/plan3-tactical-a1-v2-authoring.json",
+    "sha256": "05418449e740c3ade4c616c8d314e6c11748ace9924332bf1c13945b9c48693a"
+  },
+  "evidence_index": {
+    "path": "benchmark_runs/plan3-part1/tactical-a1/evidence-index.json",
+    "sha256": "127c6be49c23fc003b182474482d6058a666f9696042a3c74631050b22ab036e"
+  },
+  "family": "tactical",
+  "journal": {
+    "path": "benchmark_runs/plan3-part1/tactical-a1/authoring-journal.json",
+    "sha256": "fcb90a6c2037e432b516481ad27d9c3928f923302bf02a4f833b3f78c8b34758"
+  },
+  "position": {
+    "path": "benchmarks/positions/plan3-tactical-a1-v2.json",
+    "sha256": "4d5f720b79dca5f24270076ecc5346c6f68f74d6d40398d9a8fba0057bf8170b"
+  },
+  "position_id": "plan3-tactical-a1-v2",
+  "scenario_id": "tactical-a1",
+  "schema_version": "2.0.0",
+  "validation_runs": [
+    {
+      "run_dir": "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation",
+      "suite_id": "plan3-tactical-a1-v2-validation",
+      "validation_sha256": "49960d14de4856785ddfe7cc51a0d18c17c30cdffd84d6a98bb9e2e7a5c3fb3f"
+    }
+  ]
+}

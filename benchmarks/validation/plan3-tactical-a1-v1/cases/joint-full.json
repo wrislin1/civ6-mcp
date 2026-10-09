@@ -1,0 +1,37 @@
+{
+  "case_id": "joint-full",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "attacker-destroyed",
+        "predicate": {
+          "kind": "target_neutralised",
+          "target": [
+            63,
+            16908390
+          ]
+        },
+        "value": true
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 12,
+      "harm_total": 0,
+      "net_credit": 12,
+      "primary_score": 1.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v1.json",
+    "sha256": "0fbfcd0e657339d4c4b44a27f98d973ce2e09a9a4c14547b610d66db4ffa3a98"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v1/joint-full.json",
+    "sha256": "c818933227661e3600eb44812cdafb50c0beb8af737b25c438ed2c0d271155b0"
+  },
+  "tags": [
+    "joint_full"
+  ]
+}

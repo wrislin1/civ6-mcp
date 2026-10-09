@@ -1,0 +1,26 @@
+{
+  "case_id": "alternative-full",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 12,
+      "harm_total": 0,
+      "net_credit": 12,
+      "primary_score": 1.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-tactical-a1-v1.json",
+    "sha256": "0fbfcd0e657339d4c4b44a27f98d973ce2e09a9a4c14547b610d66db4ffa3a98"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-tactical-a1-v1/alternative-full.json",
+    "sha256": "530660aecd9ae741c592e49e041178510cacf5eb74dd3120d77e2b316e1f15b5"
+  },
+  "tags": [
+    "alternative_full",
+    "accepted_compensation"
+  ]
+}
