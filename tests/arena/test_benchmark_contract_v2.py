@@ -33,6 +33,10 @@ def test_dependency_list_is_sorted_unique_and_exists():
         assert (REPO / rel).is_file(), rel
     assert "src/civ_mcp/arena/benchmark_contract_v2.py" in deps
     assert "src/civ_mcp/arena/benchmark_manifest_v2.py" in deps
+    # Every Lua module GameState dispatches through is in the scoring chain.
+    lua_modules = sorted(p.relative_to(REPO).as_posix()
+                         for p in (REPO / "src/civ_mcp/lua").glob("*.py"))
+    assert set(lua_modules) <= set(deps), sorted(set(lua_modules) - set(deps))
 
 
 def _copy_tree(tmp_path: Path) -> Path:
@@ -70,7 +74,12 @@ def test_editing_a_dependency_changes_fingerprint(tmp_path, rel):
                                  "src/civ_mcp/tuner_client.py",
                                  "src/civ_mcp/game_state.py",
                                  "src/civ_mcp/narrate.py",
-                                 "src/civ_mcp/lua/benchmark.py"])
+                                 "src/civ_mcp/lua/benchmark.py",
+                                 # Tool implementations: their result strings are
+                                 # what the classifier and predicates parse.
+                                 "src/civ_mcp/lua/units.py",
+                                 "src/civ_mcp/lua/cities.py",
+                                 "src/civ_mcp/lua/map.py"])
 def test_editing_a_scoring_chain_module_changes_only_the_contract_identity(tmp_path, rel):
     root = _copy_tree(tmp_path)
     before = c2.implementation_fingerprint(root), c2.toolkit_fingerprint(root)

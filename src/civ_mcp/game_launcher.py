@@ -2014,6 +2014,21 @@ WSL_WINDOWS_REPO = "/mnt/c/Users/wrisl/dev/civ6-mcp"
 _WSL_WINDOWS_BOOTSTRAP = f"{WSL_WINDOWS_REPO}/tools/windows/civ6_launcher_bootstrap.py"
 
 
+def windows_repo_root() -> str:
+    """The Windows companion checkout (WSL-visible) whose code the bridge runs.
+
+    ``CIV6_WINDOWS_BOOTSTRAP`` overrides the bootstrap; since the bootstrap
+    lives at ``<checkout>/tools/windows/civ6_launcher_bootstrap.py``, the
+    checkout is derived from it. Repo-relative bridge arguments and export
+    destinations must resolve in the checkout whose code actually runs, not
+    in the default one.
+    """
+    bootstrap = os.environ.get("CIV6_WINDOWS_BOOTSTRAP")
+    if not bootstrap:
+        return WSL_WINDOWS_REPO
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(bootstrap))))
+
+
 def _press_escape_windows_bridge() -> bool:
     """Deliver one Escape press via the Windows companion checkout.
 

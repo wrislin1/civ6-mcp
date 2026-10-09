@@ -95,8 +95,30 @@ fingerprint_dependencies:
   - src/civ_mcp/arena/registry.py
   - src/civ_mcp/connection.py
   - src/civ_mcp/game_state.py
+  # Every Lua module GameState dispatches through (tool-result text, engine refusals).
+  - src/civ_mcp/lua/__init__.py
+  - src/civ_mcp/lua/_helpers.py
   - src/civ_mcp/lua/benchmark.py
   - src/civ_mcp/lua/benchmark_v2.py
+  - src/civ_mcp/lua/channel_observation.py
+  - src/civ_mcp/lua/channel_payments.py
+  - src/civ_mcp/lua/cities.py
+  - src/civ_mcp/lua/climate.py
+  - src/civ_mcp/lua/congress.py
+  - src/civ_mcp/lua/diplomacy.py
+  - src/civ_mcp/lua/economy.py
+  - src/civ_mcp/lua/espionage.py
+  - src/civ_mcp/lua/governance.py
+  - src/civ_mcp/lua/great_people.py
+  - src/civ_mcp/lua/great_works.py
+  - src/civ_mcp/lua/map.py
+  - src/civ_mcp/lua/models.py
+  - src/civ_mcp/lua/notifications.py
+  - src/civ_mcp/lua/overview.py
+  - src/civ_mcp/lua/religion.py
+  - src/civ_mcp/lua/tech.py
+  - src/civ_mcp/lua/units.py
+  - src/civ_mcp/lua/victory.py
   - src/civ_mcp/narrate.py
   - src/civ_mcp/tuner_client.py
 # Informational only (toolkit_identity); never gated for equality.

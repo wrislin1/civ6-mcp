@@ -255,6 +255,21 @@ def test_bridge_runs_in_the_windows_checkout_with_a_repo_relative_archive(monkey
     assert cmd[cmd.index("--archive") + 1] == "benchmarks/saves/s-v1.Civ6Save"
 
 
+def test_bridge_cwd_follows_a_bootstrap_override_to_its_checkout(monkeypatch):
+    """CIV6_WINDOWS_BOOTSTRAP names the checkout whose code runs; repo-relative
+    archive paths must resolve there, not in the default checkout."""
+    monkeypatch.setenv("CIV6_WINDOWS_BOOTSTRAP",
+                       "/mnt/d/other/civ6-mcp/tools/windows/civ6_launcher_bootstrap.py")
+    _fake_bridge_available(monkeypatch)
+    calls = _fake_subprocess_returning(monkeypatch, {
+        "ok": True, "save_name": "S", "dest_path": r"C:\Saves\S.Civ6Save",
+        "archive_sha256": "ab", "deployed_sha256": "ab", "expected_sha256": "ab"})
+    benchmark_deploy.deploy_via_windows("benchmarks/saves/s-v1.Civ6Save", "S", "ab")
+    [(cmd, kwargs)] = calls
+    assert kwargs["cwd"] == "/mnt/d/other/civ6-mcp"
+    assert cmd[1] == r"D:\other\civ6-mcp\tools\windows\civ6_launcher_bootstrap.py"
+
+
 def test_deploy_refuses_an_absolute_wsl_home_archive_before_the_bridge(monkeypatch):
     _fake_bridge_available(monkeypatch)
     calls = _fake_subprocess_returning(monkeypatch, {"ok": True})

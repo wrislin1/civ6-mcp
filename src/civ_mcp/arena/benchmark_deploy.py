@@ -124,12 +124,14 @@ def _run_bridge(argv: list[str], *, timeout: float) -> dict[str, Any]:
     win_bootstrap = _windows_path(bootstrap)
     try:
         # Repository-relative paths in `argv` resolve against the Windows
-        # checkout, whichever directory this process was started from.
+        # checkout whose code runs (the one holding `bootstrap`, so a
+        # CIV6_WINDOWS_BOOTSTRAP override moves the cwd with it), whichever
+        # directory this process was started from.
         proc = subprocess.run(
             [python_exe, win_bootstrap, *argv],
             capture_output=True,
             timeout=timeout,
-            cwd=game_launcher.WSL_WINDOWS_REPO,
+            cwd=game_launcher.windows_repo_root(),
         )
     except Exception as exc:
         raise BridgeError(f"Windows bridge invocation failed: {exc}") from exc

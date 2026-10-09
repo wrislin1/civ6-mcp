@@ -73,11 +73,13 @@ and must regenerate byte-identically.
 - **Coverage:** the recipe's `coverage_rule` (owned tiles when `include_owned_tiles`, every tile within
   `area_radius` in x and y of each bound tile, and the tracked target units) is resolved once and frozen in
   the position; it is a comparison identity.
-- **Contract/code identity:** `implementation_fingerprint` over the 27 `fingerprint_dependencies` listed
+- **Contract/code identity:** `implementation_fingerprint` over the 49 `fingerprint_dependencies` listed
   in `instrument-v2.yaml` — the score/classification/evidence-determining chain only (the v2
   construction; never equal to, or presented as, the v1 scorer fingerprint). The chain includes
   `game_state.py` and `narrate.py`, which determine the tool results the actor observes and the
-  dispatch outcomes that become evidence, and `lua/benchmark.py`, the v1 identity/digest path used by
+  dispatch outcomes that become evidence, every `lua/*.py` module `GameState` dispatches through
+  (they produce the result text the scoring chain parses and the engine refusals that become
+  dispatch evidence), and `lua/benchmark.py`, the v1 identity/digest path used by
   `capture_position` and the positive-control probe's identity check (the plan's original list named
   "registry/narration" and "GameState/Lua"). It is recorded as each
   position's `contract_identity`, in every validation suite, and as the offline preflight's

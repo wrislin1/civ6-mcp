@@ -110,7 +110,7 @@ from civ_mcp.arena.benchmark_scoring_v2 import (
     validate_rubric_structure,
 )
 from civ_mcp.arena.benchmark_state_v2 import digest_state_v2
-from civ_mcp.game_launcher import WSL_WINDOWS_REPO
+from civ_mcp.game_launcher import windows_repo_root
 
 __all__ = [
     "STAGES",
@@ -1003,7 +1003,7 @@ async def _load_and_verify_base(ctx: _Context, connection: Any, out: dict[str, A
         raise StageFailure(f"base load of {base['name']!r} failed: {result}")
     await ctx.ops.reconnect(connection)
     out["base_reconnect"] = {"reconnected": True}
-    destination = f"{WSL_WINDOWS_REPO}/{BASE_EXPORT_DIR}/{base['sha256']}.Civ6Save"
+    destination = f"{windows_repo_root()}/{BASE_EXPORT_DIR}/{base['sha256']}.Civ6Save"
     export = await _maybe_await(ctx.ops.export_save(base["name"], destination,
                                                     expected_sha256=base["sha256"]))
     out["base_export"] = export
@@ -1366,7 +1366,7 @@ async def _stage_archive(ctx: _Context) -> None:
             raise StageFailure(f"save_game was not acknowledged: {message}")
     finally:
         await _disconnect(connection)
-    mounted = f"{WSL_WINDOWS_REPO}/{names['path']}"
+    mounted = f"{windows_repo_root()}/{names['path']}"
     export = await _maybe_await(ctx.ops.export_save(names["name"], mounted))
     ctx.evidence["export"] = export
     export_sha = export.get("sha256") if isinstance(export, dict) else None
