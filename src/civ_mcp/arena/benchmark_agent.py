@@ -161,7 +161,15 @@ class EpisodeEvidence:
     completion_tokens) plus the harness-only `state_before`/`state_after`/
     `state_digest_before`/`state_digest_after` canonical-state projection
     captured around every dispatched game tool call -- `None` when no
-    `tile_coords`/`capture_state` was configured.
+    `tile_coords`/`capture_state` was configured, and the 0-based
+    `round_index` of the chat round that emitted the call.
+
+    The direct counters default to zero so legacy construction and the
+    runner's explicit-field serialization are unchanged: `round_trips`
+    counts `backend.chat` calls started, `round_trips_completed` those that
+    returned (a timeout mid-chat leaves them one apart), `tool_call_attempts`
+    every emitted non-finish call (including rejected ones), and
+    `dispatched_calls` only calls that reached the registry.
     """
 
     terminal: EpisodeTerminal
@@ -171,6 +179,11 @@ class EpisodeEvidence:
     wall_clock_s: float
     prompt_tokens: int
     completion_tokens: int
+    round_trips: int = 0
+    round_trips_completed: int = 0
+    tool_call_attempts: int = 0
+    dispatched_calls: int = 0
+    evidence_version: str = "1.0.0"
 
 
 CaptureStateFn = Callable[[Any, int, Sequence[tuple[int, int]]], Awaitable[Mapping[str, object]]]
@@ -194,8 +207,10 @@ class SingleTurnAgent:
         capture_state: CaptureStateFn | None = capture_canonical_state,
         user_prompt: str | None = None,
         capture_telemetry: CaptureTelemetry | None = None,
+        evidence_version: str = "1.0.0",
     ) -> None:
         self.backend = backend
+        self.evidence_version = evidence_version
         self._game_tool_names = _resolve_game_tool_names(tier)
         self._tools_schema = resolved_benchmark_tools(tier)
         self.episode_wall_s = episode_wall_s
@@ -221,6 +236,22 @@ class SingleTurnAgent:
         self._progress_prompt_tokens: int = 0
         self._progress_completion_tokens: int = 0
         self._progress_wall_clock_start: float = time.time()
+        self._reset_counters()
+
+    def _reset_counters(self) -> None:
+        self._progress_round_trips = 0
+        self._progress_round_trips_completed = 0
+        self._progress_tool_call_attempts = 0
+        self._progress_dispatched_calls = 0
+
+    def _counter_fields(self) -> dict[str, Any]:
+        return {
+            "round_trips": self._progress_round_trips,
+            "round_trips_completed": self._progress_round_trips_completed,
+            "tool_call_attempts": self._progress_tool_call_attempts,
+            "dispatched_calls": self._progress_dispatched_calls,
+            "evidence_version": self.evidence_version,
+        }
 
     def partial_evidence(self) -> EpisodeEvidence:
         """Snapshot of progress accumulated so far in the current/most
@@ -243,6 +274,7 @@ class SingleTurnAgent:
             wall_clock_s=time.time() - self._progress_wall_clock_start,
             prompt_tokens=self._progress_prompt_tokens,
             completion_tokens=self._progress_completion_tokens,
+            **self._counter_fields(),
         )
 
     async def _capture(
@@ -293,6 +325,7 @@ class SingleTurnAgent:
         self._progress_prompt_tokens: int = 0
         self._progress_completion_tokens: int = 0
         self._progress_wall_clock_start: float = time.time()
+        self._reset_counters()
         if self._capture_telemetry is not None:
             # Never let an earlier episode's cancellation latch classify this
             # one. Clear only the latch: `records` may be shared with the
@@ -336,8 +369,11 @@ class SingleTurnAgent:
         invalid_tool_calls = self._progress_invalid_tool_calls
         terminal = EpisodeTerminal.STEP_LIMIT
 
-        for _ in range(self.max_steps):
+        for round_index in range(self.max_steps):
+            self._progress_round_trips += 1
             reply = await self.backend.chat(messages, self._tools_schema)
+            self._progress_round_trips_completed += 1
+            # Once per reply, however many tool calls the batch carries.
             self._progress_prompt_tokens += reply.prompt_tokens
             self._progress_completion_tokens += reply.completion_tokens
 
@@ -372,6 +408,7 @@ class SingleTurnAgent:
                     })
                     continue
 
+                self._progress_tool_call_attempts += 1
                 ts_start = time.time()
                 malformed_args = False
                 try:
@@ -414,6 +451,7 @@ class SingleTurnAgent:
                     digest_before = digest_after = None
                 else:
                     state_before, digest_before = await self._capture(gs, player_id, "tool_before")
+                    self._progress_dispatched_calls += 1
                     try:
                         result = await _registry_dispatch(
                             gs, tc["name"], args, allowed=self._game_tool_names
@@ -442,6 +480,7 @@ class SingleTurnAgent:
                     "state_after": state_after,
                     "state_digest_before": digest_before,
                     "state_digest_after": digest_after,
+                    "round_index": round_index,
                 })
                 messages.append({
                     "role": "tool", "tool_call_id": tc["id"],
@@ -460,4 +499,5 @@ class SingleTurnAgent:
             wall_clock_s=time.time() - self._progress_wall_clock_start,
             prompt_tokens=self._progress_prompt_tokens,
             completion_tokens=self._progress_completion_tokens,
+            **self._counter_fields(),
         )

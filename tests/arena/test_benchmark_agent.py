@@ -10,6 +10,7 @@ from civ_mcp.arena.benchmark_agent import (
     benchmark_prompt,
     resolved_benchmark_tools,
 )
+from civ_mcp.arena.benchmark_scripted import ScriptedBackend
 from civ_mcp.arena.benchmark_state import BenchmarkStateError
 
 
@@ -749,3 +750,175 @@ async def test_external_cancel_during_backend_call_propagates_through_real_agent
     with pytest.raises(asyncio.CancelledError):
         await task
     assert telemetry.cancelled_capture is None
+
+
+# --- Task 10: scripted replies and direct round-trip counters ---------------
+
+_SCRIPT_TOOLS = ("get_overview", "fortify_unit")
+_TWO_FORTIFIES = [
+    {"name": "fortify_unit", "arguments": {"unit_index": 0}},
+    {"name": "fortify_unit", "arguments": {"unit_index": 1}},
+]
+_FINISH = {"name": "finish_trial", "arguments": {}}
+
+
+def _fortify_script(batches):
+    return {"schema_version": "2.0.0", "script_id": "fortify", "batches": batches}
+
+
+@pytest.mark.asyncio
+async def test_scripted_two_calls_plus_finish_in_one_round():
+    backend = ScriptedBackend(
+        _fortify_script([{"calls": [*_TWO_FORTIFIES, _FINISH]}]), game_tools=_SCRIPT_TOOLS
+    )
+    gs = FakeGS()
+    agent = SingleTurnAgent(backend, _SCRIPT_TOOLS, episode_wall_s=5.0, max_steps=6)
+
+    evidence = await agent.run(gs, player_id=0, turn=1)
+
+    assert evidence.terminal == EpisodeTerminal.FINISH_TRIAL
+    assert gs.calls == [("fortify", 0), ("fortify", 1)]
+    assert evidence.round_trips == 1
+    assert evidence.round_trips_completed == 1
+    assert evidence.tool_call_attempts == 2
+    assert evidence.dispatched_calls == 2
+    assert evidence.tool_call_attempts / evidence.round_trips == 2.0
+    assert [s["round_index"] for s in evidence.steps] == [0, 0]
+    backend.assert_exhausted()
+
+
+@pytest.mark.asyncio
+async def test_scripted_finish_alone_in_second_round_is_counted():
+    backend = ScriptedBackend(
+        _fortify_script([{"calls": list(_TWO_FORTIFIES)}, {"calls": [_FINISH]}]),
+        game_tools=_SCRIPT_TOOLS,
+    )
+    gs = FakeGS()
+    agent = SingleTurnAgent(backend, _SCRIPT_TOOLS, episode_wall_s=5.0, max_steps=6)
+
+    evidence = await agent.run(gs, player_id=0, turn=1)
+
+    assert evidence.terminal == EpisodeTerminal.FINISH_TRIAL
+    assert gs.calls == [("fortify", 0), ("fortify", 1)]
+    assert evidence.round_trips == 2
+    assert evidence.round_trips_completed == 2
+    assert evidence.tool_call_attempts == 2
+    assert evidence.dispatched_calls == 2
+    assert evidence.tool_call_attempts / evidence.round_trips == 1.0
+    assert [s["round_index"] for s in evidence.steps] == [0, 0]
+    backend.assert_exhausted()
+
+
+class _MalformedThenFinishBackend:
+    def __init__(self):
+        self.n = 0
+
+    async def chat(self, messages, tools):
+        self.n += 1
+        if self.n == 1:
+            return Reply(text=None, tool_calls=[
+                {"id": "1", "name": "fortify_unit", "arguments": "{not json"},
+                {"id": "2", "name": "no_such_tool", "arguments": "{}"},
+                {"id": "3", "name": "fortify_unit", "arguments": '{"unit_index": 2}'},
+            ])
+        return Reply(text=None, tool_calls=[{"id": "4", "name": "finish_trial", "arguments": "{}"}])
+
+
+@pytest.mark.asyncio
+async def test_malformed_and_unknown_calls_are_attempts_but_not_dispatches():
+    gs = FakeGS()
+    agent = SingleTurnAgent(_MalformedThenFinishBackend(), "minimal", episode_wall_s=5.0, max_steps=6)
+
+    evidence = await agent.run(gs, player_id=0, turn=1)
+
+    assert gs.calls == [("fortify", 2)]
+    assert evidence.tool_call_attempts == 3
+    assert evidence.dispatched_calls == 1
+    assert [c["reason"] for c in evidence.invalid_tool_calls] == ["bad_arguments", "unknown_tool"]
+    assert evidence.round_trips == 2
+    assert [s["round_index"] for s in evidence.steps] == [0, 0, 0]
+
+
+@pytest.mark.asyncio
+async def test_scripted_step_cap_with_unfinished_script():
+    backend = ScriptedBackend(
+        _fortify_script([
+            {"calls": [_TWO_FORTIFIES[0]]},
+            {"calls": [_TWO_FORTIFIES[1]]},
+            {"calls": [_TWO_FORTIFIES[0]]},
+            {"calls": [_FINISH]},
+        ]),
+        game_tools=_SCRIPT_TOOLS,
+    )
+    agent = SingleTurnAgent(backend, _SCRIPT_TOOLS, episode_wall_s=5.0, max_steps=2)
+
+    evidence = await agent.run(FakeGS(), player_id=0, turn=1)
+
+    assert evidence.terminal == EpisodeTerminal.STEP_LIMIT
+    assert evidence.round_trips == agent.max_steps == 2
+    assert evidence.round_trips_completed == 2
+    assert evidence.tool_call_attempts == 2
+    assert evidence.dispatched_calls == 2
+    assert [s["round_index"] for s in evidence.steps] == [0, 1]
+    with pytest.raises(ValueError):
+        backend.assert_exhausted()
+
+
+@pytest.mark.asyncio
+async def test_round_index_tracks_rounds_across_episode():
+    agent = SingleTurnAgent(RepeatingBackend(), "minimal", episode_wall_s=5.0, max_steps=3)
+
+    evidence = await agent.run(FakeGS(), player_id=0, turn=1)
+
+    assert [s["round_index"] for s in evidence.steps] == [0, 1, 2]
+
+
+@pytest.mark.asyncio
+async def test_batch_tokens_are_counted_once_per_reply():
+    agent = SingleTurnAgent(BatchFinishBackend(), "minimal", episode_wall_s=5.0, max_steps=6)
+
+    evidence = await agent.run(FakeGS(), player_id=0, turn=1)
+
+    assert len(evidence.steps) == 2
+    assert evidence.round_trips == 1
+    assert evidence.prompt_tokens == 9
+    assert evidence.completion_tokens == 4
+
+
+@pytest.mark.asyncio
+async def test_implicit_finish_round_is_completed():
+    agent = SingleTurnAgent(ImmediateDoneBackend(), "minimal", episode_wall_s=5.0, max_steps=4)
+
+    evidence = await agent.run(FakeGS(), player_id=0, turn=1)
+
+    assert evidence.round_trips == 1
+    assert evidence.round_trips_completed == 1
+    assert evidence.tool_call_attempts == 0
+    assert evidence.dispatched_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_timeout_mid_chat_leaves_one_unfinished_round():
+    agent = SingleTurnAgent(TimeoutAfterOneStepBackend(), "minimal", episode_wall_s=0.1, max_steps=4)
+
+    with pytest.raises(EpisodeTimedOut) as exc_info:
+        await agent.run(FakeGS(), player_id=0, turn=1)
+
+    partial = exc_info.value.partial_evidence
+    assert partial.round_trips == 2
+    assert partial.round_trips_completed == 1
+    assert partial.tool_call_attempts == 1
+    assert partial.dispatched_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_evidence_version_defaults_to_legacy_and_can_be_stamped():
+    legacy = SingleTurnAgent(TwoRoundBackend(), "minimal", episode_wall_s=5.0, max_steps=6)
+    assert (await legacy.run(FakeGS(), player_id=0, turn=1)).evidence_version == "1.0.0"
+    assert legacy.partial_evidence().evidence_version == "1.0.0"
+
+    v2 = SingleTurnAgent(
+        TwoRoundBackend(), "minimal", episode_wall_s=5.0, max_steps=6, evidence_version="2.0.0"
+    )
+    assert (await v2.run(FakeGS(), player_id=0, turn=1)).evidence_version == "2.0.0"
+    assert v2.partial_evidence().evidence_version == "2.0.0"
