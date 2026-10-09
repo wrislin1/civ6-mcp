@@ -1,15 +1,15 @@
 {
-  "code_identity": "0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a",
+  "code_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
   "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
-  "duration_s": 195.382,
+  "duration_s": 188.167,
   "errors": 0,
   "exit_code": 0,
   "failed": 0,
-  "finished": "2026-10-09T17:43:40.823238+00:00",
-  "git_head": "f9728c550311984ac0c462e0da2dffbe8d90b818",
-  "git_head_note": "HEAD is the live-phase launcher fix (WSL restart-and-load via the Windows bridge, a toolkit dependency: code identity unchanged); the evidence commit that follows adds only these three force-added files, which are outside every fingerprint list",
-  "passed": 4055,
+  "finished": "2026-10-09T19:06:48.562603+00:00",
+  "git_head": "382a449351d4c1f3a10be382f22951a39667ddc7",
+  "git_head_note": "HEAD is the recipe-naming test update after the live-phase capture fix 12050df (dead and delayed-death units skipped, a fingerprint dependency); the evidence commit that follows adds only these three force-added files, which are outside every fingerprint list",
+  "passed": 4056,
   "skipped": 0,
-  "started": "2026-10-09T17:40:25.440771+00:00",
-  "summary_line": "4055 passed in 194.19s (0:03:14)"
+  "started": "2026-10-09T19:03:40.395483+00:00",
+  "summary_line": "4056 passed in 186.82s (0:03:06)"
 }

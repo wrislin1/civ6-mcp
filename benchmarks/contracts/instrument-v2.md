@@ -226,3 +226,20 @@ Amendment procedure by kind of change:
   `plan3-city-a2` authors a third legal site (tile (67,22) granted to Jeonju and mined); its housing
   shortfall moved from Gongju to Jeonju because Gongju's `get_cities` line falls past the
   1500-character feed cap at the archived start.
+- **2026-10-09, during the live phase, tactical family open (validate, tactical-a1 stage 010).**
+  Scoring-chain: a unit killed in combat lingers in GameCore for the rest of the turn as a
+  delayed-death row (position -9999,-9999, hp 0); the v2 capture listed a dead own warrior as a
+  living unit and a killed tracked attacker as "alive, not visible", so no loss was charged and no
+  kill counted. The capture now skips dead and delayed-death units in the owned-unit rows, the
+  tracked-target lookup and the visible-hostile scan (commit `12050df`); `code_identity` moved from
+  `08585538…` to `af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697`. One packet existed (`plan3-city-a2-v1`, captured under the
+  previous identity): per the revalidation rule it is repeated from survey under the new identity
+  (same scenario identity, archive `plan3-city-a2-v2`), the full suite and committed preflight
+  evidence are regenerated, and the preflight is rerun. Recipe (no identity consequence): the
+  tactical family's a1, revised in place, chooses the attacker, archer, settler and warrior tiles
+  jointly (Gongju is hemmed by mountains, coast and Jerusalem; its land approaches are forest, so
+  the settler starts beside the city), starts the attacker at 65 hp with the provisional damage
+  threshold at 40 (measured archer 56 / warrior 28), buys a spearman (the base holds 10 of the 20
+  iron a swordsman needs), and repeats a purchase rather than an archer shot. Toolset defects
+  recorded for a later identity: `attack_unit` answers a settler's attack and an archer's second
+  shot, and `fortify_unit` answers a settler, with success-shaped text instead of rejections.
