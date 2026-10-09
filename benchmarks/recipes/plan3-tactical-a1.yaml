@@ -32,11 +32,20 @@ result_char_cap: 1500
 # wounded own warrior stands next to the attacker and dies if it attacks first.
 # The archer can shoot from Gongju; the treasury buys a reinforcement.
 #
-# DAMAGE THRESHOLD: target_damaged.minimum_damage (25) is PROVISIONAL. The
-# recipe schema has no non-entity binding, so the probe stage's measured
-# readback of the archer shot (probe archer-shot) must confirm or replace this
-# literal (a journaled recipe revision) before the archive stage; archive must
-# not run on an unconfirmed threshold. It is never derived from model behaviour.
+# DAMAGE THRESHOLD: target_damaged.minimum_damage (25) is a provisional
+# placeholder declared in measured_parameters. The archive stage refuses to run
+# unless this attempt's measuring probes show the futile warrior's damage
+# strictly below it and the archer shot's damage strictly above it with the
+# attacker surviving; only then is the value frozen into the position rubric.
+measured_parameters:
+- name: tactical_damage_threshold
+  provisional: true
+  used_by:
+  - [objectives, 0, rungs, 0, predicate, minimum_damage]
+  source_probes: [expendable-attack, archer-shot]
+  rule:
+    strictly_between: [expendable-attack, archer-shot]
+    survives: [archer-shot]
 setup:
   operations:
   - kind: lua
@@ -150,6 +159,9 @@ setup:
       local g = Players[0]:GetTreasury():GetGoldBalance()
       if g >= 500 then print("OK|gold " .. g) else print("ERR|gold " .. g) end
   assertions:
+  - id: civilian-initially-exposed
+    value: true
+    predicate: {kind: civilian_exposed, unit: "${civilian.pair}"}
   - id: civilian-not-yet-rescued
     value: false
     predicate: {kind: unit_in_area, unit_types: [UNIT_SETTLER], tiles: ["${defended_city.xy}"]}
@@ -237,9 +249,11 @@ harms:
 
 probes:
 - {id: archer-shot, tool: attack_unit, expect: ok, restore: true,
+   measure_target: "${attacker.pair}",
    arguments_from_bindings: {unit_index: "${archer.unit_index}",
                              x: "${attacker.x}", y: "${attacker.y}"}}
 - {id: expendable-attack, tool: attack_unit, expect: ok, restore: true,
+   measure_target: "${attacker.pair}",
    arguments_from_bindings: {unit_index: "${expendable.unit_index}",
                              x: "${attacker.x}", y: "${attacker.y}"}}
 - {id: civilian-to-city, tool: move_unit, expect: ok, restore: true,
@@ -393,6 +407,10 @@ cases:
     endpoints:
     - {id: attacker-alive, value: false,
        predicate: {kind: target_neutralised, target: "${attacker.pair}"}}
+    - {id: still-exposed, value: true,
+       predicate: {kind: civilian_exposed, unit: "${civilian.pair}"}}
+    - {id: initial_exposure_null, value: false,
+       predicate: {kind: new_civilian_exposure, unit: "${civilian.pair}"}}
     ledger: []
 - case_id: joint-full
   script_id: joint-full

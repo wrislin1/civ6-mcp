@@ -945,3 +945,153 @@ def test_fingerprint_covers_authoring_module():
     from civ_mcp.arena.benchmark_contract_v2 import FINGERPRINT_DEPENDENCIES
     assert "src/civ_mcp/arena/benchmark_authoring.py" in FINGERPRINT_DEPENDENCIES
     assert digest_state_v2  # imported for fixture parity
+
+
+# ---------------------------------------------------------------------------
+# Probe expect_pattern and measured parameters
+# ---------------------------------------------------------------------------
+
+THRESHOLD_PATH = ["objectives", 0, "rungs", 0, "predicate", "minimum_damage"]
+
+
+def _measured_recipe() -> dict:
+    doc = _recipe()
+    doc["bindings"].append({"name": "threat", "selector": {"owner": 1, "hostile": True},
+                            "resolves": "target"})
+    doc["coverage_rule"]["tracked_target_bindings"] = ["threat"]
+    doc["objectives"][0]["rungs"].insert(0, {"points": 2, "predicate": {
+        "kind": "target_damaged", "target": "${threat.pair}", "minimum_damage": 25}})
+    for probe_id, name in (("weak", "WEAK"), ("strong", "STRONG")):
+        doc["probes"].append({
+            "id": probe_id, "tool": "improve_tile", "expect": "ok", "restore": True,
+            "measure_target": "${threat.pair}",
+            "arguments_from_bindings": {"unit_index": "${builder.unit_index}",
+                                        "improvement_name": name}})
+    doc["measured_parameters"] = [{
+        "name": "damage_threshold", "provisional": True, "used_by": [THRESHOLD_PATH],
+        "source_probes": ["weak", "strong"],
+        "rule": {"strictly_between": ["weak", "strong"], "survives": ["strong"]}}]
+    return doc
+
+
+class MeasuredOps(FakeOps):
+    """A tracked hostile whose hp the measuring probes change; reloads restore it."""
+
+    def __init__(self, root: Path, attempt_dir: Path) -> None:
+        super().__init__(root, attempt_dir)
+        self.target_hp = 100
+        self.target_visible = True
+        self.damage = {"WEAK": 10, "STRONG": 40}
+        self.hide_after: str | None = None
+
+    async def load_game_save(self, conn, name):
+        self.target_hp, self.target_visible = 100, True
+        return await super().load_game_save(conn, name)
+
+    def state(self, coverage) -> dict:
+        state = super().state(coverage)
+        if self.target_visible:
+            target = dict(owner=1, id=70001, tracked=True, role="combat", hostile=True,
+                          visible=True, status="alive_visible", x=11, y=10,
+                          hp=self.target_hp, max_hp=100)
+        else:
+            target = dict(owner=1, id=70001, tracked=True, role=None, hostile=True,
+                          visible=False, status="alive_not_visible", x=None, y=None,
+                          hp=None, max_hp=None)
+        state["targets"] = [target]
+        state["row_counts"] = {**state["row_counts"], "target": 1}
+        state["coverage"] = {**state["coverage"], "tracked_targets": [[1, 70001]]}
+        return state
+
+
+def _measured_rig(tmp_path, tool_log, monkeypatch) -> Rig:
+    rig = Rig(tmp_path, tool_log, _measured_recipe())
+    rig.ops = MeasuredOps(tmp_path, rig.attempt)
+    rig.tools = tool_log(rig.ops)
+    ops = rig.ops
+
+    async def improve(gs, args, **_context):
+        name = args.get("improvement_name")
+        ops.target_hp -= ops.damage.get(name, 0)
+        if name == ops.hide_after:
+            ops.target_visible = False
+        return ops.tool_results["improve_tile"]
+    monkeypatch.setitem(registry.TOOL_REGISTRY, "improve_tile",
+                        dataclasses.replace(registry.TOOL_REGISTRY["improve_tile"], call=improve))
+    return rig
+
+
+async def test_probe_expect_pattern_must_match_the_result(tmp_path, tool_log):
+    doc = _recipe()
+    doc["probes"][0]["expect_pattern"] = "Started IMPROVEMENT_PASTURE"
+    rig = Rig(tmp_path, tool_log, doc)
+    await rig.run_through("apply")
+    record = await rig.run("probe")
+    assert record["status"] == "failed" and "improve-site" in record["error"]
+
+    doc["probes"][0]["expect_pattern"] = "Started IMPROVEMENT_FARM"
+    other = Rig(tmp_path / "ok", tool_log, doc)
+    await other.run_through("probe")
+
+
+def test_recipe_rejects_invalid_expect_pattern(tmp_path):
+    doc = _recipe()
+    doc["probes"][0]["expect_pattern"] = "("
+    with pytest.raises(ValueError, match="expect_pattern"):
+        load_recipe(write_recipe(tmp_path, doc), root=tmp_path)
+
+
+def test_damage_threshold_must_be_a_provisional_measured_parameter(tmp_path):
+    assert load_recipe(write_recipe(tmp_path, _measured_recipe()), root=tmp_path)
+    doc = _measured_recipe()
+    del doc["measured_parameters"]
+    with pytest.raises(ValueError, match="measured parameter"):
+        load_recipe(write_recipe(tmp_path, doc), root=tmp_path)
+    doc = _measured_recipe()
+    doc["measured_parameters"][0]["provisional"] = False
+    with pytest.raises(ValueError, match="provisional"):
+        load_recipe(write_recipe(tmp_path, doc), root=tmp_path)
+    doc = _measured_recipe()
+    del doc["probes"][-1]["measure_target"]
+    with pytest.raises(ValueError, match="measure_target"):
+        load_recipe(write_recipe(tmp_path, doc), root=tmp_path)
+
+
+async def test_archive_freezes_measured_parameter_bracketed_by_probe_deltas(
+        tmp_path, tool_log, monkeypatch):
+    rig = _measured_rig(tmp_path, tool_log, monkeypatch)
+    await rig.run_through("capture")
+    archive = authoring._latest(authoring._stage_records(rig.attempt))["archive"]["evidence"]
+    (frozen,) = archive["measured_parameters"]
+    assert frozen["value"] == 25
+    assert frozen["measurements"]["weak"]["delta"] == 10
+    assert frozen["measurements"]["strong"]["delta"] == 40
+    assert frozen["measurements"]["strong"]["status_after"] == "alive_visible"
+    assert all((tmp_path / p).is_file() for p in frozen["evidence"])
+
+    position = json.loads((tmp_path / "benchmarks/positions/test-builder-a1-v1.yaml").read_text())
+    assert position["rubric"]["objectives"][0]["rungs"][0]["predicate"]["minimum_damage"] == 25
+    provenance = json.loads(
+        (tmp_path / "benchmarks/provenance/test-builder-a1-v1-authoring.json").read_text())
+    assert provenance["measured_parameters"] == archive["measured_parameters"]
+
+
+async def test_archive_refuses_threshold_outside_measured_deltas(tmp_path, tool_log, monkeypatch):
+    rig = _measured_rig(tmp_path, tool_log, monkeypatch)
+    rig.ops.damage["WEAK"] = 30  # the futile probe already exceeds the threshold
+    await rig.run_through("probe")
+    mark = rig.marks()
+    record = await rig.run("archive")
+    assert record["status"] == "failed"
+    assert "strictly between" in record["error"]
+    assert ("connect",) not in rig.calls_since(mark)
+    assert not list((tmp_path / "benchmarks" / "saves").glob("*.Civ6Save"))
+
+
+async def test_archive_refuses_without_probe_measurement(tmp_path, tool_log, monkeypatch):
+    rig = _measured_rig(tmp_path, tool_log, monkeypatch)
+    rig.ops.hide_after = "STRONG"  # the target is not visible after the probe: no delta
+    await rig.run_through("probe")
+    record = await rig.run("archive")
+    assert record["status"] == "failed"
+    assert "no passing probe measurement" in record["error"]

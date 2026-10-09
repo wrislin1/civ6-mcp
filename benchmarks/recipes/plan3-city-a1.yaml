@@ -67,22 +67,27 @@ setup:
         print("ERR|Gwangju monument is not pillaged")
       end
   - kind: lua
-    # Measurement only: Gyeongju must show a housing shortfall and no granary.
+    # Measurement only. Gyeongju must have no granary and a shortfall that the
+    # granary alone resolves (minimum_surplus 1, as in the housing rubric):
+    #   housing - pop < 1   and   housing - pop + granary_housing >= 1.
     lua: |
       print("OK|measure housing")
     readback: |
+      local minimum_surplus = 1
       local c = nil
       for _, city in Players[0]:GetCities():Members() do
         if Locale.Lookup(city:GetName()) == "Gyeongju" then c = city end
       end
       if c == nil then print("ERR|Gyeongju missing") return end
-      local housing = c:GetGrowth():GetHousing()
-      local pop = c:GetPopulation()
-      local granary = c:GetBuildings():HasBuilding(GameInfo.Buildings["BUILDING_GRANARY"].Index)
-      if housing - pop < 1 and not granary then
-        print("OK|housing_city|Gyeongju|housing " .. housing .. "|pop " .. pop)
+      local info = GameInfo.Buildings["BUILDING_GRANARY"]
+      local gain = info.Housing or 0
+      local surplus = c:GetGrowth():GetHousing() - c:GetPopulation()
+      local granary = c:GetBuildings():HasBuilding(info.Index)
+      if not granary and surplus < minimum_surplus and surplus + gain >= minimum_surplus then
+        print("OK|housing_city|Gyeongju|surplus " .. surplus .. "|granary_housing " .. gain)
       else
-        print("ERR|Gyeongju housing " .. housing .. " pop " .. pop .. " granary " .. tostring(granary))
+        print("ERR|Gyeongju surplus " .. surplus .. " granary_housing " .. gain
+              .. " has_granary " .. tostring(granary))
       end
   assertions:
   - id: housing-unresolved

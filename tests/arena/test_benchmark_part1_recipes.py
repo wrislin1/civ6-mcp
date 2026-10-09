@@ -196,6 +196,59 @@ def test_mutually_incompatible_objectives_are_rejected(tmp_path):
         _load_variant(tmp_path, doc)
 
 
+def test_builder_witness_legs_must_be_reachable_this_turn():
+    recipe = load_recipe(_path("builder"), root=REPO)
+    reach = {(p["arguments_from_bindings"]["unit_index"], p["arguments_from_bindings"]["x"])
+             for p in recipe["probes"] if p["tool"] == "get_pathing_estimate"
+             and p.get("expect_pattern") == "Reachable this turn"}
+    # joint-full legs and the alternative allocation's legs
+    assert reach == {("${builder_repair.unit_index}", "${repair_site.x}"),
+                     ("${builder_resource.unit_index}", "${resource_site.x}"),
+                     ("${builder_food.unit_index}", "${food_site.x}"),
+                     ("${builder_food.unit_index}", "${repair_site.x}"),
+                     ("${builder_repair.unit_index}", "${food_site_alt.x}")}
+    spawn = recipe["setup"]["operations"][1]
+    assert "Map.GetPlotDistance" in spawn["readback"] and "d > 2" in spawn["readback"]
+
+
+def test_city_housing_readback_bounds_the_shortfall_on_both_sides():
+    recipe = load_recipe(_path("city"), root=REPO)
+    readback = recipe["setup"]["operations"][2]["readback"]
+    assert 'GameInfo.Buildings["BUILDING_GRANARY"]' in readback and "Housing" in readback
+    assert "surplus < minimum_surplus" in readback
+    assert "surplus + gain >= minimum_surplus" in readback
+    housing = next(o for o in recipe["objectives"] if o["id"] == "address-housing")
+    assert housing["rungs"][-1]["predicate"]["minimum_surplus"] == 1
+
+
+def test_tactical_null_case_proves_initial_exposure_stays_zero():
+    recipe = load_recipe(_path("tactical"), root=REPO)
+    assert {"id": "civilian-initially-exposed", "value": True,
+            "predicate": {"kind": "civilian_exposed", "unit": "${civilian.pair}"}} \
+        in recipe["setup"]["assertions"]
+    null = next(c for c in recipe["cases"] if "initial_exposure_null" in c["tags"])
+    endpoints = {e["id"]: e for e in null["expected"]["endpoints"]}
+    assert endpoints["initial_exposure_null"]["predicate"]["kind"] == "new_civilian_exposure"
+    assert endpoints["initial_exposure_null"]["value"] is False
+    assert endpoints["still-exposed"]["predicate"]["kind"] == "civilian_exposed"
+    assert endpoints["still-exposed"]["value"] is True
+
+
+def test_tactical_threshold_is_a_provisional_measured_parameter(tmp_path):
+    recipe = load_recipe(_path("tactical"), root=REPO)
+    (param,) = recipe["measured_parameters"]
+    assert param["provisional"] is True
+    assert param["used_by"] == [["objectives", 0, "rungs", 0, "predicate", "minimum_damage"]]
+    assert param["rule"] == {"strictly_between": ["expendable-attack", "archer-shot"],
+                             "survives": ["archer-shot"]}
+    probes = {p["id"]: p for p in recipe["probes"]}
+    assert all(probes[p]["measure_target"] == "${attacker.pair}" for p in param["source_probes"])
+    doc = _raw("tactical")
+    del doc["measured_parameters"]
+    with pytest.raises(ValueError, match="measured parameter"):
+        _load_variant(tmp_path, doc)
+
+
 @pytest.mark.parametrize("family", FAMILIES)
 def test_case_scores_follow_the_rubric_structure(family):
     recipe = load_recipe(_path(family), root=REPO)

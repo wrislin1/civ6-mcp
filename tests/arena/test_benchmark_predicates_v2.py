@@ -271,6 +271,30 @@ def test_no_positive_rung_for_moving_closer_to_cover():
     assert not ev(COVER, initial, closer)
 
 
+EXPOSED = {"kind": "civilian_exposed", "unit": [0, 1]}
+
+
+def test_civilian_exposed_endpoint_reads_the_shared_geometry_at_final():
+    exposed = state_v2(units=[civ(x=10, y=10)], targets=[foe(x=11, y=10)])
+    covered = state_v2(units=[civ(x=10, y=10), mil(x=10, y=10)], targets=[foe(x=11, y=10)])
+    far = state_v2(units=[civ(x=10, y=10)], targets=[foe(x=13, y=10)])
+    assert ev(EXPOSED, covered, exposed)
+    assert not ev(EXPOSED, exposed, covered)
+    assert not ev(EXPOSED, exposed, far)
+
+
+def test_civilian_exposed_endpoint_on_absent_civilian_raises():
+    with pytest.raises(BenchmarkStateError):
+        ev(EXPOSED, state_v2(), state_v2(targets=[foe(x=11, y=10)]))
+
+
+def test_civilian_exposed_requires_a_unit_pair():
+    with pytest.raises(ValueError):
+        validate_predicate({"kind": "civilian_exposed", "unit": 1})
+    with pytest.raises(ValueError):
+        validate_predicate({"kind": "civilian_exposed", "unit": [0, 1], "tiles": [[1, 1]]})
+
+
 def test_civilian_covered_on_missing_civilian_is_false():
     start = state_v2(units=[civ(x=10, y=14), mil(x=10, y=11)])
     assert not ev(COVER, start, state_v2(units=[mil(x=10, y=11)]))

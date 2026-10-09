@@ -127,6 +127,7 @@ _SPECS: dict[str, _Spec] = {
     "target_damaged": ({"target": _check_pair, "minimum_damage": _positive}, {}),
     "target_neutralised": ({"target": _check_pair}, {}),
     "civilian_covered": ({"unit": _check_pair, "tiles": _tiles}, {}),
+    "civilian_exposed": ({"unit": _check_pair}, {}),
     "unit_in_area": ({"unit_types": _names, "tiles": _tiles}, {}),
     "unit_lost": ({"unit": _check_pair}, {}),
     "asset_displaced": ({"tiles": _tiles, "asset_fields": _fields}, {}),
@@ -383,6 +384,11 @@ def _eval(p: dict[str, Any], initial: dict[str, Any], final: dict[str, Any],
         # Rescue credit needs relocation: staying put on an accepted tile earns nothing.
         return (_xy(unit) != _xy(start) and _xy(unit) in _tile_set(p["tiles"])
                 and civilian_covered(final, ref))
+
+    if kind == "civilian_exposed":
+        # Endpoint state only: the shared geometry at `final` (a missing or
+        # dead civilian raises rather than reading as safe).
+        return civilian_exposed(final, tuple(p["unit"]))
 
     if kind == "unit_in_area":
         pid, tiles = player_id(final), _tile_set(p["tiles"])

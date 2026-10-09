@@ -33,8 +33,12 @@ result_char_cap: 1500
 # Every other entity (spawned builders, route threat, food sites) is located by
 # the selectors below and resolved live; ambiguity fails with the candidate list.
 #
-# Scenario: three builders start on city centres away from every scored tile,
-# each with one charge (scarce but sufficient: repair needs no charge, the
+# Scenario: three builders start on city centres within two tiles of, but never
+# on, their scored work (there is no end_turn: every completion must fit in one
+# turn): Gwangju (70,22) for the mine and the Gwangju-ring farm, Jeonju (67,24)
+# for the Jeonju-ring farm and the mine, Jinju (73,30) next to the horses. The
+# setup readback refuses distances above two; reachability this turn is proven
+# by the pathing probes' expect_pattern. Each builder holds one charge (scarce but sufficient: repair needs no charge, the
 # pasture and farm need one each, a stray improvement starves an objective).
 # A visible barbarian warrior stands next to the horses; the wounded Jinju
 # garrison is the escort whose presence covers a builder on the horses.
@@ -62,7 +66,7 @@ setup:
     # charge adjustment is the scarce-charge rule; readback refuses the setup
     # unless every spawned builder holds exactly one charge.
     lua: |
-      local spots = {{70, 22}, {72, 26}, {67, 24}}
+      local spots = {{70, 22}, {73, 30}, {67, 24}}
       for _, s in ipairs(spots) do
         local u = UnitManager.InitUnit(0, "UNIT_BUILDER", s[1], s[2])
         if u == nil then
@@ -82,8 +86,31 @@ setup:
           print("OK|builder|" .. s[1] .. "," .. s[2] .. "|charges " .. u:GetBuildCharges())
         end
       end
+    # Readback also measures each builder's distance to the work it serves:
+    # fixed sites must lie 1..2 tiles away, and each farm ring must offer an
+    # eligible (owned, flat grass, featureless, unimproved) tile 1..2 away.
     readback: |
-      local spots = {{70, 22}, {72, 26}, {67, 24}}
+      local function eligible(p)
+        return p ~= nil and p:GetOwner() == 0 and p:GetFeatureType() < 0
+          and p:GetResourceType() < 0 and p:GetImprovementType() < 0 and p:GetDistrictType() < 0
+          and GameInfo.Terrains[p:GetTerrainType()].TerrainType == "TERRAIN_GRASS"
+      end
+      local function ringOk(x, y, cx, cy)
+        for dy = -1, 1 do
+          for dx = -1, 1 do
+            if dx ~= 0 or dy ~= 0 then
+              local d = Map.GetPlotDistance(x, y, cx + dx, cy + dy)
+              if d >= 1 and d <= 2 and eligible(Map.GetPlot(cx + dx, cy + dy)) then return true end
+            end
+          end
+        end
+        return false
+      end
+      local spots = {
+        {70, 22, {{68, 23}}, {{70, 22}}},
+        {73, 30, {{74, 30}}, {}},
+        {67, 24, {{68, 23}}, {{67, 24}}},
+      }
       for _, s in ipairs(spots) do
         local n = 0
         for _, v in Players[0]:GetUnits():Members() do
@@ -91,8 +118,17 @@ setup:
               and GameInfo.Units[v:GetType()].UnitType == "UNIT_BUILDER"
               and v:GetBuildCharges() == 1 and v:GetMovesRemaining() > 0 then n = n + 1 end
         end
-        if n == 1 then print("OK|builder|" .. s[1] .. "," .. s[2] .. "|charges 1")
-        else print("ERR|expected one 1-charge builder at " .. s[1] .. "," .. s[2] .. ", found " .. n) end
+        local near = true
+        for _, t in ipairs(s[3]) do
+          local d = Map.GetPlotDistance(s[1], s[2], t[1], t[2])
+          if d < 1 or d > 2 then near = false end
+        end
+        for _, r in ipairs(s[4]) do
+          if not ringOk(s[1], s[2], r[1], r[2]) then near = false end
+        end
+        if n == 1 and near then print("OK|builder|" .. s[1] .. "," .. s[2] .. "|charges 1|work within 2")
+        else print("ERR|builder at " .. s[1] .. "," .. s[2] .. ": found " .. n
+                   .. ", work within 2 = " .. tostring(near)) end
       end
   - kind: lua
     # Route threat: a barbarian warrior on the first passable empty land tile
@@ -184,12 +220,12 @@ bindings:
   resolves: tile
   selector: {x: 74, y: 30, owner: 0, resource: RESOURCE_HORSES, improvement: NONE}
 - name: food_site
-  # Unimproved featureless grassland next to Gyeongju; narrowed live from the candidates.
+  # Unimproved featureless grassland next to Jeonju; narrowed live from the candidates.
   resolves: tile
   selector: {owner: 0, terrain: TERRAIN_GRASS, feature: NONE, resource: NONE,
              improvement: NONE, district: NONE,
-             area: [[71, 25], [72, 25], [73, 25], [71, 26], [73, 26], [71, 27], [72, 27],
-                    [73, 27]]}
+             area: [[66, 23], [67, 23], [68, 23], [66, 24], [68, 24], [66, 25], [67, 25],
+                    [68, 25]]}
 - name: food_site_alt
   # The economically equivalent alternative next to Gwangju, declared before freezing.
   resolves: tile
@@ -202,7 +238,7 @@ bindings:
   selector: {type: UNIT_BUILDER, role: civilian, charges: 1, x: 70, y: 22}
 - name: builder_resource
   resolves: unit
-  selector: {type: UNIT_BUILDER, role: civilian, charges: 1, x: 72, y: 26}
+  selector: {type: UNIT_BUILDER, role: civilian, charges: 1, x: 73, y: 30}
 - name: builder_food
   resolves: unit
   selector: {type: UNIT_BUILDER, role: civilian, charges: 1, x: 67, y: 24}
@@ -285,9 +321,27 @@ probes:
 - {id: move-food-builder-to-repair, tool: move_unit, expect: ok, restore: true,
    arguments_from_bindings: {unit_index: "${builder_food.unit_index}",
                              x: "${repair_site.x}", y: "${repair_site.y}"}}
-- {id: pathing-resource-builder, tool: get_pathing_estimate, expect: ok, restore: true,
+# Each witness leg must be reachable this turn (no end_turn in the toolset).
+- {id: reach-repair, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
+                             x: "${repair_site.x}", y: "${repair_site.y}"}}
+- {id: reach-resource, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
    arguments_from_bindings: {unit_index: "${builder_resource.unit_index}",
                              x: "${resource_site.x}", y: "${resource_site.y}"}}
+- {id: reach-food, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_food.unit_index}",
+                             x: "${food_site.x}", y: "${food_site.y}"}}
+- {id: reach-alt-repair, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_food.unit_index}",
+                             x: "${repair_site.x}", y: "${repair_site.y}"}}
+- {id: reach-alt-food, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
+                             x: "${food_site_alt.x}", y: "${food_site_alt.y}"}}
 - {id: escort-lethal-attack, tool: attack_unit, expect: ok, restore: true,
    arguments_from_bindings: {unit_index: "${escort.unit_index}",
                              x: "${route_threat.x}", y: "${route_threat.y}"}}
@@ -392,11 +446,12 @@ scripts:
   - calls:
     - {name: finish_trial, arguments: {}}
 - script_id: closer-only
-  # The resource builder stops in Jinju (closer, covered) but not on the site.
+  # The Gwangju builder moves into Jeonju, next to the mine (closer, covered in
+  # a city) but not onto it.
   batches:
   - calls:
-    - {name: move_unit, arguments: {unit_index: "${builder_resource.unit_index}",
-                                    x: "${escort.x}", y: "${escort.y}"}}
+    - {name: move_unit, arguments: {unit_index: "${builder_repair.unit_index}",
+                                    x: "${builder_food.x}", y: "${builder_food.y}"}}
   - calls:
     - {name: finish_trial, arguments: {}}
 - script_id: escort-loss

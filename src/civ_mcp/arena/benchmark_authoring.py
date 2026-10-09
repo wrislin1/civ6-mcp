@@ -42,6 +42,13 @@ Setup Lua conventions: a setup operation's write result must contain no line
 starting with ``ERR``/``Error``, and its readback query must print at least
 one line starting with ``OK`` and none starting with ``ERR``.
 
+A probe may also require its result to match `expect_pattern` and may
+`measure_target` (a tracked target's hp delta across the probe). A recipe's
+`measured_parameters` mark provisional rubric literals (every damage threshold
+must be one); `archive` refuses to run unless this attempt's measuring probes
+satisfy each parameter's rule, then freezes the value into the position rubric
+and records the measurements in the authoring provenance.
+
 Offline commands (never connect to the game):
 
     uv run python -m civ_mcp.arena.benchmark_authoring STAGE --recipe PATH --attempt-dir PATH
@@ -286,8 +293,87 @@ def _validate_assertions(assertions: Any, dummy: dict, context: str) -> None:
     _require(len(ids) == len(set(ids)), f"{context} has duplicate ids")
 
 
+_PROBE_OPTIONAL_KEYS = {"expect_pattern", "measure_target"}
+_MEASURED_KEYS = {"name", "provisional", "used_by", "source_probes", "rule"}
+_MEASURED_RULES = {"strictly_between", "survives"}
+
+
+def _rubric_path_value(raw: dict[str, Any], path: Any, context: str) -> Any:
+    """Follow a ``used_by`` path (rooted at the rubric: objectives/harms)."""
+    _require(isinstance(path, list) and len(path) >= 2 and path[0] in ("objectives", "harms"),
+             f"{context} must be a list path starting at 'objectives' or 'harms'")
+    node: Any = raw
+    for step in path:
+        if isinstance(node, dict) and isinstance(step, str) and step in node:
+            node = node[step]
+        elif isinstance(node, list) and _is_int(step) and 0 <= step < len(node):
+            node = node[step]
+        else:
+            raise ValueError(f"{context}: path {path} does not resolve in the rubric")
+    return node
+
+
+def _threshold_paths(node: Any, path: list[Any]) -> list[list[Any]]:
+    """Every ``target_damaged.minimum_damage`` literal under `node`."""
+    if isinstance(node, dict):
+        found = [path + ["minimum_damage"]] if node.get("kind") == "target_damaged" else []
+        return found + [p for k, v in node.items() for p in _threshold_paths(v, path + [k])]
+    if isinstance(node, list):
+        return [p for i, v in enumerate(node) for p in _threshold_paths(v, path + [i])]
+    return []
+
+
+def _validate_measured_parameters(raw: dict[str, Any], probes: dict[str, dict[str, Any]]) -> None:
+    """Measured parameters: provisional rubric literals that the archive stage
+    may freeze only when this attempt's measuring probes satisfy the rule.
+    Every damage threshold in the rubric must be one of them."""
+    params = raw.get("measured_parameters", [])
+    _require(isinstance(params, list), "recipe.measured_parameters must be a list")
+    covered: list[list[Any]] = []
+    names = []
+    for i, param in enumerate(params):
+        ctx = f"recipe.measured_parameters[{i}]"
+        _check_keys(param, _MEASURED_KEYS, ctx)
+        _require(_is_str(param["name"]), f"{ctx}.name must be a non-empty string")
+        _require(param["provisional"] is True,
+                 f"{ctx}.provisional must be true: the rubric literal is a placeholder until "
+                 "the archive stage freezes it from measured probe evidence")
+        used = param["used_by"]
+        _require(isinstance(used, list) and bool(used), f"{ctx}.used_by must be a non-empty list")
+        values = []
+        for j, path in enumerate(used):
+            value = _rubric_path_value({"objectives": raw["objectives"], "harms": raw["harms"]},
+                                       path, f"{ctx}.used_by[{j}]")
+            _require(type(value) in (int, float), f"{ctx}.used_by[{j}] must name a number")
+            values.append(value)
+            covered.append(list(path))
+        _require(len(set(values)) == 1, f"{ctx}.used_by literals must share one value")
+        sources = param["source_probes"]
+        _require(isinstance(sources, list) and bool(sources) and all(
+            s in probes and "measure_target" in probes[s] for s in sources),
+            f"{ctx}.source_probes must name probes that declare measure_target")
+        rule = param["rule"]
+        _require(isinstance(rule, dict) and bool(rule) and set(rule) <= _MEASURED_RULES,
+                 f"{ctx}.rule must use only {sorted(_MEASURED_RULES)}")
+        if "strictly_between" in rule:
+            pair = rule["strictly_between"]
+            _require(isinstance(pair, list) and len(pair) == 2 and all(p in sources for p in pair),
+                     f"{ctx}.rule.strictly_between must be [low_probe, high_probe] from "
+                     "source_probes")
+        if "survives" in rule:
+            _require(isinstance(rule["survives"], list) and bool(rule["survives"]) and all(
+                p in sources for p in rule["survives"]),
+                f"{ctx}.rule.survives must list probes from source_probes")
+        names.append(param["name"])
+    _require(len(names) == len(set(names)), "recipe.measured_parameters has duplicate names")
+    for path in _threshold_paths(raw["objectives"], ["objectives"]) + \
+            _threshold_paths(raw["harms"], ["harms"]):
+        _require(path in covered, f"damage threshold at {path} must be a measured parameter "
+                 "(frozen from probe readback, never a fixed constant)")
+
+
 def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
-    _check_keys(raw, _RECIPE_KEYS, "recipe")
+    _check_keys(raw, _RECIPE_KEYS, "recipe", optional={"measured_parameters"})
     lua = [p for key, value in raw.items() if key != "setup" for p in _lua_keys(value, key)]
     lua += _lua_keys(raw["setup"].get("assertions") if isinstance(raw["setup"], dict) else None,
                      "setup.assertions")
@@ -426,7 +512,8 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
     probe_ids = []
     for i, probe in enumerate(probes):
         ctx = f"recipe.probes[{i}]"
-        _check_keys(probe, {"id", "tool", "arguments_from_bindings", "expect", "restore"}, ctx)
+        _check_keys(probe, {"id", "tool", "arguments_from_bindings", "expect", "restore"}, ctx,
+                    optional=_PROBE_OPTIONAL_KEYS)
         _require(_is_str(probe["id"]), f"{ctx}.id must be a non-empty string")
         _require(probe["tool"] in tools, f"{ctx}.tool {probe['tool']!r} is not in the frozen toolset")
         _require(isinstance(probe["arguments_from_bindings"], dict),
@@ -434,8 +521,19 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
         substitute_bindings(probe["arguments_from_bindings"], dummy)
         _require(probe["expect"] in ("ok", "rejected"), f"{ctx}.expect must be 'ok' or 'rejected'")
         _require(probe["restore"] is True, f"{ctx}.restore must be true")
+        if "expect_pattern" in probe:
+            _require(_is_str(probe["expect_pattern"]), f"{ctx}.expect_pattern must be a regex")
+            try:
+                re.compile(probe["expect_pattern"])
+            except re.error as exc:
+                raise ValueError(f"{ctx}.expect_pattern is not a valid regex: {exc}") from exc
+        if "measure_target" in probe:
+            pair = substitute_bindings(probe["measure_target"], dummy)
+            _require(isinstance(pair, list) and len(pair) == 2 and all(_is_int(v) for v in pair),
+                     f"{ctx}.measure_target must be a ${{binding.pair}} template")
         probe_ids.append(probe["id"])
     _require(len(probe_ids) == len(set(probe_ids)), "recipe.probes has duplicate ids")
+    _validate_measured_parameters(raw, {p["id"]: p for p in probes})
 
     archive = raw["archive"]
     _check_keys(archive, {"name", "path"}, "recipe.archive")
@@ -1029,6 +1127,70 @@ async def _stage_apply(ctx: _Context) -> None:
         raise StageFailure(f"setup assertions failed: {failed}")
 
 
+def _measure_target(before: dict[str, Any], after: dict[str, Any], ref: list[int]
+                    ) -> dict[str, Any]:
+    """Measured hp delta of one tracked target across a probe (a destroyed
+    target counts its whole remaining hp as damage)."""
+    def row(state: dict[str, Any]) -> dict[str, Any] | None:
+        return next((t for t in state.get("targets", [])
+                     if [t.get("owner"), t.get("id")] == list(ref)), None)
+    start, end = row(before), row(after)
+    measured: dict[str, Any] = {"target": list(ref), "hp_before": None, "hp_after": None,
+                                "status_after": None, "delta": None}
+    if start is None or end is None or start.get("hp") is None:
+        return measured
+    measured.update(hp_before=start["hp"], hp_after=end.get("hp"), status_after=end["status"])
+    if end["status"] == "destroyed":
+        measured["delta"] = start["hp"]
+    elif end["status"] == "alive_visible" and end.get("hp") is not None:
+        measured["delta"] = start["hp"] - end["hp"]
+    return measured
+
+
+def _freeze_measured_parameters(recipe: dict[str, Any],
+                                probe_outcomes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Freeze each provisional parameter only if this attempt's probe
+    measurements satisfy its rule; otherwise the archive stage fails."""
+    by_id = {o["id"]: o for o in probe_outcomes}
+    frozen = []
+    for param in recipe.get("measured_parameters", []):
+        value = _rubric_path_value({"objectives": recipe["objectives"], "harms": recipe["harms"]},
+                                   param["used_by"][0], param["name"])
+        measurements = {}
+        for probe_id in param["source_probes"]:
+            outcome = by_id.get(probe_id)
+            measurement = (outcome or {}).get("measurement")
+            if not outcome or not outcome.get("passed") or measurement is None \
+                    or measurement.get("delta") is None:
+                raise StageFailure(f"measured parameter {param['name']!r} has no passing "
+                                   f"probe measurement from {probe_id!r} in this attempt")
+            measurements[probe_id] = measurement
+        rule = param["rule"]
+        if "strictly_between" in rule:
+            low, high = (measurements[p]["delta"] for p in rule["strictly_between"])
+            if not low < value < high:
+                raise StageFailure(f"measured parameter {param['name']!r} = {value} is not "
+                                   f"strictly between measured deltas {low} and {high}")
+        for probe_id in rule.get("survives", []):
+            if measurements[probe_id]["status_after"] != "alive_visible":
+                raise StageFailure(f"measured parameter {param['name']!r}: target did not "
+                                   f"survive probe {probe_id!r}")
+        frozen.append({"name": param["name"], "value": value,
+                       "used_by": copy.deepcopy(param["used_by"]), "rule": copy.deepcopy(rule),
+                       "measurements": measurements,
+                       "evidence": [by_id[p]["path"] for p in param["source_probes"]]})
+    return frozen
+
+
+def _apply_frozen(rubric: dict[str, Any], frozen: list[dict[str, Any]]) -> None:
+    for param in frozen:
+        for path in param["used_by"]:
+            node: Any = rubric
+            for step in path[:-1]:
+                node = node[step]
+            node[path[-1]] = param["value"]
+
+
 async def _stage_probe(ctx: _Context) -> None:
     expected = ctx.latest("apply")["evidence"]["bindings"]
     connection = await _connect(ctx)
@@ -1050,15 +1212,28 @@ async def _stage_probe(ctx: _Context) -> None:
                 result = await _dispatch(ctx, connection, probe["tool"], arguments)
                 outcome = {"success": "ok", "domain_rejection": "rejected"}.get(
                     classify_result(result), "not_dispatched")
-                record.update(result=result, outcome=outcome, passed=outcome == probe["expect"])
+                passed = outcome == probe["expect"]
+                if "expect_pattern" in probe:
+                    matched = re.search(probe["expect_pattern"], str(result)) is not None
+                    record["pattern_matched"] = matched
+                    passed = passed and matched
+                if "measure_target" in probe:
+                    ref = substitute_bindings(probe["measure_target"], expected)
+                    ctx.check(f"probe-{probe['id']}-measure")
+                    after = await _capture(ctx, connection, replay["coverage"])
+                    record["measurement"] = _measure_target(replay["state"], after, ref)
+                record.update(result=result, outcome=outcome, passed=passed)
             except StageFailure as exc:
                 record.update(error=str(exc), passed=False)
             finally:
                 if "state" in record.get("restore", {}):
                     record["restore"] = {**record["restore"], "state": None}
-                ctx.write_evidence("probes", probe["id"], record)
+                path = ctx.write_evidence("probes", probe["id"], record)
             outcomes.append({"id": probe["id"], "expect": probe["expect"],
-                             "outcome": record.get("outcome"), "passed": record["passed"]})
+                             "outcome": record.get("outcome"), "passed": record["passed"],
+                             "path": ctx.rel(path),
+                             **({"measurement": record["measurement"]}
+                                if "measurement" in record else {})})
     finally:
         await _disconnect(connection)
     ctx.evidence["probes"] = outcomes
@@ -1088,6 +1263,9 @@ async def _stage_archive(ctx: _Context) -> None:
     local = ctx.root / names["path"]
     if local.exists():
         raise StageFailure(f"archive {names['path']} already exists; refusing to reuse it")
+    # Provisional rubric parameters freeze only from this attempt's probe readback.
+    ctx.evidence["measured_parameters"] = _freeze_measured_parameters(
+        recipe, ctx.latest("probe")["evidence"]["probes"])
     connection = await _connect(ctx)
     replay: dict[str, Any] = {}
     try:
@@ -1188,6 +1366,7 @@ def _materialise(ctx: _Context, names: dict[str, str], archive: dict[str, Any],
     contract_identity = implementation_fingerprint(_REPO_ROOT)
     rubric = substitute_bindings({"objectives": recipe["objectives"], "harms": recipe["harms"]},
                                  bindings)
+    _apply_frozen(rubric, archive.get("measured_parameters", []))
     validate_rubric(rubric, state)
 
     observation = _public_observation(ctx, archive)
@@ -1301,6 +1480,7 @@ async def _stage_capture(ctx: _Context) -> None:
         "bindings": archive["bindings"],
         "probes": {"results": probe_record["evidence"]["probes"],
                    "files": [f for f in probe_record["files"] if "/probes/" in f["path"]]},
+        "measured_parameters": archive.get("measured_parameters", []),
         "archive": archive["archive_path"], "archive_sha256": archive["export_sha256"],
         "archive_digests": {"export": archive["export_sha256"],
                             "publish": archive["publish_sha256"],
