@@ -193,3 +193,40 @@ The separate design and implementation plan must cover these concrete dependenci
 6. **Hosted reference and interpretation limits.** Support Workers AI's account-scoped URL and `{"success": true, "result": ...}` envelope for `@cf/cloudflare/clef-flash` and `@cf/cloudflare/clef`; validate envelope errors separately from decision content. Prefer running that leg on riz-llm, where the existing account/token configuration resides, rather than moving credentials as part of this plan. The reported max probability difference of 0.006 with no choice disagreements covers five records/fourteen questions; it is a small parity check, not general equivalence. The sharper 27B distributions on the reported game-like states justify considering that reference, but do not establish better decisions, calibration or benchmark scores. Laya availability likewise does not establish quality or remove the need for a controlled evaluation.
 
 These dependencies are the handoff for a separate design, not extra [Part 1 implementation tasks](../superpowers/plans/2026-10-08-arena-benchmark-plan-3-part-1.md) or gates. Part 1 delivers verified public discoverability, archives, scoring and script evidence for that future consumer. Server availability alone does not alter the screen roster, experimental architecture, held-out access rules, or the prohibition on model-informed position tuning.
+
+## Addendum 2026-10-09: Kev-9B and Von added (four local servers)
+
+Two more SystemOne servers are live and vendored (brothereye `454be718`, vendor refresh in
+this commit). Same wire protocol, same `Registry.systemone_url(id, network="lan")` call.
+
+| id | Server | Host / compute | URL (LAN) | Resident | Cold / warm |
+|---|---|---|---|---|---|
+| `riz-gpu1-kev` | Kev-9B (jaredpalmer/kev-9b, LoRA + pointer head on Qwen3.5-9B-Base, Apache-2.0) | riz-llm GPU 1 | `http://192.168.20.196:11451/v1/systemone` | 21.7 GB while hot, 0 idle | 29 s / 0.1-0.25 s |
+| `home-cpu-von` | Von 1.3 (wfzyx/von, 395M ModernBERT encoder, Apache-2.0) | home-llm **CPU** (OpenVINO) | `http://192.168.20.146:11451/v1/systemone` | RAM only, always resident | 2.3 s first / 0.1-0.45 s |
+
+**GPU-1 eviction rule (matters for benchmark sequencing).** Clef-Flash (18.6 GB) and Kev-9B
+(21.7 GB) share riz-llm GPU 1 and cannot both be hot. Each server POSTs the other's
+`/unload` before loading, so a request to the cold one costs one ~29 s swap and never OOMs.
+Alternating Clef and Kev per record pays a swap per record: run all records against one,
+then the other. `GET /ready` on either shows `loaded` and `evict_urls`.
+
+**Protocol notes.** Kev's front defaults `model` to `kev-latest` and rewrites the response
+`model` to `kev-9b`; Kev also serves `POST /v1/systemone/permute` (option-order stability)
+and `/separate`. Kev and Von report `usage.output_tokens` > 0 (they count answer tokens);
+Clef and Laya report 0, so do not assert zero across servers. Von runs with
+`--noul-decision raw` (calibrated P(yes); the default `band` mode would remap every noul
+outside 0.2..0.8). Von is English-only. `home-cpu-von` is the first registry endpoint with
+`gpu_indexes: []`; any conflict rule keyed on GPU must skip it (no `vram_*` fields in its
+telemetry record either).
+
+**Health shapes for the admission probe.** `GET {base minus /v1}/health` returns
+`status == "ok"` on all four. Clef and Kev add `loaded: bool`; Laya `loaded: [...]`; Von
+`engine: "von-1.3"` (always loaded).
+
+**Evidence** (`services/clef/evidence/four-way-2026-10-09.json`, 5 records / 14 questions,
+reference hosted Clef 27B): choice agreement Clef-Flash 5/5, Kev-9B 3/5, Laya 2/5, Von 2/5.
+Kev is as decisive as the 27B (invoice overdue 1.00, barbarian threat noul 0.75 vs Flash's
+0.49) but picks differently on both Civ records (Warrior over Library; surprise war over
+pressure). Laya and Von both chose Settler on the city-build record. For the arena this
+means: Clef-Flash is the local model that tracks the strongest reference; Kev is the local
+model that commits hardest; the two encoders are the low-latency floor, not contenders.

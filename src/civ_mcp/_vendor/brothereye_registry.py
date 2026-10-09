@@ -272,8 +272,14 @@ def _parse(payload: Any) -> Registry:
         if endpoint_id in endpoints:
             raise RegistryLoadError("duplicate endpoint id")
         host_id = _string(row.get("host_id"), "endpoint host_id")
+        kind = _string(row.get("kind"), "endpoint kind")
+        if kind not in ENDPOINT_KINDS:
+            raise RegistryLoadError("invalid endpoint kind")
         indexes_value = row.get("gpu_indexes")
-        if not isinstance(indexes_value, list) or not indexes_value:
+        # Only systemone endpoints may be CPU-only (gpu_indexes == []).
+        if not isinstance(indexes_value, list) or (
+            not indexes_value and kind not in SYSTEMONE_ENDPOINT_KINDS
+        ):
             raise RegistryLoadError("invalid endpoint GPU indexes")
         indexes = tuple(indexes_value)
         if (
@@ -283,9 +289,6 @@ def _parse(payload: Any) -> Registry:
             raise RegistryLoadError("invalid endpoint GPU indexes")
         if any((host_id, index) not in gpus for index in indexes):
             raise RegistryLoadError("endpoint references unknown host/GPU")
-        kind = _string(row.get("kind"), "endpoint kind")
-        if kind not in ENDPOINT_KINDS:
-            raise RegistryLoadError("invalid endpoint kind")
         urls = _mapping(row.get("urls"), "endpoint urls")
         required_urls = {"lan", "host_loopback"}
         if kind in GATEWAY_ROUTED_KINDS:
