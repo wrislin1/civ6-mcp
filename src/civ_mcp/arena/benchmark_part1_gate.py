@@ -27,7 +27,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 from civ_mcp.arena.benchmark_capture_probe import REQUIRED_SAMPLES, capture_implementation_digest
-from civ_mcp.arena.benchmark_contract_v2 import implementation_fingerprint
+from civ_mcp.arena.benchmark_contract_v2 import implementation_fingerprint, toolkit_fingerprint
 from civ_mcp.arena.benchmark_part1_evidence import UNINDEXED_PREFIXES, load_gate_evidence
 
 __all__ = ["FAMILIES", "HARM_COUNTERPART_TAGS", "OFFLINE_FIXTURES", "PACKET_REQUIREMENTS",
@@ -646,17 +646,20 @@ PACKET_REQUIREMENTS: tuple[tuple[str, _Checker], ...] = (
 
 
 def check_part1_packet(packet: dict[str, Any] | str | Path, *, root: Path | None = None,
-                       code_root: Path | None = None) -> dict[str, Any]:
+                       code_root: Path | None = None,
+                       probe_path: str | None = None) -> dict[str, Any]:
     """Evaluate every Part 1 requirement.
 
     `packet` is a finish-packet path (resolved from raw files under `root`)
     or an already-derived view. `root` holds the evidence; `code_root` is the
-    checkout whose capture implementation and tests are current."""
+    checkout whose capture implementation and tests are current. `probe_path`
+    is the probe provenance the preflight bound (default: the standard path).
+    `toolkit_identity` is reported for information only."""
     root = Path(os.path.abspath(root or _REPO_ROOT))
     code_root = Path(os.path.abspath(code_root or _REPO_ROOT))
     if isinstance(packet, (str, Path)):
         try:
-            view = load_gate_evidence(Path(packet), root=root)
+            view = load_gate_evidence(Path(packet), root=root, probe_path=probe_path)
         except Exception as exc:  # noqa: BLE001 -- the gate never raises
             view = {"resolution": {"finish_packet": None, "unindexed": [], "problems": [
                 f"loader raised {type(exc).__name__}: {exc}"]}}
@@ -675,7 +678,16 @@ def check_part1_packet(packet: dict[str, Any] | str | Path, *, root: Path | None
     failed = [name for name, entry in requirements.items() if not entry["passed"]]
     return {"position_id": view.get("position_id"), "family": view.get("family"),
             "passed": not failed, "failed_requirements": failed,
-            "requirements": requirements, "view": view}
+            "requirements": requirements, "toolkit_identity": _toolkit_identity(code_root),
+            "view": view}
+
+
+def _toolkit_identity(code_root: Path) -> str | None:
+    """Informational only: never compared, and never a reason to fail."""
+    try:
+        return toolkit_fingerprint(code_root)
+    except (OSError, ValueError):
+        return None
 
 
 def check_part1_gate(packets: list[dict[str, Any] | str | Path], preflight: dict[str, Any], *,
@@ -691,7 +703,11 @@ def check_part1_gate(packets: list[dict[str, Any] | str | Path], preflight: dict
             failed.append(name)
         details[name] = "; ".join(filter(None, (details.get(name), why)))
 
-    results = [check_part1_packet(p, root=root, code_root=code_root) for p in packets]
+    # The view reads the probe the preflight bound, so the two cannot diverge.
+    bound_probe = (preflight.get("probe") or {}).get("path")
+    results = [check_part1_packet(p, root=root, code_root=code_root,
+                                  probe_path=bound_probe if isinstance(bound_probe, str) else None)
+               for p in packets]
     by_family: dict[str, list[dict[str, Any]]] = {}
     for result in results:
         by_family.setdefault(str(result["family"]), []).append(result)
@@ -745,5 +761,7 @@ def check_part1_gate(packets: list[dict[str, Any] | str | Path], preflight: dict
                 fail("probe_binding", f"{family}: probe reference differs from preflight")
     return {"passed": not failed, "failed_requirements": failed, "details": details,
             "families": families,
+            "toolkit_identity": _toolkit_identity(code_root),  # informational, never gated
             "preflight": {k: preflight.get(k) for k in ("passed", "failed_requirements",
-                                                        "code_identity", "probe")}}
+                                                        "code_identity", "toolkit_identity",
+                                                        "probe")}}

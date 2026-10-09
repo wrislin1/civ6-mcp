@@ -19,6 +19,9 @@ contract_identity_rule: >-
   implementation_fingerprint (benchmark_contract_v2) over fingerprint_dependencies;
   recorded per position (contract_identity), per suite and in the offline preflight
   (code_identity). Every packet and the preflight must carry the same value.
+toolkit_identity_rule: >-
+  toolkit_fingerprint (benchmark_contract_v2) over toolkit_dependencies; recorded in
+  the offline preflight and the gate result for information only, never compared.
 coverage_rule: >-
   Owned tiles when include_owned_tiles is true, plus every tile within
   area_radius in x and in y (a square window) of each bound tile, plus the tracked target
@@ -72,21 +75,16 @@ fingerprint_dependencies:
   - src/civ_mcp/arena/action_metrics.py
   - src/civ_mcp/arena/benchmark_agent.py
   - src/civ_mcp/arena/benchmark_audit.py
-  - src/civ_mcp/arena/benchmark_authoring.py
-  - src/civ_mcp/arena/benchmark_authoring_journal.py
   - src/civ_mcp/arena/benchmark_capture.py
-  - src/civ_mcp/arena/benchmark_capture_probe.py
   - src/civ_mcp/arena/benchmark_contract_v2.py
-  - src/civ_mcp/arena/benchmark_deploy.py
   - src/civ_mcp/arena/benchmark_ledger.py
   - src/civ_mcp/arena/benchmark_lifecycle.py
   - src/civ_mcp/arena/benchmark_manifest_v2.py
-  - src/civ_mcp/arena/benchmark_part1_evidence.py
-  - src/civ_mcp/arena/benchmark_part1_gate.py
   - src/civ_mcp/arena/benchmark_position.py
   - src/civ_mcp/arena/benchmark_predicates_v2.py
   - src/civ_mcp/arena/benchmark_report_v2.py
   - src/civ_mcp/arena/benchmark_runner.py
+  - src/civ_mcp/arena/benchmark_schedule.py
   - src/civ_mcp/arena/benchmark_scoring_v2.py
   - src/civ_mcp/arena/benchmark_scripted.py
   - src/civ_mcp/arena/benchmark_scripted_runner.py
@@ -96,7 +94,15 @@ fingerprint_dependencies:
   - src/civ_mcp/arena/benchmark_validation.py
   - src/civ_mcp/arena/registry.py
   - src/civ_mcp/connection.py
-  - src/civ_mcp/game_launcher.py
-  - src/civ_mcp/game_state.py
-  - src/civ_mcp/lua/benchmark.py
   - src/civ_mcp/lua/benchmark_v2.py
+  - src/civ_mcp/tuner_client.py
+# Informational only (toolkit_identity); never gated for equality.
+toolkit_dependencies:
+  - src/civ_mcp/arena/benchmark_authoring.py
+  - src/civ_mcp/arena/benchmark_authoring_journal.py
+  - src/civ_mcp/arena/benchmark_capture_probe.py
+  - src/civ_mcp/arena/benchmark_deploy.py
+  - src/civ_mcp/arena/benchmark_part1_evidence.py
+  - src/civ_mcp/arena/benchmark_part1_gate.py
+  - src/civ_mcp/game_launcher.py
+  - src/civ_mcp/launcher_cli.py

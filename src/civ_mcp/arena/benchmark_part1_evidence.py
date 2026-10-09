@@ -222,8 +222,11 @@ def _attempts(resolver: _Resolver, family: str) -> tuple[list[dict[str, Any]],
             if journal_ref and listed.get(journal_rel) != journal_ref["sha256"]:
                 resolver.problem(f"{journal_rel}: not hash-bound by {index_ref['path']}")
                 journal = None
+        # A substitute's journal carries its failed predecessor by reference
+        # (`imported_from`); the predecessor's own journal is its evidence.
         entries = [e for e in _items(_dict(_dict(_dict(journal).get("families")).get(family))
-                                     .get("scenarios")) if isinstance(e, dict)]
+                                     .get("scenarios"))
+                   if isinstance(e, dict) and not e.get("imported_from")]
         for entry in entries:
             sid = entry.get("scenario_id")
             known = scenarios.get(sid)
@@ -281,18 +284,21 @@ def _case_view(resolver: _Resolver, run_dir: str, result: dict[str, Any],
     }
 
 
-def load_gate_evidence(finish_packet_path: Path, *, root: Path) -> dict[str, Any]:
+def load_gate_evidence(finish_packet_path: Path, *, root: Path,
+                       probe_path: str | None = None) -> dict[str, Any]:
     """Derive the gate view of one finish packet from the raw files it references.
 
     Never raises: every problem is recorded in `resolution.problems`."""
     resolver = _Resolver(Path(root))
     view: dict[str, Any] = {"resolution": {"finish_packet": None, "problems": resolver.problems,
                                            "unindexed": resolver.unindexed}}
-    resolver.guard("finish packet", lambda: _load(resolver, view, Path(finish_packet_path)))
+    resolver.guard("finish packet", lambda: _load(resolver, view, Path(finish_packet_path),
+                                                  probe_path or PROBE_PROVENANCE))
     return view
 
 
-def _load(resolver: _Resolver, view: dict[str, Any], packet_path: Path) -> None:
+def _load(resolver: _Resolver, view: dict[str, Any], packet_path: Path,
+          probe_path: str = PROBE_PROVENANCE) -> None:
     absolute = packet_path if packet_path.is_absolute() else resolver.root / packet_path
     try:
         packet_rel = _rel(absolute, resolver.root)
@@ -431,8 +437,8 @@ def _load(resolver: _Resolver, view: dict[str, Any], packet_path: Path) -> None:
     resolver.guard("attempt history", history)
 
     def shared() -> None:
-        if (resolver.root / PROBE_PROVENANCE).is_file():
-            view["positive_control_probe"] = resolver.ref(PROBE_PROVENANCE)
+        if (resolver.root / probe_path).is_file():
+            view["positive_control_probe"] = resolver.ref(probe_path)
         if (resolver.root / PREFLIGHT_OUTPUT).is_file():
             audit = _dict(_dict(resolver.raw(PREFLIGHT_OUTPUT)).get("historical_audit"))
             view["offline_audit"] = {"evidence": PREFLIGHT_OUTPUT,

@@ -3388,8 +3388,12 @@ def export_benchmark_save(
         if (st.st_size, st.st_mtime_ns) != signature:
             raise ValueError(f"source save {source_path} changed during export")
 
+    # The destination directory may not exist yet (e.g. the gitignored
+    # benchmark_runs/ tree on a fresh Windows checkout).
+    dest_dir = os.path.dirname(os.path.abspath(dest_path))
+    os.makedirs(dest_dir, exist_ok=True)
     tmp = tempfile.NamedTemporaryFile(
-        dir=os.path.dirname(os.path.abspath(dest_path)),
+        dir=dest_dir,
         prefix=".export.",
         suffix=".tmp",
         delete=False,

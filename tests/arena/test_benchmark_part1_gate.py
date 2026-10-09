@@ -26,7 +26,9 @@ from civ_mcp.arena.benchmark_authoring import check_part1_gate, check_part1_pack
 from civ_mcp.arena.benchmark_capture_probe import capture_implementation_digest
 from civ_mcp.arena.benchmark_contract_v2 import (
     FINGERPRINT_DEPENDENCIES,
+    TOOLKIT_DEPENDENCIES,
     implementation_fingerprint,
+    toolkit_fingerprint,
 )
 from civ_mcp.arena.benchmark_manifest_v2 import load_toolset
 from civ_mcp.arena.benchmark_part1_evidence import load_gate_evidence
@@ -155,7 +157,7 @@ def _predecessor(repo, family, *, indexed=True, attempt_name="attempt-1"):
 
 
 def _build(repo: Path, family: str = "builder", *, substitute: bool = False,
-           extra_packet: dict | None = None) -> Path:
+           extra_packet: dict | None = None, imported: list | None = None) -> Path:
     recipe = yaml.safe_load((REPO / f"benchmarks/recipes/plan3-{family}-a1.yaml").read_text())
     scenario = f"{family}-a2" if substitute else f"{family}-a1"
     pid = f"{scenario}-v1"
@@ -219,7 +221,7 @@ def _build(repo: Path, family: str = "builder", *, substitute: bool = False,
               ("finish", {})]
     for seq, (stage, evidence) in enumerate(stages, start=1):
         _stage(repo, attempt, seq, stage, evidence, scenario=scenario)
-    records = [_scenario_record(scenario, family, attempt=2 if substitute else 1,
+    records = [*(imported or []), _scenario_record(scenario, family, attempt=2 if substitute else 1,
                                 predecessor=f"{family}-a1" if substitute else None)]
     journal = _journal(repo, attempt, family, records)
     index = _index(repo, attempt, [position["path"], authoring_input["path"], *case_paths])
@@ -614,6 +616,22 @@ def test_substitute_passes_only_with_both_scenario_durations(repo):
     assert _check(view, repo)["failed_requirements"] == ["scenario_duration"]
 
 
+def test_substitute_journal_imported_predecessor_is_a_reference_not_an_attempt(repo):
+    """A substitute begun in a fresh directory carries its failed predecessor
+    by reference; the gate reads the predecessor from its own journal."""
+    _predecessor(repo, "builder")
+    copy_ = {**_scenario_record("builder-a1", "builder", status="failed", elapsed=99999.0),
+             "imported_from": {"journal": "benchmark_runs/plan3-part1/builder-a1/attempt-1/"
+                                          "authoring-journal.json", "sha256": "0" * 64}}
+    path = _build(repo, substitute=True, imported=[copy_])
+    result = _check(path, repo)
+    assert result["passed"] is True, result["failed_requirements"]
+    assert "18000" in result["requirements"]["scenario_duration"]["detail"]
+    (pred,) = [s for s in load_gate_evidence(path, root=repo)["scenarios"]
+               if s["scenario_id"] == "builder-a1"]
+    assert pred["journal"].endswith("builder-a1/attempt-1/authoring-journal.json")
+
+
 def test_substitute_without_declaration_fails(repo):
     _predecessor(repo, "builder")
     view = load_gate_evidence(_build(repo, substitute=True), root=repo)
@@ -680,6 +698,29 @@ def test_gate_fails_for_named_reason(family_paths, repo, name, mutate):
     assert result["passed"] is False
     assert name in result["failed_requirements"]
     assert result["details"][name]
+
+
+def test_gate_reads_the_probe_the_preflight_bound(family_paths, repo):
+    """The packet view takes its probe from the preflight's recorded path, so a
+    preflight run with `--probe OTHER` and the gate cannot diverge."""
+    other = "benchmarks/provenance/other-capture-probe.json"
+    (repo / other).write_bytes((repo / PROBE_PATH).read_bytes() + b"\n")
+    _git(repo, "add", "-A")
+    pre = _preflight(repo, probe={"present": True, "path": other, "sha256": _sha(repo, other),
+                                  "capture_implementation_sha256": CAPTURE})
+    result = check_part1_gate(family_paths, pre, root=repo)
+    assert "probe_binding" not in result["failed_requirements"], result["details"]
+    assert result["passed"] is True, result["details"]
+
+
+def test_toolkit_identity_is_reported_but_never_gated(family_paths, repo):
+    result = check_part1_gate(family_paths, _preflight(repo, toolkit_identity="x" * 64),
+                              root=repo)
+    assert result["passed"] is True, result["details"]
+    assert result["toolkit_identity"] == toolkit_fingerprint(REPO)
+    assert result["preflight"]["toolkit_identity"] == "x" * 64
+    packet = check_part1_packet(family_paths[0], root=repo)
+    assert packet["toolkit_identity"] == toolkit_fingerprint(REPO)
 
 
 def test_stale_preflight_and_packets_fail_together_against_current_code(family_paths, repo):
@@ -771,7 +812,9 @@ def test_preflight_binds_passing_probe_suite_and_recipe_versions(tmp_path, offli
     result = authoring.preflight(RECIPES, root=REPO, probe_path=probe,
                                  pytest_result_path=_pytest_result(tmp_path))
     assert result["passed"] is True, result["failed_requirements"]
+    assert result["toolkit_identity"] == toolkit_fingerprint(REPO)
     assert result["probe"]["present"] is True
+    assert result["probe"]["path"] == str(probe)  # outside the repo: absolute
     assert result["probe"]["evidence_index_sha256"] == "e" * 64
     assert result["probe"]["limitations"] == ["positive control only"]
     assert result["probe"]["sha256"] == hashlib.sha256(probe.read_bytes()).hexdigest()
@@ -814,8 +857,10 @@ def test_candidate_contract_lists_dependencies_and_toolset_identity():
     assert doc["released"] is False
     assert doc["primary_comparable_to_plan2"] is False
     assert doc["fingerprint_dependencies"] == list(FINGERPRINT_DEPENDENCIES)
+    assert doc["toolkit_dependencies"] == list(TOOLKIT_DEPENDENCIES)
     for module in ("benchmark_part1_gate.py", "benchmark_part1_evidence.py"):
-        assert f"src/civ_mcp/arena/{module}" in doc["fingerprint_dependencies"]
+        assert f"src/civ_mcp/arena/{module}" in doc["toolkit_dependencies"]
+        assert f"src/civ_mcp/arena/{module}" not in doc["fingerprint_dependencies"]
     assert doc["toolset"] == {"toolset_id": "plan3-part1-v1",
                               "path": "benchmarks/toolsets/plan3-part1-v1.yaml",
                               "identity": TOOLSET}

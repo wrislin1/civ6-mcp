@@ -186,7 +186,8 @@ async def run_validation(suite_path: Path, run_dir: Path, *,
         _verified(Path(suite["position"]["path"]), suite["position"]["sha256"], "position"),
         kind="position")
     # The scripted actor receives the suite only; expectations are loaded after.
-    trials = await run_scripted_suite(suite, run_dir, dependencies=dependencies)
+    trials = await run_scripted_suite(suite, run_dir, suite_path=Path(suite_path),
+                                      dependencies=dependencies)
 
     cases = {}
     for ref in suite["cases"]:
@@ -228,6 +229,8 @@ def build_reports(run_dir: Path) -> dict[str, str]:
     if lock["code_identity"] != code_identity:
         raise ValueError(f"code identity changed since the run: lock records "
                          f"{lock['code_identity']}, current code is {code_identity}")
+    if lock["suite"].get("bound") == "bytes":
+        _verified(_locked_path(lock["suite"]["path"]), lock["suite"]["sha256"], "suite")
     for ref in lock["scripts"]:
         _verified(_locked_path(ref["path"]), ref["sha256"], "script")
     cases = {}

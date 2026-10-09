@@ -236,12 +236,14 @@ survey:
   - {tool: get_empire_resources, arguments: {}}
   - {tool: get_map_area, arguments: {x: 74, y: 30, radius: 2}}
   - {tool: get_map_area, arguments: {x: 68, y: 23, radius: 1}}
+  # Radius 1 on the resolved threat keeps its unit line inside the result cap.
+  - {tool: get_map_area, arguments: {x: "${route_threat.x}", y: "${route_threat.y}", radius: 1}}
   required_facts:
   - {id: pillaged-mine-visible, source: get_builder_tasks, pattern: "repair\\s+\\S*IRON|repair\\s+\\S*MINE"}
   - {id: horses-unimproved-visible, source: get_builder_tasks, pattern: "HORSES"}
   - {id: food-work-visible, source: get_builder_tasks, pattern: "build FARM"}
   - {id: builders-visible, source: get_units, pattern: "(?i)builder"}
-  - {id: route-threat-visible, source: get_units, pattern: "Barbarian \\(\\d+ units?\\):"}
+  - {id: route-threat-visible, source: get_map_area, pattern: "\\*\\*\\[[^\\]]*Barbarian"}
   - {id: pillage-visible-in-city, source: get_cities, pattern: "PILLAGED TILES"}
 
 bindings:

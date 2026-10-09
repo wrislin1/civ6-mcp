@@ -601,6 +601,36 @@ async def test_setup_fact_beyond_cap_at_archived_start_blocks_archive(tmp_path, 
         await rig.run("capture")
 
 
+async def test_binding_centred_query_is_deferred_on_base_and_resolved_at_archive(
+        tmp_path, tool_log):
+    """A survey query may centre on a binding (e.g. a radius-1 map on a spawned
+    threat): the base survey skips it, the archived start dispatches it with
+    the resolved coordinates."""
+    survey = copy.deepcopy(RECIPE["survey"])
+    survey["queries"].append({"tool": "get_units",
+                              "arguments": {"x": "${builder.x}", "y": "${builder.y}"}})
+    rig = Rig(tmp_path, tool_log, _recipe(survey=survey))
+    record = await rig.run("survey")
+    assert record["status"] == "passed", record.get("error")
+    assert [t[1] for t in rig.tools] == [{}]
+    await rig.run_through("probe")
+    mark = len(rig.tools)
+    record = await rig.run("archive")
+    assert record["status"] == "passed", record.get("error")
+    assert [t[1] for t in rig.tools[mark:]] == [{}, {"x": 10, "y": 10}]
+    archived = sorted((rig.attempt / "observations").glob("archived-*.json"))
+    saved = json.loads(archived[-1].read_text())
+    assert saved["arguments"] == {"x": "${builder.x}", "y": "${builder.y}"}
+    assert saved["resolved_arguments"] == {"x": 10, "y": 10}
+
+
+def test_recipe_rejects_unknown_binding_in_survey_query(tmp_path):
+    survey = copy.deepcopy(RECIPE["survey"])
+    survey["queries"].append({"tool": "get_units", "arguments": {"x": "${ghost.x}"}})
+    with pytest.raises(ValueError, match="ghost"):
+        load_recipe(write_recipe(tmp_path, _recipe(survey=survey)), root=tmp_path)
+
+
 async def test_base_load_error_fails_before_any_setup_mutation(tmp_path, tool_log):
     rig = Rig(tmp_path, tool_log)
     await rig.run_through("survey")
@@ -696,6 +726,98 @@ async def test_abandon_indexes_an_expired_attempt(tmp_path, tool_log):
                                        root=tmp_path)
     assert record["evidence"]["expired_before"] is True
     evidence_files(tmp_path / "benchmark_runs" / "plan3-part1", repo_root=tmp_path)
+
+
+async def test_abandon_is_idempotent_when_the_index_write_failed(tmp_path, tool_log, monkeypatch):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("survey")
+    real = authoring._write_index
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(authoring, "_write_index", broken)
+    with pytest.raises(OSError, match="disk full"):
+        authoring.abandon_attempt(rig.recipe_path, attempt_dir=rig.attempt, reason="r",
+                                  ops=rig.ops.live_ops(), root=tmp_path)
+    assert not (rig.attempt / "evidence-index.json").exists()
+    monkeypatch.setattr(authoring, "_write_index", real)
+    record = authoring.abandon_attempt(rig.recipe_path, attempt_dir=rig.attempt, reason="r",
+                                       ops=rig.ops.live_ops(), root=tmp_path)
+    assert record["status"] == "abandoned" and record["recovered"] is True
+    assert (rig.attempt / "evidence-index.json").is_file()
+    assert len(list((rig.attempt / "stages").glob("*-abandon.json"))) == 1
+    evidence_files(tmp_path / "benchmark_runs" / "plan3-part1", repo_root=tmp_path)
+    with pytest.raises(ValueError, match="closed"):
+        authoring.abandon_attempt(rig.recipe_path, attempt_dir=rig.attempt, reason="r",
+                                  ops=rig.ops.live_ops(), root=tmp_path)
+
+
+async def test_finish_is_idempotent_when_the_index_write_failed(tmp_path, tool_log, monkeypatch):
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("validate")
+    real = authoring._write_index
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(authoring, "_write_index", broken)
+    with pytest.raises(OSError, match="disk full"):
+        await rig.run("finish")
+    journal = json.loads((rig.attempt / "authoring-journal.json").read_text())
+    assert journal["families"]["builder"]["scenarios"][0]["status"] == "passed"
+    assert not (rig.attempt / "evidence-index.json").exists()
+    monkeypatch.setattr(authoring, "_write_index", real)
+    mark = rig.marks()
+    record = await rig.run("finish")
+    assert record["status"] == "passed" and record["recovered"] is True
+    assert rig.calls_since(mark) == []  # no live contact on recovery
+    assert (rig.attempt / "evidence-index.json").is_file()
+    assert (tmp_path / record["completion"]["packet"]["path"]).is_file()
+    assert len(list((rig.attempt / "stages").glob("*-finish.json"))) == 1
+    evidence_files(tmp_path / "benchmark_runs" / "plan3-part1", repo_root=tmp_path)
+    with pytest.raises(ValueError, match="closed"):
+        await rig.run("finish")
+
+
+def _substitute_recipe() -> dict:
+    return _recipe(recipe_id="test-builder-a2", scenario_id="builder-a2",
+                   predecessor="builder-a1", substitution_reason="setup cannot pass",
+                   material_change="different builder tile")
+
+
+async def _failed_attempt_one(tmp_path, tool_log) -> Rig:
+    rig = Rig(tmp_path, tool_log)
+    await rig.run_through("survey")
+    authoring.abandon_attempt(rig.recipe_path, attempt_dir=rig.attempt, reason="dead end",
+                              ops=rig.ops.live_ops(), root=tmp_path)
+    return rig
+
+
+async def test_substitute_in_fresh_attempt_dir_binds_the_sibling_predecessor_journal(
+        tmp_path, tool_log):
+    first = await _failed_attempt_one(tmp_path, tool_log)
+    path = write_recipe(tmp_path, _substitute_recipe(), name="test-builder-a2")
+    attempt = first.attempt.parent / "builder-a2"
+    record = await run_authoring_stage(path, stage="survey", attempt_dir=attempt,
+                                       ops=first.ops.live_ops(), root=tmp_path)
+    assert record["status"] == "passed", record.get("error")
+    journal = json.loads((attempt / "authoring-journal.json").read_text())
+    imported, substitute = journal["families"]["builder"]["scenarios"]
+    assert imported["imported_from"]["journal"] == \
+        "benchmark_runs/plan3-part1/builder-a1/authoring-journal.json"
+    assert substitute["attempt"] == 2 and substitute["predecessor"] == "builder-a1"
+
+
+async def test_substitute_with_explicit_predecessor_journal_elsewhere(tmp_path, tool_log):
+    first = await _failed_attempt_one(tmp_path, tool_log)
+    path = write_recipe(tmp_path, _substitute_recipe(), name="test-builder-a2")
+    attempt = tmp_path / "benchmark_runs" / "plan3-part1-retry" / "builder-a2"
+    with pytest.raises(ValueError, match="failed predecessor"):
+        await run_authoring_stage(path, stage="survey", attempt_dir=attempt,
+                                  ops=first.ops.live_ops(), root=tmp_path)
+    record = await run_authoring_stage(
+        path, stage="survey", attempt_dir=attempt, ops=first.ops.live_ops(), root=tmp_path,
+        predecessor_journal=first.attempt / "authoring-journal.json")
+    assert record["status"] == "passed", record.get("error")
 
 
 async def test_evidence_files_rejects_unindexed_attempt(tmp_path, tool_log):
@@ -941,9 +1063,14 @@ def test_preflight_fails_when_historical_audit_diverges(tmp_path, monkeypatch):
     assert json.loads(out.read_text())["passed"] is False
 
 
-def test_fingerprint_covers_authoring_module():
-    from civ_mcp.arena.benchmark_contract_v2 import FINGERPRINT_DEPENDENCIES
-    assert "src/civ_mcp/arena/benchmark_authoring.py" in FINGERPRINT_DEPENDENCIES
+def test_toolkit_identity_covers_authoring_modules():
+    from civ_mcp.arena.benchmark_contract_v2 import (
+        FINGERPRINT_DEPENDENCIES,
+        TOOLKIT_DEPENDENCIES,
+    )
+    for module in ("benchmark_authoring.py", "benchmark_authoring_journal.py"):
+        assert f"src/civ_mcp/arena/{module}" in TOOLKIT_DEPENDENCIES
+        assert f"src/civ_mcp/arena/{module}" not in FINGERPRINT_DEPENDENCIES
     assert digest_state_v2  # imported for fixture parity
 
 

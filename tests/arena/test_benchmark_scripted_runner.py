@@ -280,6 +280,17 @@ async def test_lock_binds_script_case_schedule_and_null_model_fields(tmp_path):
     }]
     assert lock["limits"] == {"max_steps": 15, "episode_wall_s": 300, "result_char_cap": 4000}
     assert lock["session_fingerprint"] == h.trial()["session_fingerprint"]
+    # No suite file supplied: the lock records the suite id and a portable digest.
+    assert lock["suite"]["bound"] == "portable"
+    assert lock["suite"]["path"] == lock["lock_id"].removesuffix(":scripted")
+
+
+def test_lock_suite_bound_must_be_bytes_or_portable():
+    from civ_mcp.arena.benchmark_manifest_v2 import _validate_lock
+    lock = {"lock_id": "x", "suite": {"path": "s", "sha256": "a", "bound": "nope"},
+            "scripts": [{"path": "p", "sha256": "a"}], "cases": [{"path": "c", "sha256": "a"}]}
+    with pytest.raises(ValueError, match="bound"):
+        _validate_lock(lock)
 
 
 async def test_changed_script_is_refused_by_the_existing_lock(tmp_path):
@@ -417,6 +428,20 @@ async def test_production_wiring_deploys_and_requires_confirmed_reload(tmp_path,
     assert json.loads(attempt.read_text())["failure_class"] == "reload_or_reconnect_failure"
     assert records[0]["validation_status"] == "passed_mechanics"
     assert conn.connected is False
+
+
+def test_production_transport_hands_the_bridge_a_repo_relative_archive(monkeypatch):
+    """`load_v2_document` resolves the archive to an absolute local path; the
+    Windows bridge (cwd = Windows checkout) must get the repo-relative one."""
+    deploys: list[tuple] = []
+    monkeypatch.setattr(scripted_runner, "deploy_via_windows",
+                        lambda *args: deploys.append(args))
+    monkeypatch.setattr(scripted_runner, "GameConnection", lambda: object())
+    local = scripted_runner._REPO_ROOT / "benchmarks/saves/builder-a1-v1.Civ6Save"
+    transport = scripted_runner._production_transport({
+        "archive": {"path": str(local), "sha256": "ab"}, "game_save_name": "S"})
+    transport.deploy()
+    assert deploys == [("benchmarks/saves/builder-a1-v1.Civ6Save", "S", "ab")]
 
 
 # ---------------------------------------------------------------------------

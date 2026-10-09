@@ -36,6 +36,7 @@ class FakeClock:
 
 
 def _open(path: Path, clock: FakeClock) -> AuthoringJournal:
+    path.parent.mkdir(parents=True, exist_ok=True)
     return AuthoringJournal(path, wall_clock=clock.wall_clock, monotonic=clock.monotonic)
 
 
@@ -302,6 +303,78 @@ def test_family_total_includes_both_attempts(tmp_path):
 
     doc = json.loads(path.read_text())
     assert doc["families"]["builder"]["total_elapsed_s"] == 6500.0
+
+
+# --- substitution across attempt directories --------------------------------
+
+
+def _failed_attempt_one(path: Path, clock: FakeClock, seconds: float = 4000) -> Path:
+    with _open(path, clock) as journal:
+        _begin_first(journal)
+        clock.advance(seconds)
+        journal.finish(scenario_id="builder-a1", passed=False)
+    return path
+
+
+def test_substitute_in_fresh_dir_with_predecessor_journal_passes(tmp_path):
+    clock = FakeClock()
+    first = _failed_attempt_one(tmp_path / "builder-a1" / "journal.json", clock)
+    clock.advance(50)
+    fresh = tmp_path / "builder-a2" / "journal.json"
+    with _open(fresh, clock) as journal:
+        record = _begin_substitute(journal, predecessor_journal=first,
+                                   predecessor_journal_ref="runs/builder-a1/journal.json",
+                                   sibling_journals=[first])
+        assert record["attempt"] == 2
+        imported = journal.record("builder-a1")
+        assert imported["status"] == "failed"
+        assert imported["imported_from"] == {
+            "journal": "runs/builder-a1/journal.json",
+            "sha256": __import__("hashlib").sha256(first.read_bytes()).hexdigest()}
+        clock.advance(2500)
+        journal.finish(scenario_id="builder-a2", passed=True)
+        # Family total sums the imported predecessor and the substitute.
+        assert journal.family_total_seconds("builder") == 6500.0
+
+
+def test_substitute_in_fresh_dir_without_predecessor_journal_fails(tmp_path):
+    clock = FakeClock()
+    first = _failed_attempt_one(tmp_path / "builder-a1" / "journal.json", clock)
+    with _open(tmp_path / "builder-a2" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="failed predecessor"):
+            _begin_substitute(journal, sibling_journals=[first])
+
+
+def test_predecessor_journal_must_hold_a_terminal_failed_predecessor(tmp_path):
+    clock = FakeClock()
+    first = tmp_path / "builder-a1" / "journal.json"
+    with _open(first, clock) as journal:
+        _begin_first(journal)  # still open
+    with _open(tmp_path / "builder-a2" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="not terminal-failed"):
+            _begin_substitute(journal, predecessor_journal=first)
+
+
+def test_third_identity_across_attempt_dirs_is_blocked(tmp_path):
+    clock = FakeClock()
+    first = _failed_attempt_one(tmp_path / "builder-a1" / "journal.json", clock)
+    second = tmp_path / "builder-a2" / "journal.json"
+    with _open(second, clock) as journal:
+        _begin_substitute(journal, predecessor_journal=first, sibling_journals=[first])
+        journal.finish(scenario_id="builder-a2", passed=False)
+    with _open(tmp_path / "builder-a3" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="blocked"):
+            _begin_substitute(journal, scenario_id="builder-a3", predecessor_journal=first,
+                              sibling_journals=[first, second])
+        # Nor can a fresh "attempt 1" identity sidestep the budget.
+        with pytest.raises(ValueError, match="blocked"):
+            journal.begin(family="builder", scenario_id="builder-b1", predecessor=None,
+                          reason=None, material_change=None,
+                          sibling_journals=[first, second])
+    with _open(tmp_path / "builder-b1" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="already has attempt 1"):
+            journal.begin(family="builder", scenario_id="builder-b1", predecessor=None,
+                          reason=None, material_change=None, sibling_journals=[first])
 
 
 # --- durability and ownership ---------------------------------------------

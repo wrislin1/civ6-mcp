@@ -51,7 +51,7 @@ and records the measurements in the authoring provenance.
 
 Offline commands (never connect to the game):
 
-    uv run python -m civ_mcp.arena.benchmark_authoring STAGE --recipe PATH --attempt-dir PATH
+    uv run python -m civ_mcp.arena.benchmark_authoring STAGE --recipe PATH --attempt-dir PATH [--predecessor-journal PATH]
     uv run python -m civ_mcp.arena.benchmark_authoring preflight --recipes PATH... --output PATH [--probe PATH]
     uv run python -m civ_mcp.arena.benchmark_authoring gate --packets PATH... --output PATH [--preflight PATH]
     uv run python -m civ_mcp.arena.benchmark_authoring evidence-files --root PATH --output PATH
@@ -82,7 +82,11 @@ from civ_mcp.arena.benchmark_agent import FINISH_TRIAL_TOOL_NAME
 from civ_mcp.arena.benchmark_audit import reproduce_audit
 from civ_mcp.arena.benchmark_authoring_journal import AuthoringJournal
 from civ_mcp.arena.benchmark_capture import CaptureTelemetry
-from civ_mcp.arena.benchmark_contract_v2 import document_digest, implementation_fingerprint
+from civ_mcp.arena.benchmark_contract_v2 import (
+    document_digest,
+    implementation_fingerprint,
+    toolkit_fingerprint,
+)
 from civ_mcp.arena.benchmark_manifest_v2 import (
     SCHEMA_VERSION,
     load_toolset,
@@ -133,6 +137,30 @@ STAGE_PREREQUISITES = {
 }
 STAGES: tuple[str, ...] = tuple(STAGE_PREREQUISITES)
 REPEATABLE_STAGES = frozenset({"survey", "apply", "probe"})
+# One sentence per stage: precondition -> what it does -> where outputs land.
+STAGE_HELP = {
+    "survey": "LIVE, no precondition (opens/resumes the 3h clock): load and verify the base "
+              "save, record its private state and survey query results under "
+              "ATTEMPT/samples and ATTEMPT/observations.",
+    "apply": "LIVE, needs survey passed: reload the base, run setup Lua with readback, resolve "
+             "bindings and setup assertions into ATTEMPT/mutations.",
+    "probe": "LIVE, needs apply passed: run each legality probe from a fresh base replay into "
+             "ATTEMPT/probes.",
+    "archive": "LIVE, needs probe passed: replay setup, require every survey fact within the "
+               "result cap, then save, export and publish the archive to the recipe's "
+               "benchmarks/saves path.",
+    "capture": "LIVE, needs archive passed: deploy and capture the archived position and write "
+               "the position, authoring provenance, scripts, cases and suite under benchmarks/.",
+    "verify": "LIVE, needs capture passed: reload the archive repeatedly and require every "
+              "digest to equal the position's expected state.",
+    "menu-check": "LIVE, needs verify passed: restart the game via restart_and_load and require "
+                  "the loaded identity and digest to match.",
+    "validate": "LIVE, needs menu-check passed: run the scripted validation suite into "
+                "ATTEMPT/validation and rebuild its reports identically.",
+    "finish": "OFFLINE, needs every stage passed: close the journal as passed, then write "
+              "ATTEMPT/evidence-index.json and the provenance packet (re-run to recover a "
+              "failed index/packet write).",
+}
 ABANDON = "abandon"
 
 JOURNAL_FILE = "authoring-journal.json"
@@ -479,6 +507,8 @@ def _validate_recipe(raw: dict[str, Any], *, root: Path) -> None:
                  f"{ctx}.tool {query['tool']!r} is an action tool; survey queries must be "
                  "read-only (they also run on the archived start before save)")
         _require(isinstance(query["arguments"], dict), f"{ctx}.arguments must be a mapping")
+        # Binding references resolve at archive; their names must be declared.
+        substitute_bindings(query["arguments"], dummy)
     _require(isinstance(survey["required_facts"], list) and bool(survey["required_facts"]),
              "recipe.survey.required_facts must be a non-empty list")
     query_tools = {query["tool"] for query in survey["queries"]}
@@ -1059,17 +1089,31 @@ async def _dispatch(ctx: _Context, connection: Any, tool: str, arguments: dict[s
 # Stages
 # ---------------------------------------------------------------------------
 
-async def _observe(ctx: _Context, connection: Any, filename: Callable[[int], str]
+def query_uses_bindings(query: dict[str, Any]) -> bool:
+    """True when a survey query's arguments reference ``${name.field}`` bindings."""
+    return "${" in json.dumps(query["arguments"])
+
+
+async def _observe(ctx: _Context, connection: Any, filename: Callable[[int], str],
+                   bindings: dict[str, Any] | None = None
                    ) -> list[tuple[str, dict[str, Any]]]:
-    """Run `survey.queries` through registry dispatch; keep full and capped text."""
+    """Run `survey.queries` through registry dispatch; keep full and capped text.
+
+    A query whose arguments reference bindings (e.g. a radius-1 map centred on
+    a spawned threat, so the threat line lands inside the result cap) runs only
+    once bindings are resolved (archive); on the unmodified base (survey) the
+    entity does not exist yet, so the query is not dispatched there."""
     cap = ctx.recipe["result_char_cap"]
     observations = []
     for index, query in enumerate(ctx.recipe["survey"]["queries"]):
+        if bindings is None and query_uses_bindings(query):
+            continue
         ctx.check(f"query-{index}")
-        full = await _dispatch(ctx, connection, query["tool"], dict(query["arguments"]))
+        arguments = substitute_bindings(dict(query["arguments"]), bindings or {})
+        full = await _dispatch(ctx, connection, query["tool"], arguments)
         capped = full[:cap]
         doc = {"index": index, "tool": query["tool"], "arguments": query["arguments"],
-               "result_char_cap": cap, "result_full": full, "result_capped": capped,
+               "resolved_arguments": arguments, "result_char_cap": cap, "result_full": full, "result_capped": capped,
                "full_sha256": _sha256_bytes(full.encode()),
                "capped_sha256": _sha256_bytes(capped.encode())}
         path = ctx.write_evidence("observations", "", doc, filename=filename(index))
@@ -1291,7 +1335,8 @@ async def _stage_archive(ctx: _Context) -> None:
                             state_sha256=replay["state_sha256"])
         # Observe the archived start exactly as an actor would, before saving.
         observations = await _observe(
-            ctx, connection, lambda i: f"archived-{ctx.sequence:03d}-{i:02d}.json")
+            ctx, connection, lambda i: f"archived-{ctx.sequence:03d}-{i:02d}.json",
+            bindings=replay["bindings"])
         ctx.evidence["archived_observations"] = [p for p, _ in observations]
         facts = _required_facts(recipe, observations)
         ctx.evidence["required_facts"] = facts
@@ -1711,7 +1756,8 @@ def _complete(ctx: _Context) -> dict[str, Any]:
             "packet": {"path": ctx.rel(packet_path), "sha256": _sha256_file(packet_path)}}
 
 
-def _prepare(recipe_path: Path, attempt_dir: Path, root: Path | None
+def _prepare(recipe_path: Path, attempt_dir: Path, root: Path | None, *,
+             unindexed_abandon_ok: bool = False
              ) -> tuple[dict[str, Any], Path, Path, Path, list[dict[str, Any]]]:
     root = Path(os.path.abspath(root or _REPO_ROOT))
     recipe_path = Path(os.path.abspath(recipe_path))
@@ -1720,14 +1766,53 @@ def _prepare(recipe_path: Path, attempt_dir: Path, root: Path | None
     _rel(attempt_dir, root)
     _rel(recipe_path, root)
     records = _stage_records(attempt_dir)
-    if (attempt_dir / INDEX_FILE).exists() or any(r["stage"] == ABANDON for r in records):
+    abandoned = any(r["stage"] == ABANDON for r in records)
+    if (attempt_dir / INDEX_FILE).exists() or (abandoned and not unindexed_abandon_ok):
         raise ValueError(f"attempt {attempt_dir} is closed (indexed or abandoned)")
     return recipe, root, recipe_path, attempt_dir, records
 
 
+def _sibling_journals(attempt_dir: Path) -> list[Path]:
+    """Every other attempt journal of the run (sibling attempt directories)."""
+    own = (attempt_dir / JOURNAL_FILE).resolve()
+    parent = attempt_dir.parent
+    if not parent.is_dir():
+        return []
+    return [p for p in sorted(parent.glob(f"*/{JOURNAL_FILE}")) if p.resolve() != own]
+
+
+def find_predecessor_journal(attempt_dir: Path, family: str, predecessor: str) -> Path | None:
+    """The sibling journal holding `predecessor` of `family` as terminal-failed."""
+    found = []
+    for path in _sibling_journals(attempt_dir):
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        scenarios = ((doc.get("families") or {}).get(family) or {}).get("scenarios") or []
+        if any(isinstance(s, dict) and s.get("scenario_id") == predecessor
+               and s.get("status") == "failed" and not s.get("imported_from")
+               for s in scenarios):
+            found.append(path)
+    if len(found) > 1:
+        raise ValueError(f"predecessor {predecessor!r} is journaled in several attempt "
+                         f"directories {[str(p) for p in found]}; pass --predecessor-journal")
+    return found[0] if found else None
+
+
+def _recover_completion(ctx: _Context, journal: AuthoringJournal,
+                        latest: dict[str, Any]) -> dict[str, Any] | None:
+    """A passed journal whose index/packet write failed: redo only `_complete`."""
+    if journal.record(ctx.scenario_id)["status"] != "passed":
+        return None
+    completion = _complete(ctx)
+    return {**latest, "completion": completion, "recovered": True}
+
+
 async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Path,
                               ops: LiveOps | None = None,
-                              root: Path | None = None) -> dict[str, Any]:
+                              root: Path | None = None,
+                              predecessor_journal: Path | None = None) -> dict[str, Any]:
     """Run one stage; returns its (immutable) stage record.
 
     Raises `ValueError` without writing anything when the transition is not
@@ -1735,6 +1820,12 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
     as ``failed`` with every piece of evidence gathered so far. The journal
     records the stage before the stage record is written, so a clock that
     expires at the end turns the record into ``failed`` (``clock_expired``).
+
+    A substitute recipe begun in a fresh attempt directory binds its failed
+    predecessor's journal: `predecessor_journal`, or by default the sibling
+    attempt journal holding the predecessor as terminal-failed. Re-running
+    `finish` on a passed attempt whose evidence index is missing (the write
+    failed after the journal closed) re-runs only the index/packet writes.
     """
     if stage not in STAGE_PREREQUISITES:
         raise ValueError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
@@ -1745,12 +1836,30 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
         for required in STAGES[:-1]:
             if statuses.get(required) != "passed":
                 raise ValueError(f"finish requires successful {required}")
+    if stage == "finish" and statuses.get(stage) == "passed" \
+            and (attempt_dir / JOURNAL_FILE).is_file():
+        ctx = _Context(recipe=recipe, recipe_path=recipe_path, attempt_dir=attempt_dir,
+                       root=root, ops=ops, stage=stage, sequence=_next_sequence(records),
+                       records=records)
+        wall, monotonic = ops.clocks if ops is not None else (time.time, time.monotonic)
+        with AuthoringJournal(attempt_dir / JOURNAL_FILE, wall_clock=wall,
+                              monotonic=monotonic) as journal:
+            recovered = _recover_completion(ctx, journal, _latest(records)["finish"])
+        if recovered is not None:
+            return recovered
     if stage not in REPEATABLE_STAGES and statuses.get(stage) == "passed":
         raise ValueError(f"{stage} already passed; repeat survey/apply/probe to revise it")
 
     ops = ops or production_ops()
     ctx = _Context(recipe=recipe, recipe_path=recipe_path, attempt_dir=attempt_dir, root=root,
                    ops=ops, stage=stage, sequence=_next_sequence(records), records=records)
+    if recipe["predecessor"] is not None and predecessor_journal is None:
+        predecessor_journal = find_predecessor_journal(attempt_dir, recipe["family"],
+                                                       recipe["predecessor"])
+    predecessor_ref = None
+    if predecessor_journal is not None:
+        predecessor_journal = Path(os.path.abspath(predecessor_journal))
+        predecessor_ref = _rel(predecessor_journal, root)
     attempt_dir.mkdir(parents=True, exist_ok=True)
     if stage in REPEATABLE_STAGES:
         _invalidate_downstream(ctx)
@@ -1762,7 +1871,10 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
             journal.begin(family=recipe["family"], scenario_id=recipe["scenario_id"],
                           predecessor=recipe["predecessor"],
                           reason=recipe["substitution_reason"],
-                          material_change=recipe["material_change"])
+                          material_change=recipe["material_change"],
+                          predecessor_journal=predecessor_journal,
+                          predecessor_journal_ref=predecessor_ref,
+                          sibling_journals=_sibling_journals(attempt_dir))
         except ValueError as exc:
             if "expired" not in str(exc):
                 raise
@@ -1807,15 +1919,21 @@ def abandon_attempt(recipe_path: Path, *, attempt_dir: Path, reason: str,
 
     Never connects to the game. An attempt whose journal is already
     terminal-failed (e.g. an expired clock) is indexed as well; a passed
-    or never-started attempt is refused."""
+    or never-started attempt is refused. Idempotent: an attempt already
+    abandoned whose index write failed is indexed now (no second record)."""
     if not (isinstance(reason, str) and reason.strip()):
         raise ValueError("abandon requires a non-empty reason")
-    recipe, root, recipe_path, attempt_dir, records = _prepare(recipe_path, attempt_dir, root)
+    recipe, root, recipe_path, attempt_dir, records = _prepare(
+        recipe_path, attempt_dir, root, unindexed_abandon_ok=True)
     if not (attempt_dir / JOURNAL_FILE).is_file():
         raise ValueError(f"attempt {attempt_dir} has no authoring journal to abandon")
     wall, monotonic = ops.clocks if ops is not None else (time.time, time.monotonic)
     ctx = _Context(recipe=recipe, recipe_path=recipe_path, attempt_dir=attempt_dir, root=root,
                    ops=ops, stage=ABANDON, sequence=_next_sequence(records), records=records)
+    previous = _latest(records).get(ABANDON)
+    if previous is not None:
+        index_ref = _write_index(ctx, [], position_id=None)
+        return {**previous, "evidence_index": index_ref, "recovered": True}
     with AuthoringJournal(attempt_dir / JOURNAL_FILE, wall_clock=wall,
                           monotonic=monotonic) as journal:
         ctx.journal = journal
@@ -2008,6 +2126,7 @@ def preflight(recipe_paths: list[Path], *, root: Path | None = None,
     return {
         "schema_version": SCHEMA_VERSION,
         "code_identity": code_identity,
+        "toolkit_identity": toolkit_fingerprint(root),  # informational, never gated
         "schema_identity": {
             "schema_version": SCHEMA_VERSION,
             "manifest_sha256": _sha256_file(arena / "benchmark_manifest_v2.py"),
@@ -2040,21 +2159,39 @@ def main(argv: list[str] | None = None) -> int:
         description="Replayable benchmark position authoring.")
     sub = parser.add_subparsers(dest="command", required=True)
     for stage in STAGES:
-        stage_parser = sub.add_parser(stage, help=f"run the {stage} stage")
+        stage_parser = sub.add_parser(stage, help=STAGE_HELP[stage])
         stage_parser.add_argument("--recipe", type=Path, required=True)
         stage_parser.add_argument("--attempt-dir", type=Path, required=True)
-    pre = sub.add_parser("preflight", help="offline identity binding (never connects)")
+        stage_parser.add_argument(
+            "--predecessor-journal", type=Path, default=None,
+            help="a substitute recipe's failed predecessor journal (default: the sibling "
+                 "attempt directory journal holding the predecessor as terminal-failed)")
+    pre = sub.add_parser(
+        "preflight", help="OFFLINE, needs the committed full-suite run and (to pass) the "
+                          "positive-control probe: bind code, toolkit, recipe, toolset and "
+                          "probe identities into --output; never connects.")
     pre.add_argument("--recipes", type=Path, nargs="+", required=True)
     pre.add_argument("--output", type=Path, required=True)
-    pre.add_argument("--probe", type=Path, default=None)
-    gate = sub.add_parser("gate", help="offline Part 1 acceptance gate over family packets")
+    pre.add_argument("--probe", type=Path, default=None,
+                     help=f"probe provenance (default {PROBE_PROVENANCE}); its path is "
+                          "recorded so the gate reads the same file")
+    gate = sub.add_parser(
+        "gate", help="OFFLINE, needs the three finish packets and a passed preflight: "
+                     "re-derive every requirement from raw files and write the verdict to "
+                     "--output.")
     gate.add_argument("--packets", type=Path, nargs="+", required=True)
     gate.add_argument("--preflight", type=Path, default=None)
     gate.add_argument("--output", type=Path, required=True)
-    files = sub.add_parser("evidence-files", help="offline evidence inventory/closure check")
+    files = sub.add_parser(
+        "evidence-files", help="OFFLINE, needs every attempt finished or abandoned: check "
+                               "each evidence index's closure and list the files to "
+                               "force-add into --output.")
     files.add_argument("--root", type=Path, required=True)
     files.add_argument("--output", type=Path, required=True)
-    abandon = sub.add_parser(ABANDON, help="close a failed attempt and index its evidence")
+    abandon = sub.add_parser(
+        ABANDON, help="OFFLINE, needs a journaled, not-passed attempt: record the abandon, "
+                      "close the journal as failed and write ATTEMPT/evidence-index.json "
+                      "(re-run to recover a failed index write).")
     abandon.add_argument("--recipe", type=Path, required=True)
     abandon.add_argument("--attempt-dir", type=Path, required=True)
     abandon.add_argument("--reason", required=True)
@@ -2088,7 +2225,8 @@ def main(argv: list[str] | None = None) -> int:
             print(args.output)
             return 0
         record = asyncio.run(run_authoring_stage(args.recipe, stage=args.command,
-                                                 attempt_dir=args.attempt_dir))
+                                                 attempt_dir=args.attempt_dir,
+                                                 predecessor_journal=args.predecessor_journal))
         print(json.dumps({"stage": record["stage"], "sequence": record["sequence"],
                           "status": record["status"], "error": record["error"]}))
         return 0 if record["status"] == "passed" else 1

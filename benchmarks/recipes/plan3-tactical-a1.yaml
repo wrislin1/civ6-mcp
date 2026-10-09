@@ -179,9 +179,11 @@ survey:
   - {tool: get_units, arguments: {}}
   - {tool: get_cities, arguments: {}}
   - {tool: get_map_area, arguments: {x: 73, y: 19, radius: 3}}
+  # Radius 1 on the resolved attacker keeps its unit line inside the result cap.
+  - {tool: get_map_area, arguments: {x: "${attacker.x}", y: "${attacker.y}", radius: 1}}
   - {tool: get_city_production, arguments: {city_id: 262147}}
   required_facts:
-  - {id: attacker-visible, source: get_units, pattern: "Barbarian \\(\\d+ units?\\):"}
+  - {id: attacker-visible, source: get_map_area, pattern: "\\*\\*\\[[^\\]]*Barbarian"}
   - {id: civilian-visible, source: get_units, pattern: "(?i)settler"}
   - {id: expendable-visible, source: get_units, pattern: "(?i)warrior"}
   - {id: defended-city-visible, source: get_cities, pattern: "Gongju \\(pop \\d+\\)"}

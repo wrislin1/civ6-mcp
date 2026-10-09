@@ -75,6 +75,20 @@ def test_export_copies_base_save_with_spaces_and_verifies_digest(saves, tmp_path
     assert [p.name for p in dest.parent.iterdir()] == ["base.Civ6Save"]
 
 
+def test_export_creates_a_missing_destination_directory(saves, tmp_path):
+    """A fresh Windows checkout has no (gitignored) benchmark_runs/.../bases/."""
+    payload = b"civ6 save bytes"
+    (saves / BASE_SAVE).write_bytes(payload)
+    dest = tmp_path / "benchmark_runs" / "plan3-part1" / "bases" / "abc.Civ6Save"
+    assert not dest.parent.exists()
+
+    result = _export("SEONDEOK 100 400 BC", dest)
+
+    assert dest.read_bytes() == payload
+    assert result["existed"] is False
+    assert [p.name for p in dest.parent.iterdir()] == ["abc.Civ6Save"]
+
+
 @pytest.mark.parametrize(
     "bad_name",
     ["", "../evil", "sub/name", "sub\\name", "..", "a..b", "C:name", ".Civ6Save"],

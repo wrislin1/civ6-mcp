@@ -73,10 +73,15 @@ and must regenerate byte-identically.
 - **Coverage:** the recipe's `coverage_rule` (owned tiles when `include_owned_tiles`, every tile within
   `area_radius` in x and y of each bound tile, and the tracked target units) is resolved once and frozen in
   the position; it is a comparison identity.
-- **Contract/code identity:** `implementation_fingerprint` over the 31 fingerprint dependencies listed in
-  `instrument-v2.yaml` (the v2 construction; never equal to, or presented as, the v1 scorer fingerprint).
-  It is recorded as each position's `contract_identity`, in every validation suite, and as the offline
-  preflight's `code_identity`; the gate requires all of them to match.
+- **Contract/code identity:** `implementation_fingerprint` over the 24 `fingerprint_dependencies` listed
+  in `instrument-v2.yaml` — the score/classification/evidence-determining chain only (the v2
+  construction; never equal to, or presented as, the v1 scorer fingerprint). It is recorded as each
+  position's `contract_identity`, in every validation suite, and as the offline preflight's
+  `code_identity`; the gate requires all of them to match.
+- **Toolkit identity:** `toolkit_fingerprint` over the 8 `toolkit_dependencies` (authoring stages and
+  journal, gate and evidence loader, capture probe, deployment, launcher). These produce and check evidence
+  but never change what a score means; `toolkit_identity` is recorded in the preflight and the gate
+  result for information and is **never** compared for equality.
 - **Capture implementation:** the positive-control timing probe (Task 17) is bound by
   `capture_implementation_digest`, which hashes only the capture path, so appending a fingerprint
   dependency does not invalidate a timing measurement.
@@ -150,3 +155,16 @@ all prior evidence (including failed attempts) unchanged, forces every affected 
 under the new identity, and **does not reset scenario time** — the three-hour clock of an attempt keeps
 running across the amendment. Changed bounds, extra attempts or a second substitution require a
 prospective amendment recorded before use.
+
+Amendment procedure by kind of change:
+
+- **Scoring-chain change** (any file in `fingerprint_dependencies`): the change yields a new
+  `contract_identity`. Record the amendment here before use, re-run the full suite and the offline
+  preflight under the new identity, and revalidate every affected packet (re-run its `validate` stage
+  under the new identity; earlier packets stay retained, never edited). The gate passes only when every
+  packet and the preflight carry the new identity.
+- **Toolkit change** (any file in `toolkit_dependencies`): no revalidation. The new `toolkit_identity`
+  is recorded by the next preflight and gate run; packets already produced keep their contract identity
+  and remain valid. A toolkit change must not alter what any stage records as scored evidence — if it
+  would, the module belongs in `fingerprint_dependencies` and the scoring-chain procedure applies.
+- `capture_implementation_digest` (the timing probe's binding) is separate and unaffected by either list.

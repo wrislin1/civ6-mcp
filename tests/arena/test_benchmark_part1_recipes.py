@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,13 @@ import yaml
 
 from civ_mcp.arena import registry
 from civ_mcp.arena.benchmark_agent import FINISH_TRIAL_TOOL_NAME
-from civ_mcp.arena.benchmark_authoring import load_recipe
+from civ_mcp.arena.benchmark_authoring import (
+    load_recipe,
+    query_uses_bindings,
+    substitute_bindings,
+)
 from civ_mcp.arena.benchmark_manifest_v2 import load_toolset
+from civ_mcp.lua import models as lq
 
 REPO = Path(__file__).resolve().parents[2]
 FAMILIES = ("builder", "city", "tactical")
@@ -293,3 +299,132 @@ def test_case_scores_follow_the_rubric_structure(family):
     if family == "builder":
         # Both distinct four-point harms fire: the full -8/12 deduction.
         assert any(c["expected"]["score"]["harm_total"] == 8 for c in recipe["cases"])
+
+
+# ---------------------------------------------------------------------------
+# Required facts against the ARENA narrators (no game contact)
+# ---------------------------------------------------------------------------
+#
+# `_required_facts` searches the capped text of exactly the tool named as a
+# fact's `source`, rendered by the frozen arena registry. These fixtures drive
+# that registry path (registry.dispatch -> arena narrator) from model objects
+# shaped like each scenario's archived start, so a pattern the arena surface
+# cannot emit (e.g. the MCP-only threats header of get_units) fails offline.
+
+# Where each scenario's setup places the hostile (resolved live; fixture values).
+FIXTURE_BINDINGS = {
+    "builder": {"route_threat": {"x": 75, "y": 30}},
+    "city": {},
+    "tactical": {"attacker": {"x": 73, "y": 21}},
+}
+
+
+def _unit(index, unit_type, x, y, **kw):
+    return lq.UnitInfo(unit_id=65536 + index, unit_index=index, name=unit_type.title(),
+                       unit_type=unit_type, x=x, y=y, moves_remaining=2, max_moves=2,
+                       health=100, max_health=100, **kw)
+
+
+def _city(city_id, name, x, y, **kw):
+    return lq.CityInfo(city_id=city_id, name=name, x=x, y=y, population=7, food=9,
+                       production=8, gold=5, science=4, culture=3, faith=1, housing=8,
+                       amenities=1, turns_to_grow=6, food_surplus=2.0, food_stored=30,
+                       growth_threshold=60, currently_building="BUILDING_GRANARY",
+                       production_turns_left=4, districts=["DISTRICT_CAMPUS@72,25"],
+                       buildings=["PALACE", "GRANARY", "WALLS"], **kw)
+
+
+def _tiles(cx, cy, radius, hostile_at):
+    """A hex-sized area of maximally verbose tiles; the centre tile comes last."""
+    count = 1 + 3 * radius * (radius + 1)
+    ring = [(cx + dx, cy + dy) for dy in range(-radius, radius + 1)
+            for dx in range(-radius, radius + 1) if (dx, dy) != (0, 0)]
+    coords = ring[: count - 1] + [(cx, cy)]
+    return [lq.TileInfo(
+        x=x, y=y, terrain="TERRAIN_GRASS", feature="FEATURE_FOREST" if i % 3 else None,
+        resource="RESOURCE_HORSES" if i % 2 else "RESOURCE_WHEAT", is_hills=True,
+        is_river=True, is_coastal=True,
+        improvement="IMPROVEMENT_FARM" if i % 2 == 0 else "IMPROVEMENT_PASTURE",
+        owner_id=0, owner_name="Korea", yields=(3, 2, 1, 1, 1, 1),
+        resource_class="bonus", route_type=0, movement_cost=3,
+        own_units=["BUILDER", "SWORDSMAN"] if i == 0 else None,
+        units=["Barbarian WARRIOR"] if (x, y) in hostile_at else None)
+        for i, (x, y) in enumerate(coords)]
+
+
+class _ArenaFixtureGame:
+    """The GameState reads the arena narrators consume, returning fixtures."""
+
+    def __init__(self, hostile_at):
+        self.hostile_at = set(hostile_at)
+
+    async def get_units(self):
+        return [_unit(1, "UNIT_BUILDER", 70, 22, build_charges=1),
+                _unit(2, "UNIT_BUILDER", 73, 30, build_charges=1),
+                _unit(3, "UNIT_BUILDER", 67, 24, build_charges=1),
+                _unit(4, "UNIT_SWORDSMAN", 73, 30, combat_strength=35),
+                _unit(5, "UNIT_ARCHER", 73, 19, combat_strength=25, ranged_strength=25),
+                _unit(6, "UNIT_SETTLER", 74, 21),
+                _unit(7, "UNIT_WARRIOR", 72, 21, combat_strength=20)]
+
+    async def get_cities(self):
+        return ([_city(65536, "Gyeongju", 72, 26, pillaged_buildings=["BUILDING_MONUMENT"]),
+                 _city(131073, "Jeonju", 67, 24, pillaged_improvements=["MINE@68,23"]),
+                 _city(196610, "Gwangju", 70, 22),
+                 _city(262147, "Gongju", 73, 19),
+                 _city(327684, "Jinju", 73, 30, unimproved_resources=["HORSES@74,30"])], [])
+
+    async def get_builder_tasks(self):
+        tasks = [lq.BuilderTask("urgent", 68, 23, "IMPROVEMENT_MINE", "IRON", "pillaged",
+                                "Jeonju", 65537, 2),
+                 lq.BuilderTask("high", 74, 30, "IMPROVEMENT_PASTURE", "HORSES", "strategic",
+                                "Jinju", 65538, 1),
+                 lq.BuilderTask("normal", 66, 23, "IMPROVEMENT_FARM", "", "", "Jeonju",
+                                65539, 1)]
+        builders = [lq.BuilderInfo(65536 + i, i, 70, 22, 1, 2) for i in (1, 2, 3)]
+        return tasks, builders
+
+    async def get_map_area(self, x, y, radius=2):
+        return _tiles(x, y, radius, self.hostile_at)
+
+    async def list_city_production(self, city_id):
+        return [lq.ProductionOption("UNIT", "UNIT_BUILDER", 50, 5, 200),
+                lq.ProductionOption("UNIT", "UNIT_SPEARMAN", 65, 6, 260),
+                lq.ProductionOption("UNIT", "UNIT_SWORDSMAN", 90, 8, 360),
+                lq.ProductionOption("BUILDING", "BUILDING_GRANARY", 65, 6, 260),
+                lq.ProductionOption("BUILDING", "BUILDING_MONUMENT", 30, 2, 120,
+                                    is_repair=True)]
+
+    async def get_district_advisor(self, city_id, district_type):
+        return [lq.DistrictPlacement(66, 25, {"science": 2}, 2, "Grassland Hills"),
+                lq.DistrictPlacement(68, 24, {"science": 1}, 1, "Plains")]
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+async def test_required_facts_match_the_arena_narrators_within_the_cap(family):
+    recipe = load_recipe(_path(family), root=REPO)
+    allowed = tuple(load_toolset(REPO / recipe["toolset_path"])["game_tools"])
+    bindings = FIXTURE_BINDINGS[family]
+    game = _ArenaFixtureGame([(b["x"], b["y"]) for b in bindings.values()])
+    sources = {fact["source"] for fact in recipe["survey"]["required_facts"]}
+    rendered: dict[str, list[str]] = {}
+    for query in recipe["survey"]["queries"]:
+        if query["tool"] not in sources:
+            continue
+        arguments = substitute_bindings(dict(query["arguments"]), bindings) \
+            if query_uses_bindings(query) else dict(query["arguments"])
+        text = await registry.dispatch(game, query["tool"], arguments, allowed=allowed)
+        rendered.setdefault(query["tool"], []).append(text[: recipe["result_char_cap"]])
+    missing = [fact["id"] for fact in recipe["survey"]["required_facts"]
+               if not any(re.search(fact["pattern"], text)
+                          for text in rendered.get(fact["source"], []))]
+    assert missing == [], {tool: texts for tool, texts in rendered.items()}
+
+
+def test_the_arena_get_units_surface_never_emits_the_threats_header():
+    """Pins why threat facts are sourced from get_map_area: the arena
+    get_units narrator is called without threats."""
+    async def run():
+        return await registry.dispatch(_ArenaFixtureGame([]), "get_units", {})
+    import asyncio
+    assert not re.search(r"Barbarian \(\d+ units?\):", asyncio.run(run()))

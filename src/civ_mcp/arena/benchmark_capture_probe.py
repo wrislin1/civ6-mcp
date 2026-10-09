@@ -34,6 +34,7 @@ import dataclasses
 import hashlib
 import json
 import math
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -277,6 +278,14 @@ async def _query_grid_size(conn: Any) -> tuple[int, int]:
     raise BenchmarkStateError(f"grid size query returned no GRID row: {lines!r}")
 
 
+def _bridge_archive(archive: Path) -> str:
+    """Repository-relative archive path for the Windows bridge (absolute otherwise)."""
+    try:
+        return Path(os.path.abspath(archive)).relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return str(archive)
+
+
 def production_ops() -> ProbeOps:
     """The production deploy/reload/capture path; read-only after deploy."""
     from civ_mcp.arena.benchmark_deploy import deploy_via_windows
@@ -292,8 +301,10 @@ def production_ops() -> ProbeOps:
         return conn
 
     async def deploy(position: PositionManifest, archive: Path) -> dict[str, Any]:
+        # The bridge runs in the Windows checkout: hand it the repo-relative path.
         evidence = await asyncio.to_thread(
-            deploy_via_windows, str(archive), position.game_save_name, position.archive_sha256)
+            deploy_via_windows, _bridge_archive(archive), position.game_save_name,
+            position.archive_sha256)
         return dataclasses.asdict(evidence)
 
     async def disconnect(conn: Any) -> None:

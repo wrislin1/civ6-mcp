@@ -83,10 +83,18 @@ def _windows_path(path: str) -> str:
     Mirrors ``civ_mcp.game_launcher._press_escape_windows_bridge``'s
     translation exactly (same drive-letter / backslash convention) since the
     signed Windows interpreter cannot resolve ``/mnt`` paths.
+
+    A relative path is returned unchanged: the bridge runs with the Windows
+    checkout as its working directory, so it resolves there. Any other
+    absolute POSIX path (e.g. ``/home/...``) has no Windows meaning and raises
+    ``ValueError`` instead of being handed to the Windows side verbatim.
     """
     text = str(path)
-    if text.startswith("/mnt/") and len(text) > 7:
+    if _MOUNTED_ABS.match(text):
         return text[5].upper() + ":" + text[6:].replace("/", "\\")
+    if text.startswith("/"):
+        raise ValueError(f"{text!r} is an absolute POSIX path outside /mnt/<drive>/; "
+                         "pass a repository-relative path or a /mnt/<drive>/ path")
     return text
 
 
@@ -115,10 +123,13 @@ def _run_bridge(argv: list[str], *, timeout: float) -> dict[str, Any]:
 
     win_bootstrap = _windows_path(bootstrap)
     try:
+        # Repository-relative paths in `argv` resolve against the Windows
+        # checkout, whichever directory this process was started from.
         proc = subprocess.run(
             [python_exe, win_bootstrap, *argv],
             capture_output=True,
             timeout=timeout,
+            cwd=game_launcher.WSL_WINDOWS_REPO,
         )
     except Exception as exc:
         raise BridgeError(f"Windows bridge invocation failed: {exc}") from exc

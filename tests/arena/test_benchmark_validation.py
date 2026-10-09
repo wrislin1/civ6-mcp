@@ -10,6 +10,7 @@ the store are all real.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 
@@ -470,6 +471,31 @@ async def test_report_only_path_refuses_changed_dependencies(tmp_path):
     script_path.write_bytes(script_path.read_bytes() + b"\n# edited\n")
     with pytest.raises(ValueError, match="script"):
         build_reports(run_dir)
+
+
+async def test_lock_binds_the_suite_file_path_and_bytes(tmp_path):
+    docs, run_dir = tmp_path / "docs", tmp_path / "run"
+    suite = write_case(docs, PASSING_EXPECTED)
+    await run_validation(suite, run_dir, dependencies=World().transport())
+    lock = json.loads((run_dir / "session.json").read_text())
+    assert lock["suite"] == {"path": str(suite), "sha256": hashlib.sha256(suite.read_bytes()).hexdigest(),
+                             "bound": "bytes"}
+
+
+async def test_report_only_path_refuses_a_changed_suite_file(tmp_path):
+    docs, run_dir = tmp_path / "docs", tmp_path / "run"
+    suite = write_case(docs, PASSING_EXPECTED)
+    await run_validation(suite, run_dir, dependencies=World().transport())
+    build_reports(run_dir)
+    suite.write_bytes(suite.read_bytes() + b"\n# edited\n")
+    with pytest.raises(ValueError, match="suite"):
+        build_reports(run_dir)
+
+
+def test_lock_suite_path_is_repo_relative_for_a_suite_in_the_checkout():
+    from civ_mcp.arena.benchmark_scripted_runner import _REPO_ROOT, _portable
+    inside = _REPO_ROOT / "benchmarks/validation/x/suite.yaml"
+    assert _portable(inside) == "benchmarks/validation/x/suite.yaml"
 
 
 async def test_report_only_path_refuses_changed_code_identity(tmp_path, monkeypatch):

@@ -16,11 +16,12 @@ writers cannot edit the same clock concurrently.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,36 @@ def elapsed_authoring_seconds(started_unix_s, now_unix_s, recorded_elapsed_s):
     if now_unix_s < started_unix_s + recorded_elapsed_s:
         raise ValueError("authoring clock moved backwards")
     return max(recorded_elapsed_s, now_unix_s - started_unix_s)
+
+
+def _read_journal(path: Path) -> dict[str, Any]:
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(doc, dict) or doc.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError(f"unsupported authoring journal schema in {path}")
+    return doc
+
+
+def _family_scenarios(doc: dict[str, Any], family: str) -> list[dict[str, Any]]:
+    entry = doc.get("families", {}).get(family) or {}
+    return [s for s in entry.get("scenarios", []) if isinstance(s, dict)]
+
+
+def _import_predecessor(path: Path, family: str, predecessor: str, ref: str) -> dict[str, Any]:
+    """The terminal-failed predecessor record from another journal, by reference."""
+    if not path.is_file():
+        raise ValueError(f"predecessor journal {path} does not exist")
+    data = path.read_bytes()
+    doc = _read_journal(path)
+    found = [s for s in _family_scenarios(doc, family)
+             if s.get("scenario_id") == predecessor and not s.get("imported_from")]
+    if not found:
+        raise ValueError(f"no predecessor {predecessor!r} of family {family!r} in {path}")
+    record = copy.deepcopy(found[0])
+    if record.get("status") != "failed":
+        raise ValueError(f"predecessor {predecessor!r} in {path} is {record.get('status')!r}, "
+                         "not terminal-failed")
+    record["imported_from"] = {"journal": ref, "sha256": hashlib.sha256(data).hexdigest()}
+    return record
 
 
 def _pid_alive(pid: int) -> bool:
@@ -216,7 +247,18 @@ class AuthoringJournal:
         predecessor: str | None,
         reason: str | None,
         material_change: str | None,
+        predecessor_journal: Path | None = None,
+        predecessor_journal_ref: str | None = None,
+        sibling_journals: Sequence[Path] = (),
     ) -> dict[str, Any]:
+        """Open (or resume) `scenario_id`'s clock.
+
+        A substitute begun in a fresh journal names the failed predecessor's
+        journal (`predecessor_journal`); that terminal-failed record is copied
+        by reference (journal path + sha256, ``imported_from``) so substitution
+        validation and the family total see both attempts. `sibling_journals`
+        are every other attempt journal of the run: their identities count
+        toward the two-identity family budget."""
         doc = copy.deepcopy(self._doc)
         existing = self._find(doc, scenario_id)
         if existing is not None:
@@ -235,14 +277,42 @@ class AuthoringJournal:
 
         entry = doc["families"].setdefault(family, {"scenarios": [], "total_elapsed_s": 0.0})
         scenarios = entry["scenarios"]
-        if len(scenarios) >= 2:
+        # Identities journaled elsewhere (sibling attempt directories) count
+        # toward the family's two-identity budget.
+        elsewhere: dict[str, str] = {}
+        for path in sibling_journals:
+            path = Path(path)
+            if path.resolve() == self._path.resolve() or not path.is_file():
+                continue
+            for other in _family_scenarios(_read_journal(path), family):
+                if not other.get("imported_from"):
+                    elsewhere.setdefault(other["scenario_id"], str(path))
+        if scenario_id in elsewhere:
             raise ValueError(
-                f"family {family!r} is blocked: attempt and substitute already used"
+                f"scenario {scenario_id!r} is already journaled in {elsewhere[scenario_id]}"
             )
+        identities = set(elsewhere) | {
+            s["scenario_id"] for s in scenarios if not s.get("imported_from")}
+        if len(scenarios) >= 2 or len(identities | {scenario_id}) > 2:
+            raise ValueError(
+                f"family {family!r} is blocked: attempt and substitute already used "
+                f"({sorted(identities)})"
+            )
+        if not scenarios and predecessor is not None and predecessor_journal is not None:
+            scenarios.append(_import_predecessor(
+                Path(predecessor_journal), family, predecessor,
+                predecessor_journal_ref or Path(predecessor_journal).as_posix()))
         if not scenarios:
             if predecessor is not None:
                 raise ValueError(
-                    f"no failed predecessor {predecessor!r} in family {family!r}"
+                    f"no failed predecessor {predecessor!r} in family {family!r} "
+                    "(a substitute in a fresh attempt directory needs the predecessor's "
+                    "journal: --predecessor-journal)"
+                )
+            if elsewhere:
+                raise ValueError(
+                    f"family {family!r} already has attempt 1 {sorted(elsewhere)}; a new "
+                    "identity must be a declared substitute of a failed predecessor"
                 )
             attempt = 1
         else:

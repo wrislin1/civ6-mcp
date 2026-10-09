@@ -181,14 +181,22 @@ def _build_lock(
     cases: list[_ScriptedCase],
     schedule: list[ScriptedTrialSpec],
     code_identity: str,
+    suite_path: Path | None = None,
 ) -> dict[str, Any]:
-    portable_suite = copy.deepcopy(suite)
-    portable_suite["position"] = _portable_ref(suite["position"])
-    portable_suite["cases"] = [_portable_ref(ref) for ref in suite["cases"]]
+    if suite_path is not None:
+        # Bound to the suite file itself: its path and the sha256 of its bytes.
+        suite_ref = {"path": _portable(suite_path), "sha256": _file_sha256(suite_path),
+                     "bound": "bytes"}
+    else:
+        portable_suite = copy.deepcopy(suite)
+        portable_suite["position"] = _portable_ref(suite["position"])
+        portable_suite["cases"] = [_portable_ref(ref) for ref in suite["cases"]]
+        suite_ref = {"path": suite["suite_id"], "sha256": document_digest(portable_suite),
+                     "bound": "portable"}
     lock = {
         "schema_version": SCHEMA_VERSION,
         "lock_id": f"{suite['suite_id']}:scripted",
-        "suite": {"path": suite["suite_id"], "sha256": document_digest(portable_suite)},
+        "suite": suite_ref,
         "scripts": [_portable_ref(c.script_ref) for c in cases],
         "cases": [_portable_ref(c.case_ref) for c in cases],
         "archive_identity": {
@@ -236,10 +244,15 @@ async def run_scripted_suite(
     suite: dict[str, Any],
     run_dir: Path,
     *,
+    suite_path: Path | None = None,
     dependencies: ScriptedTransport | None = None,
 ) -> list[dict[str, Any]]:
     """Run every case of a loaded validation suite; return committed trials.
 
+    `suite_path` is the file `suite` was loaded from: the lock then binds its
+    repository-relative path and the sha256 of its bytes (``bound: bytes``);
+    without it the lock records the suite id and a portable digest of the
+    loaded document (``bound: portable``).
     `dependencies` replaces only the game transport/save lifecycle (tests);
     by default the archive is deployed through the Windows bridge, the live
     `GameConnection` is used, and every reload must be confirmed.
@@ -253,7 +266,8 @@ async def run_scripted_suite(
         for i, c in enumerate(cases, start=1)
     ]
     contract_fingerprint = implementation_fingerprint(_REPO_ROOT)
-    lock = _build_lock(suite, position, toolset, cases, schedule, contract_fingerprint)
+    lock = _build_lock(suite, position, toolset, cases, schedule, contract_fingerprint,
+                       suite_path=Path(suite_path) if suite_path is not None else None)
     lock["session_fingerprint"] = compute_session_fingerprint(lock)
     store = BenchmarkStore.create(run_dir, lock)
 
@@ -344,8 +358,12 @@ def _production_transport(position: dict[str, Any]) -> ScriptedTransport:
     archive = position["archive"]
     save = SimpleNamespace(game_save_name=position["game_save_name"])
 
+    # `load_v2_document` resolved the archive to an absolute local path; the
+    # bridge runs in the Windows checkout, so it gets the repo-relative path.
+    archive_rel = _portable(archive["path"])
+
     def deploy() -> object:
-        return deploy_via_windows(archive["path"], position["game_save_name"], archive["sha256"])
+        return deploy_via_windows(archive_rel, position["game_save_name"], archive["sha256"])
 
     async def reload() -> bool:
         return await reload_position(connection, save)

@@ -12,6 +12,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -236,6 +237,22 @@ async def test_library_or_other_position_is_refused_before_any_deploy(tmp_path):
                                       ops=ops.bundle())
         assert ops.calls == []
         assert not (tmp_path / "out").exists()
+
+
+async def test_production_deploy_hands_the_bridge_a_repo_relative_archive(monkeypatch):
+    from civ_mcp.arena import benchmark_deploy
+    deploys: list[tuple] = []
+
+    def fake_deploy(*args):
+        deploys.append(args)
+        return benchmark_deploy.DeploymentEvidence(
+            ok=True, save_name=args[1], dest_path="C:\\x",
+            archive_sha256=args[2], deployed_sha256=args[2], expected_sha256=args[2], raw={})
+    monkeypatch.setattr(benchmark_deploy, "deploy_via_windows", fake_deploy)
+    position = SimpleNamespace(game_save_name="S", archive_sha256="ab")
+    archive = REPO / "benchmarks/saves/builder-posctrl-v1.Civ6Save"
+    await probe.production_ops().deploy(position, archive)
+    assert deploys == [("benchmarks/saves/builder-posctrl-v1.Civ6Save", "S", "ab")]
 
 
 async def test_archive_hash_mismatch_is_refused(tmp_path):
@@ -529,9 +546,11 @@ def test_function_source_matches_inspect_getsource():
     assert probe._function_source(path, "document_digest") == inspect.getsource(c2.document_digest)
 
 
-def test_probe_module_is_a_fingerprint_dependency():
-    deps = list(c2.FINGERPRINT_DEPENDENCIES)
+def test_probe_module_is_a_toolkit_dependency():
+    """The probe measures capture timing; it never changes what a score means."""
+    deps = list(c2.TOOLKIT_DEPENDENCIES)
     assert "src/civ_mcp/arena/benchmark_capture_probe.py" in deps
+    assert "src/civ_mcp/arena/benchmark_capture_probe.py" not in c2.FINGERPRINT_DEPENDENCIES
     assert deps == sorted(set(deps))
 
 

@@ -312,7 +312,14 @@ def _validate_suite(raw: dict[str, Any]) -> None:
 
 def _validate_lock(raw: dict[str, Any]) -> None:
     _require(_is_str(raw["lock_id"]), "lock.lock_id must be a non-empty string")
-    _check_keys(raw["suite"], {"path", "sha256"}, "lock.suite")
+    suite = raw["suite"]
+    # `bound` says what suite.sha256 binds: the suite file's bytes (suite.path is
+    # its repo-relative path) or a portable digest of the loaded document
+    # (suite.path is the suite id). Locks written before `bound` omit it.
+    _check_keys(suite, {"path", "sha256", "bound"} if isinstance(suite, dict) and "bound" in suite
+                else {"path", "sha256"}, "lock.suite")
+    _require(suite.get("bound", "portable") in ("bytes", "portable"),
+             "lock.suite.bound must be 'bytes' or 'portable'")
     for key in ("scripts", "cases"):
         refs = raw[key]
         _require(isinstance(refs, list) and refs, f"lock.{key} must be a non-empty list")
