@@ -65,6 +65,8 @@ CAPTURE = {"count": 4, "mean_s": 0.25, "p95_s": 0.5, "max_s": 0.5, "total_s": 1.
            "in_episode_share": 0.1, "lua_executions_total": 4,
            "all_single_execution": True, "unavailable": {}}
 
+TOOLSET_IDENTITY = {"source_sha256": "a" * 64, "schemas_sha256": "b" * 64}
+
 COVERAGE = {"include_owned_tiles": False, "area": [[10, 10]], "tracked_targets": []}
 
 
@@ -91,7 +93,7 @@ def make_trial(**overrides):
         "round_trips_completed": 3, "script_id": "farm", "script_sha256": "s" * 64,
         "seed": None, "session_fingerprint": "e" * 64, "steps": steps,
         "terminal": "finish_trial", "tool_call_attempts": 2, "toolset_id": "tools",
-        "toolset_identity": {"source_sha256": "a" * 64, "schemas_sha256": "b" * 64},
+        "toolset_identity": copy.deepcopy(TOOLSET_IDENTITY),
         "validation_failures": [], "validation_status": "passed_mechanics",
         "wall_clock_s": 5.0,
     }
@@ -110,7 +112,7 @@ def make_position(**overrides):
         "public_observation": {"path": "/abs/obs.json", "sha256": "0" * 64},
         "public_task_tiles": [[11, 10]],
         "coverage": copy.deepcopy(COVERAGE),
-        "toolset": {"path": "/abs/tools.yaml", "identity": "tools"},
+        "toolset": {"path": "/abs/tools.yaml", "identity": copy.deepcopy(TOOLSET_IDENTITY)},
         "rubric": {"objectives": [{"id": "farm", "rungs": [{"points": 4,
                                                            "predicate": FARM}]}],
                    "harms": [{"id": "warrior-lost", "loss_key": "warrior",
@@ -226,6 +228,25 @@ def test_capture_summary_is_surfaced_with_honest_unavailable_fields():
 
     missing = build_trial_report(make_trial(capture_summary=None), make_position())["capture"]
     assert missing["available"] is False and missing["total_s"] is None
+
+
+@pytest.mark.parametrize("field,trial_overrides,position_overrides", [
+    ("position_id", {"position_id": "pos-other"}, {}),
+    ("coverage", {"coverage": {"include_owned_tiles": True, "area": [[10, 10]],
+                               "tracked_targets": []}}, {}),
+    ("toolset_identity", {}, {"toolset": {"path": "/abs/tools.yaml",
+                                          "identity": {"source_sha256": "x" * 64,
+                                                       "schemas_sha256": "b" * 64}}}),
+])
+def test_trial_scored_against_a_mismatched_position_is_refused(field, trial_overrides,
+                                                               position_overrides):
+    with pytest.raises(ValueError, match=field):
+        build_trial_report(make_trial(**trial_overrides), make_position(**position_overrides))
+
+
+def test_matching_trial_and_position_still_build():
+    report = build_trial_report(make_trial(), make_position())
+    assert report["provenance"]["position_id"] == "pos-farm"
 
 
 def test_evidence_version_one_is_rejected():

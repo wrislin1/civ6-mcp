@@ -119,9 +119,26 @@ def _loss_coverage(trial: dict[str, Any], losses: list[dict[str, Any]]) -> dict[
             "declared": declared, "undeclared": len(losses) - declared}
 
 
+def _require_matching_position(trial: dict[str, Any], position: dict[str, Any]) -> None:
+    """Refuse to score a trial against a position it was not recorded for.
+
+    `contract_fingerprint` is deliberately not compared with the position's
+    `contract_identity`: the former is the run-time `implementation_fingerprint`
+    of the code, the latter a declared identity string from the position
+    document; they are different kinds of value with no defined conversion.
+    """
+    pairs = (("position_id", trial["position_id"], position["position_id"]),
+             ("coverage", trial["coverage"], position["coverage"]),
+             ("toolset_identity", trial["toolset_identity"], position["toolset"]["identity"]))
+    for field, recorded, declared in pairs:
+        if canonical_bytes(recorded) != canonical_bytes(declared):
+            raise ValueError(f"trial {field} does not match the position's {field}")
+
+
 def build_trial_report(trial: dict[str, Any], position: dict[str, Any]) -> dict[str, Any]:
     """Derived, deterministic report of one persisted v2 trial."""
     _require_v2(trial, "trial")
+    _require_matching_position(trial, position)
     rubric = position["rubric"]
     score = score_trial(trial, rubric)
     progress = attribute_progress(trial, rubric)
