@@ -54,150 +54,140 @@ measured_parameters:
 setup:
   operations:
   - kind: lua
-    # Attacker: first passable empty land tile at distance 2 from Gongju.
+    # Joint layout, chosen before anything is placed (live 2026-10-09, apply
+    # stage 002: placing the attacker, archer, settler and warrior one after
+    # another left no tile for the warrior -- Gongju sits between mountains,
+    # the coast and Jerusalem, and the first attacker tile in scan order was
+    # the holy site at (72,17)). The attacker is the first passable, empty,
+    # district-free land tile at distance 2 from Gongju for which all three
+    # companions exist: the archer's tile beside Gongju within two tiles of
+    # the attacker (verified pattern: UnitManager.PlaceUnit + RestoreMovement),
+    # the settler's tile beside the attacker with no own combat unit within
+    # one tile once the archer has moved, and the wounded warrior's tile
+    # beside the attacker at distance >= 2 from the settler. Measured on this
+    # base: attacker (72,21), archer (74,20), settler (73,22), warrior (71,21).
     lua: |
-      local pick = nil
-      for y = 16, 22 do
-        for x = 70, 76 do
-          local p = Map.GetPlot(x, y)
-          if pick == nil and p ~= nil and Map.GetPlotDistance(x, y, 73, 19) == 2
-              and not p:IsWater() and not p:IsImpassable() and not p:IsCity()
-              and p:GetUnitCount() == 0 then pick = p end
-        end
+      local CX, CY = 73, 19
+      local function free(p)
+        return p ~= nil and not p:IsWater() and not p:IsImpassable() and not p:IsCity()
+          and p:GetUnitCount() == 0 and p:GetDistrictType() < 0
       end
-      if pick == nil then print("ERR|no attacker tile at distance 2 from Gongju") return end
-      local u = UnitManager.InitUnit(63, "UNIT_WARRIOR", pick:GetX(), pick:GetY())
-      if u == nil then print("ERR|barbarian spawn failed") return end
-      u:SetDamage(50)
-      print("OK|attacker|" .. pick:GetX() .. "," .. pick:GetY())
-    readback: |
-      local n = 0
-      for _, u in Players[63]:GetUnits():Members() do
-        local p = Map.GetPlot(u:GetX(), u:GetY())
-        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2
-            and PlayersVisibility[0]:IsVisible(p:GetIndex()) then
-          n = n + 1
-          print("OK|attacker|" .. u:GetX() .. "," .. u:GetY() .. "|hp "
-                .. (u:GetMaxDamage() - u:GetDamage()))
-        end
+      local function same(p, q)
+        return p ~= nil and q ~= nil and p:GetX() == q:GetX() and p:GetY() == q:GetY()
       end
-      if n ~= 1 then print("ERR|expected one visible attacker near Gongju, found " .. n) end
-  - kind: lua
-    # Archer: off the city tile (frees Gongju's combat slot for purchases), onto an
-    # empty land tile beside Gongju within two tiles of the attacker. Verified pattern
-    # (provenance mutation_journal seq 2/3): UnitManager.PlaceUnit + RestoreMovement.
-    # Runs before the civilian spawn so the settler's exposure check sees the new tile.
-    lua: |
-      local ax, ay = nil, nil
-      for _, u in Players[63]:GetUnits():Members() do
-        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end
-      end
-      if ax == nil then print("ERR|attacker missing") return end
       local archer = nil
       for _, v in Players[0]:GetUnits():Members() do
         if GameInfo.Units[v:GetType()].UnitType == "UNIT_ARCHER"
-            and v:GetX() == 73 and v:GetY() == 19 then archer = v end
+            and v:GetX() == CX and v:GetY() == CY then archer = v end
       end
       if archer == nil then print("ERR|no archer garrisoned in Gongju") return end
-      local pick = nil
-      for dir = 0, 5 do
-        local p = Map.GetAdjacentPlot(73, 19, dir)
-        if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()
-            and not p:IsCity() and p:GetUnitCount() == 0
-            and Map.GetPlotDistance(p:GetX(), p:GetY(), ax, ay) <= 2 then pick = p end
+      local function guarded(x, y, a)
+        for _, v in Players[0]:GetUnits():Members() do
+          if v:GetID() ~= archer:GetID()
+              and GameInfo.Units[v:GetType()].FormationClass ~= "FORMATION_CLASS_CIVILIAN"
+              and Map.GetPlotDistance(x, y, v:GetX(), v:GetY()) <= 1 then return true end
+        end
+        return Map.GetPlotDistance(x, y, a:GetX(), a:GetY()) <= 1
       end
-      if pick == nil then print("ERR|no empty land tile beside Gongju within range of the attacker") return end
-      UnitManager.PlaceUnit(archer, pick:GetX(), pick:GetY())
+      local P, A, S, W = nil, nil, nil, nil
+      for y = 16, 22 do
+        for x = 70, 76 do
+          local p = Map.GetPlot(x, y)
+          if P == nil and free(p) and Map.GetPlotDistance(x, y, CX, CY) == 2 then
+            local a = nil
+            for d = 0, 5 do
+              local q = Map.GetAdjacentPlot(CX, CY, d)
+              if a == nil and free(q) and Map.GetPlotDistance(q:GetX(), q:GetY(), x, y) <= 2 then a = q end
+            end
+            if a ~= nil then
+              for d1 = 0, 5 do
+                local s = Map.GetAdjacentPlot(x, y, d1)
+                if P == nil and free(s) and not same(s, a) and not guarded(s:GetX(), s:GetY(), a) then
+                  for d2 = 0, 5 do
+                    local w = Map.GetAdjacentPlot(x, y, d2)
+                    if P == nil and free(w) and not same(w, a) and not same(w, s)
+                        and Map.GetPlotDistance(w:GetX(), w:GetY(), s:GetX(), s:GetY()) >= 2 then
+                      P, A, S, W = p, a, s, w
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+      if P == nil then print("ERR|no attacker tile at distance 2 from Gongju admits the layout") return end
+      local att = UnitManager.InitUnit(63, "UNIT_WARRIOR", P:GetX(), P:GetY())
+      if att == nil then print("ERR|barbarian spawn failed") return end
+      att:SetDamage(50)
+      UnitManager.PlaceUnit(archer, A:GetX(), A:GetY())
       UnitManager.RestoreMovement(archer)
-      print("OK|archer|" .. pick:GetX() .. "," .. pick:GetY())
+      local st = UnitManager.InitUnit(0, "UNIT_SETTLER", S:GetX(), S:GetY())
+      if st == nil then print("ERR|settler spawn failed") return end
+      UnitManager.RestoreMovement(st)
+      local ex = UnitManager.InitUnit(0, "UNIT_WARRIOR", W:GetX(), W:GetY())
+      if ex == nil then print("ERR|warrior spawn failed") return end
+      ex:SetDamage(80)
+      UnitManager.RestoreMovement(ex)
+      print("OK|layout|attacker " .. P:GetX() .. "," .. P:GetY() .. "|archer " .. A:GetX() .. ","
+        .. A:GetY() .. "|civilian " .. S:GetX() .. "," .. S:GetY() .. "|expendable " .. W:GetX()
+        .. "," .. W:GetY())
     readback: |
-      local n, on_city = 0, 0
+      local CX, CY = 73, 19
+      local ax, ay, n = nil, nil, 0
+      for _, u in Players[63]:GetUnits():Members() do
+        local p = Map.GetPlot(u:GetX(), u:GetY())
+        if Map.GetPlotDistance(u:GetX(), u:GetY(), CX, CY) == 2
+            and PlayersVisibility[0]:IsVisible(p:GetIndex()) then
+          n = n + 1
+          ax, ay = u:GetX(), u:GetY()
+          print("OK|attacker|" .. ax .. "," .. ay .. "|hp " .. (u:GetMaxDamage() - u:GetDamage()))
+        end
+      end
+      if n ~= 1 then print("ERR|expected one visible attacker at distance 2 from Gongju, found " .. n) return end
+      local na, on_city = 0, 0
       for _, v in Players[0]:GetUnits():Members() do
         local info = GameInfo.Units[v:GetType()]
-        if info.UnitType == "UNIT_ARCHER"
-            and Map.GetPlotDistance(v:GetX(), v:GetY(), 73, 19) == 1 then
-          n = n + 1
+        if info.UnitType == "UNIT_ARCHER" and Map.GetPlotDistance(v:GetX(), v:GetY(), CX, CY) == 1 then
+          na = na + 1
+          if Map.GetPlotDistance(v:GetX(), v:GetY(), ax, ay) > 2 then
+            print("ERR|archer beyond two tiles of the attacker")
+          end
           print("OK|archer|" .. v:GetX() .. "," .. v:GetY())
         end
-        if v:GetX() == 73 and v:GetY() == 19
-            and info.FormationClass == "FORMATION_CLASS_LAND_COMBAT" then
+        if v:GetX() == CX and v:GetY() == CY and info.FormationClass == "FORMATION_CLASS_LAND_COMBAT" then
           on_city = on_city + 1
         end
       end
-      if n ~= 1 then print("ERR|expected one archer beside Gongju, found " .. n) end
+      if na ~= 1 then print("ERR|expected one archer beside Gongju, found " .. na) end
       if on_city ~= 0 then print("ERR|a land combat unit still occupies Gongju's tile") end
-  - kind: lua
-    # Civilian: a settler next to the attacker with no own combat unit within one tile.
-    lua: |
-      local ax, ay = nil, nil
-      for _, u in Players[63]:GetUnits():Members() do
-        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end
-      end
-      if ax == nil then print("ERR|attacker missing") return end
-      local function guarded(x, y)
-        for _, v in Players[0]:GetUnits():Members() do
-          local info = GameInfo.Units[v:GetType()]
-          if info.FormationClass ~= "FORMATION_CLASS_CIVILIAN"
-              and Map.GetPlotDistance(x, y, v:GetX(), v:GetY()) <= 1 then return true end
-        end
-        return false
-      end
-      local pick = nil
-      for dir = 0, 5 do
-        local p = Map.GetAdjacentPlot(ax, ay, dir)
-        if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()
-            and not p:IsCity() and p:GetUnitCount() == 0 and not guarded(p:GetX(), p:GetY()) then
-          pick = p
-        end
-      end
-      if pick == nil then print("ERR|no exposed civilian tile") return end
-      local u = UnitManager.InitUnit(0, "UNIT_SETTLER", pick:GetX(), pick:GetY())
-      if u == nil then print("ERR|settler spawn failed") return end
-      UnitManager.RestoreMovement(u)
-      print("OK|civilian|" .. pick:GetX() .. "," .. pick:GetY())
-    readback: |
-      local n = 0
+      local sx, sy, ns = nil, nil, 0
       for _, v in Players[0]:GetUnits():Members() do
         if GameInfo.Units[v:GetType()].UnitType == "UNIT_SETTLER" then
-          n = n + 1
-          print("OK|civilian|" .. v:GetX() .. "," .. v:GetY())
+          ns = ns + 1
+          sx, sy = v:GetX(), v:GetY()
+          print("OK|civilian|" .. sx .. "," .. sy)
         end
       end
-      if n ~= 1 then print("ERR|expected one settler, found " .. n) end
-  - kind: lua
-    # Expendable: a wounded own warrior next to the attacker, not covering the settler.
-    lua: |
-      local ax, ay, sx, sy = nil, nil, nil, nil
-      for _, u in Players[63]:GetUnits():Members() do
-        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end
-      end
+      if ns ~= 1 then print("ERR|expected one settler, found " .. ns) return end
+      if Map.GetPlotDistance(sx, sy, ax, ay) ~= 1 then print("ERR|settler is not beside the attacker") end
       for _, v in Players[0]:GetUnits():Members() do
-        if GameInfo.Units[v:GetType()].UnitType == "UNIT_SETTLER" then sx, sy = v:GetX(), v:GetY() end
+        local info = GameInfo.Units[v:GetType()]
+        if info.FormationClass ~= "FORMATION_CLASS_CIVILIAN"
+            and Map.GetPlotDistance(sx, sy, v:GetX(), v:GetY()) <= 1 then
+          print("ERR|settler is covered by " .. info.UnitType .. " at " .. v:GetX() .. "," .. v:GetY())
+        end
       end
-      if ax == nil or sx == nil then print("ERR|attacker or settler missing") return end
-      local pick = nil
-      for dir = 0, 5 do
-        local p = Map.GetAdjacentPlot(ax, ay, dir)
-        if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()
-            and not p:IsCity() and p:GetUnitCount() == 0
-            and Map.GetPlotDistance(p:GetX(), p:GetY(), sx, sy) >= 2 then pick = p end
-      end
-      if pick == nil then print("ERR|no expendable tile") return end
-      local u = UnitManager.InitUnit(0, "UNIT_WARRIOR", pick:GetX(), pick:GetY())
-      if u == nil then print("ERR|warrior spawn failed") return end
-      u:SetDamage(80)
-      UnitManager.RestoreMovement(u)
-      print("OK|expendable|" .. pick:GetX() .. "," .. pick:GetY())
-    readback: |
-      local n = 0
+      local nw = 0
       for _, v in Players[0]:GetUnits():Members() do
         if GameInfo.Units[v:GetType()].UnitType == "UNIT_WARRIOR" then
-          n = n + 1
-          print("OK|expendable|" .. v:GetX() .. "," .. v:GetY() .. "|hp "
-                .. (v:GetMaxDamage() - v:GetDamage()))
+          nw = nw + 1
+          print("OK|expendable|" .. v:GetX() .. "," .. v:GetY() .. "|hp " .. (v:GetMaxDamage() - v:GetDamage()))
+          if Map.GetPlotDistance(v:GetX(), v:GetY(), ax, ay) ~= 1 then print("ERR|warrior is not beside the attacker") end
+          if Map.GetPlotDistance(v:GetX(), v:GetY(), sx, sy) < 2 then print("ERR|warrior covers the settler") end
         end
       end
-      if n ~= 1 then print("ERR|expected one own warrior, found " .. n) end
+      if nw ~= 1 then print("ERR|expected one own warrior, found " .. nw) end
   - kind: lua
     # Treasury for a purchased reinforcement (checked by the purchase probe).
     lua: |
