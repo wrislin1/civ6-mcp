@@ -606,6 +606,31 @@ def _query(player_id=3, coverage=COVERAGE):
     return build_benchmark_state_query_v2(player_id, coverage)
 
 
+def test_query_iterates_city_districts_with_gamecore_accessors():
+    """Live 2026-10-09 (positive-control timing probe, GameCore_Tuner): a
+    city's CityDistricts object has no ``Members()`` iterator there, so
+    ``c:GetDistricts():Members()`` raised "function expected instead of nil"
+    at the first DISTRICT row. GameCore exposes ``GetNumDistricts()`` and the
+    zero-based ``GetDistrictByIndex(i)`` (index == count returns nil); the
+    player-level ``p:GetDistricts():Members()`` does iterate but its rows
+    carry no city id. The program must use the per-city index accessors."""
+    q = _query()
+    assert "GetDistricts():Members()" not in q
+    assert "GetNumDistricts()" in q
+    assert "GetDistrictByIndex(" in q
+
+
+def test_query_treats_gamecore_empty_queue_string_as_no_production():
+    """Live 2026-10-09 (positive-control timing probe, GameCore_Tuner):
+    ``BuildQueue:CurrentlyBuilding()`` returns the string ``"NONE"`` for a
+    city with nothing in production (Gyeongju) and the real type name
+    otherwise (``BUILDING_GRANARY``, ``DISTRICT_ENCAMPMENT``); the program
+    raised "unknown production item NONE". ``"NONE"`` must read as an empty
+    queue (kind NONE, item NONE), exactly like nil or the empty string."""
+    q = _query()
+    assert 'cur ~= "NONE"' in q
+
+
 def test_query_embeds_player_and_coverage_digest():
     q = _query()
     assert "local PID = 3\n" in q

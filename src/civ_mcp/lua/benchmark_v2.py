@@ -174,7 +174,12 @@ local function capture()
             end
         end
         local districts = {{}}
-        for _, d in c:GetDistricts():Members() do
+        -- GameCore's CityDistricts has no Members() iterator (live 2026-10-09):
+        -- it exposes GetNumDistricts() and the zero-based GetDistrictByIndex(i).
+        local cds = c:GetDistricts()
+        for i = 0, cds:GetNumDistricts() - 1 do
+            local d = cds:GetDistrictByIndex(i)
+            if d == nil then error("district index " .. i .. " missing") end
             local dInfo = GameInfo.Districts[d:GetType()]
             if dInfo == nil then error("unknown district type") end
             districts[#districts + 1] = {{d = d, t = dInfo.DistrictType}}
@@ -183,7 +188,9 @@ local function capture()
         end
         local cur = c:GetBuildQueue():CurrentlyBuilding()
         local kind, item, repair, tx, ty = "NONE", "NONE", false, NULL, NULL
-        if cur ~= nil and cur ~= "" then
+        -- GameCore's BuildQueue:CurrentlyBuilding() answers the string "NONE" for
+        -- an empty queue (live 2026-10-09) and the type name otherwise.
+        if cur ~= nil and cur ~= "" and cur ~= "NONE" then
             item = cur
             if GameInfo.Units[cur] ~= nil then kind = "UNIT"
             elseif GameInfo.Buildings[cur] ~= nil then
