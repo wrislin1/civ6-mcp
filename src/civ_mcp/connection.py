@@ -11,12 +11,38 @@ Wraps tuner_client.py into a stateful connection manager with:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import time
+from collections.abc import Iterator
+from typing import Any
 
 from civ_mcp import tuner_client
 from civ_mcp.lua._helpers import SENTINEL
 
 log = logging.getLogger(__name__)
+
+# Monotonic clock for opt-in read timing (a module attribute so tests can
+# substitute a controlled clock without touching the event loop's clock).
+_clock = time.monotonic
+
+
+@contextlib.contextmanager
+def _phase(timing: dict[str, Any] | None, key: str) -> Iterator[None]:
+    """Add the elapsed seconds of the enclosed phase to ``timing[key]``.
+
+    No-op when ``timing`` is None. Recorded in ``finally`` so an exception or
+    cancellation still leaves the partial observation; a phase that never
+    started leaves no key. Repeated phases (a retried read) accumulate.
+    """
+    if timing is None:
+        yield
+        return
+    start = _clock()
+    try:
+        yield
+    finally:
+        timing[key] = timing.get(key, 0) + (_clock() - start)
 
 
 class LuaError(Exception):
@@ -117,15 +143,47 @@ class GameConnection:
                 "Make sure a game is in progress (not at the main menu)."
             )
 
-    async def execute_read(self, lua_code: str, timeout: float = 5.0) -> list[str]:
-        """Execute Lua in GameCore context (read state). Returns parsed output lines."""
-        await self._ensure_game_states()
-        return await self._execute_and_collect(self.gamecore_index, lua_code, timeout)
+    async def execute_read(
+        self,
+        lua_code: str,
+        timeout: float = 5.0,
+        *,
+        timing: dict[str, Any] | None = None,
+        retry_on_disconnect: bool = True,
+    ) -> list[str]:
+        """Execute Lua in GameCore context (read state). Returns parsed output lines.
+
+        ``timing``, when given, receives monotonic seconds for ``connect_s``,
+        ``lock_wait_s``, ``pre_drain_s``, ``response_wait_s`` and
+        ``post_drain_s`` plus an integer ``lua_executions`` (commands sent).
+        A missing key means the phase never ran. ``retry_on_disconnect=False``
+        propagates a dead-socket error instead of reconnecting and re-sending.
+        """
+        with _phase(timing, "connect_s"):
+            await self._ensure_game_states()
+        return await self._execute_and_collect(
+            self.gamecore_index, lua_code, timeout,
+            timing=timing, retry_on_disconnect=retry_on_disconnect,
+        )
 
     async def execute_write(self, lua_code: str, timeout: float = 5.0) -> list[str]:
         """Execute Lua in InGame context (issue commands). Returns parsed output lines."""
         await self._ensure_game_states()
         return await self._execute_and_collect(self.ingame_index, lua_code, timeout)
+
+    async def execute_mutation(self, lua_code: str, timeout: float = 5.0) -> list[str]:
+        """Execute state-changing Lua in the GameCore context (authoring setup).
+
+        GameCore owns the mutation APIs that the InGame UI context never
+        exposes (``UnitManager``, ``ImprovementBuilder``, treasury and city
+        mutators). A dead socket propagates instead of reconnecting: a
+        mutation is never silently re-sent, so a readback can attribute every
+        change to exactly one request.
+        """
+        await self._ensure_game_states()
+        return await self._execute_and_collect(
+            self.gamecore_index, lua_code, timeout, retry_on_disconnect=False
+        )
 
     async def execute_in_state(
         self, state_index: int, lua_code: str, timeout: float = 5.0
@@ -134,62 +192,91 @@ class GameConnection:
         return await self._execute_and_collect(state_index, lua_code, timeout)
 
     async def _execute_and_collect(
-        self, state_index: int, lua_code: str, timeout: float
+        self,
+        state_index: int,
+        lua_code: str,
+        timeout: float,
+        *,
+        timing: dict[str, Any] | None = None,
+        retry_on_disconnect: bool = True,
     ) -> list[str]:
         """Send Lua code and collect output lines until sentinel or timeout.
 
-        Auto-reconnects once on dead socket (e.g. after game crash/reload).
+        Auto-reconnects once on dead socket (e.g. after game crash/reload)
+        unless ``retry_on_disconnect`` is False.
         """
-        await self.ensure_connected()
-        async with self._lock:
+        with _phase(timing, "connect_s"):
+            await self.ensure_connected()
+        with _phase(timing, "lock_wait_s"):
+            await self._lock.acquire()
+        try:
             try:
-                return await self._locked_execute(state_index, lua_code, timeout)
+                return await self._locked_execute(
+                    state_index, lua_code, timeout, timing=timing
+                )
             except (ConnectionError, OSError, asyncio.IncompleteReadError):
+                if not retry_on_disconnect:
+                    raise
                 # Dead socket — reconnect once and retry (still holding lock)
                 log.info("Connection lost, reconnecting...")
-                await self.reconnect()
-                return await self._locked_execute(state_index, lua_code, timeout)
+                with _phase(timing, "connect_s"):
+                    await self.reconnect()
+                return await self._locked_execute(
+                    state_index, lua_code, timeout, timing=timing
+                )
+        finally:
+            self._lock.release()
 
     async def _locked_execute(
-        self, state_index: int, lua_code: str, timeout: float
+        self,
+        state_index: int,
+        lua_code: str,
+        timeout: float,
+        *,
+        timing: dict[str, Any] | None = None,
     ) -> list[str]:
         """Inner execute — must be called while holding self._lock."""
         assert self._reader is not None
         assert self._writer is not None
 
         # Drain any stale messages
-        await tuner_client.drain_messages(self._reader, timeout=0.1)
+        with _phase(timing, "pre_drain_s"):
+            await tuner_client.drain_messages(self._reader, timeout=0.1)
 
-        await tuner_client.send_message(
-            self._writer, tuner_client.TAG_COMMAND, f"CMD:{state_index}:{lua_code}"
-        )
-
-        lines: list[str] = []
-        deadline = asyncio.get_running_loop().time() + timeout
-
-        while True:
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                break
-
-            msg = await tuner_client.recv_message_timeout(
-                self._reader, timeout=min(remaining, 2.0)
+        with _phase(timing, "response_wait_s"):
+            if timing is not None:
+                timing["lua_executions"] = timing.get("lua_executions", 0) + 1
+            await tuner_client.send_message(
+                self._writer, tuner_client.TAG_COMMAND, f"CMD:{state_index}:{lua_code}"
             )
-            if msg is None:
-                break
 
-            if msg.payload.startswith("ERR:"):
-                raise LuaError(msg.payload)
+            lines: list[str] = []
+            deadline = asyncio.get_running_loop().time() + timeout
 
-            text = _parse_output(msg.payload)
-            if text is not None:
-                if text.strip() == SENTINEL:
+            while True:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
                     break
-                lines.append(text)
-            # Ignore non-output messages (e.g. tag=3 empty ack)
+
+                msg = await tuner_client.recv_message_timeout(
+                    self._reader, timeout=min(remaining, 2.0)
+                )
+                if msg is None:
+                    break
+
+                if msg.payload.startswith("ERR:"):
+                    raise LuaError(msg.payload)
+
+                text = _parse_output(msg.payload)
+                if text is not None:
+                    if text.strip() == SENTINEL:
+                        break
+                    lines.append(text)
+                # Ignore non-output messages (e.g. tag=3 empty ack)
 
         # Drain any trailing unsolicited output
-        await tuner_client.drain_messages(self._reader, timeout=0.2)
+        with _phase(timing, "post_drain_s"):
+            await tuner_client.drain_messages(self._reader, timeout=0.2)
         return lines
 
 

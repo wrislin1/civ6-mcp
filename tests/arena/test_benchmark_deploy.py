@@ -229,3 +229,50 @@ def test_check_boot_health_via_windows_raises_bridge_error_when_bootstrap_missin
 )
 def test_windows_path_translates_mnt_paths(wsl_path, windows_path):
     assert benchmark_deploy._windows_path(wsl_path) == windows_path
+
+
+def test_windows_path_keeps_repo_relative_paths():
+    rel = "benchmarks/saves/builder-a1-v1.Civ6Save"
+    assert benchmark_deploy._windows_path(rel) == rel
+
+
+@pytest.mark.parametrize("path", ["/home/riz/projects/civ6-mcp/benchmarks/saves/x.Civ6Save",
+                                  "/tmp/x.Civ6Save", "/mnt/cc/x.Civ6Save"])
+def test_windows_path_refuses_absolute_posix_paths_outside_a_mount(path):
+    with pytest.raises(ValueError, match="absolute POSIX path"):
+        benchmark_deploy._windows_path(path)
+
+
+def test_bridge_runs_in_the_windows_checkout_with_a_repo_relative_archive(monkeypatch):
+    from civ_mcp import game_launcher
+    _fake_bridge_available(monkeypatch)
+    calls = _fake_subprocess_returning(monkeypatch, {
+        "ok": True, "save_name": "S", "dest_path": r"C:\Saves\S.Civ6Save",
+        "archive_sha256": "ab", "deployed_sha256": "ab", "expected_sha256": "ab"})
+    benchmark_deploy.deploy_via_windows("benchmarks/saves/s-v1.Civ6Save", "S", "ab")
+    [(cmd, kwargs)] = calls
+    assert kwargs["cwd"] == game_launcher.WSL_WINDOWS_REPO
+    assert cmd[cmd.index("--archive") + 1] == "benchmarks/saves/s-v1.Civ6Save"
+
+
+def test_bridge_cwd_follows_a_bootstrap_override_to_its_checkout(monkeypatch):
+    """CIV6_WINDOWS_BOOTSTRAP names the checkout whose code runs; repo-relative
+    archive paths must resolve there, not in the default checkout."""
+    monkeypatch.setenv("CIV6_WINDOWS_BOOTSTRAP",
+                       "/mnt/d/other/civ6-mcp/tools/windows/civ6_launcher_bootstrap.py")
+    _fake_bridge_available(monkeypatch)
+    calls = _fake_subprocess_returning(monkeypatch, {
+        "ok": True, "save_name": "S", "dest_path": r"C:\Saves\S.Civ6Save",
+        "archive_sha256": "ab", "deployed_sha256": "ab", "expected_sha256": "ab"})
+    benchmark_deploy.deploy_via_windows("benchmarks/saves/s-v1.Civ6Save", "S", "ab")
+    [(cmd, kwargs)] = calls
+    assert kwargs["cwd"] == "/mnt/d/other/civ6-mcp"
+    assert cmd[1] == r"D:\other\civ6-mcp\tools\windows\civ6_launcher_bootstrap.py"
+
+
+def test_deploy_refuses_an_absolute_wsl_home_archive_before_the_bridge(monkeypatch):
+    _fake_bridge_available(monkeypatch)
+    calls = _fake_subprocess_returning(monkeypatch, {"ok": True})
+    with pytest.raises(ValueError, match="absolute POSIX path"):
+        benchmark_deploy.deploy_via_windows("/home/riz/x.Civ6Save", "S", "ab")
+    assert calls == []

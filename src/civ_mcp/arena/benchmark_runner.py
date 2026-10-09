@@ -55,10 +55,17 @@ from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 import openai
 
+from civ_mcp.arena.action_metrics import classify_result
 from civ_mcp.arena.backends import OpenAICompatBackend, RetryPolicy
-from civ_mcp.arena.benchmark_agent import EpisodeTimedOut, SingleTurnAgent, resolved_benchmark_tools
+from civ_mcp.arena.benchmark_agent import (
+    EpisodeTerminal,
+    EpisodeTimedOut,
+    SingleTurnAgent,
+    resolved_benchmark_tools,
+)
 from civ_mcp.arena.benchmark_backend import HealthProbe
 from civ_mcp.arena.benchmark_backend import probe_health as _probe_backend_health
+from civ_mcp.arena.benchmark_capture import CaptureTelemetry, capture_bounded
 from civ_mcp.arena.benchmark_gates import GateFailure
 from civ_mcp.arena.benchmark_manifest import (
     PositionManifest,
@@ -67,7 +74,7 @@ from civ_mcp.arena.benchmark_manifest import (
     load_position_manifest,
     load_suite_manifest,
 )
-from civ_mcp.arena.benchmark_schedule import TrialSpec, compile_schedule
+from civ_mcp.arena.benchmark_schedule import ScriptedTrialSpec, TrialSpec, compile_schedule
 from civ_mcp.arena.benchmark_state import (
     BenchmarkStateError,
     capture_canonical_state,
@@ -75,6 +82,7 @@ from civ_mcp.arena.benchmark_state import (
     state_digest,
     verify_expected_state_digest,
 )
+from civ_mcp.arena.benchmark_state_v2 import digest_state_v2
 from civ_mcp.arena.benchmark_store import (
     BenchmarkStore,
     BenchmarkStoreError,
@@ -111,6 +119,11 @@ MAX_INFRASTRUCTURE_ATTEMPTS = 3
 # Not a `FailureClass` member: this is a preregistered SCOREABLE terminal
 # (a completed, model-attributable trial), never an infrastructure attempt.
 RUNAWAY_TIMEOUT_TERMINAL = "runaway_timeout"
+
+# A scripted (non-model) episode that hit its operational wall. Never
+# `runaway_timeout`: a script has no model to admit and no model canary; the
+# trial commits as a validation failure carrying game-health evidence.
+SCRIPTED_TIMEOUT_TERMINAL = "episode_timeout"
 
 
 class SessionAborted(Exception):
@@ -153,7 +166,8 @@ class FailureClass(str, Enum):
 ReloadPositionFn = Callable[[str], Awaitable[bool]]
 DismissPopupsFn = Callable[[], Awaitable[str]]
 CaptureStateFn = Callable[[], Awaitable[Mapping[str, object]]]
-MakeAgentFn = Callable[[TrialSpec], Any]
+MakeAgentFn = Callable[[TrialSpec | ScriptedTrialSpec], Any]
+TrialIdentityFn = Callable[[ScriptedTrialSpec], Mapping[str, object]]
 ProbeHealthFn = Callable[[], Awaitable[HealthProbe]]
 
 
@@ -200,6 +214,17 @@ class RunnerDependencies:
       `connection`'s own close/disconnect is the caller's (`_run_async`'s)
       responsibility, not this callable's, since the caller owns
       `connection`'s lifetime independently of `RunnerDependencies`.
+    - `capture_telemetry`: optional. `None` keeps the version-1 initial/
+      final capture path unchanged. When set, it is reset before every
+      attempt, initial/final captures run through
+      `benchmark_capture.capture_bounded` (2.0 s wall, v2 digest), and the
+      expected-state checksum uses the v2 digest. A local capture deadline
+      is a `CaptureFailure` infrastructure attempt; an external
+      cancellation propagates unchanged (no attempt, retry or commit).
+    - `trial_identity(spec)`: required for `ScriptedTrialSpec` schedules
+      only; returns the static version-2 identities (script/case digests,
+      toolset, contract fingerprint, coverage) merged into each scripted
+      trial payload. Never consulted for a model `TrialSpec`.
     """
 
     reload_position: ReloadPositionFn
@@ -209,6 +234,8 @@ class RunnerDependencies:
     probe_health: ProbeHealthFn
     connection: Any = None
     aclose: Callable[[], Awaitable[None]] | None = None
+    capture_telemetry: CaptureTelemetry | None = None
+    trial_identity: TrialIdentityFn | None = None
 
 
 class BenchmarkRunner:
@@ -229,10 +256,23 @@ class BenchmarkRunner:
         self.store = store
         self._deps = dependencies
         self._expected_state = dict(expected_state)
-        self._expected_digest = state_digest(self._expected_state)
+        self._expected_digest = (
+            state_digest(self._expected_state)
+            if dependencies.capture_telemetry is None
+            else digest_state_v2(self._expected_state)
+        )
         self.player_id = player_id
 
-    async def run(self, schedule: Sequence[TrialSpec]) -> None:
+    async def _capture(self, phase: str) -> tuple[Mapping[str, object], str | None]:
+        """Runner-owned initial/final capture. Without telemetry this is
+        exactly the v1 call and returns no digest (the caller digests where
+        it always did); with telemetry it is the bounded v2 capture."""
+        telemetry = self._deps.capture_telemetry
+        if telemetry is None:
+            return await self._deps.capture_state(), None
+        return await capture_bounded(self._deps.capture_state, phase=phase, telemetry=telemetry)
+
+    async def run(self, schedule: Sequence[TrialSpec | ScriptedTrialSpec]) -> None:
         """Strictly serial: walk `schedule` in order, skip any index the
         store already has committed (resume), and keep re-attempting an
         incomplete trial until it commits or `run_trial` raises
@@ -285,7 +325,7 @@ class BenchmarkRunner:
                 },
             )
 
-    async def run_trial(self, spec: TrialSpec) -> None:
+    async def run_trial(self, spec: TrialSpec | ScriptedTrialSpec) -> None:
         """Attempt `spec` exactly once.
 
         Returns normally either because the trial is already committed, a
@@ -317,6 +357,9 @@ class BenchmarkRunner:
                 },
             )
 
+        if self._deps.capture_telemetry is not None:
+            # Never classify this attempt with an earlier attempt's latch.
+            self._deps.capture_telemetry.reset()
         self.store.append_event("trial_attempt_started", trial_index=spec.index)
 
         # -- reload / continue / reconnect ----------------------------------
@@ -356,12 +399,13 @@ class BenchmarkRunner:
 
         # -- canonical checksum -----------------------------------------------
         try:
-            observed_state = await self._deps.capture_state()
+            observed_state, observed_digest = await self._capture("initial")
         except Exception as exc:  # noqa: BLE001
             self._record_infra_attempt(spec.index, FailureClass.HARNESS_CRASH, exc)
             return
 
-        observed_digest = state_digest(observed_state)
+        if observed_digest is None:
+            observed_digest = state_digest(observed_state)
         if observed_digest != self._expected_digest:
             # F12: journaling two opaque hashes is useless for actually
             # seeing what differed -- include the field-level diff so a
@@ -439,6 +483,10 @@ class BenchmarkRunner:
         try:
             evidence = await agent.run(gs, self.player_id, turn)
         except EpisodeTimedOut as exc:
+            if isinstance(spec, ScriptedTrialSpec):
+                # No model canary for a script: commit a validation failure.
+                await self._finalize_scripted_timeout(spec, exc, observed_state, agent)
+                return
             await self._handle_timeout_like(spec, exc, observed_state, admits_runaway=True, agent=agent)
             return
         except openai.APITimeoutError as exc:
@@ -478,6 +526,9 @@ class BenchmarkRunner:
                 },
             ) from exc
 
+        if isinstance(spec, ScriptedTrialSpec):
+            await self._finalize_scripted(spec, agent, evidence, observed_state)
+            return
         await self._finalize_trial(
             spec,
             terminal=evidence.terminal.value,
@@ -588,14 +639,103 @@ class BenchmarkRunner:
         )
         self._record_infra_attempt(spec.index, failure_class, exc)
 
-    async def _finalize_trial(self, spec: TrialSpec, **fields: object) -> None:
+    async def _finalize_scripted(
+        self,
+        spec: ScriptedTrialSpec,
+        agent: Any,
+        evidence: Any,
+        observed_state: Mapping[str, object],
+    ) -> None:
+        """Commit a completed scripted episode with its mechanics validation.
+
+        Validation failures are raw evidence, never infrastructure attempts:
+        an unconsumed script, a terminal other than an explicit
+        `finish_trial`, and every per-step defect (`_scripted_step_failures`)
+        are recorded on the committed trial; final-state identity drift is
+        added by `_finalize_trial` once the final capture exists."""
+        failures: list[dict[str, object]] = []
+        try:
+            agent.backend.assert_exhausted()
+        except ValueError as exc:
+            failures.append({"reason": "script_unconsumed", "error": str(exc)})
+        if evidence.terminal is not EpisodeTerminal.FINISH_TRIAL:
+            failures.append({"reason": "no_explicit_finish", "terminal": evidence.terminal.value})
+        failures.extend(
+            _scripted_step_failures(evidence.steps, evidence.invalid_tool_calls, observed_state)
+        )
+        await self._finalize_trial(
+            spec,
+            scripted_wall_s=agent.episode_wall_s,
+            terminal=evidence.terminal.value,
+            initial_state=observed_state,
+            validation_failures=failures,
+            **_scripted_evidence_fields(evidence),
+        )
+
+    async def _finalize_scripted_timeout(
+        self,
+        spec: ScriptedTrialSpec,
+        exc: EpisodeTimedOut,
+        observed_state: Mapping[str, object],
+        agent: Any,
+    ) -> None:
+        """A scripted episode hit its operational wall: probe the game (one
+        bounded capture) instead of a model canary and commit the partial
+        transcript as a validation failure. A failed final capture is still
+        a harness crash (infrastructure attempt) via `_finalize_trial`."""
+        self.store.append_event(
+            "episode_exception",
+            trial_index=spec.index,
+            failure_class=None,
+            details={"exception_type": type(exc).__qualname__, "error": str(exc)},
+        )
+        try:
+            health_state, health_digest = await self._capture("timeout_health")
+            game_health: dict[str, object] = {
+                "healthy": True,
+                "turn": health_state.get("turn"),
+                "active_player": health_state.get("active_player"),
+                "state_digest": health_digest,
+            }
+        except Exception as probe_exc:  # noqa: BLE001 - recorded as evidence
+            game_health = {"healthy": False, "error": repr(probe_exc)}
+        partial = exc.partial_evidence
+        if partial is None:
+            partial = agent.partial_evidence()
+        failures: list[dict[str, object]] = [
+            {"reason": "episode_timeout", "error": str(exc), "game_health": game_health}
+        ]
+        failures.extend(
+            _scripted_step_failures(partial.steps, partial.invalid_tool_calls, observed_state)
+        )
+        await self._finalize_trial(
+            spec,
+            scripted_wall_s=agent.episode_wall_s,
+            terminal=SCRIPTED_TIMEOUT_TERMINAL,
+            initial_state=observed_state,
+            validation_failures=failures,
+            **_scripted_evidence_fields(partial),
+        )
+
+    async def _finalize_trial(
+        self,
+        spec: TrialSpec | ScriptedTrialSpec,
+        *,
+        scripted_wall_s: float | None = None,
+        **fields: object,
+    ) -> None:
         """Capture final state and atomically commit the raw trial. A
         failure capturing final state after a completed/admitted episode is
         itself a harness crash (an infra attempt) -- the episode happened,
         but nothing is committed until this succeeds, so a fresh attempt
-        reloads and reruns the whole episode from scratch."""
+        reloads and reruns the whole episode from scratch.
+
+        A `ScriptedTrialSpec` payload additionally gets its static
+        identities, the final-state identity check, the validation status
+        and the capture summary (`scripted_wall_s` is its episode wall); a
+        model `TrialSpec` payload is unchanged."""
         try:
-            final_state = await self._deps.capture_state()
+            final_state, _final_digest = await self._capture("final")
         except Exception as exc:  # noqa: BLE001
             self._record_infra_attempt(spec.index, FailureClass.HARNESS_CRASH, exc)
             return
@@ -625,7 +765,36 @@ class BenchmarkRunner:
             # smoke and a smoke trial payload stays single-stamped, exactly
             # as before this dual-stamp change.
             payload["campaign_fingerprint"] = self.store.campaign_fingerprint
+        if isinstance(spec, ScriptedTrialSpec):
+            self._complete_scripted_payload(spec, payload, final_state, scripted_wall_s)
         self.store.commit_trial(spec.index, payload)
+
+    def _complete_scripted_payload(
+        self,
+        spec: ScriptedTrialSpec,
+        payload: dict[str, object],
+        final_state: Mapping[str, object],
+        episode_wall_s: float | None,
+    ) -> None:
+        if self._deps.trial_identity is None:
+            raise TypeError("RunnerDependencies.trial_identity is required for scripted trials")
+        identity = dict(self._deps.trial_identity(spec))
+        overlap = sorted(identity.keys() & payload.keys())
+        if overlap:
+            raise ValueError(f"trial_identity must not override runner fields: {overlap}")
+        payload.update(identity)
+        failures = list(payload["validation_failures"])  # type: ignore[call-overload]
+        failures.extend(
+            _identity_drift(payload["initial_state"], final_state, "final")  # type: ignore[arg-type]
+        )
+        payload["validation_failures"] = failures
+        payload["validation_status"] = "failed" if failures else "passed_mechanics"
+        telemetry = self._deps.capture_telemetry
+        payload["capture_summary"] = (
+            telemetry.summary(episode_wall_s=float(episode_wall_s or 0.0))
+            if telemetry is not None
+            else None
+        )
 
     def _record_infra_attempt(
         self, index: int, failure_class: FailureClass, exc: Exception
@@ -639,6 +808,84 @@ class BenchmarkRunner:
                 "error": repr(exc),
             },
         )
+
+
+# Turn/active-player/player identity must not move during a scripted episode.
+_SCRIPTED_IDENTITY_FIELDS = ("turn", "active_player", "player_id")
+
+
+def _identity_drift(
+    initial: Mapping[str, object], observed: Mapping[str, object], phase: str
+) -> list[dict[str, object]]:
+    return [
+        {
+            "reason": "identity_drift",
+            "phase": phase,
+            "field": field,
+            "expected": initial.get(field),
+            "observed": observed.get(field),
+        }
+        for field in _SCRIPTED_IDENTITY_FIELDS
+        if observed.get(field) != initial.get(field)
+    ]
+
+
+def _scripted_step_failures(
+    steps: Sequence[Mapping[str, object]],
+    invalid_tool_calls: Sequence[Mapping[str, object]],
+    initial_state: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """Per-step scripted validation: an invalid (never-dispatched) call, a
+    dispatched call the game rejected, a missing before/after capture, and
+    identity drift at any step boundary. A rejection the validation case
+    intends is still reported here; only the later case comparison may
+    accept it -- the runner never reads expected cases."""
+    failures: list[dict[str, object]] = [
+        {"reason": "invalid_tool_call", "tool_name": call.get("tool_name"),
+         "detail": call.get("reason")}
+        for call in invalid_tool_calls
+    ]
+    for step in steps:
+        index = step.get("idx")
+        result = str(step.get("tool_result_full", ""))
+        outcome = classify_result(result)
+        if outcome == "not_dispatched":
+            continue  # already listed in invalid_tool_calls
+        if outcome == "domain_rejection":
+            failures.append({"reason": "rejected_operation", "step": index,
+                             "tool_name": step.get("tool_name"), "result": result})
+        for side in ("before", "after"):
+            state = step.get(f"state_{side}")
+            if state is None:
+                failures.append({"reason": "missing_capture", "step": index, "phase": side})
+            else:
+                failures.extend(
+                    _identity_drift(initial_state, state, f"step {index} {side}")  # type: ignore[arg-type]
+                )
+    return failures
+
+
+def _scripted_evidence_fields(evidence: Any) -> dict[str, object]:
+    """Version-2 scripted evidence: direct counters and timing, with every
+    model-only field explicitly null (a script has no tokens, cost or model
+    latency; `Reply`'s zero-token defaults are transport filler only)."""
+    return {
+        "evidence_version": evidence.evidence_version,
+        "actor_kind": "scripted",
+        "counting": False,
+        "steps": list(evidence.steps),
+        "invalid_tool_calls": list(evidence.invalid_tool_calls),
+        "final_summary": evidence.final_summary,
+        "wall_clock_s": evidence.wall_clock_s,
+        "round_trips": evidence.round_trips,
+        "round_trips_completed": evidence.round_trips_completed,
+        "tool_call_attempts": evidence.tool_call_attempts,
+        "dispatched_calls": evidence.dispatched_calls,
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "cost_usd": None,
+        "model_latency_s": None,
+    }
 
 
 # ---------------------------------------------------------------------------

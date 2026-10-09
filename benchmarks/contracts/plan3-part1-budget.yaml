@@ -1,0 +1,13 @@
+schema_version: 2.0.0
+budget_id: plan3-part1-v1
+unit: backend_round_trip
+max_steps: 15
+script_episode_wall_s: 300
+capture_wall_s: 2.0
+capture_lua_executions: 1
+positive_control_timing_samples: 20
+model_episode_wall_formula: "max(300, ceil(15 * p95_roundtrip_s * 1.5))"
+primary_comparable_to_plan2: false
+benefit_ledger_gates_advancement: false
+authoring_seconds_per_scenario: 10800
+scenario_substitutions_per_family: 1

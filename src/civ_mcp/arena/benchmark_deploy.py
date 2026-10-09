@@ -17,7 +17,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,6 +32,8 @@ log = logging.getLogger(__name__)
 # deadline, so a slow-but-honest native timeout is reported by the native
 # side's structured failure rather than getting killed by the bridge first.
 _DEPLOY_BRIDGE_TIMEOUT_S = 60.0
+# The native export waits up to 30 s for a stable save before copying.
+_EXPORT_BRIDGE_TIMEOUT_S = 90.0
 _BOOT_HEALTH_BRIDGE_MARGIN_S = 30.0
 
 
@@ -78,11 +83,30 @@ def _windows_path(path: str) -> str:
     Mirrors ``civ_mcp.game_launcher._press_escape_windows_bridge``'s
     translation exactly (same drive-letter / backslash convention) since the
     signed Windows interpreter cannot resolve ``/mnt`` paths.
+
+    A relative path is returned unchanged: the bridge runs with the Windows
+    checkout as its working directory, so it resolves there. Any other
+    absolute POSIX path (e.g. ``/home/...``) has no Windows meaning and raises
+    ``ValueError`` instead of being handed to the Windows side verbatim.
     """
     text = str(path)
-    if text.startswith("/mnt/") and len(text) > 7:
+    if _MOUNTED_ABS.match(text):
         return text[5].upper() + ":" + text[6:].replace("/", "\\")
+    if text.startswith("/"):
+        raise ValueError(f"{text!r} is an absolute POSIX path outside /mnt/<drive>/; "
+                         "pass a repository-relative path or a /mnt/<drive>/ path")
     return text
+
+
+_MOUNTED_ABS = re.compile(r"^/mnt/[A-Za-z]/.+")
+_WINDOWS_ABS = re.compile(r"^[A-Za-z]:\\.+")
+
+
+def _mounted_path(path: str) -> str:
+    """Translate a Windows ``X:\\…`` path to its WSL ``/mnt/x/…`` mount."""
+    if _WINDOWS_ABS.match(path):
+        return f"/mnt/{path[0].lower()}/" + path[3:].replace("\\", "/")
+    return path
 
 
 def _run_bridge(argv: list[str], *, timeout: float) -> dict[str, Any]:
@@ -99,10 +123,15 @@ def _run_bridge(argv: list[str], *, timeout: float) -> dict[str, Any]:
 
     win_bootstrap = _windows_path(bootstrap)
     try:
+        # Repository-relative paths in `argv` resolve against the Windows
+        # checkout whose code runs (the one holding `bootstrap`, so a
+        # CIV6_WINDOWS_BOOTSTRAP override moves the cwd with it), whichever
+        # directory this process was started from.
         proc = subprocess.run(
             [python_exe, win_bootstrap, *argv],
             capture_output=True,
             timeout=timeout,
+            cwd=game_launcher.windows_repo_root(),
         )
     except Exception as exc:
         raise BridgeError(f"Windows bridge invocation failed: {exc}") from exc
@@ -172,6 +201,144 @@ def deploy_via_windows(
         expected_sha256=expected_sha256,
         raw=payload,
     )
+
+
+def stat_via_windows(name: str, *, timeout: float = _EXPORT_BRIDGE_TIMEOUT_S) -> dict[str, Any]:
+    """Native ``stat-save``: whether save ``name`` exists and its signature.
+
+    Taken before a ``Network.SaveGame`` request so the export that follows can
+    refuse the stale same-named file (``export_via_windows(previous_signature=...)``).
+    """
+    payload = _run_bridge(["stat-save", "--name", name, "--json"], timeout=timeout)
+    if not payload.get("ok") or not isinstance(payload.get("exists"), bool):
+        raise DeploymentVerificationError(
+            f"stat_benchmark_save failed on Windows: {payload.get('error') or payload!r}"
+        )
+    return payload
+
+
+def export_via_windows(
+    name: str,
+    destination: str,
+    expected_sha256: str | None = None,
+    *,
+    previous_signature: tuple[int, int] | None = None,
+    timeout: float = _EXPORT_BRIDGE_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Archive a native save through the native ``export-save`` command.
+
+    ``destination`` must be a Windows-visible absolute path (``/mnt/<drive>/…``
+    or ``X:\\…``), e.g. under ``game_launcher.windows_repo_root()``; a WSL ext4
+    or relative path would resolve to an unrelated location on the native
+    side. The native side never overwrites ``destination``; an identical
+    existing archive comes back with ``existed: True``. After a successful
+    export the archive is re-hashed here through its mounted path and must
+    match the native digest (and ``expected_sha256`` when given).
+    ``previous_signature`` (``(size, mtime_ns)`` from ``stat_via_windows``
+    before the save request) names the stale same-named save that must never
+    be archived as the new one. Use ``publish_archive_copy`` to place a
+    verified copy into the WSL repo store.
+    """
+    if not (_MOUNTED_ABS.match(destination) or _WINDOWS_ABS.match(destination)):
+        raise ValueError(
+            f"destination {destination!r} must be a Windows-visible absolute path "
+            f"such as one under {game_launcher.WSL_WINDOWS_REPO} (/mnt/<drive>/... or X:\\...)"
+        )
+    argv = [
+        "export-save",
+        "--name", name,
+        "--destination", _windows_path(destination),
+        "--json",
+    ]
+    if expected_sha256 is not None:
+        argv += ["--sha256", expected_sha256]
+    if previous_signature is not None:
+        size, mtime_ns = previous_signature
+        argv += ["--previous-signature", f"{int(size)}:{int(mtime_ns)}"]
+    payload = _run_bridge(argv, timeout=timeout)
+
+    if not payload.get("ok"):
+        raise DeploymentVerificationError(
+            f"export_benchmark_save failed on Windows: {payload.get('error')}"
+        )
+    if expected_sha256 is not None and payload.get("sha256") != expected_sha256:
+        raise DeploymentVerificationError(
+            f"exported sha256 {payload.get('sha256')} != expected {expected_sha256}"
+        )
+
+    mounted = _mounted_path(destination)
+    try:
+        mounted_sha256 = game_launcher._sha256_file(mounted)
+    except OSError as exc:
+        raise DeploymentVerificationError(
+            f"exported archive unreadable at mounted path {mounted}: {exc}"
+        ) from exc
+    if mounted_sha256 != payload.get("sha256"):
+        raise DeploymentVerificationError(
+            f"mounted archive {mounted} sha256 {mounted_sha256} != "
+            f"native sha256 {payload.get('sha256')}"
+        )
+    return payload
+
+
+def publish_archive_copy(source_path: str, destination: str, *, expected_sha256: str) -> dict[str, Any]:
+    """Copy a verified archive into the WSL repo store without overwriting.
+
+    Copies to a temp file in ``destination``'s directory, verifies the source
+    and the copy both hash to ``expected_sha256``, then publishes with
+    ``os.link`` (fails rather than replacing an existing path). An existing
+    destination is accepted only when its digest is identical
+    (``existed: True``); a differing one raises and is left untouched.
+    """
+    source_sha256 = game_launcher._sha256_file(source_path)
+    if source_sha256 != expected_sha256:
+        raise DeploymentVerificationError(
+            f"source archive {source_path} sha256 {source_sha256} != expected {expected_sha256}"
+        )
+
+    tmp = tempfile.NamedTemporaryFile(
+        dir=os.path.dirname(os.path.abspath(destination)),
+        prefix=".publish.",
+        suffix=".tmp",
+        delete=False,
+    )
+    try:
+        with open(source_path, "rb") as src:
+            shutil.copyfileobj(src, tmp)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        copy_sha256 = game_launcher._sha256_file(tmp.name)
+        if copy_sha256 != expected_sha256:
+            raise DeploymentVerificationError(
+                f"copied archive sha256 {copy_sha256} != expected {expected_sha256}"
+            )
+        size = os.path.getsize(tmp.name)
+
+        existed = False
+        try:
+            os.link(tmp.name, destination)
+        except FileExistsError:
+            existed = True
+        if existed:
+            archived_sha256 = game_launcher._sha256_file(destination)
+            if archived_sha256 != expected_sha256:
+                raise DeploymentVerificationError(
+                    f"archive at {destination} differs: existing {archived_sha256}, "
+                    f"new {expected_sha256}"
+                )
+    finally:
+        tmp.close()
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+
+    return {
+        "source_path": source_path,
+        "dest_path": destination,
+        "sha256": expected_sha256,
+        "size": size,
+        "existed": existed,
+    }
 
 
 def check_boot_health_via_windows(

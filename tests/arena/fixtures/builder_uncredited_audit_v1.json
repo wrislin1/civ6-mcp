@@ -1,0 +1,1373 @@
+{
+ "evaluator_revision": "bf0f0b5",
+ "evaluator_files": [
+  {
+   "path": "src/civ_mcp/arena/benchmark_report.py",
+   "sha256": "1a417f60a89effb9d58a1620dde4f875e226da6f3e33c2406d2f8903cee1ec5c"
+  },
+  {
+   "path": "src/civ_mcp/arena/action_metrics.py",
+   "sha256": "652923662e2a87f1437e93d2abc132996eadc5859bbab4c558f7cfd4e2c07709"
+  }
+ ],
+ "inputs": [
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-001.json",
+   "sha256": "4fc38512566efa9f2c235c884dd051d93aa33a5a6e5092188a9f22f943f0646b"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-002.json",
+   "sha256": "66ef4297b4381c98dfc1da80839096d5779852fe903e03fd342ff45f7f3b3b63"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-003.json",
+   "sha256": "dbb019bdd1251f1acd34be1a0cae6a2a0ddf423ca6d39a6c10d8a40d1b638f58"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-004.json",
+   "sha256": "c762b588ed8ed0f28c7a75271a02524e5944c34452342de244e2d7c647791a79"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-005.json",
+   "sha256": "c7b24d9157c5f397f5896d2be933b949ef880f619fa8d9a46f64705e3cdd0163"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-006.json",
+   "sha256": "e03cedc8571bd92ecfbfa4e97bc6cf04e25d7afae7b5dc9c5109f1e8dbd7b9ad"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-007.json",
+   "sha256": "1c4c2e1ad1a4771923aa3e5601e9cd7f87a2dd83fc411ecbca3d7cf054aa5d1b"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-008.json",
+   "sha256": "51edba17fb188d856a12b779a93a7f4d4a7e30d7f6d2db2d0303e8f56a322276"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-009.json",
+   "sha256": "9db677e2707b77bf72ee572b7611eef7978886a94121d4692bb0a1c6e9139aa0"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-010.json",
+   "sha256": "76ede66f32a5268bd6a1dfb2c855d8dde5fe83c846b9c3b7b84ae0241d9f7437"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-011.json",
+   "sha256": "b6c05b08e595ed608e893f87b5e28aa0c815ee212c97ec6ea568c8453bb5b422"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-012.json",
+   "sha256": "a2d219a455d7d6dc6c16732b5d46cfc7560b950494345e15b4b90d398777b4ad"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-013.json",
+   "sha256": "08dafa9789e02dc61eb859b37bea23a3c3b8233d93fd49d154fdce15d37de221"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-014.json",
+   "sha256": "e9b7a3c259ee1f73ba9902b19c281a469f97fa39583b5d3b1890f4c8e329c052"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-015.json",
+   "sha256": "7f4494c26dd26889b6a5de995c5b390b728f88fe9131bf4036a3b9558aa4d40c"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-016.json",
+   "sha256": "898070d50699261575459bb518cb4883c8962c5eb02f5c12070c847703a858ca"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-017.json",
+   "sha256": "091975b5e1072ef2ff056127daba1e70b111281b4c5026cc1e35dc5aaea11d1f"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-018.json",
+   "sha256": "e99f71fdc52ea99f43e708401e97c756507ca50c54f29850aaa414626ea68512"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-019.json",
+   "sha256": "01c628158d98e5da9b3910b5cc29b6d36760b6a1d21007077365c641d890d680"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-020.json",
+   "sha256": "6a2f797c19935258c9a563c21d0b2af4739376c1cf7cf2b013aebe2847b3e81b"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-021.json",
+   "sha256": "653614ee554e86cd96dab00c0a250c8f8b759c0b04e6724336044370be464320"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-022.json",
+   "sha256": "633376f942239a3841427d8a9e0e3ddb2b8c03749bb75e856a269ae375056159"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-023.json",
+   "sha256": "07aba9627863263e347f87fc634a20eba8d5306198d4b9611338503397e7c11d"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/trials/trial-024.json",
+   "sha256": "06b00ef4f864b2ff8b859259f82ba7ba03db48ae2551e59df490859bcb606267"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-001.json",
+   "sha256": "1670ef25f6f76eb866b48b0089a10f93d7f0b87e584b068761a7d6b6a463f08d"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-002.json",
+   "sha256": "0d8482e2b8b800fc7ed27d5f41237f8baf10c51171a18f1e2ae7905c95a420be"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-003.json",
+   "sha256": "1e35ad9ebd047b9e2e09672e419e67a7d5b96131af87bd419db4b1e274772611"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-004.json",
+   "sha256": "b93499d143cc2a454f8356c8425716a7d86ec47f73f0efc34dc61bb5f5be818d"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-005.json",
+   "sha256": "10ed6aecfb38c4eb0b1d7b067405dc9f3e824c71f82671fffdc9b7119a93a107"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-006.json",
+   "sha256": "6dd8b20e786990f07040b4b19ae50f219e09f418af6c1bdfb98995e16444238e"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-007.json",
+   "sha256": "fb4ad8959ebf2961deb79e166e77ed9c0d948c18857e7717f8eb536a4572e61f"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-008.json",
+   "sha256": "b9bb974ad203050a7c1abd89b12d5c5741b84594a546d7984406392e9313e74a"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-009.json",
+   "sha256": "033b2eb3aa3001d8bf54c99a28af18bdd80551e215adc7c81c651f5fe8d94c5d"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-010.json",
+   "sha256": "66f16f7760bbecd78f5a105771a8093ff344c425ad5a797ee93af2a1d9359bf5"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-011.json",
+   "sha256": "8bbb4d2cb123dc26aa637b841213035c52470c3895277d60b09db42e22baad28"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-012.json",
+   "sha256": "58eb0e170d0ae5befd81611e6d975ce8e0287d335063692c5b8deeb48180a230"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-013.json",
+   "sha256": "a67ce2263a4a2b557d62ebbe773b1f4c4b245286eb2a884473c0b64c1c65f56f"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-014.json",
+   "sha256": "3c91a3f7ba4dc71d0ce6a3932a521ba9bd815d49eb5389f2e2caf51cb246256c"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-015.json",
+   "sha256": "8384fc55717807fac46dea45cffa4faa77422507c5d7d41ffeaed0306fe37633"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-016.json",
+   "sha256": "49763819b60fc2b3e3edc1f2a48299499abb5c6f47f461a9ed092a01f9bedd8a"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-017.json",
+   "sha256": "329121e4771a234ac131467104bf44a4b84650ed7e4cf2cec05f826650d1f1ef"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-018.json",
+   "sha256": "4fba94e864e7ac51b92e3abbd4055ba7ee7fe7cdead0f4f11b857650bec2e38f"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-019.json",
+   "sha256": "5da627329401441d6bea2a08cf81bf0b3d107f960d2df8f5942f2bfe90c3bb2b"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-020.json",
+   "sha256": "b42acaac745c8c98c0d7dff922e3331839b574c7327f98077dafdea56a92b0cd"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-021.json",
+   "sha256": "b417845e6fc76c7c50402a6965d3f3dec5e7c64d4e319d48eee3eaaf81798254"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-022.json",
+   "sha256": "4b66ff82d9a5cfbf816c85a2a1edbcf4a5dd8b1224893b4f201c31f45df22da6"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-023.json",
+   "sha256": "65f4e0e0ce2825ea19ff22ffec329b9fa2ae2df372889527af6b3212ed737fde"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-024.json",
+   "sha256": "c1efb9779df567ecdd7d8d9968a343f2345fa75718ae27cd0eb1e6648d015785"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-001.json",
+   "sha256": "8aba9ae930839b7edb46459cec6bc8c7ddadf4dd2e69bc3d9e8f44e5b3d6f640"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-002.json",
+   "sha256": "7124826f2040f349380e57116c3f37d566dba716800a87a2feed5b67b37684cc"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-003.json",
+   "sha256": "9e3e5f12596158d000a9e9ac126a12af46011edac7cf5222d05cbcba8d7546a0"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-004.json",
+   "sha256": "9dae0fc08ac2068b4e5b494eb28e78ee09c99c250e0ed93b25108dc9ec0d6374"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-005.json",
+   "sha256": "ecb6d684a108a8dcefa40034ec0d6c8b6c23c4f88c338f5023fdd53e171a1c9e"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-006.json",
+   "sha256": "75b4c69b02a22d5d2c997da8790bb2677734fdb6f1518f9028d74f3b5347f580"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-007.json",
+   "sha256": "becfd5eb4de21756e36a9346cc4894c80210eecba5b344b9737b8eb155c0c407"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-008.json",
+   "sha256": "a4220d72889367a6a8c0d074b426ea1631612720a9f335e7dc27c26479723e1b"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-009.json",
+   "sha256": "ecf0ca4b8978ce09f60924b4569630947671030bef2d97af7e706e365b676986"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-010.json",
+   "sha256": "82ef904233e5e4ae62f1530a38fe6260a2834e97ccc2ec309430e485523d0dd9"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-011.json",
+   "sha256": "14e132cc1e1559bc4950c39bada3d4a7a289186094ba46a0e53f20294cdb8482"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-012.json",
+   "sha256": "b5237eefcf99990b478cba7b530823509f857dc264ca77d103368f25cb0adcf6"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-013.json",
+   "sha256": "94a6bd9486c5b790434922d3c1c61b7b49dce573172f727c09a0f925e841e13c"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-014.json",
+   "sha256": "3a8318540c4d94b8809d37911319f33a005d9479c06d06c4535cab7d51137024"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-015.json",
+   "sha256": "afd5584b0dd18594c11fe901d0a99a4f753a240ef47e3ec8a0b0d604bd37150f"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-016.json",
+   "sha256": "a0133ab357722bbcc7724f7763773150eeb6abd5831ed7e5cf5ad5781a4dd773"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-017.json",
+   "sha256": "99b6d11ddd405628f858fb99b63efceca2f818dfe65dc00febaa69ae7314abbf"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-018.json",
+   "sha256": "e1870a03b8689447595eb430e3ffda650ca6969d707e2baf7d23163832c6cc42"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-019.json",
+   "sha256": "39ba3fff8300f341cc45042aa164d344cb6dff903f13d1977309018373a152fd"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-020.json",
+   "sha256": "86d34953b7b959fb55b0ff8f4d45276dde803b43280a4d684b1b06b7d4e65613"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-021.json",
+   "sha256": "23c65313078418648802c83f9746defa5e326dce6d34a4da40e69a68307b3bbb"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-022.json",
+   "sha256": "211752bee4aa069f897d889bbd827120ddfb064b3a7c43f1dbc82d7c69b9769d"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-023.json",
+   "sha256": "01ce952b0a04aef8eab8b872053c4bc069529a59a7c99059ecfad8b03fe1bc19"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/trials/trial-024.json",
+   "sha256": "2142ff565656827eed00c7a6094e98cfd7257d04e7bdd6e78ae190d5038458c4"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-001.json",
+   "sha256": "840c480f90b6520d2d1614400be1cfd3eaa6164746e644c32c6c532ea27485f6"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-002.json",
+   "sha256": "3438f0f815995eba41bd0b615723b9fdf0b768a5d1a749d7e7ee4951761f46d3"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-003.json",
+   "sha256": "97a6163bd4a141a21dd717882ce34deea8fc5dedefaf9b22044c13c715accb4e"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-004.json",
+   "sha256": "ea1d33f02654e7c5f16a6e8184e26fe87b4d6a2321f0d0f660fa733d804f9037"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-005.json",
+   "sha256": "1d65269baa6856957ed3b1534c9eab4c15f9ba2df1d2229991355f3e20bfa018"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-006.json",
+   "sha256": "8e38d588f3d8799774b32da749be06fe376695b41ad110f09be31fda519676a5"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-007.json",
+   "sha256": "a9234af1db3d99c55481fc668bb1e148453bfd845e2404485a2b11fe07a9b8bc"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-008.json",
+   "sha256": "4ed91d682d40849c0efde8d1eac5540b19728cc6aa6e5a3ddfabaef774e1fc04"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-009.json",
+   "sha256": "f8558e0955d20d9472b304c84cbcf4f117635f66b214f09d7b00f782696910e4"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-010.json",
+   "sha256": "16d5788d354465265fc90d263d2f2faf9b426ee38981a640f4899c8ab6ea63e5"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-011.json",
+   "sha256": "73a042328fed5e386c6d27d979b567df309482db6c97f8e9cef06609b358fb53"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-012.json",
+   "sha256": "1299d6499490f023cb8481d6f5939b28ed4ec67996cfa85e4bd555e9789b7899"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-013.json",
+   "sha256": "99b1fadf3857ac82ac8274c1cb69410767de2cca06833eac7f152004040ad2a3"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-014.json",
+   "sha256": "3f21fc2ce492b69e28aff1e1f314f9ba519497969294ea06c97e48e1eb6a3bc9"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-015.json",
+   "sha256": "c4186c0bbf077417892fe5856f9dcb3854a529498693962e909e7b9b1ce14fd5"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-016.json",
+   "sha256": "6833bcdacb9d19b045d0b995d13088a8fbf2b0484c4f1656832199da3117616a"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-017.json",
+   "sha256": "06de96e1c5b5b09977ec107787ad68bb98e4bdccb964bcddb66e03ed15031382"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-018.json",
+   "sha256": "50b30b4c46e64d864e779ebd11aaabbacbfb9501492c865ba7a2d2801178a5fe"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-019.json",
+   "sha256": "e3a796066c09d464fc7558fe048441198ac64f33ad3078410c329262d23778db"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-020.json",
+   "sha256": "8c0e75689e40679bfddb7d794d92059ec74a7b9a6e650bc97bf191eef875b45f"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-021.json",
+   "sha256": "9a581f738fc74eb84c04a33f9ea826397155a594bfbe58c04ad3ffcad965e854"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-022.json",
+   "sha256": "4296f5bd476b2dfc0af586b6c877ba2bf0f6c3ff974d5a5a70c9d04eafb3fee2"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-023.json",
+   "sha256": "3b0a3e0ab1d3de847cd8f3053878fc6f9de5e940bea97e1b2053a648fb0ad835"
+  },
+  {
+   "kind": "raw_trial",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/trials/trial-024.json",
+   "sha256": "f96bf4ea3ad7fe80692248a1d5c892605bd6f422332cda8a3eea8f0007d28994"
+  },
+  {
+   "kind": "objective_lock",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/gemma4-26b/session.json",
+   "sha256": "923035e47ddd5fb8ad213960cf5125e25016c24956a110759ec0ccf10c0e0aa5"
+  },
+  {
+   "kind": "objective_lock",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/session.json",
+   "sha256": "eebdf3ed4e3a1543e9f2d898a5464e11e856f7357a1a217d6fc6077f3b01435c"
+  },
+  {
+   "kind": "objective_lock",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/gemma4-26b/session.json",
+   "sha256": "300535490c37c1e074b21b69acb82376cf7e53534abbad8b4148ae34673d4f6c"
+  },
+  {
+   "kind": "objective_lock",
+   "path": "benchmark_runs/builder-economy-cal-v2/blocks/qwen3.6-27b/session.json",
+   "sha256": "ce099c5991232fc2ad04d71993fac07a2c03635dc46e0cba65f3f72d592d2bc0"
+  },
+  {
+   "kind": "public_task_list",
+   "path": "benchmark_runs/builder-economy-cal-v1/blocks/qwen3.6-27b/trials/trial-002.json",
+   "sha256": "0d8482e2b8b800fc7ed27d5f41237f8baf10c51171a18f1e2ae7905c95a420be",
+   "step": 8,
+   "text_sha256": "2e036fc5831940360ac6a4b6391dfa84211e1b4dbcc03e1c7a265cedd2ca225b"
+  }
+ ],
+ "supplements": [
+  {
+   "id": "city_yield_probe_2026_09_27",
+   "label": "audit section 2: later live reload probes of same-turn city yields; supplementary historical measurement, not a measured tile delta",
+   "path": "docs/research/arena-benchmark-builder-calibration-uncredited-actions-audit.md",
+   "sha256": "518d58dd85bb039ac4a86ad8361be2fc021b0edec30c2432b009c7a0114758ea",
+   "applies_to_tag": "farm_on_own_tile",
+   "tile_yields": "unavailable"
+  }
+ ],
+ "expected_membership": [
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-001",
+   "step": 4,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-002",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-003",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-004",
+   "step": 4,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-006",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-007",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-009",
+   "step": 4,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-010",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-011",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-014",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-014",
+   "step": 7,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-015",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-018",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-018",
+   "step": 7,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-019",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-019",
+   "step": 7,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-021",
+   "step": 4,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-022",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-023",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "gemma4-26b",
+   "trial": "trial-023",
+   "step": 6,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-001",
+   "step": 5,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-001",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-001",
+   "step": 7,
+   "tag": "farther_from_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-002",
+   "step": 14,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-006",
+   "step": 9,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-006",
+   "step": 12,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-007",
+   "step": 13,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-008",
+   "step": 5,
+   "tag": "farther_from_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-008",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-008",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-009",
+   "step": 5,
+   "tag": "farther_from_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-009",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-009",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-010",
+   "step": 11,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-011",
+   "step": 8,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-012",
+   "step": 5,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-012",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-012",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-013",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-013",
+   "step": 7,
+   "tag": "farther_from_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-013",
+   "step": 8,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-013",
+   "step": 9,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-014",
+   "step": 10,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-015",
+   "step": 9,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-016",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-016",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-016",
+   "step": 8,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-016",
+   "step": 9,
+   "tag": "farther_from_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-017",
+   "step": 5,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-017",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-017",
+   "step": 7,
+   "tag": "farther_from_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-018",
+   "step": 9,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-020",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-020",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-020",
+   "step": 8,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-020",
+   "step": 13,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-020",
+   "step": 14,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-020",
+   "step": 15,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-022",
+   "step": 11,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-022",
+   "step": 20,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-022",
+   "step": 21,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-023",
+   "step": 7,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v1",
+   "block": "qwen3.6-27b",
+   "trial": "trial-023",
+   "step": 8,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-002",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-003",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-003",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-006",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-006",
+   "step": 7,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-007",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-010",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-011",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-014",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-015",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-018",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-019",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-022",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-022",
+   "step": 7,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "gemma4-26b",
+   "trial": "trial-023",
+   "step": 3,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-001",
+   "step": 5,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-001",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-001",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-006",
+   "step": 17,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-007",
+   "step": 19,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-007",
+   "step": 21,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-008",
+   "step": 5,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-008",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-008",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-008",
+   "step": 10,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-008",
+   "step": 11,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-009",
+   "step": 6,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-009",
+   "step": 7,
+   "tag": "farther_from_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-010",
+   "step": 11,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-010",
+   "step": 12,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-010",
+   "step": 17,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-010",
+   "step": 18,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-011",
+   "step": 11,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-012",
+   "step": 5,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-012",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-012",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-013",
+   "step": 6,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-013",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-013",
+   "step": 8,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-013",
+   "step": 9,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-014",
+   "step": 15,
+   "tag": "farm_on_own_tile"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-014",
+   "step": 16,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-016",
+   "step": 6,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-016",
+   "step": 7,
+   "tag": "farther_from_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-017",
+   "step": 6,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-017",
+   "step": 7,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-018",
+   "step": 9,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-018",
+   "step": 14,
+   "tag": "same_distance_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-019",
+   "step": 10,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-021",
+   "step": 7,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-022",
+   "step": 13,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-023",
+   "step": 10,
+   "tag": "closer_to_public_task"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-024",
+   "step": 6,
+   "tag": "non_builder_move"
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-024",
+   "step": 7,
+   "tag": "farther_from_public_task"
+  }
+ ],
+ "expected_undercredits": [
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-006",
+   "step": 13,
+   "objective_id": "clear-forest-stone",
+   "rubric_score": 2,
+   "rubric_max": 4
+  },
+  {
+   "campaign": "builder-economy-cal-v2",
+   "block": "qwen3.6-27b",
+   "trial": "trial-007",
+   "step": 14,
+   "objective_id": "clear-forest-stone",
+   "rubric_score": 2,
+   "rubric_max": 4
+  }
+ ]
+}

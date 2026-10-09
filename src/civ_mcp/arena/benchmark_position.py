@@ -25,7 +25,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Mapping
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from civ_mcp.arena.benchmark_deploy import deploy_via_windows
 from civ_mcp.arena.benchmark_manifest import PositionManifest, load_position_manifest
@@ -112,7 +112,16 @@ def _load_provenance(path: str | Path) -> dict[str, object]:
 
 
 
-async def capture_position(provenance: Mapping[str, object]) -> dict[str, object]:
+CaptureStateFn = Callable[[Any, int, Sequence[tuple[int, int]]], Awaitable[Mapping[str, object]]]
+DigestFn = Callable[[Mapping[str, object]], str]
+
+
+async def capture_position(
+    provenance: Mapping[str, object],
+    *,
+    capture_state: CaptureStateFn | None = None,
+    digest: DigestFn | None = None,
+) -> dict[str, object]:
     """Deploy `provenance`'s archive and capture the post-reload canonical
     state through the exact production path -- never advances a turn.
 
@@ -126,7 +135,14 @@ async def capture_position(provenance: Mapping[str, object]) -> dict[str, object
     bake a new position manifest's `expected_state` /
     `expected_state_sha256` fields. Writes nothing itself; the CLI's
     `capture` subcommand decides where the result goes.
+
+    `capture_state`/`digest` default (when `None`) to this module's
+    `capture_canonical_state`/`state_digest` (resolved at call time); a v2
+    caller injects its own `(conn, player_id, relevant_tiles)` closure and
+    digest.
     """
+    capture_state = capture_state or capture_canonical_state
+    digest = digest or state_digest
     archive = str(provenance["archive"])
     archive_sha256 = str(provenance["archive_sha256"])
     game_save_name = str(provenance["game_save_name"])
@@ -156,22 +172,28 @@ async def capture_position(provenance: Mapping[str, object]) -> dict[str, object
                 "before popup hygiene/state capture; no output produced"
             )
         popup_status = await dismiss_blocking_popups(connection)
-        state = await capture_canonical_state(connection, player_id, relevant_tiles)
+        state = await capture_state(connection, player_id, relevant_tiles)
     finally:
         await connection.disconnect()
 
-    digest = state_digest(state)
+    state_sha256 = digest(state)
     return {
         "provenance": dict(provenance),
         "deployment": dataclasses.asdict(deployment),
         "reload": {"verified": verified},
         "popup_hygiene": {"status": popup_status},
         "captured_state": state,
-        "captured_state_sha256": digest,
+        "captured_state_sha256": state_sha256,
     }
 
 
-async def verify_position(position: PositionManifest, cycles: int) -> dict[str, object]:
+async def verify_position(
+    position: PositionManifest,
+    cycles: int,
+    *,
+    capture_state: CaptureStateFn | None = None,
+    digest: DigestFn | None = None,
+) -> dict[str, object]:
     """Freshly deploy and reload `position` `cycles` times through the
     exact production path, stopping at the first digest mismatch against
     `position.expected_state_sha256`.
@@ -187,7 +209,11 @@ async def verify_position(position: PositionManifest, cycles: int) -> dict[str, 
     the moment a cycle's digest disagrees -- no further cycles run past a
     mismatch, and the twelve-digest list is only ever written by the CLI
     when `ok` is True.
+
+    `capture_state`/`digest` injection works as in `capture_position`.
     """
+    capture_state = capture_state or capture_canonical_state
+    digest = digest or state_digest
     if cycles != REQUIRED_CYCLES:
         raise PositionCLIError(
             f"--cycles must be exactly {REQUIRED_CYCLES} for freeze-mode verification "
@@ -214,24 +240,24 @@ async def verify_position(position: PositionManifest, cycles: int) -> dict[str, 
                     "hygiene/state capture; no output produced"
                 )
             await dismiss_blocking_popups(connection)
-            state = await capture_canonical_state(
+            state = await capture_state(
                 connection, position.player_id, position.relevant_tiles
             )
         finally:
             await connection.disconnect()
 
-        digest = state_digest(state)
-        if digest != position.expected_state_sha256:
+        cycle_digest = digest(state)
+        if cycle_digest != position.expected_state_sha256:
             return {
                 "ok": False,
                 "position_id": position.position_id,
                 "cycles_completed": cycle,
                 "mismatch_at_cycle": cycle,
                 "expected_state_sha256": position.expected_state_sha256,
-                "observed_state_sha256": digest,
+                "observed_state_sha256": cycle_digest,
                 "digests": digests,
             }
-        digests.append(digest)
+        digests.append(cycle_digest)
 
     return {
         "ok": True,

@@ -1,0 +1,539 @@
+schema_version: 2.0.0
+family: tactical
+scenario_id: tactical-a1
+predecessor: null
+substitution_reason: null
+material_change: null
+toolset_id: plan3-part1-v1
+max_steps: 15
+positive_maximum: 12
+harm_maximum: 4
+base_save_identity:
+  name: SEONDEOK 100 400 BC
+  sha256: 2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29
+  turn: 100
+  seed: 1881300077
+  civ_type: CIVILIZATION_KOREA
+recipe_id: plan3-tactical-a1
+version: 1
+toolset_path: benchmarks/toolsets/plan3-part1-v1.yaml
+player_id: 0
+# The arena's model feed cap (agent.MODEL_FEED_CHAR_CAP).
+result_char_cap: 1500
+
+# Offline declaration. Literal city/unit facts are MEASURED from this base
+# (benchmarks/positions/builder-posctrl-v1.yaml): Gongju 262147 at (73,19)
+# garrisoned by a UNIT_ARCHER. The defended area below is Gongju's centre and
+# its surrounding box.
+#
+# Scenario: a wounded barbarian warrior (owner 63, always at war, so no
+# declaration-turn combat sync) stands two tiles from Gongju; a settler stands
+# next to it, initially exposed (no own combat unit within one tile); a badly
+# wounded own warrior stands next to the attacker and dies if it attacks first.
+# Setup moves the garrisoned archer onto a land tile beside Gongju within two
+# tiles of the attacker: a land-combat unit on the city tile would block every
+# same-class purchase there (lua.cities: ERR:STACKING_CONFLICT), so the
+# reinforcement probes and witnesses need the slot free. The archer can still
+# shoot the attacker and still covers the city tile; the treasury buys a
+# reinforcement.
+#
+# DAMAGE THRESHOLD: target_damaged.minimum_damage (25) is a provisional
+# placeholder declared in measured_parameters. The archive stage refuses to run
+# unless this attempt's measuring probes show the futile warrior's damage
+# strictly below it and the archer shot's damage strictly above it with the
+# attacker surviving; only then is the value frozen into the position rubric.
+measured_parameters:
+- name: tactical_damage_threshold
+  provisional: true
+  used_by:
+  - [objectives, 0, rungs, 0, predicate, minimum_damage]
+  source_probes: [expendable-attack, archer-shot]
+  rule:
+    strictly_between: [expendable-attack, archer-shot]
+    survives: [archer-shot]
+setup:
+  operations:
+  - kind: lua
+    # Attacker: first passable empty land tile at distance 2 from Gongju.
+    lua: |
+      local pick = nil
+      for y = 16, 22 do
+        for x = 70, 76 do
+          local p = Map.GetPlot(x, y)
+          if pick == nil and p ~= nil and Map.GetPlotDistance(x, y, 73, 19) == 2
+              and not p:IsWater() and not p:IsImpassable() and not p:IsCity()
+              and p:GetUnitCount() == 0 then pick = p end
+        end
+      end
+      if pick == nil then print("ERR|no attacker tile at distance 2 from Gongju") return end
+      local u = UnitManager.InitUnit(63, "UNIT_WARRIOR", pick:GetX(), pick:GetY())
+      if u == nil then print("ERR|barbarian spawn failed") return end
+      u:SetDamage(50)
+      print("OK|attacker|" .. pick:GetX() .. "," .. pick:GetY())
+    readback: |
+      local n = 0
+      for _, u in Players[63]:GetUnits():Members() do
+        local p = Map.GetPlot(u:GetX(), u:GetY())
+        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2
+            and PlayersVisibility[0]:IsVisible(p:GetIndex()) then
+          n = n + 1
+          print("OK|attacker|" .. u:GetX() .. "," .. u:GetY() .. "|hp "
+                .. (u:GetMaxDamage() - u:GetDamage()))
+        end
+      end
+      if n ~= 1 then print("ERR|expected one visible attacker near Gongju, found " .. n) end
+  - kind: lua
+    # Archer: off the city tile (frees Gongju's combat slot for purchases), onto an
+    # empty land tile beside Gongju within two tiles of the attacker. Verified pattern
+    # (provenance mutation_journal seq 2/3): UnitManager.PlaceUnit + RestoreMovement.
+    # Runs before the civilian spawn so the settler's exposure check sees the new tile.
+    lua: |
+      local ax, ay = nil, nil
+      for _, u in Players[63]:GetUnits():Members() do
+        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end
+      end
+      if ax == nil then print("ERR|attacker missing") return end
+      local archer = nil
+      for _, v in Players[0]:GetUnits():Members() do
+        if GameInfo.Units[v:GetType()].UnitType == "UNIT_ARCHER"
+            and v:GetX() == 73 and v:GetY() == 19 then archer = v end
+      end
+      if archer == nil then print("ERR|no archer garrisoned in Gongju") return end
+      local pick = nil
+      for dir = 0, 5 do
+        local p = Map.GetAdjacentPlot(73, 19, dir)
+        if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()
+            and not p:IsCity() and p:GetUnitCount() == 0
+            and Map.GetPlotDistance(p:GetX(), p:GetY(), ax, ay) <= 2 then pick = p end
+      end
+      if pick == nil then print("ERR|no empty land tile beside Gongju within range of the attacker") return end
+      UnitManager.PlaceUnit(archer, pick:GetX(), pick:GetY())
+      UnitManager.RestoreMovement(archer)
+      print("OK|archer|" .. pick:GetX() .. "," .. pick:GetY())
+    readback: |
+      local n, on_city = 0, 0
+      for _, v in Players[0]:GetUnits():Members() do
+        local info = GameInfo.Units[v:GetType()]
+        if info.UnitType == "UNIT_ARCHER"
+            and Map.GetPlotDistance(v:GetX(), v:GetY(), 73, 19) == 1 then
+          n = n + 1
+          print("OK|archer|" .. v:GetX() .. "," .. v:GetY())
+        end
+        if v:GetX() == 73 and v:GetY() == 19
+            and info.FormationClass == "FORMATION_CLASS_LAND_COMBAT" then
+          on_city = on_city + 1
+        end
+      end
+      if n ~= 1 then print("ERR|expected one archer beside Gongju, found " .. n) end
+      if on_city ~= 0 then print("ERR|a land combat unit still occupies Gongju's tile") end
+  - kind: lua
+    # Civilian: a settler next to the attacker with no own combat unit within one tile.
+    lua: |
+      local ax, ay = nil, nil
+      for _, u in Players[63]:GetUnits():Members() do
+        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end
+      end
+      if ax == nil then print("ERR|attacker missing") return end
+      local function guarded(x, y)
+        for _, v in Players[0]:GetUnits():Members() do
+          local info = GameInfo.Units[v:GetType()]
+          if info.FormationClass ~= "FORMATION_CLASS_CIVILIAN"
+              and Map.GetPlotDistance(x, y, v:GetX(), v:GetY()) <= 1 then return true end
+        end
+        return false
+      end
+      local pick = nil
+      for dir = 0, 5 do
+        local p = Map.GetAdjacentPlot(ax, ay, dir)
+        if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()
+            and not p:IsCity() and p:GetUnitCount() == 0 and not guarded(p:GetX(), p:GetY()) then
+          pick = p
+        end
+      end
+      if pick == nil then print("ERR|no exposed civilian tile") return end
+      local u = UnitManager.InitUnit(0, "UNIT_SETTLER", pick:GetX(), pick:GetY())
+      if u == nil then print("ERR|settler spawn failed") return end
+      UnitManager.RestoreMovement(u)
+      print("OK|civilian|" .. pick:GetX() .. "," .. pick:GetY())
+    readback: |
+      local n = 0
+      for _, v in Players[0]:GetUnits():Members() do
+        if GameInfo.Units[v:GetType()].UnitType == "UNIT_SETTLER" then
+          n = n + 1
+          print("OK|civilian|" .. v:GetX() .. "," .. v:GetY())
+        end
+      end
+      if n ~= 1 then print("ERR|expected one settler, found " .. n) end
+  - kind: lua
+    # Expendable: a wounded own warrior next to the attacker, not covering the settler.
+    lua: |
+      local ax, ay, sx, sy = nil, nil, nil, nil
+      for _, u in Players[63]:GetUnits():Members() do
+        if Map.GetPlotDistance(u:GetX(), u:GetY(), 73, 19) == 2 then ax, ay = u:GetX(), u:GetY() end
+      end
+      for _, v in Players[0]:GetUnits():Members() do
+        if GameInfo.Units[v:GetType()].UnitType == "UNIT_SETTLER" then sx, sy = v:GetX(), v:GetY() end
+      end
+      if ax == nil or sx == nil then print("ERR|attacker or settler missing") return end
+      local pick = nil
+      for dir = 0, 5 do
+        local p = Map.GetAdjacentPlot(ax, ay, dir)
+        if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()
+            and not p:IsCity() and p:GetUnitCount() == 0
+            and Map.GetPlotDistance(p:GetX(), p:GetY(), sx, sy) >= 2 then pick = p end
+      end
+      if pick == nil then print("ERR|no expendable tile") return end
+      local u = UnitManager.InitUnit(0, "UNIT_WARRIOR", pick:GetX(), pick:GetY())
+      if u == nil then print("ERR|warrior spawn failed") return end
+      u:SetDamage(80)
+      UnitManager.RestoreMovement(u)
+      print("OK|expendable|" .. pick:GetX() .. "," .. pick:GetY())
+    readback: |
+      local n = 0
+      for _, v in Players[0]:GetUnits():Members() do
+        if GameInfo.Units[v:GetType()].UnitType == "UNIT_WARRIOR" then
+          n = n + 1
+          print("OK|expendable|" .. v:GetX() .. "," .. v:GetY() .. "|hp "
+                .. (v:GetMaxDamage() - v:GetDamage()))
+        end
+      end
+      if n ~= 1 then print("ERR|expected one own warrior, found " .. n) end
+  - kind: lua
+    # Treasury for a purchased reinforcement (checked by the purchase probe).
+    lua: |
+      local t = Players[0]:GetTreasury()
+      t:ChangeGoldBalance(500 - t:GetGoldBalance())
+      print("OK|gold " .. t:GetGoldBalance())
+    readback: |
+      local g = Players[0]:GetTreasury():GetGoldBalance()
+      if g >= 500 then print("OK|gold " .. g) else print("ERR|gold " .. g) end
+  assertions:
+  - id: civilian-initially-exposed
+    value: true
+    predicate: {kind: civilian_exposed, unit: "${civilian.pair}"}
+  - id: civilian-not-yet-rescued
+    value: false
+    predicate: {kind: unit_in_area, unit_types: [UNIT_SETTLER], tiles: ["${defended_city.xy}"]}
+  - id: city-combat-slot-free
+    # No archer on the centre: a same-class unit there blocks every purchase.
+    value: false
+    predicate: {kind: unit_in_area, unit_types: [UNIT_ARCHER], tiles: ["${defended_city.xy}"]}
+  - id: no-reinforcement-in-area
+    value: false
+    predicate:
+      kind: unit_in_area
+      unit_types: [UNIT_SPEARMAN, UNIT_SWORDSMAN]
+      tiles: [[72, 18], [73, 18], [74, 18], [72, 19], [73, 19], [74, 19], [72, 20], [73, 20],
+              [74, 20]]
+
+survey:
+  queries:
+  - {tool: get_overview, arguments: {}}
+  - {tool: get_units, arguments: {}}
+  - {tool: get_cities, arguments: {}}
+  - {tool: get_map_area, arguments: {x: 73, y: 19, radius: 3}}
+  # Radius 1 on the resolved attacker keeps its unit line inside the result cap.
+  - {tool: get_map_area, arguments: {x: "${attacker.x}", y: "${attacker.y}", radius: 1}}
+  - {tool: get_city_production, arguments: {city_id: 262147}}
+  required_facts:
+  - {id: attacker-visible, source: get_map_area, pattern: "\\*\\*\\[[^\\]]*Barbarian"}
+  - {id: civilian-visible, source: get_units, pattern: "(?i)settler"}
+  - {id: expendable-visible, source: get_units, pattern: "(?i)warrior"}
+  - {id: defended-city-visible, source: get_cities, pattern: "Gongju \\(pop \\d+\\)"}
+  - {id: reinforcement-available, source: get_city_production, pattern: "SPEARMAN|SWORDSMAN"}
+
+bindings:
+- name: attacker
+  resolves: target
+  selector: {owner: 63, role: combat, hostile: true, visible: true, status: alive_visible}
+- name: civilian
+  resolves: unit
+  selector: {type: UNIT_SETTLER, role: civilian}
+- name: expendable
+  resolves: unit
+  selector: {type: UNIT_WARRIOR, role: combat}
+- name: archer
+  # Relocated by setup: the one archer in Gongju's surrounding box, off the centre.
+  resolves: unit
+  selector: {type: UNIT_ARCHER, role: combat,
+             area: [[72, 18], [73, 18], [74, 18], [72, 19], [74, 19], [72, 20], [73, 20],
+                    [74, 20]]}
+- name: defended_city
+  resolves: city
+  selector: {owner: 0, name: Gongju}
+
+coverage_rule:
+  include_owned_tiles: true
+  area_radius: 2
+  tracked_target_bindings: [attacker]
+
+objectives:
+- id: neutralise-attacker
+  rungs:
+  - points: 2
+    predicate: {kind: target_damaged, target: "${attacker.pair}", minimum_damage: 25}
+  - points: 4
+    predicate: {kind: target_neutralised, target: "${attacker.pair}"}
+- id: rescue-civilian
+  rungs:
+  - points: 4
+    # The settler's start tile is never an accepted endpoint (relocation required).
+    predicate: {kind: civilian_covered, unit: "${civilian.pair}", tiles: ["${defended_city.xy}"]}
+- id: reinforce
+  rungs:
+  - points: 2
+    predicate: {kind: active_production, cities: ["${defended_city.id}"],
+                items: [UNIT_SPEARMAN, UNIT_SWORDSMAN], repair: false}
+  - points: 4
+    predicate:
+      kind: unit_in_area
+      unit_types: [UNIT_SPEARMAN, UNIT_SWORDSMAN]
+      tiles: [[72, 18], [73, 18], [74, 18], [72, 19], [73, 19], [74, 19], [72, 20], [73, 20],
+              [74, 20]]
+
+harms:
+- id: military-loss
+  loss_key: military_asset
+  objective_id: neutralise-attacker
+  weight: 4
+  weight_reason: ""
+  timing: event
+  priority: 0
+  predicate: {kind: unit_lost, unit: "${expendable.pair}"}
+  # Accepted tactical compensation: the attacker is destroyed this episode.
+  compensation:
+  - timing: final
+    predicate: {kind: target_neutralised, target: "${attacker.pair}"}
+
+probes:
+- {id: archer-shot, tool: attack_unit, expect: ok, restore: true,
+   measure_target: "${attacker.pair}",
+   arguments_from_bindings: {unit_index: "${archer.unit_index}",
+                             x: "${attacker.x}", y: "${attacker.y}"}}
+- {id: expendable-attack, tool: attack_unit, expect: ok, restore: true,
+   measure_target: "${attacker.pair}",
+   arguments_from_bindings: {unit_index: "${expendable.unit_index}",
+                             x: "${attacker.x}", y: "${attacker.y}"}}
+- {id: civilian-to-city, tool: move_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${civilian.unit_index}",
+                             x: "${defended_city.x}", y: "${defended_city.y}"}}
+- {id: civilian-pathing, tool: get_pathing_estimate, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${civilian.unit_index}",
+                             x: "${defended_city.x}", y: "${defended_city.y}"}}
+- {id: purchase-spearman, tool: purchase_item, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${defended_city.id}", item_type: UNIT,
+                             item_name: UNIT_SPEARMAN}}
+- {id: purchase-swordsman, tool: purchase_item, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${defended_city.id}", item_type: UNIT,
+                             item_name: UNIT_SWORDSMAN}}
+- {id: queue-spearman, tool: set_city_production, expect: ok, restore: true,
+   arguments_from_bindings: {city_id: "${defended_city.id}", item_type: UNIT,
+                             item_name: UNIT_SPEARMAN}}
+- {id: civilian-attack-rejected, tool: attack_unit, expect: rejected, restore: true,
+   arguments_from_bindings: {unit_index: "${civilian.unit_index}",
+                             x: "${attacker.x}", y: "${attacker.y}"}}
+- {id: civilian-fortify-rejected, tool: fortify_unit, expect: rejected, restore: true,
+   arguments_from_bindings: {unit_index: "${civilian.unit_index}"}}
+
+archive:
+  name: PLAN3_TACTICAL_A1_V{version}
+  path: benchmarks/saves/plan3-tactical-a1-v{version}.Civ6Save
+outputs:
+  position: benchmarks/positions/plan3-tactical-a1-v{version}.json
+  provenance_authoring: benchmarks/provenance/plan3-tactical-a1-v{version}-authoring.json
+  provenance_packet: benchmarks/provenance/plan3-tactical-a1-v{version}.json
+  scripts_dir: benchmarks/scripts/plan3-tactical-a1-v{version}
+  validation_dir: benchmarks/validation/plan3-tactical-a1-v{version}
+
+# Script templates hold calls only; expectations live in the separate cases.
+scripts:
+- script_id: observe
+  batches:
+  - calls:
+    - {name: get_overview, arguments: {}}
+    - {name: get_units, arguments: {}}
+  - calls:
+    - {name: get_map_area, arguments: {x: "${attacker.x}", y: "${attacker.y}", radius: 2}}
+    - {name: get_city_production, arguments: {city_id: "${defended_city.id}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: joint-full
+  batches:
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${archer.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${expendable.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${civilian.unit_index}",
+                                    x: "${defended_city.x}", y: "${defended_city.y}"}}
+    - {name: purchase_item, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
+                                        item_name: UNIT_SPEARMAN}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: alternative-full
+  # The wounded warrior strikes first and may fall; the archer finishes the
+  # attacker (accepted compensation); a swordsman is bought instead.
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${civilian.unit_index}",
+                                    x: "${defended_city.x}", y: "${defended_city.y}"}}
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${expendable.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${archer.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: purchase_item, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
+                                        item_name: UNIT_SWORDSMAN}}
+    - {name: finish_trial, arguments: {}}
+- script_id: meaningful-damage
+  batches:
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${archer.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: reinforcement-partial
+  batches:
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
+                                              item_name: UNIT_SPEARMAN}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: closer-only
+  # The settler steps onto the warrior's tile: closer to cover, not the
+  # accepted defended endpoint.
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${civilian.unit_index}",
+                                    x: "${expendable.x}", y: "${expendable.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: covered-rescue
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${civilian.unit_index}",
+                                    x: "${defended_city.x}", y: "${defended_city.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: military-loss
+  # Futile attack: the wounded warrior attacks unprepared and dies.
+  batches:
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${expendable.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: mixed-gain-loss
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${civilian.unit_index}",
+                                    x: "${defended_city.x}", y: "${defended_city.y}"}}
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${expendable.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: repeat-undo
+  # Repeat: a second archer shot is rejected. Undo: the reinforcement queue is replaced.
+  batches:
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${archer.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${archer.unit_index}",
+                                      x: "${attacker.x}", y: "${attacker.y}"}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
+                                              item_name: UNIT_SPEARMAN}}
+  - calls:
+    - {name: set_city_production, arguments: {city_id: "${defended_city.id}", item_type: UNIT,
+                                              item_name: UNIT_BUILDER}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+
+cases:
+- case_id: null-discovery
+  script_id: observe
+  # The settler starts exposed and stays: no credit and no new-exposure debit.
+  tags: [null_discovery, initial_exposure_null]
+  expected:
+    score: {gross_credit: 0, harm_total: 0, net_credit: 0, primary_score: 0.0}
+    endpoints:
+    - {id: attacker-alive, value: false,
+       predicate: {kind: target_neutralised, target: "${attacker.pair}"}}
+    - {id: still-exposed, value: true,
+       predicate: {kind: civilian_exposed, unit: "${civilian.pair}"}}
+    - {id: initial_exposure_null, value: false,
+       predicate: {kind: new_civilian_exposure, unit: "${civilian.pair}"}}
+    ledger: []
+- case_id: joint-full
+  script_id: joint-full
+  tags: [joint_full]
+  expected:
+    score: {gross_credit: 12, harm_total: 0, net_credit: 12, primary_score: 1.0}
+    endpoints:
+    - {id: attacker-destroyed, value: true,
+       predicate: {kind: target_neutralised, target: "${attacker.pair}"}}
+    ledger: []
+- case_id: alternative-full
+  script_id: alternative-full
+  tags: [alternative_full, accepted_compensation]
+  expected:
+    score: {gross_credit: 12, harm_total: 0, net_credit: 12, primary_score: 1.0}
+    endpoints: []
+    ledger: []
+- case_id: meaningful-damage
+  script_id: meaningful-damage
+  tags: [meaningful_damage]
+  expected:
+    score: {gross_credit: 2, harm_total: 0, net_credit: 2, primary_score: 0.16666666666666666}
+    endpoints: []
+    ledger: []
+- case_id: reinforcement-partial
+  script_id: reinforcement-partial
+  tags: [reinforcement_partial]
+  expected:
+    score: {gross_credit: 2, harm_total: 0, net_credit: 2, primary_score: 0.16666666666666666}
+    endpoints: []
+    ledger: []
+- case_id: closer-only
+  script_id: closer-only
+  tags: [closer_only]
+  expected:
+    score: {gross_credit: 0, harm_total: 0, net_credit: 0, primary_score: 0.0}
+    endpoints: []
+    ledger: []
+- case_id: covered-rescue
+  script_id: covered-rescue
+  tags: [covered_rescue]
+  expected:
+    score: {gross_credit: 4, harm_total: 0, net_credit: 4, primary_score: 0.3333333333333333}
+    endpoints: []
+    ledger: []
+- case_id: military-loss
+  script_id: military-loss
+  tags: [military_loss, harm_only]
+  expected:
+    score: {gross_credit: 0, harm_total: 4, net_credit: -4, primary_score: -0.3333333333333333}
+    endpoints: []
+    ledger: []
+- case_id: mixed-gain-loss
+  script_id: mixed-gain-loss
+  tags: [mixed_gain_loss]
+  expected:
+    score: {gross_credit: 4, harm_total: 4, net_credit: 0, primary_score: 0.0}
+    endpoints: []
+    ledger: []
+- case_id: repeat-undo
+  script_id: repeat-undo
+  tags: [repeat_undo]
+  declared_rejections:
+  - {step: 1, tool_name: attack_unit}
+  expected:
+    score: {gross_credit: 2, harm_total: 0, net_credit: 2, primary_score: 0.16666666666666666}
+    endpoints: []
+    ledger: []

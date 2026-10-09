@@ -1,0 +1,15 @@
+{
+  "code_identity": "e9255e849b14462ea32c0765f041691717714449857358707ec59261be3bf260",
+  "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
+  "duration_s": 184.914,
+  "errors": 0,
+  "exit_code": 0,
+  "failed": 0,
+  "finished": "2026-10-09T15:36:15.926686+00:00",
+  "git_head": "8f9b884fc0b73e1915d59b5f5dd91dcfb77d4c8f",
+  "git_head_note": "HEAD is the final code commit of the pre-live review fix wave; the evidence commit that follows adds only these three force-added files, which are outside every fingerprint list",
+  "passed": 4051,
+  "skipped": 0,
+  "started": "2026-10-09T15:33:11.012291+00:00",
+  "summary_line": "4051 passed in 183.41s (0:03:03)"
+}

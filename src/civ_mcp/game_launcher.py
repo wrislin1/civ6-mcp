@@ -2014,6 +2014,21 @@ WSL_WINDOWS_REPO = "/mnt/c/Users/wrisl/dev/civ6-mcp"
 _WSL_WINDOWS_BOOTSTRAP = f"{WSL_WINDOWS_REPO}/tools/windows/civ6_launcher_bootstrap.py"
 
 
+def windows_repo_root() -> str:
+    """The Windows companion checkout (WSL-visible) whose code the bridge runs.
+
+    ``CIV6_WINDOWS_BOOTSTRAP`` overrides the bootstrap; since the bootstrap
+    lives at ``<checkout>/tools/windows/civ6_launcher_bootstrap.py``, the
+    checkout is derived from it. Repo-relative bridge arguments and export
+    destinations must resolve in the checkout whose code actually runs, not
+    in the default one.
+    """
+    bootstrap = os.environ.get("CIV6_WINDOWS_BOOTSTRAP")
+    if not bootstrap:
+        return WSL_WINDOWS_REPO
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(bootstrap))))
+
+
 def _press_escape_windows_bridge() -> bool:
     """Deliver one Escape press via the Windows companion checkout.
 
@@ -3303,6 +3318,181 @@ def deploy_benchmark_save(source, save_name: str, expected_sha256: str) -> dict:
         "archive_sha256": archive_sha256,
         "deployed_sha256": deployed_sha256,
         "expected_sha256": expected_sha256,
+    }
+
+
+_STABLE_POLL_S = 1.0
+_EXPORT_TIMEOUT_S = 30.0
+_SAVE_EXTENSION = ".Civ6Save"
+
+
+def _export_save_basename(name: str) -> str:
+    """Validate a save basename (spaces allowed) and append the extension."""
+    basename = name if name.endswith(_SAVE_EXTENSION) else f"{name}{_SAVE_EXTENSION}"
+    stem = basename[: -len(_SAVE_EXTENSION)]
+    if (
+        not stem.strip()
+        or any(ch in name for ch in ("/", "\\", ":", "\0"))
+        or ".." in name
+    ):
+        raise ValueError(f"unsafe save name {name!r}: must be a plain basename")
+    return basename
+
+
+def _save_signature(path: str) -> tuple[int, int] | None:
+    """``(size, mtime_ns)`` of a non-empty file at ``path``; ``None`` otherwise."""
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return (st.st_size, st.st_mtime_ns) if st.st_size > 0 else None
+
+
+def stat_benchmark_save(name: str) -> dict:
+    """Whether a native save ``name`` exists in ``SINGLE_SAVE_DIR`` and its
+    ``(size, mtime_ns)`` signature (runs on the native Windows side).
+
+    Taken *before* a ``Network.SaveGame`` request, the signature identifies
+    the stale same-named file an export must not mistake for the new save
+    (``export_benchmark_save(previous_signature=...)``).
+    """
+    basename = _export_save_basename(name)
+    source_path = os.path.join(SINGLE_SAVE_DIR, basename)
+    signature = _save_signature(source_path)
+    return {
+        "save_name": basename,
+        "source_path": source_path,
+        "exists": signature is not None,
+        "size": signature[0] if signature else None,
+        "mtime_ns": signature[1] if signature else None,
+    }
+
+
+def _wait_for_stable_save(
+    path: str,
+    *,
+    timeout_s: float,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+    exclude: tuple[int, int] | None = None,
+) -> tuple[int, int]:
+    """Return ``(size, mtime_ns)`` once ``path`` is non-empty and unchanged
+    across two polls ``_STABLE_POLL_S`` apart; ``TimeoutError`` otherwise.
+
+    A ``Network.SaveGame`` result is written asynchronously, so a file that
+    merely exists may still be partial -- it is never read as final until
+    its size and mtime stop moving. A file still carrying the ``exclude``
+    signature (the same-named save that existed before the save request) is
+    the stale predecessor, not the new save: it is waited out, never returned.
+    """
+    deadline = clock() + timeout_s
+    previous: tuple[int, int] | None = None
+    while True:
+        signature = _save_signature(path)
+        if signature is not None and signature == previous and signature != exclude:
+            return signature
+        previous = signature
+        if clock() >= deadline:
+            what = ("still the pre-request save" if signature is not None and signature == exclude
+                    else "not complete and stable")
+            raise TimeoutError(f"save {path} {what} after {timeout_s}s")
+        sleep(_STABLE_POLL_S)
+
+
+def export_benchmark_save(
+    name: str,
+    destination: str,
+    *,
+    expected_sha256: str | None = None,
+    previous_signature: tuple[int, int] | None = None,
+    timeout_s: float = _EXPORT_TIMEOUT_S,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict:
+    """Archive a native save from ``SINGLE_SAVE_DIR`` without overwriting.
+
+    Runs on the native Windows side (the export twin of
+    ``deploy_benchmark_save``). Waits for a complete, stable source file,
+    copies it to a temp file beside ``destination``, verifies the source and
+    copy digests agree and the source did not change meanwhile, then
+    publishes with ``os.link`` -- which fails rather than replacing an
+    existing path. An existing destination is accepted only when its digest
+    is identical (``existed: True``); a differing one raises ``ValueError``
+    and is left untouched. ``previous_signature`` (from
+    ``stat_benchmark_save`` before the save request) names a stale same-named
+    save that must never be archived as the new one.
+    """
+    basename = _export_save_basename(name)
+    source_path = os.path.join(SINGLE_SAVE_DIR, basename)
+    dest_path = str(destination)
+    signature = _wait_for_stable_save(
+        source_path, timeout_s=timeout_s, sleep=sleep, clock=clock,
+        exclude=tuple(previous_signature) if previous_signature else None,
+    )
+
+    def _source_unchanged() -> None:
+        st = os.stat(source_path)
+        if (st.st_size, st.st_mtime_ns) != signature:
+            raise ValueError(f"source save {source_path} changed during export")
+
+    # The destination directory may not exist yet (e.g. the gitignored
+    # benchmark_runs/ tree on a fresh Windows checkout).
+    dest_dir = os.path.dirname(os.path.abspath(dest_path))
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile(
+        dir=dest_dir,
+        prefix=".export.",
+        suffix=".tmp",
+        delete=False,
+    )
+    try:
+        with open(source_path, "rb") as src:
+            for chunk in iter(lambda: src.read(_HASH_CHUNK_SIZE), b""):
+                tmp.write(chunk)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        _source_unchanged()
+
+        source_sha256 = _sha256_file(source_path)
+        copy_sha256 = _sha256_file(tmp.name)
+        _source_unchanged()
+        if source_sha256 != copy_sha256:
+            raise ValueError(
+                f"copy hash mismatch for {source_path}: "
+                f"source {source_sha256}, copy {copy_sha256}"
+            )
+        if expected_sha256 is not None and copy_sha256 != expected_sha256:
+            raise ValueError(
+                f"source hash mismatch for {source_path}: "
+                f"expected {expected_sha256}, got {copy_sha256}"
+            )
+
+        existed = False
+        try:
+            os.link(tmp.name, dest_path)
+        except FileExistsError:
+            existed = True
+        if existed:
+            archived_sha256 = _sha256_file(dest_path)
+            if archived_sha256 != copy_sha256:
+                raise ValueError(
+                    f"archive at {dest_path} differs from {source_path}: "
+                    f"existing {archived_sha256}, new {copy_sha256}"
+                )
+    finally:
+        tmp.close()
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+
+    return {
+        "save_name": basename,
+        "source_path": source_path,
+        "dest_path": dest_path,
+        "sha256": copy_sha256,
+        "size": signature[0],
+        "existed": existed,
+        "excluded_signature": list(previous_signature) if previous_signature else None,
     }
 
 

@@ -584,3 +584,63 @@ def test_capture_cli_rejects_provenance_missing_required_field(tmp_path, capsys)
     assert not output_path.exists()
     err = capsys.readouterr().err
     assert "mutation_journal" in err
+
+
+# ---------------------------------------------------------------------------
+# capture_state / digest injection (Task 4): v1 defaults unchanged.
+# ---------------------------------------------------------------------------
+
+
+def _fake_digest(state):
+    return "v2:" + str(state["turn"])
+
+
+async def test_capture_position_uses_injected_capture_state_and_digest(monkeypatch):
+    def default_capture_must_not_run(*args):
+        raise AssertionError("default capture_canonical_state used despite injection")
+
+    _patch_common(monkeypatch, capture=default_capture_must_not_run)
+    seen = []
+
+    async def injected(connection, player_id, tiles):
+        seen.append((player_id, tiles))
+        return {"turn": 5}
+
+    result = await benchmark_position.capture_position(
+        _provenance(), capture_state=injected, digest=_fake_digest
+    )
+    assert seen == [(0, [(9, 8), (10, 8)])]
+    assert result["captured_state"] == {"turn": 5}
+    assert result["captured_state_sha256"] == "v2:5"
+
+
+async def test_capture_position_defaults_remain_v1(monkeypatch):
+    _patch_common(monkeypatch)
+    result = await benchmark_position.capture_position(_provenance())
+    assert result["captured_state_sha256"] == _GOOD_DIGEST
+
+
+async def test_verify_position_uses_injection_for_exactly_twelve_cycles(monkeypatch):
+    def default_capture_must_not_run(*args):
+        raise AssertionError("default capture_canonical_state used despite injection")
+
+    _patch_common(monkeypatch, capture=default_capture_must_not_run)
+    calls = []
+
+    async def injected(connection, player_id, tiles):
+        calls.append((player_id, tiles))
+        return {"turn": 3}
+
+    position = _position_manifest(expected_state_sha256="v2:3")
+    result = await benchmark_position.verify_position(
+        position, 12, capture_state=injected, digest=_fake_digest
+    )
+    assert result["ok"] is True
+    assert result["cycles_completed"] == 12
+    assert result["digests"] == ["v2:3"] * 12
+    assert len(calls) == 12
+    assert calls[0] == (0, ((9, 8),))
+    with pytest.raises(benchmark_position.PositionCLIError):
+        await benchmark_position.verify_position(
+            position, 11, capture_state=injected, digest=_fake_digest
+        )
