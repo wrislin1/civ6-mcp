@@ -229,20 +229,37 @@ def _fake_bridge(monkeypatch, payload):
     return calls
 
 
-def test_export_via_windows_builds_argv_and_returns_payload(monkeypatch):
+@pytest.fixture
+def mounted(tmp_path, monkeypatch):
+    """Map the mounted Windows path the bridge verifies onto a temp dir."""
+    root = tmp_path / "mnt"
+    root.mkdir()
+    seen = []
+
+    def fake_mounted(path):
+        seen.append(path)
+        return str(root / os.path.basename(path.replace("\\", "/")))
+
+    monkeypatch.setattr(benchmark_deploy, "_mounted_path", fake_mounted)
+    return SimpleNamespace(root=root, seen=seen)
+
+
+def test_export_via_windows_builds_argv_and_verifies_mounted_archive(monkeypatch, mounted):
+    data = b"archived"
+    (mounted.root / "base.Civ6Save").write_bytes(data)
     payload = {
         "ok": True,
         "save_name": BASE_SAVE,
         "source_path": r"C:\Docs\Single\x.Civ6Save",
         "dest_path": r"C:\arch\base.Civ6Save",
-        "sha256": "abc",
-        "size": 3,
+        "sha256": _sha(data),
+        "size": len(data),
         "existed": False,
     }
     calls = _fake_bridge(monkeypatch, payload)
 
     result = benchmark_deploy.export_via_windows(
-        "SEONDEOK 100 400 BC", "/mnt/c/arch/base.Civ6Save", expected_sha256="abc"
+        "SEONDEOK 100 400 BC", "/mnt/c/arch/base.Civ6Save", expected_sha256=_sha(data)
     )
 
     assert result == payload
@@ -252,25 +269,161 @@ def test_export_via_windows_builds_argv_and_returns_payload(monkeypatch):
         "--name", "SEONDEOK 100 400 BC",
         "--destination", r"C:\arch\base.Civ6Save",
         "--json",
-        "--sha256", "abc",
+        "--sha256", _sha(data),
     ]
+    assert mounted.seen == ["/mnt/c/arch/base.Civ6Save"]
 
 
-def test_export_via_windows_omits_sha256_when_not_given(monkeypatch):
-    calls = _fake_bridge(monkeypatch, {"ok": True, "sha256": "abc"})
-    benchmark_deploy.export_via_windows("NAME", "/mnt/d/out.Civ6Save")
+def test_export_via_windows_accepts_windows_absolute_destination(monkeypatch, mounted):
+    (mounted.root / "out.Civ6Save").write_bytes(b"x")
+    calls = _fake_bridge(monkeypatch, {"ok": True, "sha256": _sha(b"x")})
+    benchmark_deploy.export_via_windows("NAME", r"D:\arch\out.Civ6Save")
     [cmd] = calls
     assert "--sha256" not in cmd
-    assert cmd[cmd.index("--destination") + 1] == r"D:\out.Civ6Save"
+    assert cmd[cmd.index("--destination") + 1] == r"D:\arch\out.Civ6Save"
+    assert mounted.seen == [r"D:\arch\out.Civ6Save"]
 
 
-def test_export_via_windows_raises_on_native_failure(monkeypatch):
+def test_mounted_path_translates_windows_paths():
+    assert benchmark_deploy._mounted_path(r"D:\arch\a b.Civ6Save") == "/mnt/d/arch/a b.Civ6Save"
+    assert benchmark_deploy._mounted_path("/mnt/c/x/y.Civ6Save") == "/mnt/c/x/y.Civ6Save"
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "/home/riz/projects/civ6-mcp/benchmarks/saves/base.Civ6Save",
+        "benchmarks/saves/base.Civ6Save",
+        r"arch\base.Civ6Save",
+        "/mnt/c",
+        "/mnt/cc/x.Civ6Save",
+        r"\\wsl.localhost\Ubuntu\home\x.Civ6Save",
+    ],
+)
+def test_export_via_windows_refuses_destinations_windows_cannot_reach(
+    monkeypatch, destination
+):
+    calls = _fake_bridge(monkeypatch, {"ok": True, "sha256": "abc"})
+    with pytest.raises(ValueError, match="Windows-visible absolute path"):
+        benchmark_deploy.export_via_windows("NAME", destination)
+    assert calls == []
+
+
+def test_export_via_windows_raises_on_native_failure(monkeypatch, mounted):
     _fake_bridge(monkeypatch, {"ok": False, "error": "archive at X differs"})
     with pytest.raises(benchmark_deploy.DeploymentVerificationError, match="differs"):
         benchmark_deploy.export_via_windows("NAME", "/mnt/c/out.Civ6Save")
 
 
-def test_export_via_windows_raises_when_native_digest_disagrees(monkeypatch):
+def test_export_via_windows_raises_when_native_digest_disagrees(monkeypatch, mounted):
+    (mounted.root / "out.Civ6Save").write_bytes(b"x")
     _fake_bridge(monkeypatch, {"ok": True, "sha256": "other"})
     with pytest.raises(benchmark_deploy.DeploymentVerificationError, match="sha256"):
         benchmark_deploy.export_via_windows("NAME", "/mnt/c/out.Civ6Save", "abc")
+
+
+def test_export_via_windows_raises_when_mounted_archive_disagrees(monkeypatch, mounted):
+    (mounted.root / "out.Civ6Save").write_bytes(b"what WSL actually sees")
+    _fake_bridge(monkeypatch, {"ok": True, "sha256": _sha(b"what Windows claims")})
+    with pytest.raises(benchmark_deploy.DeploymentVerificationError, match="mounted"):
+        benchmark_deploy.export_via_windows("NAME", "/mnt/c/out.Civ6Save")
+
+
+def test_export_via_windows_raises_when_mounted_archive_missing(monkeypatch, mounted):
+    _fake_bridge(monkeypatch, {"ok": True, "sha256": "abc"})
+    with pytest.raises(benchmark_deploy.DeploymentVerificationError, match="mounted"):
+        benchmark_deploy.export_via_windows("NAME", "/mnt/c/out.Civ6Save")
+
+
+# --- WSL-side publish into the repo store ---------------------------------
+
+
+@pytest.fixture
+def store(tmp_path):
+    src_dir = tmp_path / "windows_checkout"
+    src_dir.mkdir()
+    dest_dir = tmp_path / "benchmarks" / "saves"
+    dest_dir.mkdir(parents=True)
+    return SimpleNamespace(src=src_dir, dest=dest_dir)
+
+
+def test_publish_archive_copy_creates_verified_copy(store):
+    data = b"verified archive"
+    source = store.src / "a.Civ6Save"
+    source.write_bytes(data)
+    dest = store.dest / "a.Civ6Save"
+
+    result = benchmark_deploy.publish_archive_copy(
+        str(source), str(dest), expected_sha256=_sha(data)
+    )
+
+    assert dest.read_bytes() == data
+    assert result == {
+        "source_path": str(source),
+        "dest_path": str(dest),
+        "sha256": _sha(data),
+        "size": len(data),
+        "existed": False,
+    }
+    assert [p.name for p in store.dest.iterdir()] == ["a.Civ6Save"]
+
+
+def test_publish_archive_copy_is_idempotent_for_identical_archive(store):
+    data = b"same"
+    (store.src / "a.Civ6Save").write_bytes(data)
+    dest = store.dest / "a.Civ6Save"
+    dest.write_bytes(data)
+
+    result = benchmark_deploy.publish_archive_copy(
+        str(store.src / "a.Civ6Save"), str(dest), expected_sha256=_sha(data)
+    )
+
+    assert result["existed"] is True
+    assert [p.name for p in store.dest.iterdir()] == ["a.Civ6Save"]
+
+
+def test_publish_archive_copy_refuses_differing_archive(store):
+    (store.src / "a.Civ6Save").write_bytes(b"new")
+    dest = store.dest / "a.Civ6Save"
+    dest.write_bytes(b"old")
+
+    with pytest.raises(benchmark_deploy.DeploymentVerificationError, match="differs"):
+        benchmark_deploy.publish_archive_copy(
+            str(store.src / "a.Civ6Save"), str(dest), expected_sha256=_sha(b"new")
+        )
+    assert dest.read_bytes() == b"old"
+    assert [p.name for p in store.dest.iterdir()] == ["a.Civ6Save"]
+
+
+def test_publish_archive_copy_never_overwrites_a_racing_archive(store, monkeypatch):
+    (store.src / "a.Civ6Save").write_bytes(b"ours")
+    dest = store.dest / "a.Civ6Save"
+    real_link = os.link
+
+    def racing_link(src, dst):
+        with open(dst, "wb") as fh:
+            fh.write(b"theirs")
+        return real_link(src, dst)
+
+    monkeypatch.setattr(benchmark_deploy.os, "link", racing_link)
+    monkeypatch.setattr(
+        benchmark_deploy.os, "replace", lambda *a: pytest.fail("os.replace must not be used")
+    )
+
+    with pytest.raises(benchmark_deploy.DeploymentVerificationError, match="differs"):
+        benchmark_deploy.publish_archive_copy(
+            str(store.src / "a.Civ6Save"), str(dest), expected_sha256=_sha(b"ours")
+        )
+    assert dest.read_bytes() == b"theirs"
+    assert [p.name for p in store.dest.iterdir()] == ["a.Civ6Save"]
+
+
+def test_publish_archive_copy_rejects_source_digest_mismatch(store):
+    (store.src / "a.Civ6Save").write_bytes(b"bytes")
+    dest = store.dest / "a.Civ6Save"
+    with pytest.raises(benchmark_deploy.DeploymentVerificationError, match="expected"):
+        benchmark_deploy.publish_archive_copy(
+            str(store.src / "a.Civ6Save"), str(dest), expected_sha256="0" * 64
+        )
+    assert list(store.dest.iterdir()) == []
+

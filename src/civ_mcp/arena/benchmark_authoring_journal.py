@@ -229,6 +229,8 @@ class AuthoringJournal:
                 self._advance(existing, "resume")
                 self._commit(doc)
                 self._mark(scenario_id)
+                if existing["expired"]:
+                    raise ValueError("authoring clock expired")
             return copy.deepcopy(existing)
 
         entry = doc["families"].setdefault(family, {"scenarios": [], "total_elapsed_s": 0.0})

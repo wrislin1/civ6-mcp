@@ -187,6 +187,28 @@ def test_clock_expires_at_limit_and_expiry_survives_reopen(tmp_path):
         assert record["finished_unix_s"] == clock.wall
 
 
+def test_resuming_an_expired_clock_raises_and_persists_expiry(tmp_path):
+    clock = FakeClock()
+    path = tmp_path / "attempts.json"
+    with _open(path, clock) as journal:
+        _begin_first(journal)
+        clock.advance(600)
+        journal.checkpoint(scenario_id="builder-a1")
+
+    clock.advance(AUTHORING_LIMIT_S)  # process was down past the limit
+    clock.mono = 0.0
+    with _open(path, clock) as journal:
+        with pytest.raises(ValueError, match="authoring clock expired"):
+            _begin_first(journal)
+        assert journal.is_expired("builder-a1") is True
+
+    stored = json.loads(path.read_text())["families"]["builder"]["scenarios"][0]
+    assert stored["expired"] is True
+    assert stored["status"] == "open"
+    assert stored["recorded_elapsed_s"] == 600.0 + AUTHORING_LIMIT_S
+    assert stored["checkpoints"][-1]["label"] == "resume"
+
+
 def test_finish_stops_the_clock(tmp_path):
     clock = FakeClock()
     with _open(tmp_path / "attempts.json", clock) as journal:
