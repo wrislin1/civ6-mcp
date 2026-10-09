@@ -196,3 +196,19 @@ Amendment procedure by kind of change:
   selectors accept list values ("any of"). Recipes: the city family's housing objective moved to Gongju
   (granary removed in setup) and its district objective became a hills-only Seowon over mine assets; the
   tactical family relocates Gongju's archer off the city tile.
+- **2026-10-09, during the live phase, before any family clock opened (positive-control timing probe,
+  Task 17).** Scoring-chain: the first live execution of the v2 capture program in `GameCore_Tuner` found
+  two API differences from the InGame context that the offline tests cannot see. `CityDistricts` has no
+  `Members()` iterator there (`GetNumDistricts()` + zero-based `GetDistrictByIndex(i)` replace it; the
+  player-level collection iterates but carries no city id), and `BuildQueue:CurrentlyBuilding()` answers
+  the string `"NONE"` for an empty queue (now read as no production, like nil/""). Every other call the
+  program makes was verified present by a read-only probe; `GetResourceAccumulationPerTurn` is absent and
+  was already guarded. `src/civ_mcp/lua/benchmark_v2.py` is a fingerprint dependency, so `code_identity`
+  moved from `e9255e84…` to `0858553801927366fda0e90f66dfec072f57de4511bbf45b1d0448ab91f7974a`
+  (commit `ecec720`); no packet existed; the full suite and the committed preflight evidence were
+  regenerated under the new identity, and the probe passed under it (20/20 samples, mean 0.386 s,
+  p95 0.396 s, max 0.408 s, one Lua execution each, one digest). Three earlier probe directories
+  (`capture-probe`, `-2`, `-3`) retain the failed attempts: the first lost its reload to a cold
+  save-list enumeration after game launch (the frontend load tier's 30 s cancel landed after the
+  late result had already fired `Network.LoadGame`; operator note, no code change), the second and
+  third hit the two API differences above.
