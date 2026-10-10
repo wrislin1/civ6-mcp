@@ -435,9 +435,11 @@ probes:
 - {id: pasture-off-site-rejected, tool: improve_tile, expect: rejected, restore: true,
    arguments_from_bindings: {unit_index: "${builder_resource.unit_index}",
                              improvement_name: IMPROVEMENT_PASTURE}}
-- {id: builder-attack-rejected, tool: attack_unit, expect: rejected, restore: true,
-   arguments_from_bindings: {unit_index: "${builder_resource.unit_index}",
-                             x: "${route_threat.x}", y: "${route_threat.y}"}}
+# No builder-attack legality probe: the frozen registry answers a civilian's
+# attack_unit with a success-shaped move report (first live probe 2026-10-10: the
+# resource builder's attack came back "STOPPED_SHORT ... moved to (73,30)"), the
+# civilian-attack defect recorded 2026-10-09 for a later identity, so no probe can
+# witness that rejection under this identity; no case depends on it.
 
 archive:
   name: PLAN3_BUILDER_A1_V{version}

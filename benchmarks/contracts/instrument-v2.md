@@ -264,7 +264,17 @@ Amendment procedure by kind of change:
   the live path query returned no path at all; `new-exposure` and the `escort-leaves-cover`
   probe use the same tile, and a `reach-escort-leave` pathing probe witnesses it. Every other
   case, objective, harm and expected score is unchanged. The scarcity rule of the spec (a
-  stray improvement starves an objective) is forfeited for this family.
+  stray improvement starves an objective) is forfeited for this family. First live contact
+  under the same clock (apply and probe, 2026-10-10 16:06 UTC onwards) then froze three
+  measured facts (recipe only): the food sites are the plains tiles (66,22) and (69,22),
+  the only farmable tiles within two of Jeonju and Gwangju, and the improve-food rung
+  accepts a plains farm (food min 2); the closer-only destination is (69,23), the mine's
+  only unscored flat neighbour; and the route threat's selector names the horses' three
+  non-Jinju-adjacent neighbours so its tile lies inside the resolution capture's area. The
+  `builder-attack-rejected` legality probe was dropped: the frozen registry answers a
+  builder's `attack_unit` with a success-shaped move report (`STOPPED_SHORT`), the
+  civilian-attack defect recorded on 2026-10-09 for a later identity, so no probe can
+  witness that rejection under this identity and no case depends on it.
 - **2026-10-10, before the city revalidation clock opens (decision 2, city family).**
   Prospective amendment granting the city family one revalidation attempt. The 2026-10-09
   delayed-death amendment required `plan3-city-a2-v1` (captured under `08585538…`) to be
