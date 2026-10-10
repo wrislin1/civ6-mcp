@@ -1,0 +1,15 @@
+{
+  "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/exit/pytest.txt",
+  "exit_code": 0,
+  "passed": 4064,
+  "failed": 0,
+  "errors": 0,
+  "skipped": 0,
+  "duration_s": 247.791,
+  "started": "2026-10-10T20:21:34.530568+00:00",
+  "finished": "2026-10-10T20:25:42.321135+00:00",
+  "git_head": "288598a47567015397ea33659b04797600bb3ae5",
+  "git_head_note": "clean tracked tree",
+  "summary_line": "4064 passed in 246.01s (0:04:06)",
+  "code_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697"
+}

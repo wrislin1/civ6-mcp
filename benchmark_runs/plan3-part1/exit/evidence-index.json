@@ -1,0 +1,14 @@
+{
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/exit/pytest.txt",
+      "sha256": "e7af8eb776d5b223b9cf9e32155384c3a32f2d5f07ae4eff98b1123ea9bd5527"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/exit/pytest-result.json",
+      "sha256": "b7a74c1210e576c73d7a49b758745d8948dde54ce7162698aca8a8f4b5128ea4"
+    }
+  ],
+  "schema_version": "2.0.0",
+  "scope": "plan3-part1 exit gate full suite"
+}
