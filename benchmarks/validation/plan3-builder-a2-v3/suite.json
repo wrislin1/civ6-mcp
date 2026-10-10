@@ -1,0 +1,68 @@
+{
+  "actor_kind": "scripted",
+  "cases": [
+    {
+      "path": "cases/null-discovery.json",
+      "sha256": "8a90e76be3756191b376fd0f04fcfac5fc8fa3e4aa6b67eff94f2cbd829ad8ae"
+    },
+    {
+      "path": "cases/joint-full.json",
+      "sha256": "affca7d4c16b0e1417047c5aea614ac277f9bf134665361f6fc2e88f863e9e6a"
+    },
+    {
+      "path": "cases/alternative-full.json",
+      "sha256": "e861c57c346497d2091fafcd2bdf8f77f9345d67ee47b91085d67f327cd4cb1e"
+    },
+    {
+      "path": "cases/partial-repair.json",
+      "sha256": "a732cb73a78ae3ce1011c6045df320614e1b6f8bcc4163faf5b94ecd163b17a5"
+    },
+    {
+      "path": "cases/partial-resource.json",
+      "sha256": "61f992b51b8466b0914d616a41b90f3f915f6c6a7ec6db4accd0ed807fc84ade"
+    },
+    {
+      "path": "cases/partial-food.json",
+      "sha256": "7187c7d2fceaca06bf1d58323346c6fdef0c72a08cb7fe9cd9789b66c0e8945a"
+    },
+    {
+      "path": "cases/closer-only.json",
+      "sha256": "be45df2fa77eb6506f356b2562ff9694f3f7f35cec6596036b39a06b040681ad"
+    },
+    {
+      "path": "cases/escort-loss.json",
+      "sha256": "01dae8383ae1a222f00d74eac423d78a39a781b1b5df6bf87a7bb55409c16238"
+    },
+    {
+      "path": "cases/new-exposure.json",
+      "sha256": "cefe51b21767fbda69d37f6290b8d666eafebdfca7d0b4c99fb6d56deecfc9e2"
+    },
+    {
+      "path": "cases/temporary-exposure-repaired.json",
+      "sha256": "843114f5eb25a9c37a577d1c53f88d014abe5f0ad7c11b5f50a8edcacbaabcf8"
+    },
+    {
+      "path": "cases/two-harm.json",
+      "sha256": "3bcf58d65f337ca082abe95c95d1a08b1dfac0bb2d596ff35f1d711200e20d84"
+    },
+    {
+      "path": "cases/repeat-undo.json",
+      "sha256": "ba356dece363405477f1cf6a8c90ec4c868f0353d5cec5cdc2073f9ddaadc97a"
+    }
+  ],
+  "contract_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
+  "counting": false,
+  "episode_wall_s": 300,
+  "max_steps": 15,
+  "position": {
+    "path": "../../positions/plan3-builder-a2-v3.json",
+    "sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc"
+  },
+  "result_char_cap": 1500,
+  "schema_version": "2.0.0",
+  "suite_id": "plan3-builder-a2-v3-validation",
+  "toolset_identity": {
+    "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+    "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+  }
+}

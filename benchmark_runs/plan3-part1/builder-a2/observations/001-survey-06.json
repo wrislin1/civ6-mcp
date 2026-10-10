@@ -1,0 +1,19 @@
+{
+  "arguments": {
+    "radius": 1,
+    "x": 68,
+    "y": 23
+  },
+  "capped_sha256": "1c1394e2cf15fff7af456872ee9b50f1f87a7def30c8737a153aba68f9706fc4",
+  "full_sha256": "1c1394e2cf15fff7af456872ee9b50f1f87a7def30c8737a153aba68f9706fc4",
+  "index": 6,
+  "resolved_arguments": {
+    "radius": 1,
+    "x": 68,
+    "y": 23
+  },
+  "result_capped": "9 tiles:\n  (67,22): GRASS_HILLS Hills River {F:2 P:1} [mv:2]\n  (68,22): GRASS_HILLS Hills River [ENCAMPMENT] {F:0 P:0} (owned by Korea) [mv:2]\n  (69,22): PLAINS River {F:1 P:1} (owned by Korea)\n  (67,23): GRASS_HILLS Hills [STONE] River (QUARRY) {F:2 P:2} (owned by Korea) [mv:2]\n  (68,23): GRASS_HILLS Hills [IRON*] (MINE) {F:2 P:1 S:1} (owned by Korea) [mv:2]\n  (69,23): GRASS River (FARM) {F:2 P:0} (owned by Korea)\n  (67,24): GRASS_HILLS Hills [DIAMONDS+] River (Road) [CITY_CENTER] {F:2 P:1 G:3} (owned by Korea) [my: SWORDSMAN]\n  (68,24): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3]\n  (69,24): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)",
+  "result_char_cap": 1500,
+  "result_full": "9 tiles:\n  (67,22): GRASS_HILLS Hills River {F:2 P:1} [mv:2]\n  (68,22): GRASS_HILLS Hills River [ENCAMPMENT] {F:0 P:0} (owned by Korea) [mv:2]\n  (69,22): PLAINS River {F:1 P:1} (owned by Korea)\n  (67,23): GRASS_HILLS Hills [STONE] River (QUARRY) {F:2 P:2} (owned by Korea) [mv:2]\n  (68,23): GRASS_HILLS Hills [IRON*] (MINE) {F:2 P:1 S:1} (owned by Korea) [mv:2]\n  (69,23): GRASS River (FARM) {F:2 P:0} (owned by Korea)\n  (67,24): GRASS_HILLS Hills [DIAMONDS+] River (Road) [CITY_CENTER] {F:2 P:1 G:3} (owned by Korea) [my: SWORDSMAN]\n  (68,24): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3]\n  (69,24): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)",
+  "tool": "get_map_area"
+}

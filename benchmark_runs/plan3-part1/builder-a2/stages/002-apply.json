@@ -1,0 +1,579 @@
+{
+  "error": null,
+  "evidence": {
+    "bindings": {
+      "builder_food": {
+        "id": 1900558,
+        "owner": 0,
+        "pair": [
+          0,
+          1900558
+        ],
+        "unit_index": 14,
+        "x": 67,
+        "xy": [
+          67,
+          23
+        ],
+        "y": 23
+      },
+      "builder_repair": {
+        "id": 1769484,
+        "owner": 0,
+        "pair": [
+          0,
+          1769484
+        ],
+        "unit_index": 12,
+        "x": 70,
+        "xy": [
+          70,
+          22
+        ],
+        "y": 22
+      },
+      "builder_resource": {
+        "id": 1835021,
+        "owner": 0,
+        "pair": [
+          0,
+          1835021
+        ],
+        "unit_index": 13,
+        "x": 73,
+        "xy": [
+          73,
+          30
+        ],
+        "y": 30
+      },
+      "closer_only_tile": {
+        "owner": 0,
+        "x": 69,
+        "xy": [
+          69,
+          23
+        ],
+        "y": 23
+      },
+      "escort": {
+        "id": 1376259,
+        "owner": 0,
+        "pair": [
+          0,
+          1376259
+        ],
+        "unit_index": 3,
+        "x": 73,
+        "xy": [
+          73,
+          30
+        ],
+        "y": 30
+      },
+      "escort_leave_tile": {
+        "owner": 0,
+        "x": 73,
+        "xy": [
+          73,
+          29
+        ],
+        "y": 29
+      },
+      "exposure_tile": {
+        "owner": 0,
+        "x": 73,
+        "xy": [
+          73,
+          31
+        ],
+        "y": 31
+      },
+      "food_site": {
+        "owner": 0,
+        "x": 66,
+        "xy": [
+          66,
+          22
+        ],
+        "y": 22
+      },
+      "food_site_alt": {
+        "owner": 0,
+        "x": 69,
+        "xy": [
+          69,
+          22
+        ],
+        "y": 22
+      },
+      "repair_site": {
+        "owner": 0,
+        "x": 68,
+        "xy": [
+          68,
+          23
+        ],
+        "y": 23
+      },
+      "resource_site": {
+        "owner": 0,
+        "x": 74,
+        "xy": [
+          74,
+          30
+        ],
+        "y": 30
+      },
+      "route_threat": {
+        "id": 16908390,
+        "owner": 63,
+        "pair": [
+          63,
+          16908390
+        ],
+        "x": 72,
+        "xy": [
+          72,
+          31
+        ],
+        "y": 31
+      }
+    },
+    "coverage": {
+      "area": [
+        [
+          64,
+          20
+        ],
+        [
+          64,
+          21
+        ],
+        [
+          64,
+          22
+        ],
+        [
+          64,
+          23
+        ],
+        [
+          64,
+          24
+        ],
+        [
+          65,
+          20
+        ],
+        [
+          65,
+          21
+        ],
+        [
+          65,
+          22
+        ],
+        [
+          65,
+          23
+        ],
+        [
+          65,
+          24
+        ],
+        [
+          65,
+          25
+        ],
+        [
+          66,
+          20
+        ],
+        [
+          66,
+          21
+        ],
+        [
+          66,
+          22
+        ],
+        [
+          66,
+          23
+        ],
+        [
+          66,
+          24
+        ],
+        [
+          66,
+          25
+        ],
+        [
+          67,
+          20
+        ],
+        [
+          67,
+          21
+        ],
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          67,
+          24
+        ],
+        [
+          67,
+          25
+        ],
+        [
+          68,
+          20
+        ],
+        [
+          68,
+          21
+        ],
+        [
+          68,
+          22
+        ],
+        [
+          68,
+          23
+        ],
+        [
+          68,
+          24
+        ],
+        [
+          68,
+          25
+        ],
+        [
+          69,
+          20
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          69,
+          24
+        ],
+        [
+          69,
+          25
+        ],
+        [
+          70,
+          20
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          70,
+          24
+        ],
+        [
+          70,
+          25
+        ],
+        [
+          70,
+          29
+        ],
+        [
+          70,
+          30
+        ],
+        [
+          70,
+          31
+        ],
+        [
+          70,
+          32
+        ],
+        [
+          70,
+          33
+        ],
+        [
+          71,
+          20
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          71,
+          24
+        ],
+        [
+          71,
+          25
+        ],
+        [
+          71,
+          27
+        ],
+        [
+          71,
+          28
+        ],
+        [
+          71,
+          29
+        ],
+        [
+          71,
+          30
+        ],
+        [
+          71,
+          31
+        ],
+        [
+          71,
+          32
+        ],
+        [
+          71,
+          33
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          72,
+          21
+        ],
+        [
+          72,
+          22
+        ],
+        [
+          72,
+          23
+        ],
+        [
+          72,
+          24
+        ],
+        [
+          72,
+          27
+        ],
+        [
+          72,
+          28
+        ],
+        [
+          72,
+          29
+        ],
+        [
+          72,
+          30
+        ],
+        [
+          72,
+          31
+        ],
+        [
+          72,
+          32
+        ],
+        [
+          72,
+          33
+        ],
+        [
+          73,
+          27
+        ],
+        [
+          73,
+          28
+        ],
+        [
+          73,
+          29
+        ],
+        [
+          73,
+          30
+        ],
+        [
+          73,
+          31
+        ],
+        [
+          73,
+          32
+        ],
+        [
+          73,
+          33
+        ],
+        [
+          74,
+          27
+        ],
+        [
+          74,
+          28
+        ],
+        [
+          74,
+          29
+        ],
+        [
+          74,
+          30
+        ],
+        [
+          74,
+          31
+        ],
+        [
+          74,
+          32
+        ],
+        [
+          74,
+          33
+        ],
+        [
+          75,
+          27
+        ],
+        [
+          75,
+          28
+        ],
+        [
+          75,
+          29
+        ],
+        [
+          75,
+          30
+        ],
+        [
+          75,
+          31
+        ],
+        [
+          75,
+          32
+        ],
+        [
+          75,
+          33
+        ],
+        [
+          76,
+          28
+        ],
+        [
+          76,
+          29
+        ],
+        [
+          76,
+          30
+        ],
+        [
+          76,
+          31
+        ],
+        [
+          76,
+          32
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": [
+        [
+          63,
+          16908390
+        ]
+      ]
+    },
+    "grid": [
+      130,
+      66
+    ],
+    "replay": {
+      "assertions_passed": true,
+      "base_export": {
+        "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+        "excluded_signature": null,
+        "existed": true,
+        "ok": true,
+        "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+        "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+        "size": 3145591,
+        "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+      },
+      "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+      "state_sha256": "a29b6d01b3b3e61f63c59dc0c585aa12c238a9a8247414564dec09c7fa0f1bb5"
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/mutations/002-apply.json",
+      "sha256": "1cbc2fe8c6098ccb5f55d136ab70c458c57ad770f28c6cfdf4119007b416716d"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a2.yaml",
+    "recipe_id": "plan3-builder-a2",
+    "sha256": "e8ae24343b20e7881a7cd5b6306812497d3aa388868121bbbc298acabe52e5a1",
+    "version": 1
+  },
+  "scenario_id": "builder-a2",
+  "schema_version": "2.0.0",
+  "sequence": 2,
+  "stage": "apply",
+  "status": "passed"
+}

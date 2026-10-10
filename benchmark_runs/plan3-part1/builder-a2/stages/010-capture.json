@@ -1,0 +1,21 @@
+{
+  "error": null,
+  "evidence": {},
+  "files": [],
+  "invalidated_by": {
+    "sequence": 14,
+    "stage": "probe"
+  },
+  "invalidates_sequence": 5,
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a2.yaml",
+    "recipe_id": "plan3-builder-a2",
+    "sha256": "73dd54eb9c76feb0d3ec3a169aac051c7835c2f80f64b09df05b6db54a7678c1",
+    "version": 2
+  },
+  "scenario_id": "builder-a2",
+  "schema_version": "2.0.0",
+  "sequence": 10,
+  "stage": "capture",
+  "status": "invalidated"
+}

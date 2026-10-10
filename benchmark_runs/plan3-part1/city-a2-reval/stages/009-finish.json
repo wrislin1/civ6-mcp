@@ -1,0 +1,19 @@
+{
+  "error": null,
+  "evidence": {
+    "expected_state_sha256": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "final_restored_digest": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731"
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "b87d74616b82caac934088759f79a8cfc4733ddcf41c9bc853727b6269d51eb0",
+    "version": 2
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 9,
+  "stage": "finish",
+  "status": "passed"
+}

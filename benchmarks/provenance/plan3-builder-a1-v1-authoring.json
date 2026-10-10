@@ -1,0 +1,1326 @@
+{
+  "archive": "benchmarks/saves/plan3-builder-a1-v1.Civ6Save",
+  "archive_digests": {
+    "export": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+    "local": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+    "publish": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8"
+  },
+  "archive_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+  "base_save_identity": {
+    "civ_type": "CIVILIZATION_KOREA",
+    "name": "SEONDEOK 100 400 BC",
+    "seed": 1881300077,
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "turn": 100
+  },
+  "bindings": {
+    "builder_food": {
+      "id": 1900558,
+      "owner": 0,
+      "pair": [
+        0,
+        1900558
+      ],
+      "unit_index": 14,
+      "x": 67,
+      "xy": [
+        67,
+        24
+      ],
+      "y": 24
+    },
+    "builder_repair": {
+      "id": 1769484,
+      "owner": 0,
+      "pair": [
+        0,
+        1769484
+      ],
+      "unit_index": 12,
+      "x": 70,
+      "xy": [
+        70,
+        22
+      ],
+      "y": 22
+    },
+    "builder_resource": {
+      "id": 1835021,
+      "owner": 0,
+      "pair": [
+        0,
+        1835021
+      ],
+      "unit_index": 13,
+      "x": 73,
+      "xy": [
+        73,
+        30
+      ],
+      "y": 30
+    },
+    "closer_only_tile": {
+      "owner": 0,
+      "x": 69,
+      "xy": [
+        69,
+        23
+      ],
+      "y": 23
+    },
+    "escort": {
+      "id": 1376259,
+      "owner": 0,
+      "pair": [
+        0,
+        1376259
+      ],
+      "unit_index": 3,
+      "x": 73,
+      "xy": [
+        73,
+        30
+      ],
+      "y": 30
+    },
+    "escort_leave_tile": {
+      "owner": 0,
+      "x": 72,
+      "xy": [
+        72,
+        31
+      ],
+      "y": 31
+    },
+    "food_site": {
+      "owner": 0,
+      "x": 66,
+      "xy": [
+        66,
+        22
+      ],
+      "y": 22
+    },
+    "food_site_alt": {
+      "owner": 0,
+      "x": 69,
+      "xy": [
+        69,
+        22
+      ],
+      "y": 22
+    },
+    "repair_site": {
+      "owner": 0,
+      "x": 68,
+      "xy": [
+        68,
+        23
+      ],
+      "y": 23
+    },
+    "resource_site": {
+      "owner": 0,
+      "x": 74,
+      "xy": [
+        74,
+        30
+      ],
+      "y": 30
+    },
+    "route_threat": {
+      "id": 16908390,
+      "owner": 63,
+      "pair": [
+        63,
+        16908390
+      ],
+      "x": 74,
+      "xy": [
+        74,
+        31
+      ],
+      "y": 31
+    }
+  },
+  "capture": {
+    "digest": "62e56d7ea11b5650504a7b3ed750cf13fc8fa5199d0f463af75f6a689950717c",
+    "popup_hygiene": {
+      "status": "POPUPS|none"
+    },
+    "reload": {
+      "verified": true
+    },
+    "row_counts": {
+      "building": 21,
+      "city": 5,
+      "district": 18,
+      "identity": 1,
+      "queue": 5,
+      "resource": 54,
+      "target": 1,
+      "tile": 125,
+      "unit": 15
+    }
+  },
+  "coverage": {
+    "area": [
+      [
+        64,
+        20
+      ],
+      [
+        64,
+        21
+      ],
+      [
+        64,
+        22
+      ],
+      [
+        64,
+        23
+      ],
+      [
+        64,
+        24
+      ],
+      [
+        65,
+        20
+      ],
+      [
+        65,
+        21
+      ],
+      [
+        65,
+        22
+      ],
+      [
+        65,
+        23
+      ],
+      [
+        65,
+        24
+      ],
+      [
+        65,
+        25
+      ],
+      [
+        65,
+        26
+      ],
+      [
+        66,
+        20
+      ],
+      [
+        66,
+        21
+      ],
+      [
+        66,
+        22
+      ],
+      [
+        66,
+        23
+      ],
+      [
+        66,
+        24
+      ],
+      [
+        66,
+        25
+      ],
+      [
+        66,
+        26
+      ],
+      [
+        67,
+        20
+      ],
+      [
+        67,
+        21
+      ],
+      [
+        67,
+        22
+      ],
+      [
+        67,
+        23
+      ],
+      [
+        67,
+        24
+      ],
+      [
+        67,
+        25
+      ],
+      [
+        67,
+        26
+      ],
+      [
+        68,
+        20
+      ],
+      [
+        68,
+        21
+      ],
+      [
+        68,
+        22
+      ],
+      [
+        68,
+        23
+      ],
+      [
+        68,
+        24
+      ],
+      [
+        68,
+        25
+      ],
+      [
+        68,
+        26
+      ],
+      [
+        69,
+        20
+      ],
+      [
+        69,
+        21
+      ],
+      [
+        69,
+        22
+      ],
+      [
+        69,
+        23
+      ],
+      [
+        69,
+        24
+      ],
+      [
+        69,
+        25
+      ],
+      [
+        69,
+        26
+      ],
+      [
+        70,
+        20
+      ],
+      [
+        70,
+        21
+      ],
+      [
+        70,
+        22
+      ],
+      [
+        70,
+        23
+      ],
+      [
+        70,
+        24
+      ],
+      [
+        70,
+        25
+      ],
+      [
+        70,
+        29
+      ],
+      [
+        70,
+        30
+      ],
+      [
+        70,
+        31
+      ],
+      [
+        70,
+        32
+      ],
+      [
+        70,
+        33
+      ],
+      [
+        71,
+        20
+      ],
+      [
+        71,
+        21
+      ],
+      [
+        71,
+        22
+      ],
+      [
+        71,
+        23
+      ],
+      [
+        71,
+        24
+      ],
+      [
+        71,
+        25
+      ],
+      [
+        71,
+        28
+      ],
+      [
+        71,
+        29
+      ],
+      [
+        71,
+        30
+      ],
+      [
+        71,
+        31
+      ],
+      [
+        71,
+        32
+      ],
+      [
+        71,
+        33
+      ],
+      [
+        72,
+        20
+      ],
+      [
+        72,
+        21
+      ],
+      [
+        72,
+        22
+      ],
+      [
+        72,
+        23
+      ],
+      [
+        72,
+        24
+      ],
+      [
+        72,
+        28
+      ],
+      [
+        72,
+        29
+      ],
+      [
+        72,
+        30
+      ],
+      [
+        72,
+        31
+      ],
+      [
+        72,
+        32
+      ],
+      [
+        72,
+        33
+      ],
+      [
+        73,
+        28
+      ],
+      [
+        73,
+        29
+      ],
+      [
+        73,
+        30
+      ],
+      [
+        73,
+        31
+      ],
+      [
+        73,
+        32
+      ],
+      [
+        73,
+        33
+      ],
+      [
+        74,
+        28
+      ],
+      [
+        74,
+        29
+      ],
+      [
+        74,
+        30
+      ],
+      [
+        74,
+        31
+      ],
+      [
+        74,
+        32
+      ],
+      [
+        74,
+        33
+      ],
+      [
+        75,
+        28
+      ],
+      [
+        75,
+        29
+      ],
+      [
+        75,
+        30
+      ],
+      [
+        75,
+        31
+      ],
+      [
+        75,
+        32
+      ],
+      [
+        75,
+        33
+      ],
+      [
+        76,
+        28
+      ],
+      [
+        76,
+        29
+      ],
+      [
+        76,
+        30
+      ],
+      [
+        76,
+        31
+      ],
+      [
+        76,
+        32
+      ],
+      [
+        76,
+        33
+      ]
+    ],
+    "include_owned_tiles": true,
+    "tracked_targets": [
+      [
+        63,
+        16908390
+      ]
+    ]
+  },
+  "family": "builder",
+  "game_save_name": "PLAN3_BUILDER_A1_V1",
+  "measured_parameters": [],
+  "player_id": 0,
+  "position_id": "plan3-builder-a1-v1",
+  "probes": {
+    "files": [
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-repair-builder-to-site.json",
+        "sha256": "bb540d1d00d956d9f2aa5df5cf61571169947c7e56cd1f133105eb21c2e6b177"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-resource-builder-to-site.json",
+        "sha256": "549e2ce446825bfd3f59aa4022f03da883fe6ad1580581e3b0569514a4788a10"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-food-builder-to-site.json",
+        "sha256": "dc1bd92f18cf287346a6339a0847693a8bcfb71e6c41a261c7ae368a799fe5c1"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-repair-builder-to-alt-food.json",
+        "sha256": "4a42e18c1cd9f3207a00628a0a4df7b32af746d483dd1e8309e9be9a716785cc"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-food-builder-to-repair.json",
+        "sha256": "05257f9567b1f781d80de8d7e5338af0854dd5b170d7da7c501e88444ba87310"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-repair.json",
+        "sha256": "3d7a62e391c1eaf04e6d90dd59e6c0be7c6740bde7af4c1d0304aef5213574d5"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-resource.json",
+        "sha256": "1389381c12ecb8777d757d7b45c5cd309e72691dcebcb8980b6e433b20ac6fc4"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-food.json",
+        "sha256": "0a5c6d7dd6aaff7104fe10407530c9639877baee06f77993df59f7a460b74868"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-alt-repair.json",
+        "sha256": "7cc04008e6b578c6b52359f17a6def6ee173e87a87458932f48f98b71794630b"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-closer-only.json",
+        "sha256": "10a13e859942ecf7d66f59fefd0bcd75b5b70823d2b350612cece9c4e3406d90"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-alt-food.json",
+        "sha256": "bfe72260df57321aa02e081433993d49e5c9fe8651b094b947d6197abd15129e"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-lethal-attack.json",
+        "sha256": "86dbbabada4095d807a426834c184441837445c27fb4200e5a5f3737d571348f"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-holds-cover.json",
+        "sha256": "3f2a29455699b263112d1092937f670a528eb31a091b5600cb6c6e099baffe1b"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-leaves-cover.json",
+        "sha256": "8a6dbef2d5f5dfd2949983daddf5cec21be6da4b2c61837915a556e98b2812dd"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-escort-leave.json",
+        "sha256": "4b5a93a918bce49e731cf87f498629ca09524262e753cfd569f40e0424974b01"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-repair-off-site-rejected.json",
+        "sha256": "1ffd4a5d49814d74aee26cd09ffa41eaf1ba5b44c5d82e9b7682e608a96fd9b4"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-pasture-off-site-rejected.json",
+        "sha256": "c074576b1edb93da08382e0d39f22b4a8f641e888abd6538e41b5fc618318858"
+      }
+    ],
+    "results": [
+      {
+        "expect": "ok",
+        "id": "move-repair-builder-to-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-repair-builder-to-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-resource-builder-to-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-resource-builder-to-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-food-builder-to-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-food-builder-to-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-repair-builder-to-alt-food",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-repair-builder-to-alt-food.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-food-builder-to-repair",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-food-builder-to-repair.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-repair",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-repair.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-resource",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-resource.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-food",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-food.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-alt-repair",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-alt-repair.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-closer-only",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-closer-only.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-alt-food",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-alt-food.json"
+      },
+      {
+        "expect": "ok",
+        "id": "escort-lethal-attack",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-lethal-attack.json"
+      },
+      {
+        "expect": "ok",
+        "id": "escort-holds-cover",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-holds-cover.json"
+      },
+      {
+        "expect": "ok",
+        "id": "escort-leaves-cover",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-leaves-cover.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-escort-leave",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-escort-leave.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "repair-off-site-rejected",
+        "outcome": "rejected",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-repair-off-site-rejected.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "pasture-off-site-rejected",
+        "outcome": "rejected",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-pasture-off-site-rejected.json"
+      }
+    ]
+  },
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+    "recipe_id": "plan3-builder-a1",
+    "sha256": "9ecd529376c25184202b7ce6b32c730630b9c50ef16725a1efed8fdfa0f9e9ec",
+    "version": 1
+  },
+  "relevant_tiles": [
+    [
+      64,
+      20
+    ],
+    [
+      64,
+      21
+    ],
+    [
+      64,
+      22
+    ],
+    [
+      64,
+      23
+    ],
+    [
+      64,
+      24
+    ],
+    [
+      65,
+      20
+    ],
+    [
+      65,
+      21
+    ],
+    [
+      65,
+      22
+    ],
+    [
+      65,
+      23
+    ],
+    [
+      65,
+      24
+    ],
+    [
+      65,
+      25
+    ],
+    [
+      65,
+      26
+    ],
+    [
+      66,
+      20
+    ],
+    [
+      66,
+      21
+    ],
+    [
+      66,
+      22
+    ],
+    [
+      66,
+      23
+    ],
+    [
+      66,
+      24
+    ],
+    [
+      66,
+      25
+    ],
+    [
+      66,
+      26
+    ],
+    [
+      67,
+      20
+    ],
+    [
+      67,
+      21
+    ],
+    [
+      67,
+      22
+    ],
+    [
+      67,
+      23
+    ],
+    [
+      67,
+      24
+    ],
+    [
+      67,
+      25
+    ],
+    [
+      67,
+      26
+    ],
+    [
+      68,
+      20
+    ],
+    [
+      68,
+      21
+    ],
+    [
+      68,
+      22
+    ],
+    [
+      68,
+      23
+    ],
+    [
+      68,
+      24
+    ],
+    [
+      68,
+      25
+    ],
+    [
+      68,
+      26
+    ],
+    [
+      69,
+      20
+    ],
+    [
+      69,
+      21
+    ],
+    [
+      69,
+      22
+    ],
+    [
+      69,
+      23
+    ],
+    [
+      69,
+      24
+    ],
+    [
+      69,
+      25
+    ],
+    [
+      69,
+      26
+    ],
+    [
+      70,
+      20
+    ],
+    [
+      70,
+      21
+    ],
+    [
+      70,
+      22
+    ],
+    [
+      70,
+      23
+    ],
+    [
+      70,
+      24
+    ],
+    [
+      70,
+      25
+    ],
+    [
+      70,
+      29
+    ],
+    [
+      70,
+      30
+    ],
+    [
+      70,
+      31
+    ],
+    [
+      70,
+      32
+    ],
+    [
+      70,
+      33
+    ],
+    [
+      71,
+      20
+    ],
+    [
+      71,
+      21
+    ],
+    [
+      71,
+      22
+    ],
+    [
+      71,
+      23
+    ],
+    [
+      71,
+      24
+    ],
+    [
+      71,
+      25
+    ],
+    [
+      71,
+      28
+    ],
+    [
+      71,
+      29
+    ],
+    [
+      71,
+      30
+    ],
+    [
+      71,
+      31
+    ],
+    [
+      71,
+      32
+    ],
+    [
+      71,
+      33
+    ],
+    [
+      72,
+      20
+    ],
+    [
+      72,
+      21
+    ],
+    [
+      72,
+      22
+    ],
+    [
+      72,
+      23
+    ],
+    [
+      72,
+      24
+    ],
+    [
+      72,
+      28
+    ],
+    [
+      72,
+      29
+    ],
+    [
+      72,
+      30
+    ],
+    [
+      72,
+      31
+    ],
+    [
+      72,
+      32
+    ],
+    [
+      72,
+      33
+    ],
+    [
+      73,
+      28
+    ],
+    [
+      73,
+      29
+    ],
+    [
+      73,
+      30
+    ],
+    [
+      73,
+      31
+    ],
+    [
+      73,
+      32
+    ],
+    [
+      73,
+      33
+    ],
+    [
+      74,
+      28
+    ],
+    [
+      74,
+      29
+    ],
+    [
+      74,
+      30
+    ],
+    [
+      74,
+      31
+    ],
+    [
+      74,
+      32
+    ],
+    [
+      74,
+      33
+    ],
+    [
+      75,
+      28
+    ],
+    [
+      75,
+      29
+    ],
+    [
+      75,
+      30
+    ],
+    [
+      75,
+      31
+    ],
+    [
+      75,
+      32
+    ],
+    [
+      75,
+      33
+    ],
+    [
+      76,
+      28
+    ],
+    [
+      76,
+      29
+    ],
+    [
+      76,
+      30
+    ],
+    [
+      76,
+      31
+    ],
+    [
+      76,
+      32
+    ],
+    [
+      76,
+      33
+    ]
+  ],
+  "scenario_id": "builder-a1",
+  "schema_version": "2.0.0",
+  "setup": {
+    "assertions": [
+      {
+        "actual": true,
+        "expected": true,
+        "id": "repair-site-pillaged",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_MINE",
+            "pillaged": true
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              68,
+              23
+            ]
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "builders-start-away-from-work",
+        "passed": true,
+        "predicate": {
+          "kind": "charged_builder_at",
+          "tiles": [
+            [
+              68,
+              23
+            ],
+            [
+              74,
+              30
+            ],
+            [
+              66,
+              22
+            ],
+            [
+              69,
+              22
+            ]
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "resource-unimproved",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_PASTURE"
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              74,
+              30
+            ]
+          ]
+        }
+      }
+    ],
+    "mutation_record": {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/009-archive.json",
+      "sha256": "b836b4014bbbe11a274e121302021b2f37ef35194af8f34feb46c70503ed1977"
+    },
+    "operations": [
+      {
+        "context": "gamecore",
+        "index": 0,
+        "lua": "local p = Map.GetPlot(68, 23)\nif p == nil then print(\"ERR|repair_site plot missing\") return end\nImprovementBuilder.SetImprovementPillaged(p, true)\nprint(\"OK|pillaged|68,23\")\n",
+        "readback": [
+          "OK|repair_site|68,23|IMPROVEMENT_MINE|pillaged"
+        ],
+        "readback_lua": "local p = Map.GetPlot(68, 23)\nlocal imp = p:GetImprovementType()\nlocal info = imp >= 0 and GameInfo.Improvements[imp] or nil\nif info ~= nil and info.ImprovementType == \"IMPROVEMENT_MINE\" and p:IsImprovementPillaged()\n    and p:GetOwner() == 0 then\n  print(\"OK|repair_site|68,23|IMPROVEMENT_MINE|pillaged\")\nelse\n  print(\"ERR|repair_site 68,23 is not an owned pillaged mine\")\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|pillaged|68,23"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 1,
+        "lua": "local spots = {{70, 22}, {73, 30}, {67, 24}}\nfor _, s in ipairs(spots) do\n  local u = UnitManager.InitUnit(0, \"UNIT_BUILDER\", s[1], s[2])\n  if u == nil then\n    for _, v in Players[0]:GetUnits():Members() do\n      if v:GetX() == s[1] and v:GetY() == s[2]\n          and GameInfo.Units[v:GetType()].UnitType == \"UNIT_BUILDER\" then u = v end\n    end\n  end\n  if u == nil then\n    print(\"ERR|builder spawn failed at \" .. s[1] .. \",\" .. s[2])\n  else\n    UnitManager.RestoreMovement(u)\n    print(\"OK|builder|\" .. s[1] .. \",\" .. s[2] .. \"|charges \" .. u:GetBuildCharges())\n  end\nend\n",
+        "readback": [
+          "OK|builder|70,22|charges 3|work within 2",
+          "OK|builder|73,30|charges 3|work within 2",
+          "OK|builder|67,24|charges 3|work within 2"
+        ],
+        "readback_lua": "local farm = GameInfo.Improvements[\"IMPROVEMENT_FARM\"].Index\nlocal function eligible(p)\n  if p == nil or p:GetOwner() ~= 0 or p:GetFeatureType() >= 0 or p:GetResourceType() >= 0\n      or p:GetImprovementType() >= 0 or p:GetDistrictType() >= 0 then return false end\n  local t = GameInfo.Terrains[p:GetTerrainType()].TerrainType\n  if t ~= \"TERRAIN_GRASS\" and t ~= \"TERRAIN_PLAINS\" then return false end\n  return ImprovementBuilder.CanHaveImprovement(p, farm, 0) == true\nend\nlocal function ringOk(x, y, fx, fy)\n  local d = Map.GetPlotDistance(x, y, fx, fy)\n  return d >= 1 and d <= 2 and eligible(Map.GetPlot(fx, fy))\nend\nlocal spots = {\n  {70, 22, {{68, 23}}, {{69, 22}}},\n  {73, 30, {{74, 30}}, {}},\n  {67, 24, {{68, 23}}, {{66, 22}}},\n}\nfor _, s in ipairs(spots) do\n  local n = 0\n  for _, v in Players[0]:GetUnits():Members() do\n    if v:GetX() == s[1] and v:GetY() == s[2]\n        and GameInfo.Units[v:GetType()].UnitType == \"UNIT_BUILDER\"\n        and v:GetBuildCharges() == 3 and v:GetMovesRemaining() > 0 then n = n + 1 end\n  end\n  local near = true\n  for _, t in ipairs(s[3]) do\n    local d = Map.GetPlotDistance(s[1], s[2], t[1], t[2])\n    if d < 1 or d > 2 then near = false end\n  end\n  for _, r in ipairs(s[4]) do\n    if not ringOk(s[1], s[2], r[1], r[2]) then near = false end\n  end\n  if n == 1 and near then print(\"OK|builder|\" .. s[1] .. \",\" .. s[2] .. \"|charges 3|work within 2\")\n  else print(\"ERR|builder at \" .. s[1] .. \",\" .. s[2] .. \": found \" .. n\n             .. \", work within 2 = \" .. tostring(near)) end\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|builder|70,22|charges 3",
+          "OK|builder|73,30|charges 3",
+          "OK|builder|67,24|charges 3"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 2,
+        "lua": "local pick = nil\nfor dir = 0, 5 do\n  local p = Map.GetAdjacentPlot(74, 30, dir)\n  if pick == nil and p ~= nil and not p:IsWater() and not p:IsImpassable()\n      and not p:IsCity() and p:GetUnitCount() == 0\n      and Map.GetPlotDistance(p:GetX(), p:GetY(), 73, 30) >= 2 then pick = p end\nend\nif pick == nil then print(\"ERR|no route-threat tile next to 74,30\") return end\nlocal u = UnitManager.InitUnit(63, \"UNIT_WARRIOR\", pick:GetX(), pick:GetY())\nif u == nil then print(\"ERR|barbarian spawn failed\") return end\nprint(\"OK|route_threat|\" .. pick:GetX() .. \",\" .. pick:GetY())\n",
+        "readback": [
+          "OK|route_threat|74,31"
+        ],
+        "readback_lua": "local n = 0\nfor _, u in Players[63]:GetUnits():Members() do\n  local p = Map.GetPlot(u:GetX(), u:GetY())\n  if Map.GetPlotDistance(u:GetX(), u:GetY(), 74, 30) == 1\n      and PlayersVisibility[0]:IsVisible(p:GetIndex()) then\n    n = n + 1\n    print(\"OK|route_threat|\" .. u:GetX() .. \",\" .. u:GetY())\n  end\nend\nif n ~= 1 then print(\"ERR|expected one visible barbarian next to 74,30, found \" .. n) end\n",
+        "readback_ok": true,
+        "result": [
+          "OK|route_threat|74,31"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 3,
+        "lua": "local done = false\nfor _, u in Players[0]:GetUnits():Members() do\n  if u:GetX() == 73 and u:GetY() == 30\n      and GameInfo.Units[u:GetType()].UnitType == \"UNIT_SWORDSMAN\" then\n    u:SetDamage(85)\n    UnitManager.RestoreMovement(u)\n    done = true\n  end\nend\nif done then print(\"OK|escort wounded\") else print(\"ERR|no swordsman at 73,30\") end\n",
+        "readback": [
+          "OK|escort|73,30|hp 15"
+        ],
+        "readback_lua": "local n = 0\nfor _, u in Players[0]:GetUnits():Members() do\n  if u:GetX() == 73 and u:GetY() == 30\n      and GameInfo.Units[u:GetType()].UnitType == \"UNIT_SWORDSMAN\" then\n    n = n + 1\n    print(\"OK|escort|73,30|hp \" .. (u:GetMaxDamage() - u:GetDamage()))\n  end\nend\nif n ~= 1 then print(\"ERR|expected one escort at 73,30, found \" .. n) end\n",
+        "readback_ok": true,
+        "result": [
+          "OK|escort wounded"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 4,
+        "lua": "print(\"OK|measure closer_only_tile\")\n",
+        "readback": [
+          "OK|closer_only_tile|69,23"
+        ],
+        "readback_lua": "local diplo = Players[0]:GetDiplomacy()\nlocal function hostileNear(x, y)\n  for i = 1, 63 do\n    local p = Players[i]\n    if p ~= nil and p:IsAlive() and (i == 63 or diplo:IsAtWarWith(i)) then\n      for _, u in p:GetUnits():Members() do\n        if Map.GetPlotDistance(x, y, u:GetX(), u:GetY()) <= 1 then return true end\n      end\n    end\n  end\n  return false\nend\nlocal found = 0\nfor _, t in ipairs({{69, 23}}) do\n  local p = Map.GetPlot(t[1], t[2])\n  if p ~= nil and p:GetOwner() == 0 and p:GetDistrictType() < 0 and p:GetFeatureType() < 0\n      and not p:IsWater() and not p:IsImpassable() and p:GetUnitCount() == 0\n      and not hostileNear(t[1], t[2]) then\n    found = found + 1\n    print(\"OK|closer_only_tile|\" .. t[1] .. \",\" .. t[2])\n  end\nend\nif found < 1 then print(\"ERR|no eligible closer-only tile next to 68,23\") end\n",
+        "readback_ok": true,
+        "result": [
+          "OK|measure closer_only_tile"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 5,
+        "lua": "print(\"OK|measure escort_leave_tile\")\n",
+        "readback": [
+          "OK|escort_leave_tile|72,31"
+        ],
+        "readback_lua": "local p = Map.GetPlot(72, 31)\nif p ~= nil and p:GetOwner() == 0 and p:GetDistrictType() < 0 and not p:IsWater()\n    and not p:IsImpassable() and p:GetUnitCount() == 0\n    and Map.GetPlotDistance(72, 31, 73, 30) == 1\n    and Map.GetPlotDistance(72, 31, 74, 30) == 2 then\n  print(\"OK|escort_leave_tile|72,31\")\nelse\n  print(\"ERR|72,31 is not an owned, empty, passable tile 1 from Jinju and 2 from the horses\")\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|measure escort_leave_tile"
+        ]
+      }
+    ]
+  },
+  "version": 1
+}

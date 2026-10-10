@@ -1,0 +1,72 @@
+[
+  {
+    "arguments": {},
+    "result_capped": "Turn 100 | Korea (Seondeok) | Score: 321 | Prince\nGold: 96 (+23/turn) | Income: 42 | Maintenance: -19 (units: 6) | Science: 33.5 | Culture: 17.4 | Faith: 120 | Favor: 149 (+4/turn)\nResearch: Apprenticeship | Civic: Recorded History\nCities: 5 | Population: 29 | Units: 15 — 5 Builder, 3 Scout, 2 Archer, 2 Apostle, 2 Swordsman, 1 Trader\nExplored: 40% of land (1179/2914 tiles)\nReligion: Custom Religion (6/7 slots)\nVictory: Domination, Culture, Religious, Diplomatic only (disabled: Science)\nEra: Classical Era | Score: 74 (Dark: 59, Golden: 73) -> GOLDEN AGE\nRankings: Korea 321 > Maya 175 > Phoenicia 157 > Nubia 139 > Arabia 138 > Ottomans 138 > Georgia 133",
+    "result_char_cap": 1500,
+    "tool": "get_overview"
+  },
+  {
+    "arguments": {},
+    "result_capped": "15 units:\n  Scout (UNIT_SCOUT) at (103,37) — CS:10 moves 3/3 [id:196608, idx:0]\n  Builder (UNIT_BUILDER) at (72,30) — moves 4/4 charges:2 [id:1507329, idx:1]\n  Scout (UNIT_SCOUT) at (59,36) — CS:10 moves 3/3 [id:262146, idx:2]\n  Swordsman (UNIT_SWORDSMAN) at (73,30) — CS:35 moves 2/2 [HP: 5/100] [id:1376259, idx:3]\n    >> CAN ATTACK: UNIT_WARRIOR@72,31(100hp)\n  Scout (UNIT_SCOUT) at (88,61) — CS:10 moves 3/3 [HP: 80/100] [id:393220, idx:4]\n  Archer (UNIT_ARCHER) at (70,22) — CS:15 RS:25 moves 2/2 [id:720901, idx:5]\n  Trader (UNIT_TRADER) at (70,17) — moves 2/2 [id:1179654, idx:6]\n  Swordsman (UNIT_SWORDSMAN) at (67,24) — CS:35 moves 2/2 [id:1441799, idx:7]\n  Archer (UNIT_ARCHER) at (73,19) — CS:15 RS:25 moves 2/2 [id:851976, idx:8]\n  Apostle (UNIT_APOSTLE) at (75,26) — moves 4/4 charges:3 [CUSTOM_12] [id:1638409, idx:9]\n  Builder (UNIT_BUILDER) at (73,20) — moves 4/4 charges:3 [id:1572874, idx:10]\n    >> Can build: IMPROVEMENT_LUMBER_MILL\n    >> AVAILABLE NOW: improve_tile with {\"unit_index\": 10, \"improvement_name\": \"IMPROVEMENT_LUMBER_MILL\"}\n  Apostle (UNIT_APOSTLE) at (72,26) — moves 4/4 charges:3 [CUSTOM_12] [id:1703947, idx:11]\n  Builder (UNIT_BUILDER) at (70,22) — moves 4/4 charges:3 [id:1769484, idx:12]\n  Builder (UNIT_BUILDER) at (73,30) — moves 4/4 charges:3 [id:1835021, idx:13]\n  Builder (UNIT_BUILDER) at (67,23) — moves 4/4 charges:3 [id:1900558, idx:14]",
+    "result_char_cap": 1500,
+    "tool": "get_units"
+  },
+  {
+    "arguments": {},
+    "result_capped": "=== BUILDER TASKS (30 tasks, 5 idle builders) ===\n\nURGENT:\n  (68,23): repair MINE [city: Jeonju] — nearest builder id:1900558, unit_index:14, 1 tile — on that tile call repair_improvement with {\"unit_index\": 14}\n  (74,30): HORSES* — build PASTURE [city: Jinju] — nearest builder id:1835021, unit_index:13, 1 tile — on that tile call improve_tile with {\"unit_index\": 13, \"improvement_name\": \"IMPROVEMENT_PASTURE\"}\n  (68,25): ALUMINUM* — build MINE [city: Jeonju] — nearest builder id:1900558, unit_index:14, 2 tiles — on that tile call improve_tile with {\"unit_index\": 14, \"improvement_name\": \"IMPROVEMENT_MINE\"}\n  (71,19): IRON* — build MINE [city: Gwangju] — nearest builder id:1572874, unit_index:10, 2 tiles — on that tile call improve_tile with {\"unit_index\": 10, \"improvement_name\": \"IMPROVEMENT_MINE\"}\n  (73,25): COAL* — build MINE [city: Gyeongju] — nearest builder id:1507329, unit_index:1, 5 tiles — on that tile call improve_tile with {\"unit_index\": 1, \"improvement_name\": \"IMPROVEMENT_MINE\"}\n\nHIGH:\n  (70,23): COPPER — build MINE [city: Gyeongju] — nearest builder id:1769484, unit_index:12, 1 tile — on that tile call improve_tile with {\"unit_index\": 12, \"improvement_name\": \"IMPROVEMENT_MINE\"}\n  (74,20): DEER — build CAMP [city: Gongju] — nearest builder id:1572874, unit_index:10, 1 tile — on that tile call improve_tile with {\"unit_index\": 10, \"improvement_name\": \"IMPROVEMENT_CAMP\"}\n  (71,30): DEER — build CAMP [city: Jinju] — nearest builder id:1507329, unit_index:1, 1 tile — on t",
+    "result_char_cap": 1500,
+    "tool": "get_builder_tasks"
+  },
+  {
+    "arguments": {},
+    "result_capped": "5 cities:\n  Gyeongju (pop 12) at (72,26) — Food 42 Prod 37 Gold 24 Sci 15 Cul 7 | Housing 15 Amenities 13 | Growth: 10/139 food (6t, +18.0/t) | Building: nothing | Walls 100/100 Garrison 200/200 Def:35 Gar:none [id:65536]\n    Districts: WONDER(73,26) WONDER(71,25) HOLY_SITE(75,26) SEOWON(73,29) WONDER(74,26)\n    Buildings: PALACE, GRANARY, SHRINE, WALLS, WATER_MILL, TEMPLE, HANGING_GARDENS, MAHABODHI_TEMPLE, TEMPLE_ARTEMIS\n    Needs builder: COPPER, 23, COPPER, 23, COAL, 25, DIAMONDS, 27 (unimproved)\n  Jeonju (pop 7) at (67,24) — Food 23 Prod 17 Gold 5 Sci 4 Cul 4 | Housing 8 Amenities 7 | Growth: 7/77 food (15t, +9.0/t) | Building: DISTRICT_ENCAMPMENT (3 turns) | Walls 100/100 Garrison 200/200 Def:40 Gar:SWORDSMAN [id:131073]\n    Districts: HOLY_SITE(67,25) WONDER(66,23) ENCAMPMENT(68,22)\n    Buildings: MONUMENT, GRANARY, SHRINE, WALLS, WATER_MILL, TEMPLE, STONEHENGE\n    !! PILLAGED TILES: MINE, 23 (send builder to repair)\n    Needs builder: NITER, 23, COPPER, 23, DIAMONDS, 24, ALUMINUM, 25 (unimproved)\n  Gwangju (pop 4) at (70,22) — Food 12 Prod 7 Gold 7 Sci 6 Cul 3 | Housing 6 Amenities 5 | Growth: 40/44 food (1t, +4.0/t) | Building: BUILDING_GRANARY (1 turns) | HP:200/200 Def:29 Gar:ARCHER [id:196610]\n    Districts: HOLY_SITE(69,24) SEOWON(72,23)\n    Buildings: MONUMENT, WATER_MILL\n    !! PILLAGED TILES: MINE, 23 (send builder to repair)\n    Needs builder: IRON, 19, CATTLE, 19, IVORY, 20, STONE, 21, COPPER, 23, COPPER, 23, DIAMONDS, 24, ALUMINUM, 25, COAL, 25 (unimproved)",
+    "result_char_cap": 1500,
+    "tool": "get_cities"
+  },
+  {
+    "arguments": {},
+    "result_capped": "Empire Resources:\n\nStrategic Stockpiles:\n  HORSES: 50/50 (+0/turn) [import 2]\n  IRON: 10/50 (+2/turn) [income 2]\n\nLuxury Resources:\n  DIAMONDS: 3 (2 tradeable)\n  IVORY: 2 (1 tradeable)\n\nStrategic Tiles:\n  IRON — improved at (68,23)\n  !! IRON — UNIMPROVED at (71,19) — needs builder!\n  !! HORSES — UNIMPROVED at (74,30) — needs builder!\n\nLuxury Tiles:\n  IVORY — improved at (66,27)\n  !! DIAMONDS — UNIMPROVED at (67,24) — needs builder!\n  !! IVORY — UNIMPROVED at (70,20) — needs builder!\n  DIAMONDS — improved at (70,26)\n  IVORY — improved at (72,27)\n  IVORY — improved at (72,30)\n  !! DIAMONDS — UNIMPROVED at (74,27) — needs builder!\n  !! PEARLS — UNIMPROVED at (75,20) — needs builder!\n\nBonus Tiles:\n  STONE — improved at (67,23)\n  COPPER — UNIMPROVED at (70,23)\n  BANANAS — improved at (70,28)\n  STONE — UNIMPROVED at (71,21)\n  COPPER — UNIMPROVED at (71,23)\n  COPPER — improved at (71,24)\n  DEER — UNIMPROVED at (71,30)\n  RICE — UNIMPROVED at (72,31)\n  CATTLE — UNIMPROVED at (73,19)\n  RICE — UNIMPROVED at (73,31)\n  DEER — UNIMPROVED at (74,20)\n  FISH — UNIMPROVED at (75,18)\n\nNearby Unclaimed:\n  [B] RICE at (74,22) — 4 tiles from Gyeongju\n  [B] RICE at (73,23) — 3 tiles from Gyeongju\n  [B] DEER at (76,24) — 5 tiles from Gyeongju\n  [B] DEER at (75,25) — 4 tiles from Gyeongju\n  [L] IVORY at (76,26) — 4 tiles from Gyeongju\n  [B] FISH at (74,28) — 3 tiles from Gyeongju\n  [L] DIAMONDS at (67,29) — 6 tiles from Gyeongju\n  [L] DIAMONDS at (69,30) — 5 tiles from Gyeongju\n  [B] SHEEP at (76,30)",
+    "result_char_cap": 1500,
+    "tool": "get_empire_resources"
+  },
+  {
+    "arguments": {
+      "radius": 2,
+      "x": 74,
+      "y": 30
+    },
+    "result_capped": "25 tiles:\n  (72,28): GRASS_MOUNTAIN VOLCANO {F:0 P:0} (owned by Korea)\n  (73,28): GRASS_HILLS Hills FOREST Coast FreshWater {F:2 P:2} (owned by Korea) [mv:3]\n  (74,28): COAST [FISH] {F:2 P:0 G:1}\n  (75,28): GRASS_HILLS Hills VOLCANIC_SOIL Coast FreshWater {F:4 P:2} [mv:2]\n  (76,28): GRASS VOLCANIC_SOIL (FARM) {F:5 P:1} (owned by Valletta [City-State]) **[Valletta BUILDER]**\n  (72,29): GRASS FOREST River {F:2 P:1} (owned by Korea) [mv:2]\n  (73,29): GRASS_HILLS Hills River Coast (Road) [SEOWON] {F:0 P:0} (owned by Korea)\n  (74,29): GRASS Coast FreshWater {F:2 P:0}\n  (75,29): PLAINS {F:1 P:1}\n  (76,29): PLAINS GEOTHERMAL_FISSURE {F:1 P:1 S:1} (owned by Valletta [City-State])\n  (72,30): GRASS FOREST [IVORY+] River (CAMP) {F:2 P:2 G:1} (owned by Korea) [mv:2] [my: BUILDER]\n  (73,30): GRASS FLOODPLAINS_GRASSLAND River (Road) [CITY_CENTER] {F:2 P:0} (owned by Korea) [my: SWORDSMAN, BUILDER]\n  (74,30): GRASS [HORSES*] {F:3 P:1} (owned by Korea)\n  (75,30): GRASS_HILLS Hills (MINE) {F:2 P:1} (owned by Valletta [City-State]) [mv:2]\n  (76,30): GRASS_HILLS Hills [SHEEP] (PASTURE) {F:3 P:1} (owned by Valletta [City-State]) [mv:2]\n  (72,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea) **[Barbarian WARRIOR]**\n  (73,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (74,31): GRASS_HILLS Hills FOREST River {F:2 P:2} [mv:3]\n  (75,31): GRASS_HILLS Hills River {F:2 P:1} [mv:2] **[Valletta ARCHER]**\n  (76,31): PLAINS_HILLS Hills (MINE) (Road) {F:1 P:",
+    "result_char_cap": 1500,
+    "tool": "get_map_area"
+  },
+  {
+    "arguments": {
+      "radius": 1,
+      "x": 68,
+      "y": 23
+    },
+    "result_capped": "9 tiles:\n  (67,22): GRASS_HILLS Hills River {F:2 P:1} [mv:2]\n  (68,22): GRASS_HILLS Hills River [ENCAMPMENT] {F:0 P:0} (owned by Korea) [mv:2]\n  (69,22): PLAINS River {F:1 P:1} (owned by Korea)\n  (67,23): GRASS_HILLS Hills [STONE] River (QUARRY) {F:2 P:2} (owned by Korea) [mv:2] [my: BUILDER]\n  (68,23): GRASS_HILLS Hills [IRON*] (MINE PILLAGED) {F:2 P:1 S:1} (owned by Korea) [mv:2]\n  (69,23): GRASS River (FARM) {F:2 P:0} (owned by Korea)\n  (67,24): GRASS_HILLS Hills [DIAMONDS+] River (Road) [CITY_CENTER] {F:2 P:1 G:3} (owned by Korea) [my: SWORDSMAN]\n  (68,24): GRASS_HILLS Hills FOREST {F:2 P:2} (owned by Korea) [mv:3]\n  (69,24): GRASS (Road) [HOLY_SITE] {F:0 P:0} (owned by Korea)",
+    "result_char_cap": 1500,
+    "tool": "get_map_area"
+  },
+  {
+    "arguments": {
+      "radius": 1,
+      "x": 66,
+      "y": 22
+    },
+    "result_capped": "9 tiles:\n  (65,21): DESERT [IVORY+] Coast {F:0 P:1 G:1}\n  (66,21): PLAINS {F:1 P:1}\n  (67,21): PLAINS River {F:1 P:1}\n  (65,22): COAST {F:1 P:0 G:1}\n  (66,22): PLAINS Coast {F:1 P:1} (owned by Korea)\n  (67,22): GRASS_HILLS Hills River {F:2 P:1} [mv:2]\n  (65,23): COAST {F:1 P:0 G:1}\n  (66,23): GRASS River Coast (Road) [WONDER] {F:0 P:0} (owned by Korea)\n  (67,23): GRASS_HILLS Hills [STONE] River (QUARRY) {F:2 P:2} (owned by Korea) [mv:2] [my: BUILDER]",
+    "result_char_cap": 1500,
+    "tool": "get_map_area"
+  },
+  {
+    "arguments": {
+      "radius": 1,
+      "x": "${route_threat.x}",
+      "y": "${route_threat.y}"
+    },
+    "result_capped": "9 tiles:\n  (71,30): GRASS FOREST [DEER] {F:2 P:2} (owned by Korea) [mv:2]\n  (72,30): GRASS FOREST [IVORY+] River (CAMP) {F:2 P:2 G:1} (owned by Korea) [mv:2] [my: BUILDER]\n  (73,30): GRASS FLOODPLAINS_GRASSLAND River (Road) [CITY_CENTER] {F:2 P:0} (owned by Korea) [my: SWORDSMAN, BUILDER]\n  (71,31): GRASS {F:2 P:0}\n  (72,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea) **[Barbarian WARRIOR]**\n  (73,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (71,32): PLAINS {F:1 P:1}\n  (72,32): PLAINS FLOODPLAINS_PLAINS River [COMMERCIAL_HUB] {F:0 P:0} (owned by Korea)\n  (73,32): PLAINS FLOODPLAINS_PLAINS River {F:1 P:1}",
+    "result_char_cap": 1500,
+    "tool": "get_map_area"
+  }
+]

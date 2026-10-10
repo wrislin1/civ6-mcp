@@ -1,0 +1,25 @@
+{"attempt_ordinal":null,"details":{"archive":"benchmarks/saves/plan3-builder-a2-v3.Civ6Save","evidence":{"archive_sha256":"166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46","deployed_sha256":"166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46","dest_path":"C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A2_V3.Civ6Save","expected_sha256":"166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46","ok":true,"raw":{"archive_sha256":"166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46","deployed_sha256":"166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46","dest_path":"C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A2_V3.Civ6Save","expected_sha256":"166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46","ok":true,"save_name":"PLAN3_BUILDER_A2_V3","source":"benchmarks/saves/plan3-builder-a2-v3.Civ6Save"},"save_name":"PLAN3_BUILDER_A2_V3"},"game_save_name":"PLAN3_BUILDER_A2_V3"},"event":"scripted_deploy","failure_class":null,"seq":0,"trial_index":null,"ts":"2026-10-10T19:27:17.515452+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":1,"trial_index":1,"ts":"2026-10-10T19:27:17.874676+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":2,"trial_index":1,"ts":"2026-10-10T19:28:12.847666+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":3,"trial_index":2,"ts":"2026-10-10T19:28:12.849654+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":4,"trial_index":2,"ts":"2026-10-10T19:29:12.152524+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":5,"trial_index":3,"ts":"2026-10-10T19:29:12.154415+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":6,"trial_index":3,"ts":"2026-10-10T19:30:10.136462+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":7,"trial_index":4,"ts":"2026-10-10T19:30:10.138533+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":8,"trial_index":4,"ts":"2026-10-10T19:31:01.916247+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":9,"trial_index":5,"ts":"2026-10-10T19:31:01.918338+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":10,"trial_index":5,"ts":"2026-10-10T19:31:54.032325+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":11,"trial_index":6,"ts":"2026-10-10T19:31:54.034839+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":12,"trial_index":6,"ts":"2026-10-10T19:32:45.785182+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":13,"trial_index":7,"ts":"2026-10-10T19:32:45.787435+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":14,"trial_index":7,"ts":"2026-10-10T19:33:36.322814+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":15,"trial_index":8,"ts":"2026-10-10T19:33:36.324804+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":16,"trial_index":8,"ts":"2026-10-10T19:34:27.673016+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":17,"trial_index":9,"ts":"2026-10-10T19:34:27.675213+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":18,"trial_index":9,"ts":"2026-10-10T19:35:23.480374+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":19,"trial_index":10,"ts":"2026-10-10T19:35:23.482657+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":20,"trial_index":10,"ts":"2026-10-10T19:36:18.195316+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":21,"trial_index":11,"ts":"2026-10-10T19:36:18.197300+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":22,"trial_index":11,"ts":"2026-10-10T19:37:11.747300+00:00"}
+{"attempt_ordinal":null,"event":"trial_attempt_started","failure_class":null,"seq":23,"trial_index":12,"ts":"2026-10-10T19:37:11.749516+00:00"}
+{"attempt_ordinal":1,"event":"trial_committed","failure_class":null,"seq":24,"trial_index":12,"ts":"2026-10-10T19:38:09.184876+00:00"}

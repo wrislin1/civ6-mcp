@@ -1,0 +1,25 @@
+{
+  "case_id": "null-discovery",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 0,
+      "harm_total": 0,
+      "net_credit": 0,
+      "primary_score": 0.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a1-v1.json",
+    "sha256": "2935811af6f3606b9fc2af535877f9fc9d47544f416ae4e295bd3a4d8b71442f"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a1-v1/observe.json",
+    "sha256": "112e8dc781f6cb28103793a3cf4d78ac984bb1bf83f3113dac0ac692887d1fa0"
+  },
+  "tags": [
+    "null_discovery"
+  ]
+}

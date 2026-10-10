@@ -1,0 +1,35 @@
+{
+  "error": "StageFailure: setup operation 1 readback failed: ['ERR|builder at 70,22: found 1, work within 2 = false', 'OK|builder|73,30|charges 3|work within 2', 'ERR|builder at 67,24: found 1, work within 2 = false']",
+  "evidence": {
+    "replay": {
+      "base_export": {
+        "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+        "excluded_signature": null,
+        "existed": true,
+        "ok": true,
+        "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+        "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+        "size": 3145591,
+        "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+      },
+      "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview."
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/002-apply.json",
+      "sha256": "638e740b42eb836a6640ced55ce665b48881a6f73cc3d1cf00b2113e3d202e86"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+    "recipe_id": "plan3-builder-a1",
+    "sha256": "0fa6afa37a228fb42d2805bdfd564c7266ccb300d9e39f5cb1d8444935663135",
+    "version": 1
+  },
+  "scenario_id": "builder-a1",
+  "schema_version": "2.0.0",
+  "sequence": 2,
+  "stage": "apply",
+  "status": "failed"
+}

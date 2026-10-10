@@ -1096,6 +1096,38 @@ async def test_revalidation_attempt_reopens_a_passed_scenario_in_a_fresh_dir(
     assert record["status"] == "passed", record.get("error")
 
 
+async def test_evidence_files_accepts_the_revalidated_attempts_superseded_recipe_binding(
+        tmp_path, tool_log):
+    """A revalidation reuses the recipe path at a bumped version, so the closed
+    attempt's index binds that path at a stale digest; closure reports it
+    superseded (its authoring snapshot holds the recipe it ran) only once a
+    later attempt declares the revalidation, and only for the recipe entry."""
+    done = await _finished(tmp_path, tool_log)
+    root = tmp_path / "benchmark_runs" / "plan3-part1"
+    closed_journal = done.attempt / "authoring-journal.json"
+    write_recipe(tmp_path, _recipe(version=2))  # same path, new digest
+    with pytest.raises(ValueError, match="plan3-builder-a1.yaml|test-builder-a1.yaml"):
+        evidence_files(root, repo_root=tmp_path)
+    attempt = done.attempt.parent / "builder-a1-reval"
+    for stage in authoring.STAGES:
+        record = await run_authoring_stage(done.recipe_path, stage=stage, attempt_dir=attempt,
+                                           ops=done.ops.live_ops(), root=tmp_path,
+                                           revalidates=closed_journal)
+        assert record["status"] == "passed", (stage, record.get("error"))
+    paths = evidence_files(root, repo_root=tmp_path)
+    assert paths.count(_rel_recipe(done.recipe_path, tmp_path)) == 1
+    assert "benchmark_runs/plan3-part1/builder-a1/evidence-index.json" in paths
+    assert "benchmark_runs/plan3-part1/builder-a1-reval/evidence-index.json" in paths
+    # Any other stale entry of the retained attempt is still refused.
+    (next((done.attempt / "observations").glob("*.json"))).write_text("{}")
+    with pytest.raises(ValueError, match="sha256"):
+        evidence_files(root, repo_root=tmp_path)
+
+
+def _rel_recipe(path, root) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()
+
+
 async def test_evidence_files_lists_closed_inventory(tmp_path, tool_log):
     rig = await _finished(tmp_path, tool_log)
     (rig.attempt / "stray.lock").write_text("123")

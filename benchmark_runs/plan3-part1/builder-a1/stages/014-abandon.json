@@ -1,0 +1,30 @@
+{
+  "error": "Civ VI zone of control: a civilian entering a tile adjacent to the barbarian loses all movement (measured live 2026-10-10: the Jinju builder reached the horses with 0 of 4 moves, HasMovedIntoZOC true), so the pasture objective is unachievable in one turn while the threat stands next to the horses, and a melee unit that enters ZOC cannot attack that turn, so the escort's lethal attack never resolved; joint-full cannot score 12 under this geometry",
+  "evidence": {
+    "expired_before": false,
+    "journal_status_before": "open",
+    "latest_status": {
+      "apply": "passed",
+      "archive": "passed",
+      "capture": "passed",
+      "menu-check": "passed",
+      "probe": "passed",
+      "survey": "passed",
+      "validate": "failed",
+      "verify": "passed"
+    },
+    "reason": "Civ VI zone of control: a civilian entering a tile adjacent to the barbarian loses all movement (measured live 2026-10-10: the Jinju builder reached the horses with 0 of 4 moves, HasMovedIntoZOC true), so the pasture objective is unachievable in one turn while the threat stands next to the horses, and a melee unit that enters ZOC cannot attack that turn, so the escort's lethal attack never resolved; joint-full cannot score 12 under this geometry"
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+    "recipe_id": "plan3-builder-a1",
+    "sha256": "9ecd529376c25184202b7ce6b32c730630b9c50ef16725a1efed8fdfa0f9e9ec",
+    "version": 1
+  },
+  "scenario_id": "builder-a1",
+  "schema_version": "2.0.0",
+  "sequence": 14,
+  "stage": "abandon",
+  "status": "abandoned"
+}

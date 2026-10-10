@@ -1,0 +1,78 @@
+{
+  "error": "StageFailure: validate failed: ['validation']",
+  "evidence": {
+    "expected_state_sha256": "62e56d7ea11b5650504a7b3ed750cf13fc8fa5199d0f463af75f6a689950717c",
+    "reports": {
+      "alternative-full/report.json": "528a52661c15e02c8aafceca7a391408d7ec2b371d6bb1cef7479858c8a9c5cd",
+      "alternative-full/report.md": "1635c6645ccfceaa3b488f3c2f0c32b50c82dbbf9f740dc66d6b29ac92d561f5",
+      "closer-only/report.json": "ce728d4ef4149fd6dcc4b8e981373d18f28e87f4906431fd92f2fb3d43a336e7",
+      "closer-only/report.md": "217ccd68de4a572677dcb0d73ffb99070b153e38be158747959abad5291223db",
+      "escort-loss/report.json": "11bcbf120b3e3adf2f79c1b7b515e36ae5a62a6ad82e2edbf16646603499718e",
+      "escort-loss/report.md": "b55e9b8f03929cf0401233183c92e8ab03230014775c5b7fe7c3d921129a61bb",
+      "joint-full/report.json": "aef0c5be8364fe56730cc6902c6511a23eba8eba973d7757d01b771465c36572",
+      "joint-full/report.md": "14b44b5ce6fb2e0e57928ff4bdb4390d782e272163c8c04395a67dfa5be220ba",
+      "new-exposure/report.json": "c36972a6a817661350c1adb6707bcdbef8d7ca06362e6e52c9692ff71031a960",
+      "new-exposure/report.md": "1ea6c7aae523339cb73357606d5108a647839ee209836f0c8ca7c3420c3c4a53",
+      "null-discovery/report.json": "74ae5e639680e4d1e5f1b858d0b39fcaf3158405bdea06ededc3d14378409c71",
+      "null-discovery/report.md": "5ab1f271829ca290568e049071ff7033b6a2141a3c3e562692f2f88f2483092f",
+      "partial-food/report.json": "b30d61314740d7d623aace8446e2ac91af2322b30ad3f356c6e1b062d544ccae",
+      "partial-food/report.md": "f35c13eec6089fdba730345a86cedfcd26601ffec0697d4abdb5044f0a8781c7",
+      "partial-repair/report.json": "d9ab9e9548c99bc3c3c583d3f0812c0272b7221c7161abeb0fd5dcb25e1a04f1",
+      "partial-repair/report.md": "12f2adc233e697656ff65385f58db906fed255c67a5a7836e2a04707581e446d",
+      "partial-resource/report.json": "4ba2bc1f86113bd120c35663b0cc0403ef1d1e754c114776aef4b19f25640d72",
+      "partial-resource/report.md": "2dd62cb055fec3b7207e60abe2001b808ac5d17a5d1029a4be264b662f6b2db3",
+      "repeat-undo/report.json": "5d63036f358c9e5e4dba39101a9f02acac19708616984a281f4e8b0e49204ec0",
+      "repeat-undo/report.md": "6a58a24dd1db011ac4469b566eaffb1c25304ad0729be74d7c6c708254653c6a",
+      "temporary-exposure-repaired/report.json": "2ab85576c0b8bc79bd86415594c6b846e8090285e410fc5cad0c9ca283d27ef4",
+      "temporary-exposure-repaired/report.md": "59a98969da60116d47a54a8a90ef6a3be84ccd2395cbbb93c3a11977638b9680",
+      "two-harm/report.json": "fb72bced6f20c0b919c897ee6d28059ff2f6d9841406820b56e8a44d6e6ecd80",
+      "two-harm/report.md": "1b4d0b471072cf9227d8e86cad39efb241c0eb577c167dfaec66d9a9571713dd"
+    },
+    "reports_identical": true,
+    "restore": {
+      "digest": "62e56d7ea11b5650504a7b3ed750cf13fc8fa5199d0f463af75f6a689950717c",
+      "reconnect": {
+        "reconnected": true
+      },
+      "reloaded": true
+    },
+    "restore_deploy": {
+      "archive_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+      "deployed_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A1_V1.Civ6Save",
+      "expected_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+      "ok": true,
+      "raw": {
+        "archive_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+        "deployed_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+        "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A1_V1.Civ6Save",
+        "expected_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+        "ok": true,
+        "save_name": "PLAN3_BUILDER_A1_V1",
+        "source": "benchmarks/saves/plan3-builder-a1-v1.Civ6Save"
+      },
+      "save_name": "PLAN3_BUILDER_A1_V1"
+    },
+    "restore_reload_verified": true,
+    "restored_digest": "62e56d7ea11b5650504a7b3ed750cf13fc8fa5199d0f463af75f6a689950717c",
+    "restored_digest_matches": true,
+    "run_dir": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation",
+    "validation": {
+      "errored": false,
+      "passed": false
+    },
+    "validation_sha256": "d91512826c4076c5d09a27f654ad6f540871cc84eebf26a2aa0e604074f16977"
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+    "recipe_id": "plan3-builder-a1",
+    "sha256": "9ecd529376c25184202b7ce6b32c730630b9c50ef16725a1efed8fdfa0f9e9ec",
+    "version": 1
+  },
+  "scenario_id": "builder-a1",
+  "schema_version": "2.0.0",
+  "sequence": 13,
+  "stage": "validate",
+  "status": "failed"
+}

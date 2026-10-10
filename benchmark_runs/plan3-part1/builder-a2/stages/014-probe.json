@@ -1,0 +1,218 @@
+{
+  "error": null,
+  "evidence": {
+    "probes": [
+      {
+        "expect": "ok",
+        "id": "move-repair-builder-to-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-repair-builder-to-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-resource-builder-to-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-resource-builder-to-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-food-builder-to-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-food-builder-to-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-repair-builder-to-alt-food",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-repair-builder-to-alt-food.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-food-builder-to-repair",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-food-builder-to-repair.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-repair",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-repair.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-resource",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-resource.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-food",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-food.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-alt-repair",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-alt-repair.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-closer-only",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-closer-only.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-alt-food",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-alt-food.json"
+      },
+      {
+        "expect": "ok",
+        "id": "escort-lethal-attack",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-escort-lethal-attack.json"
+      },
+      {
+        "expect": "ok",
+        "id": "escort-holds-cover",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-escort-holds-cover.json"
+      },
+      {
+        "expect": "ok",
+        "id": "escort-leaves-cover",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-escort-leaves-cover.json"
+      },
+      {
+        "expect": "ok",
+        "id": "reach-escort-leave",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-escort-leave.json"
+      },
+      {
+        "expect": "ok",
+        "id": "move-resource-builder-to-exposure",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-resource-builder-to-exposure.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "repair-off-site-rejected",
+        "outcome": "rejected",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-repair-off-site-rejected.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "pasture-off-site-rejected",
+        "outcome": "rejected",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-pasture-off-site-rejected.json"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-repair-builder-to-site.json",
+      "sha256": "9b336a5413f2d62799391946971d188777cc24dd4007960b699a48bb662e022c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-resource-builder-to-site.json",
+      "sha256": "bc81330745497454ac16943ad8b5e2e72e6b5638edfea87e2a3484a930efd052"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-food-builder-to-site.json",
+      "sha256": "42e1272a4803f1f5fa9a8a53e8e44dd79bda7c398934ea684408a1559cecee4a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-repair-builder-to-alt-food.json",
+      "sha256": "d52f6aab9173a88f01b59018f0cac42f621dc6a0e8912fdf9f322b4dd9a22ce0"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-food-builder-to-repair.json",
+      "sha256": "2bf2c1424832b23758cffa5fe67893f13153c5eec90bd72532b9e1262ff962c3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-repair.json",
+      "sha256": "ebbd7c50b605a483be9f9fefc70e7cf7c4da0b59d8f92c29bdaf193ed3162e60"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-resource.json",
+      "sha256": "f5365a8b07c90666deff69e250a099b1a4cee5fa37cc16f74a70d51ebea3f19f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-food.json",
+      "sha256": "8965be8ff8dceb3698eedd84da3133ee0cef1600e7796205ae5741e434562373"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-alt-repair.json",
+      "sha256": "0f853abae3758f735dbceb4018f0402a75c0441ee4b3ca878d9558311e33ed0d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-closer-only.json",
+      "sha256": "b844f80781f85143b7fd9e64929bbea0eac20f6b52e89e1c280a44b32ba3492e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-alt-food.json",
+      "sha256": "535eac01f262d0c39d4a457e2b8fcc59780eb4146a15f94f626d86f0974a593d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-escort-lethal-attack.json",
+      "sha256": "5568a3c05527c12713a3208daa22684eb8bb76dfad0cf48d658580bbb423ad4c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-escort-holds-cover.json",
+      "sha256": "a3bb7baefc37bdcaf956612fcef920e67e3384afc1e92e4292282138a6fa7aa1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-escort-leaves-cover.json",
+      "sha256": "046de77f753a00ae991e836c4bf969e445d1ea4cf758ba4e7d6d9f9ee6da7171"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-reach-escort-leave.json",
+      "sha256": "eab1bf769282207355164dff35f94ed3dcde898c59a798ebe94b5ea732c8b9fb"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-move-resource-builder-to-exposure.json",
+      "sha256": "09bb3d8f43ec9d25dded9001b4f2c0e2c9eefb9d3af0a2133840221dc2917c56"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-repair-off-site-rejected.json",
+      "sha256": "b939a79f9e8cbb10786b5b0feca16852cda39f4a3b827a9a308267b2358097f0"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/probes/014-pasture-off-site-rejected.json",
+      "sha256": "c2ee2b4252f341aae28611886e4fe303f0629fbe215dc91b13f0f1b8dde213ae"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a2.yaml",
+    "recipe_id": "plan3-builder-a2",
+    "sha256": "73dd54eb9c76feb0d3ec3a169aac051c7835c2f80f64b09df05b6db54a7678c1",
+    "version": 2
+  },
+  "scenario_id": "builder-a2",
+  "schema_version": "2.0.0",
+  "sequence": 14,
+  "stage": "probe",
+  "status": "passed"
+}

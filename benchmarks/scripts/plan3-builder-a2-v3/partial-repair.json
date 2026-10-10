@@ -1,0 +1,32 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 12,
+            "x": 68,
+            "y": 23
+          },
+          "name": "move_unit"
+        },
+        {
+          "arguments": {
+            "unit_index": 12
+          },
+          "name": "skip_unit"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "partial-repair"
+}

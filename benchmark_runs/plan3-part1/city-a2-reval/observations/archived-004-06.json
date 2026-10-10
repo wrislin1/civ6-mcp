@@ -1,0 +1,15 @@
+{
+  "arguments": {
+    "city_id": 131073
+  },
+  "capped_sha256": "6b5412cf2bf005c4fbebec62dde28990600c8222737db3391ee6ca56ec2766ce",
+  "full_sha256": "6b5412cf2bf005c4fbebec62dde28990600c8222737db3391ee6ca56ec2766ce",
+  "index": 6,
+  "resolved_arguments": {
+    "city_id": 131073
+  },
+  "result_capped": "13 purchasable tiles:\n  (65,21): 140g — Desert [Ivory+]\n  (65,27): 140g — Plains [Bananas]\n  (65,25): 90g — Coast and Lake\n  (65,23): 90g — Coast and Lake\n  (65,24): 90g — Coast and Lake\n  (65,26): 140g — Coast and Lake\n  (65,22): 140g — Coast and Lake\n  (66,21): 140g — Plains\n  (69,26): 140g — Plains\n  (68,27): 140g — Grassland\n  (67,27): 140g — Grassland\n  (69,25): 140g — Grassland\n  (67,21): 140g — Plains",
+  "result_char_cap": 1500,
+  "result_full": "13 purchasable tiles:\n  (65,21): 140g — Desert [Ivory+]\n  (65,27): 140g — Plains [Bananas]\n  (65,25): 90g — Coast and Lake\n  (65,23): 90g — Coast and Lake\n  (65,24): 90g — Coast and Lake\n  (65,26): 140g — Coast and Lake\n  (65,22): 140g — Coast and Lake\n  (66,21): 140g — Plains\n  (69,26): 140g — Plains\n  (68,27): 140g — Grassland\n  (67,27): 140g — Grassland\n  (69,25): 140g — Grassland\n  (67,21): 140g — Plains",
+  "tool": "get_purchasable_tiles"
+}

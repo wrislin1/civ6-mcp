@@ -2082,16 +2082,40 @@ def _safe_rel(rel: Any) -> bool:
     return ".." not in parts and "." not in parts
 
 
+def _revalidated_journals(root: Path, repo_root: Path) -> set[str]:
+    """Repo-relative journals that a later attempt declares it revalidates."""
+    found: set[str] = set()
+    for journal_path in root.rglob(JOURNAL_FILE):
+        try:
+            doc = json.loads(journal_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for family in (doc.get("families") or {}).values():
+            for scenario in (family or {}).get("scenarios") or []:
+                ref = scenario.get("revalidates") if isinstance(scenario, dict) else None
+                if isinstance(ref, dict) and isinstance(ref.get("journal"), str):
+                    found.add(ref["journal"])
+    return found
+
+
 def evidence_files(root: Path, *, repo_root: Path | None = None) -> list[str]:
     """Union every `evidence-index.json` under `root` and check its closure.
 
     Returns sorted repository-relative paths (listed files plus the index
     files). Raises `ValueError` listing every missing, altered, untracked,
-    unsafe, transient or out-of-scope entry."""
+    unsafe, transient or out-of-scope entry.
+
+    One binding is allowed to be stale: a closed attempt that a later attempt
+    declares it revalidates (amendment 2026-10-10) binds the shared recipe
+    path at the digest it ran; the revalidation changes that file (a bumped
+    version), and the retained attempt's own authoring snapshot holds the
+    recipe it ran, so that recipe entry is reported superseded rather than
+    altered. Every other entry of the retained attempt must still match."""
     repo_root = Path(os.path.abspath(repo_root or _REPO_ROOT))
     root = Path(os.path.abspath(root))
     root_rel = _rel(root, repo_root)
     indices = sorted(root.rglob(INDEX_FILE))
+    revalidated = _revalidated_journals(root, repo_root)
     problems: list[str] = []
     attempts = sorted({p.parent.parent for p in root.rglob("stages/*.json")})
     for attempt in attempts:
@@ -2129,6 +2153,12 @@ def evidence_files(root: Path, *, repo_root: Path | None = None) -> list[str]:
                 continue
             actual = _sha256_file(path)
             if actual != sha:
+                superseded = (rel.startswith("benchmarks/recipes/")
+                              and f"{_rel(index_path.parent, repo_root)}/{JOURNAL_FILE}"
+                              in revalidated)
+                if superseded:
+                    own.add(rel)  # the revalidating attempt binds the current digest
+                    continue
                 problems.append(f"{rel}: sha256 {actual} != recorded {sha}")
                 continue
             if listed.get(rel, sha) != sha:

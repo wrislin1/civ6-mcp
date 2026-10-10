@@ -1,0 +1,27 @@
+{
+  "case_id": "two-harm",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 2,
+      "harm_total": 8,
+      "net_credit": -6,
+      "primary_score": -0.5
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a1-v1.json",
+    "sha256": "2935811af6f3606b9fc2af535877f9fc9d47544f416ae4e295bd3a4d8b71442f"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a1-v1/two-harm.json",
+    "sha256": "0fd0f0494e33ddb9cd8b03c9c4020b22a809691a6d5ab903f1cc5e0159ac13ba"
+  },
+  "tags": [
+    "two_harm_maximum",
+    "escort_loss",
+    "new_exposure"
+  ]
+}

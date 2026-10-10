@@ -1,0 +1,361 @@
+{
+  "error": null,
+  "evidence": {
+    "archive_name": "PLAN3_CITY_A2_V2",
+    "archive_path": "benchmarks/saves/plan3-city-a2-v2.Civ6Save",
+    "archived_observations": [
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-00.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-01.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-02.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-03.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-04.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-05.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-06.json"
+    ],
+    "bindings": {
+      "district_city": {
+        "id": 131073,
+        "owner": 0,
+        "pair": [
+          0,
+          131073
+        ],
+        "x": 67,
+        "xy": [
+          67,
+          24
+        ],
+        "y": 24
+      },
+      "district_site": {
+        "owner": 0,
+        "x": 68,
+        "xy": [
+          68,
+          24
+        ],
+        "y": 24
+      },
+      "housing_city": {
+        "id": 131073,
+        "owner": 0,
+        "pair": [
+          0,
+          131073
+        ],
+        "x": 67,
+        "xy": [
+          67,
+          24
+        ],
+        "y": 24
+      },
+      "protected_asset": {
+        "owner": 0,
+        "x": 67,
+        "xy": [
+          67,
+          23
+        ],
+        "y": 23
+      },
+      "repair_city": {
+        "id": 196610,
+        "owner": 0,
+        "pair": [
+          0,
+          196610
+        ],
+        "x": 70,
+        "xy": [
+          70,
+          22
+        ],
+        "y": 22
+      },
+      "replacement_site": {
+        "owner": 0,
+        "x": 67,
+        "xy": [
+          67,
+          22
+        ],
+        "y": 22
+      }
+    },
+    "bindings_changed": false,
+    "coverage": {
+      "area": [
+        [
+          66,
+          21
+        ],
+        [
+          66,
+          22
+        ],
+        [
+          66,
+          23
+        ],
+        [
+          66,
+          24
+        ],
+        [
+          66,
+          25
+        ],
+        [
+          67,
+          21
+        ],
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          67,
+          24
+        ],
+        [
+          67,
+          25
+        ],
+        [
+          68,
+          21
+        ],
+        [
+          68,
+          22
+        ],
+        [
+          68,
+          23
+        ],
+        [
+          68,
+          24
+        ],
+        [
+          68,
+          25
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          69,
+          24
+        ],
+        [
+          69,
+          25
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": []
+    },
+    "export": {
+      "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\exports\\city-a2-reval\\004-plan3-city-a2-v2.Civ6Save",
+      "excluded_signature": null,
+      "existed": false,
+      "ok": true,
+      "save_name": "PLAN3_CITY_A2_V2.Civ6Save",
+      "sha256": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd",
+      "size": 3146116,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_CITY_A2_V2.Civ6Save"
+    },
+    "export_sha256": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd",
+    "export_staging_path": "/mnt/c/Users/wrisl/dev/civ6-mcp/benchmark_runs/plan3-part1/exports/city-a2-reval/004-plan3-city-a2-v2.Civ6Save",
+    "local_sha256": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd",
+    "measured_parameters": [],
+    "native_save_before": {
+      "exists": false,
+      "mtime_ns": null,
+      "ok": true,
+      "save_name": "PLAN3_CITY_A2_V2.Civ6Save",
+      "size": null,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_CITY_A2_V2.Civ6Save"
+    },
+    "position_id": "plan3-city-a2-v2",
+    "publish_sha256": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd",
+    "published": true,
+    "required_facts": [
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "housing-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-01.json"
+        ],
+        "pattern": "Jeonju \\(pop \\d+\\).*Housing \\d+",
+        "source": "get_cities"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "pillaged-building-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-01.json"
+        ],
+        "pattern": "PILLAGED: .*MONUMENT",
+        "source": "get_cities"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "granary-purchasable",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-02.json",
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-03.json"
+        ],
+        "pattern": "GRANARY",
+        "source": "get_city_production"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "monument-repair-listed",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-03.json"
+        ],
+        "pattern": "MONUMENT",
+        "source": "get_city_production"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "seowon-sites-ranked",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-04.json"
+        ],
+        "pattern": "\\(\\d+,\\s*\\d+\\)",
+        "source": "get_district_advisor"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "replacement-site-ranked",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-04.json"
+        ],
+        "pattern": "\\(67,\\s*22\\)",
+        "source": "get_district_advisor"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "mines-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-05.json"
+        ],
+        "pattern": "(?i)mine",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "quarry-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-05.json"
+        ],
+        "pattern": "(?i)quarry",
+        "source": "get_map_area"
+      }
+    ],
+    "save_ack": {
+      "message": "Saved: PLAN3_CITY_A2_V2",
+      "ok": true
+    },
+    "state_sha256": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "version": 2
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/mutations/004-archive.json",
+      "sha256": "f5d6974c5c60c9a4c644aa6fa5a2dc6baa35ff1c6902720a46f1913ab7f2d75e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-00.json",
+      "sha256": "efb47c1ab3ced2d4628f047f7acd235d1e2b2ad3073889b00e6a36c1c2ee1d03"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-01.json",
+      "sha256": "e092edbbacf9ce09860429aebe1d84a7ae5d58c40ff85f44623568a5f2679289"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-02.json",
+      "sha256": "37110c20a2ab702e598c24b9617ff99572362d4263492e4035ac1cf71f24517b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-03.json",
+      "sha256": "33f2002286d512de141d406d51428f5a0c6f58bc2e573217e10d2c0ce27f74f6"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-04.json",
+      "sha256": "3c442b2610cb7e4b5421bb74b88ca1341440a09fdfbcd9f770a05e23c6504f23"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-05.json",
+      "sha256": "97bdb5fc977489ef8068abeed2c82022b641a92354c74895f5784e282e039588"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-06.json",
+      "sha256": "14893e81a5bfcd496a08bb818a553fe37293f55046196c58b7c16ae387bab877"
+    },
+    {
+      "path": "benchmarks/saves/plan3-city-a2-v2.Civ6Save",
+      "sha256": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "b87d74616b82caac934088759f79a8cfc4733ddcf41c9bc853727b6269d51eb0",
+    "version": 2
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 4,
+  "stage": "archive",
+  "status": "passed"
+}

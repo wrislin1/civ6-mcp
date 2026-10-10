@@ -1,0 +1,19 @@
+{
+  "arguments": {
+    "radius": 2,
+    "x": 74,
+    "y": 30
+  },
+  "capped_sha256": "255839e120ec6669d4bb351cb6639bac83f97efea2cbac5690dad529f2b86906",
+  "full_sha256": "b081875f7a8343c9b6a33321ba0cf94e3740b2222a6d2f4b8fb6d34cd4991db5",
+  "index": 5,
+  "resolved_arguments": {
+    "radius": 2,
+    "x": 74,
+    "y": 30
+  },
+  "result_capped": "25 tiles:\n  (72,28): GRASS_MOUNTAIN VOLCANO {F:0 P:0} (owned by Korea)\n  (73,28): GRASS_HILLS Hills FOREST Coast FreshWater {F:2 P:2} (owned by Korea) [mv:3]\n  (74,28): COAST [FISH] {F:2 P:0 G:1}\n  (75,28): GRASS_HILLS Hills VOLCANIC_SOIL Coast FreshWater {F:4 P:2} [mv:2]\n  (76,28): GRASS VOLCANIC_SOIL (FARM) {F:5 P:1} (owned by Valletta [City-State]) **[Valletta BUILDER]**\n  (72,29): GRASS FOREST River {F:2 P:1} (owned by Korea) [mv:2]\n  (73,29): GRASS_HILLS Hills River Coast (Road) [SEOWON] {F:0 P:0} (owned by Korea)\n  (74,29): GRASS Coast FreshWater {F:2 P:0}\n  (75,29): PLAINS {F:1 P:1}\n  (76,29): PLAINS GEOTHERMAL_FISSURE {F:1 P:1 S:1} (owned by Valletta [City-State])\n  (72,30): GRASS FOREST [IVORY+] River (CAMP) {F:2 P:2 G:1} (owned by Korea) [mv:2] [my: BUILDER]\n  (73,30): GRASS FLOODPLAINS_GRASSLAND River (Road) [CITY_CENTER] {F:2 P:0} (owned by Korea) [my: SWORDSMAN, BUILDER]\n  (74,30): GRASS [HORSES*] {F:3 P:1} (owned by Korea)\n  (75,30): GRASS_HILLS Hills (MINE) {F:2 P:1} (owned by Valletta [City-State]) [mv:2]\n  (76,30): GRASS_HILLS Hills [SHEEP] (PASTURE) {F:3 P:1} (owned by Valletta [City-State]) [mv:2]\n  (72,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (73,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (74,31): GRASS_HILLS Hills FOREST River {F:2 P:2} [mv:3] **[Barbarian WARRIOR]**\n  (75,31): GRASS_HILLS Hills River {F:2 P:1} [mv:2] **[Valletta ARCHER]**\n  (76,31): PLAINS_HILLS Hills (MINE) (Road) {F:1 P:",
+  "result_char_cap": 1500,
+  "result_full": "25 tiles:\n  (72,28): GRASS_MOUNTAIN VOLCANO {F:0 P:0} (owned by Korea)\n  (73,28): GRASS_HILLS Hills FOREST Coast FreshWater {F:2 P:2} (owned by Korea) [mv:3]\n  (74,28): COAST [FISH] {F:2 P:0 G:1}\n  (75,28): GRASS_HILLS Hills VOLCANIC_SOIL Coast FreshWater {F:4 P:2} [mv:2]\n  (76,28): GRASS VOLCANIC_SOIL (FARM) {F:5 P:1} (owned by Valletta [City-State]) **[Valletta BUILDER]**\n  (72,29): GRASS FOREST River {F:2 P:1} (owned by Korea) [mv:2]\n  (73,29): GRASS_HILLS Hills River Coast (Road) [SEOWON] {F:0 P:0} (owned by Korea)\n  (74,29): GRASS Coast FreshWater {F:2 P:0}\n  (75,29): PLAINS {F:1 P:1}\n  (76,29): PLAINS GEOTHERMAL_FISSURE {F:1 P:1 S:1} (owned by Valletta [City-State])\n  (72,30): GRASS FOREST [IVORY+] River (CAMP) {F:2 P:2 G:1} (owned by Korea) [mv:2] [my: BUILDER]\n  (73,30): GRASS FLOODPLAINS_GRASSLAND River (Road) [CITY_CENTER] {F:2 P:0} (owned by Korea) [my: SWORDSMAN, BUILDER]\n  (74,30): GRASS [HORSES*] {F:3 P:1} (owned by Korea)\n  (75,30): GRASS_HILLS Hills (MINE) {F:2 P:1} (owned by Valletta [City-State]) [mv:2]\n  (76,30): GRASS_HILLS Hills [SHEEP] (PASTURE) {F:3 P:1} (owned by Valletta [City-State]) [mv:2]\n  (72,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (73,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (74,31): GRASS_HILLS Hills FOREST River {F:2 P:2} [mv:3] **[Barbarian WARRIOR]**\n  (75,31): GRASS_HILLS Hills River {F:2 P:1} [mv:2] **[Valletta ARCHER]**\n  (76,31): PLAINS_HILLS Hills (MINE) (Road) {F:1 P:2} (owned by Valletta [City-State])\n  (72,32): PLAINS FLOODPLAINS_PLAINS River [COMMERCIAL_HUB] {F:0 P:0} (owned by Korea)\n  (73,32): PLAINS FLOODPLAINS_PLAINS River {F:1 P:1}\n  (74,32): PLAINS [HORSES*] River (PASTURE) {F:2 P:2} (owned by Hunza [City-State])\n  (75,32): PLAINS_HILLS Hills River {F:1 P:2} [mv:2]\n  (76,32): PLAINS GEOTHERMAL_FISSURE Coast (Road) {F:1 P:1 S:1}",
+  "tool": "get_map_area"
+}

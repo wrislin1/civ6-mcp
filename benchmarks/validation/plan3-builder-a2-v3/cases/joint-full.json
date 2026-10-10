@@ -1,0 +1,61 @@
+{
+  "case_id": "joint-full",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "mine-restored",
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_MINE",
+            "pillaged": false
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              68,
+              23
+            ]
+          ]
+        },
+        "value": true
+      },
+      {
+        "id": "pasture-built",
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_PASTURE"
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              74,
+              30
+            ]
+          ]
+        },
+        "value": true
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 12,
+      "harm_total": 0,
+      "net_credit": 12,
+      "primary_score": 1.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a2-v3.json",
+    "sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a2-v3/joint-full.json",
+    "sha256": "b45cd2a0dd8956cd8e69b889adf4848f0e1a9e96850a0b698f0f134b4a5727ed"
+  },
+  "tags": [
+    "joint_full",
+    "covered_route",
+    "escort_legitimate"
+  ]
+}

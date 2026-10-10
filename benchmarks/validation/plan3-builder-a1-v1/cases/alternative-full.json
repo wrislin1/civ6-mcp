@@ -1,0 +1,42 @@
+{
+  "case_id": "alternative-full",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "alternative-farm",
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_FARM"
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              69,
+              22
+            ]
+          ]
+        },
+        "value": true
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 12,
+      "harm_total": 0,
+      "net_credit": 12,
+      "primary_score": 1.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a1-v1.json",
+    "sha256": "2935811af6f3606b9fc2af535877f9fc9d47544f416ae4e295bd3a4d8b71442f"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a1-v1/alternative-full.json",
+    "sha256": "ba1fb21d7286969fb6c420e117f5be16ad91790552869e96abd73a703ff2098b"
+  },
+  "tags": [
+    "alternative_full"
+  ]
+}

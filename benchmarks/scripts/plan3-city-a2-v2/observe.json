@@ -1,0 +1,43 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "get_overview"
+        },
+        {
+          "arguments": {},
+          "name": "get_cities"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "city_id": 131073
+          },
+          "name": "get_city_production"
+        },
+        {
+          "arguments": {
+            "city_id": 131073,
+            "district_type": "DISTRICT_SEOWON"
+          },
+          "name": "get_district_advisor"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "observe"
+}

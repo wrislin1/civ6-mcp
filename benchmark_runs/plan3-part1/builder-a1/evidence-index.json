@@ -1,0 +1,612 @@
+{
+  "attempt_dir": "benchmark_runs/plan3-part1/builder-a1",
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/authoring-journal.json",
+      "sha256": "ae8295825c43cb9d412868b33b5ab3cd8dff8fb15579687e458ef622f38f864a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/002-apply.json",
+      "sha256": "638e740b42eb836a6640ced55ce665b48881a6f73cc3d1cf00b2113e3d202e86"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/003-apply.json",
+      "sha256": "ec6348269bf5ffa79b6fa25e476f15af94fbe047217a9ec6fa17db9bac51e311"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/004-apply.json",
+      "sha256": "ce09877e6bd798f0539b734341e6b539dae9ac83a203aab6da70bfebcdd74fa6"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/005-apply.json",
+      "sha256": "b836b4014bbbe11a274e121302021b2f37ef35194af8f34feb46c70503ed1977"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/008-archive.json",
+      "sha256": "b836b4014bbbe11a274e121302021b2f37ef35194af8f34feb46c70503ed1977"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/009-archive.json",
+      "sha256": "b836b4014bbbe11a274e121302021b2f37ef35194af8f34feb46c70503ed1977"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/001-survey-00.json",
+      "sha256": "e9dcee01643575e1c81cd1be5b30a56877bf4e68f62f5fa14434315e7315ec83"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/001-survey-01.json",
+      "sha256": "79e73942bbee3902bfba43dcb7478ab42eb37a8d1c324515c8cfc8a02b037b1f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/001-survey-02.json",
+      "sha256": "5f05ca1f127ee70d09ba4f3d3e7b087cd84a7a37a718bbee7bb8dbfc9f4c6eb3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/001-survey-03.json",
+      "sha256": "db8026002994a7486f741c3433d2782cd20d2bb103ebd3560da999d1c337f5a8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/001-survey-04.json",
+      "sha256": "d06d9546b9e437f81a4622a5b292f595c95acfb19a095550e14fdd95eedce731"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/001-survey-05.json",
+      "sha256": "d858a899218ac93a46936a114e02a61fd95f750719b8691acfc3fe1a8a2358a1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/001-survey-06.json",
+      "sha256": "7412914374f4d55e51243d7cc361aedbe108c0652eb607f19dcb711f3bd46706"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-008-00.json",
+      "sha256": "bbab05b425a67f0bb56e41447dc27f6b63ead0f3e0af96838098d72dd1e04d6c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-008-01.json",
+      "sha256": "f1a6244863b93b3872fec1f35716aefc6c1f9da1d5010b0b4968ff33071de686"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-008-02.json",
+      "sha256": "296a9be013e17a646773b681eac5c6714e48b372e07ae27d1e086fe53835dc09"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-008-03.json",
+      "sha256": "07c9bb1daa4470ed63dd35f5e1f57f6b7736eee5d9040050c95c89b21ddc446f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-008-04.json",
+      "sha256": "d06d9546b9e437f81a4622a5b292f595c95acfb19a095550e14fdd95eedce731"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-008-05.json",
+      "sha256": "cac2127d308ecace57b46e27028b036702699ed545ad784a4f31f2b0e69c1d09"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-008-06.json",
+      "sha256": "75959f67342aeb8f71e0e2fa095be64ab4e3c648c2c54356d0f518860191fd47"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-008-07.json",
+      "sha256": "4531a801fafaab7df3c91ed30646c2654a1197739ea5b58cda1791caa5630b85"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-00.json",
+      "sha256": "5da382b5b4bfe242e75918ad8607e24163ec04d2f3f0af1e51f8514245d4965b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-01.json",
+      "sha256": "f1a6244863b93b3872fec1f35716aefc6c1f9da1d5010b0b4968ff33071de686"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-02.json",
+      "sha256": "296a9be013e17a646773b681eac5c6714e48b372e07ae27d1e086fe53835dc09"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-03.json",
+      "sha256": "07c9bb1daa4470ed63dd35f5e1f57f6b7736eee5d9040050c95c89b21ddc446f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-04.json",
+      "sha256": "d06d9546b9e437f81a4622a5b292f595c95acfb19a095550e14fdd95eedce731"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-05.json",
+      "sha256": "cac2127d308ecace57b46e27028b036702699ed545ad784a4f31f2b0e69c1d09"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-06.json",
+      "sha256": "75959f67342aeb8f71e0e2fa095be64ab4e3c648c2c54356d0f518860191fd47"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-07.json",
+      "sha256": "6684ab868e0a7c08e7e30fae3a4237eca5f6feaec0c776790620321828778198"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-08.json",
+      "sha256": "c91b6408d8dec9990ad993e63c43ca58da64aa2f40081b485519424ef3ddd819"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-builder-attack-rejected.json",
+      "sha256": "e7cadc853d26e795ab993655ec3152e3b7edce98e2c34afb1d1081b074e287e5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-escort-holds-cover.json",
+      "sha256": "3f2a29455699b263112d1092937f670a528eb31a091b5600cb6c6e099baffe1b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-escort-leaves-cover.json",
+      "sha256": "8a6dbef2d5f5dfd2949983daddf5cec21be6da4b2c61837915a556e98b2812dd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-escort-lethal-attack.json",
+      "sha256": "86dbbabada4095d807a426834c184441837445c27fb4200e5a5f3737d571348f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-move-food-builder-to-repair.json",
+      "sha256": "05257f9567b1f781d80de8d7e5338af0854dd5b170d7da7c501e88444ba87310"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-move-food-builder-to-site.json",
+      "sha256": "dc1bd92f18cf287346a6339a0847693a8bcfb71e6c41a261c7ae368a799fe5c1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-move-repair-builder-to-alt-food.json",
+      "sha256": "4a42e18c1cd9f3207a00628a0a4df7b32af746d483dd1e8309e9be9a716785cc"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-move-repair-builder-to-site.json",
+      "sha256": "bb540d1d00d956d9f2aa5df5cf61571169947c7e56cd1f133105eb21c2e6b177"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-move-resource-builder-to-site.json",
+      "sha256": "549e2ce446825bfd3f59aa4022f03da883fe6ad1580581e3b0569514a4788a10"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-pasture-off-site-rejected.json",
+      "sha256": "c074576b1edb93da08382e0d39f22b4a8f641e888abd6538e41b5fc618318858"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-reach-alt-food.json",
+      "sha256": "bfe72260df57321aa02e081433993d49e5c9fe8651b094b947d6197abd15129e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-reach-alt-repair.json",
+      "sha256": "7cc04008e6b578c6b52359f17a6def6ee173e87a87458932f48f98b71794630b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-reach-closer-only.json",
+      "sha256": "10a13e859942ecf7d66f59fefd0bcd75b5b70823d2b350612cece9c4e3406d90"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-reach-escort-leave.json",
+      "sha256": "4b5a93a918bce49e731cf87f498629ca09524262e753cfd569f40e0424974b01"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-reach-food.json",
+      "sha256": "0a5c6d7dd6aaff7104fe10407530c9639877baee06f77993df59f7a460b74868"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-reach-repair.json",
+      "sha256": "3d7a62e391c1eaf04e6d90dd59e6c0be7c6740bde7af4c1d0304aef5213574d5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-reach-resource.json",
+      "sha256": "1389381c12ecb8777d757d7b45c5cd309e72691dcebcb8980b6e433b20ac6fc4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/006-repair-off-site-rejected.json",
+      "sha256": "1ffd4a5d49814d74aee26cd09ffa41eaf1ba5b44c5d82e9b7682e608a96fd9b4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-holds-cover.json",
+      "sha256": "3f2a29455699b263112d1092937f670a528eb31a091b5600cb6c6e099baffe1b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-leaves-cover.json",
+      "sha256": "8a6dbef2d5f5dfd2949983daddf5cec21be6da4b2c61837915a556e98b2812dd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-escort-lethal-attack.json",
+      "sha256": "86dbbabada4095d807a426834c184441837445c27fb4200e5a5f3737d571348f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-food-builder-to-repair.json",
+      "sha256": "05257f9567b1f781d80de8d7e5338af0854dd5b170d7da7c501e88444ba87310"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-food-builder-to-site.json",
+      "sha256": "dc1bd92f18cf287346a6339a0847693a8bcfb71e6c41a261c7ae368a799fe5c1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-repair-builder-to-alt-food.json",
+      "sha256": "4a42e18c1cd9f3207a00628a0a4df7b32af746d483dd1e8309e9be9a716785cc"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-repair-builder-to-site.json",
+      "sha256": "bb540d1d00d956d9f2aa5df5cf61571169947c7e56cd1f133105eb21c2e6b177"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-move-resource-builder-to-site.json",
+      "sha256": "549e2ce446825bfd3f59aa4022f03da883fe6ad1580581e3b0569514a4788a10"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-pasture-off-site-rejected.json",
+      "sha256": "c074576b1edb93da08382e0d39f22b4a8f641e888abd6538e41b5fc618318858"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-alt-food.json",
+      "sha256": "bfe72260df57321aa02e081433993d49e5c9fe8651b094b947d6197abd15129e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-alt-repair.json",
+      "sha256": "7cc04008e6b578c6b52359f17a6def6ee173e87a87458932f48f98b71794630b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-closer-only.json",
+      "sha256": "10a13e859942ecf7d66f59fefd0bcd75b5b70823d2b350612cece9c4e3406d90"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-escort-leave.json",
+      "sha256": "4b5a93a918bce49e731cf87f498629ca09524262e753cfd569f40e0424974b01"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-food.json",
+      "sha256": "0a5c6d7dd6aaff7104fe10407530c9639877baee06f77993df59f7a460b74868"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-repair.json",
+      "sha256": "3d7a62e391c1eaf04e6d90dd59e6c0be7c6740bde7af4c1d0304aef5213574d5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-reach-resource.json",
+      "sha256": "1389381c12ecb8777d757d7b45c5cd309e72691dcebcb8980b6e433b20ac6fc4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/probes/007-repair-off-site-rejected.json",
+      "sha256": "1ffd4a5d49814d74aee26cd09ffa41eaf1ba5b44c5d82e9b7682e608a96fd9b4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/samples/001-survey-state.json",
+      "sha256": "14d57321b3412b43ad13872c6b511ef26898699991669c125d26c0dc17f10fbb"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/001-survey.json",
+      "sha256": "6f940ed1f8f35b0659dab5cf32c7b1970cbbcb601682d7952130ca39d1b4fd61"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/002-apply.json",
+      "sha256": "62debaad48070132d482d5c0e3941405f624b53c2c6e1cd6b34fb5369f56d312"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/003-apply.json",
+      "sha256": "13b76ce306afb2f1bb1adcd1727de4fbb537358ecd2bf11b62f838f633c7cd53"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/004-apply.json",
+      "sha256": "949f3b156952d92629235502cfecb36eeb98d64d3daa1614f367244a3fed7ef5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/005-apply.json",
+      "sha256": "95e55508db0facf9a2ca8f3f0ec27c38c5dd0aaf38ad323b5d0ce0a5194b2c83"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/006-probe.json",
+      "sha256": "69f5a6fc5e131094f2d92259a23aa3fc832ddad1c669fc491c6a315df8e19fa9"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/007-probe.json",
+      "sha256": "f377493edc89f8321e26494f68f2624ef4afa18c1084a39a37733b7f5690da62"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/008-archive.json",
+      "sha256": "7c312f81294bff315bc7131f586d6bbaa171f9d7b482a24f7211e6b2ffdceae7"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/009-archive.json",
+      "sha256": "d0ef1dec34cfc03c4756b18f50c45e5f6709d67202ef381c538e7ac14b918afa"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/010-capture.json",
+      "sha256": "775d013cda22fe4b19f5741eec8157459e5e48716a661e0ae3fc0cc20ff6bfa3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/011-verify.json",
+      "sha256": "0b9118dd8eb5e11ad3999420ef88ff5cb5276eac268a4403cc8792f1301198f2"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/012-menu-check.json",
+      "sha256": "4e99c8a52ceae562370afe02b02d4fac73c2f33d19bfcb3383e4ddbab1e7819c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/013-validate.json",
+      "sha256": "a4d9060740bb0766e39e3b9161138e7d34ae6c1976738a117d1f2bfebfbf6d4c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/stages/014-abandon.json",
+      "sha256": "64a1e11dc346e6975279b96010cba475d4041e4be2dfeae612af59f862801cef"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/journal.jsonl",
+      "sha256": "aa156aafef5cab1273b0560f55501c26d0af0b4a3d6a3453d9da77c0b8cb13de"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/alternative-full/report.json",
+      "sha256": "528a52661c15e02c8aafceca7a391408d7ec2b371d6bb1cef7479858c8a9c5cd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/alternative-full/report.md",
+      "sha256": "1635c6645ccfceaa3b488f3c2f0c32b50c82dbbf9f740dc66d6b29ac92d561f5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/closer-only/report.json",
+      "sha256": "ce728d4ef4149fd6dcc4b8e981373d18f28e87f4906431fd92f2fb3d43a336e7"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/closer-only/report.md",
+      "sha256": "217ccd68de4a572677dcb0d73ffb99070b153e38be158747959abad5291223db"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/escort-loss/report.json",
+      "sha256": "11bcbf120b3e3adf2f79c1b7b515e36ae5a62a6ad82e2edbf16646603499718e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/escort-loss/report.md",
+      "sha256": "b55e9b8f03929cf0401233183c92e8ab03230014775c5b7fe7c3d921129a61bb"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/joint-full/report.json",
+      "sha256": "aef0c5be8364fe56730cc6902c6511a23eba8eba973d7757d01b771465c36572"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/joint-full/report.md",
+      "sha256": "14b44b5ce6fb2e0e57928ff4bdb4390d782e272163c8c04395a67dfa5be220ba"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/new-exposure/report.json",
+      "sha256": "c36972a6a817661350c1adb6707bcdbef8d7ca06362e6e52c9692ff71031a960"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/new-exposure/report.md",
+      "sha256": "1ea6c7aae523339cb73357606d5108a647839ee209836f0c8ca7c3420c3c4a53"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/null-discovery/report.json",
+      "sha256": "74ae5e639680e4d1e5f1b858d0b39fcaf3158405bdea06ededc3d14378409c71"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/null-discovery/report.md",
+      "sha256": "5ab1f271829ca290568e049071ff7033b6a2141a3c3e562692f2f88f2483092f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/partial-food/report.json",
+      "sha256": "b30d61314740d7d623aace8446e2ac91af2322b30ad3f356c6e1b062d544ccae"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/partial-food/report.md",
+      "sha256": "f35c13eec6089fdba730345a86cedfcd26601ffec0697d4abdb5044f0a8781c7"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/partial-repair/report.json",
+      "sha256": "d9ab9e9548c99bc3c3c583d3f0812c0272b7221c7161abeb0fd5dcb25e1a04f1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/partial-repair/report.md",
+      "sha256": "12f2adc233e697656ff65385f58db906fed255c67a5a7836e2a04707581e446d"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/partial-resource/report.json",
+      "sha256": "4ba2bc1f86113bd120c35663b0cc0403ef1d1e754c114776aef4b19f25640d72"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/partial-resource/report.md",
+      "sha256": "2dd62cb055fec3b7207e60abe2001b808ac5d17a5d1029a4be264b662f6b2db3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/repeat-undo/report.json",
+      "sha256": "5d63036f358c9e5e4dba39101a9f02acac19708616984a281f4e8b0e49204ec0"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/repeat-undo/report.md",
+      "sha256": "6a58a24dd1db011ac4469b566eaffb1c25304ad0729be74d7c6c708254653c6a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/temporary-exposure-repaired/report.json",
+      "sha256": "2ab85576c0b8bc79bd86415594c6b846e8090285e410fc5cad0c9ca283d27ef4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/temporary-exposure-repaired/report.md",
+      "sha256": "59a98969da60116d47a54a8a90ef6a3be84ccd2395cbbb93c3a11977638b9680"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/two-harm/report.json",
+      "sha256": "fb72bced6f20c0b919c897ee6d28059ff2f6d9841406820b56e8a44d6e6ecd80"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/reports/two-harm/report.md",
+      "sha256": "1b4d0b471072cf9227d8e86cad39efb241c0eb577c167dfaec66d9a9571713dd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/session.json",
+      "sha256": "15f0a0a6ca1dc2cc56346f53fb514349b2d17d29109755daa474847d03958b2e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-001.json",
+      "sha256": "82983e4765da08fb05bab894ed7694f785f0b33f0136d34eca2ae0cf3fc084cb"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-002.json",
+      "sha256": "26361a013ff902f516133326f0a557830fc5438ae1909a1bb14f0730400c74ea"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-003.json",
+      "sha256": "c983c364c0053867430963adfd69b98484f224d30fc859af1f3c69f333b981a2"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-004.json",
+      "sha256": "12c057b9979b1a0cb07e2f8faa475c23671156c9b8f0720475fb6a9e86660966"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-005.json",
+      "sha256": "695850963cf5b683ef1a424ec9a0f3adb652fc8d67ce5557cd00412f6a02e2d1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-006.json",
+      "sha256": "7526e2a47260dd8e408eb9f4a812850e4a519ebc77fb5441a842ca37e9d5e936"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-007.json",
+      "sha256": "607b0c27831711aa69979352cde0f4b8999213facf26bd3feeb0c83960390af3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-008.json",
+      "sha256": "6a955aba8dc55620f1c51165114e9f1c2bcfd7a39b4fab8af90ca484c281cd5e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-009.json",
+      "sha256": "36b51c945360dfe238b39c67e1fd02028903d91587b6181d3e94b35cbec43c06"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-010.json",
+      "sha256": "b5a005d176a97ec21342893acd2f542b9e4d77a31cf1e361863d4e5628a0dd96"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-011.json",
+      "sha256": "865042109c202cf73609b1c16235c24cc18993977fe262345c14d3eed14f4a45"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/trials/trial-012.json",
+      "sha256": "9f93bbc21e144c096cc0dd659bf484e4bba974adbb80ab841c66150731abfbaa"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/validation/plan3-builder-a1-v1/plan3-builder-a1-v1-validation/validation.json",
+      "sha256": "d91512826c4076c5d09a27f654ad6f540871cc84eebf26a2aa0e604074f16977"
+    },
+    {
+      "path": "benchmarks/positions/plan3-builder-a1-v1.json",
+      "sha256": "2935811af6f3606b9fc2af535877f9fc9d47544f416ae4e295bd3a4d8b71442f"
+    },
+    {
+      "path": "benchmarks/provenance/plan3-builder-a1-v1-authoring.json",
+      "sha256": "5bb2e0990a50ec7dc63dfd219f3000837a8c354d4973c999a54b55f5fc3092c4"
+    },
+    {
+      "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+      "sha256": "9ecd529376c25184202b7ce6b32c730630b9c50ef16725a1efed8fdfa0f9e9ec"
+    },
+    {
+      "path": "benchmarks/saves/plan3-builder-a1-v1.Civ6Save",
+      "sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/alternative-full.json",
+      "sha256": "ba1fb21d7286969fb6c420e117f5be16ad91790552869e96abd73a703ff2098b"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/closer-only.json",
+      "sha256": "279d00068af4efcb23c1c9d86d6ea2cc8ddee09b5942ffa605594e8d64c1f3b3"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/escort-loss.json",
+      "sha256": "7a527f5063ae82f8e601752a3ff5f6d86f1fe8b53727c5f37c6e2e04c1ecca96"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/joint-full.json",
+      "sha256": "b45cd2a0dd8956cd8e69b889adf4848f0e1a9e96850a0b698f0f134b4a5727ed"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/new-exposure.json",
+      "sha256": "ffa8c2a2c9d807495e1ffb7b5885ce52e7e07c139e02262cb7eb95c2e7703689"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/observe.json",
+      "sha256": "112e8dc781f6cb28103793a3cf4d78ac984bb1bf83f3113dac0ac692887d1fa0"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/partial-food.json",
+      "sha256": "8475e4f97e9a90bb811fe63d2de183b8f69e2ca4150395864bf407206a387770"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/partial-repair.json",
+      "sha256": "140982ffd9786d5949dedbe2d64998668afa9fb22a0c0d527bff7243c202b8b6"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/partial-resource.json",
+      "sha256": "1961b337fcec031dfc7a49ce28d973dc6d8192b9ad7d12ced70d58060fafae75"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/repeat-undo.json",
+      "sha256": "0187d28b62aa3006ba71d77f26efbe6301858a8d4a280effac9872eaeb864612"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/temporary-exposure-repaired.json",
+      "sha256": "7bb8123fa1105ed80290313ddcb75418d38b987f6ebf0310855951e5f1d6f863"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a1-v1/two-harm.json",
+      "sha256": "0fd0f0494e33ddb9cd8b03c9c4020b22a809691a6d5ab903f1cc5e0159ac13ba"
+    },
+    {
+      "path": "benchmarks/toolsets/plan3-part1-v1.yaml",
+      "sha256": "c456f0907b2a20c649ce31166fc830334283326f96b8e4bb471d6f447fb4967e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/alternative-full.json",
+      "sha256": "5de093c57e07bbf5cdc2dccf2eb6c940da22b02df00d8596e8662f599a09713c"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/closer-only.json",
+      "sha256": "9f9bb0f266bc9823550a2f570058726d5a0b14f94a6a5af84b3aa48ca9c38b8e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/escort-loss.json",
+      "sha256": "7ac4d75d3439f276e1bbec7c5ec35bfeb4c204a21f38e02edee535744efe5780"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/joint-full.json",
+      "sha256": "f8f6a42ac943e6da4bac38811a6ae5288d2a849215888dc2401d536adb5d78ed"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/new-exposure.json",
+      "sha256": "1d015db3ef3705c645440a8601a57d03d62dcfc56b27f659d232ad46f0151f95"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/null-discovery.json",
+      "sha256": "bc56de0ef679871f292b14260756b3be911c4ba6b9dbe91235e6223175ad21de"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/partial-food.json",
+      "sha256": "a344fb60bb1cf013cfe1c68546b7464d864fbb16420cab58d789a29161e66551"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/partial-repair.json",
+      "sha256": "b2607371b9ea17b64f2a4998d88f68e6a75eebe5e53679f2ba0630e1766334a6"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/partial-resource.json",
+      "sha256": "67a85c16c0863ec6198698cb851721797011193231760a6ab152b0d6700b8bf4"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/repeat-undo.json",
+      "sha256": "34ecd85f9f202da51d9b4a39b2a17bd063964c3f19a6614a2081be9be3658ef9"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/temporary-exposure-repaired.json",
+      "sha256": "4d701182c416063b0cab041b19e50e9c17cb3390a169ac14f83ff8196967e902"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/cases/two-harm.json",
+      "sha256": "828f730f629d06ca63efc67231d6dd7294900d117b3f7f5c3efcc42d39f2affb"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/public-observation.json",
+      "sha256": "48f52dbc4064aad7cee67e24e1476a00ac1a2670470d3324fe1094405dc47c0b"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a1-v1/suite.json",
+      "sha256": "0f886d96e014cc0cad17e625d0a139813184fa11fc6504eaf43a916ef5bccc81"
+    }
+  ],
+  "position_id": null,
+  "scenario_id": "builder-a1",
+  "schema_version": "2.0.0"
+}

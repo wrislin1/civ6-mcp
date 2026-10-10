@@ -1,0 +1,29 @@
+{
+  "authoring_input": {
+    "path": "benchmarks/provenance/plan3-builder-a2-v3-authoring.json",
+    "sha256": "c98e0e4c271f1611b260fad1ac9f84b926ba8384c0cdad0ec5be4979f6b7c4cc"
+  },
+  "evidence_index": {
+    "path": "benchmark_runs/plan3-part1/builder-a2/evidence-index.json",
+    "sha256": "8b129874fa64914acd7829809b25519fa52f47b7d2bf593069aca5d5a6fc9f1c"
+  },
+  "family": "builder",
+  "journal": {
+    "path": "benchmark_runs/plan3-part1/builder-a2/authoring-journal.json",
+    "sha256": "ca3c6d3d6da7ed8f120cc835dee305c30f50849d851c5e3f1db477338ed0a89c"
+  },
+  "position": {
+    "path": "benchmarks/positions/plan3-builder-a2-v3.json",
+    "sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc"
+  },
+  "position_id": "plan3-builder-a2-v3",
+  "scenario_id": "builder-a2",
+  "schema_version": "2.0.0",
+  "validation_runs": [
+    {
+      "run_dir": "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation",
+      "suite_id": "plan3-builder-a2-v3-validation",
+      "validation_sha256": "ab5836f0cde25b34fa438275081bb10fc4c9d06a2d1181e38a1d37d256124dc3"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "case_id": "partial-food",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 2,
+      "harm_total": 0,
+      "net_credit": 2,
+      "primary_score": 0.16666666666666666
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a2-v3.json",
+    "sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a2-v3/partial-food.json",
+    "sha256": "8475e4f97e9a90bb811fe63d2de183b8f69e2ca4150395864bf407206a387770"
+  },
+  "tags": [
+    "partial_food"
+  ]
+}

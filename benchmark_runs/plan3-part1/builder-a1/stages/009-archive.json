@@ -1,0 +1,713 @@
+{
+  "error": null,
+  "evidence": {
+    "archive_name": "PLAN3_BUILDER_A1_V1",
+    "archive_path": "benchmarks/saves/plan3-builder-a1-v1.Civ6Save",
+    "archived_observations": [
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-00.json",
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-01.json",
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-02.json",
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-03.json",
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-04.json",
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-05.json",
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-06.json",
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-07.json",
+      "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-08.json"
+    ],
+    "bindings": {
+      "builder_food": {
+        "id": 1900558,
+        "owner": 0,
+        "pair": [
+          0,
+          1900558
+        ],
+        "unit_index": 14,
+        "x": 67,
+        "xy": [
+          67,
+          24
+        ],
+        "y": 24
+      },
+      "builder_repair": {
+        "id": 1769484,
+        "owner": 0,
+        "pair": [
+          0,
+          1769484
+        ],
+        "unit_index": 12,
+        "x": 70,
+        "xy": [
+          70,
+          22
+        ],
+        "y": 22
+      },
+      "builder_resource": {
+        "id": 1835021,
+        "owner": 0,
+        "pair": [
+          0,
+          1835021
+        ],
+        "unit_index": 13,
+        "x": 73,
+        "xy": [
+          73,
+          30
+        ],
+        "y": 30
+      },
+      "closer_only_tile": {
+        "owner": 0,
+        "x": 69,
+        "xy": [
+          69,
+          23
+        ],
+        "y": 23
+      },
+      "escort": {
+        "id": 1376259,
+        "owner": 0,
+        "pair": [
+          0,
+          1376259
+        ],
+        "unit_index": 3,
+        "x": 73,
+        "xy": [
+          73,
+          30
+        ],
+        "y": 30
+      },
+      "escort_leave_tile": {
+        "owner": 0,
+        "x": 72,
+        "xy": [
+          72,
+          31
+        ],
+        "y": 31
+      },
+      "food_site": {
+        "owner": 0,
+        "x": 66,
+        "xy": [
+          66,
+          22
+        ],
+        "y": 22
+      },
+      "food_site_alt": {
+        "owner": 0,
+        "x": 69,
+        "xy": [
+          69,
+          22
+        ],
+        "y": 22
+      },
+      "repair_site": {
+        "owner": 0,
+        "x": 68,
+        "xy": [
+          68,
+          23
+        ],
+        "y": 23
+      },
+      "resource_site": {
+        "owner": 0,
+        "x": 74,
+        "xy": [
+          74,
+          30
+        ],
+        "y": 30
+      },
+      "route_threat": {
+        "id": 16908390,
+        "owner": 63,
+        "pair": [
+          63,
+          16908390
+        ],
+        "x": 74,
+        "xy": [
+          74,
+          31
+        ],
+        "y": 31
+      }
+    },
+    "bindings_changed": false,
+    "coverage": {
+      "area": [
+        [
+          64,
+          20
+        ],
+        [
+          64,
+          21
+        ],
+        [
+          64,
+          22
+        ],
+        [
+          64,
+          23
+        ],
+        [
+          64,
+          24
+        ],
+        [
+          65,
+          20
+        ],
+        [
+          65,
+          21
+        ],
+        [
+          65,
+          22
+        ],
+        [
+          65,
+          23
+        ],
+        [
+          65,
+          24
+        ],
+        [
+          65,
+          25
+        ],
+        [
+          65,
+          26
+        ],
+        [
+          66,
+          20
+        ],
+        [
+          66,
+          21
+        ],
+        [
+          66,
+          22
+        ],
+        [
+          66,
+          23
+        ],
+        [
+          66,
+          24
+        ],
+        [
+          66,
+          25
+        ],
+        [
+          66,
+          26
+        ],
+        [
+          67,
+          20
+        ],
+        [
+          67,
+          21
+        ],
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          67,
+          24
+        ],
+        [
+          67,
+          25
+        ],
+        [
+          67,
+          26
+        ],
+        [
+          68,
+          20
+        ],
+        [
+          68,
+          21
+        ],
+        [
+          68,
+          22
+        ],
+        [
+          68,
+          23
+        ],
+        [
+          68,
+          24
+        ],
+        [
+          68,
+          25
+        ],
+        [
+          68,
+          26
+        ],
+        [
+          69,
+          20
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          69,
+          24
+        ],
+        [
+          69,
+          25
+        ],
+        [
+          69,
+          26
+        ],
+        [
+          70,
+          20
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          70,
+          24
+        ],
+        [
+          70,
+          25
+        ],
+        [
+          70,
+          29
+        ],
+        [
+          70,
+          30
+        ],
+        [
+          70,
+          31
+        ],
+        [
+          70,
+          32
+        ],
+        [
+          70,
+          33
+        ],
+        [
+          71,
+          20
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          71,
+          24
+        ],
+        [
+          71,
+          25
+        ],
+        [
+          71,
+          28
+        ],
+        [
+          71,
+          29
+        ],
+        [
+          71,
+          30
+        ],
+        [
+          71,
+          31
+        ],
+        [
+          71,
+          32
+        ],
+        [
+          71,
+          33
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          72,
+          21
+        ],
+        [
+          72,
+          22
+        ],
+        [
+          72,
+          23
+        ],
+        [
+          72,
+          24
+        ],
+        [
+          72,
+          28
+        ],
+        [
+          72,
+          29
+        ],
+        [
+          72,
+          30
+        ],
+        [
+          72,
+          31
+        ],
+        [
+          72,
+          32
+        ],
+        [
+          72,
+          33
+        ],
+        [
+          73,
+          28
+        ],
+        [
+          73,
+          29
+        ],
+        [
+          73,
+          30
+        ],
+        [
+          73,
+          31
+        ],
+        [
+          73,
+          32
+        ],
+        [
+          73,
+          33
+        ],
+        [
+          74,
+          28
+        ],
+        [
+          74,
+          29
+        ],
+        [
+          74,
+          30
+        ],
+        [
+          74,
+          31
+        ],
+        [
+          74,
+          32
+        ],
+        [
+          74,
+          33
+        ],
+        [
+          75,
+          28
+        ],
+        [
+          75,
+          29
+        ],
+        [
+          75,
+          30
+        ],
+        [
+          75,
+          31
+        ],
+        [
+          75,
+          32
+        ],
+        [
+          75,
+          33
+        ],
+        [
+          76,
+          28
+        ],
+        [
+          76,
+          29
+        ],
+        [
+          76,
+          30
+        ],
+        [
+          76,
+          31
+        ],
+        [
+          76,
+          32
+        ],
+        [
+          76,
+          33
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": [
+        [
+          63,
+          16908390
+        ]
+      ]
+    },
+    "export": {
+      "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\exports\\builder-a1\\009-plan3-builder-a1-v1.Civ6Save",
+      "excluded_signature": null,
+      "existed": false,
+      "ok": true,
+      "save_name": "PLAN3_BUILDER_A1_V1.Civ6Save",
+      "sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+      "size": 3146695,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A1_V1.Civ6Save"
+    },
+    "export_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+    "export_staging_path": "/mnt/c/Users/wrisl/dev/civ6-mcp/benchmark_runs/plan3-part1/exports/builder-a1/009-plan3-builder-a1-v1.Civ6Save",
+    "local_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+    "measured_parameters": [],
+    "native_save_before": {
+      "exists": false,
+      "mtime_ns": null,
+      "ok": true,
+      "save_name": "PLAN3_BUILDER_A1_V1.Civ6Save",
+      "size": null,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A1_V1.Civ6Save"
+    },
+    "position_id": "plan3-builder-a1-v1",
+    "publish_sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8",
+    "published": true,
+    "required_facts": [
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "pillaged-mine-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-02.json"
+        ],
+        "pattern": "repair\\s+\\S*IRON|repair\\s+\\S*MINE",
+        "source": "get_builder_tasks"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "horses-unimproved-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-02.json"
+        ],
+        "pattern": "HORSES",
+        "source": "get_builder_tasks"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "food-site-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-07.json"
+        ],
+        "pattern": "\\(66,22\\): PLAINS(?![^\\n]*\\((?:FARM|MINE|PASTURE|QUARRY|CAMP)\\))[^\\n]*\\(owned by Korea\\)",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "food-site-alt-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-06.json"
+        ],
+        "pattern": "\\(69,22\\): PLAINS(?![^\\n]*\\((?:FARM|MINE|PASTURE|QUARRY|CAMP)\\))[^\\n]*\\(owned by Korea\\)",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "builders-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-01.json"
+        ],
+        "pattern": "(?i)builder",
+        "source": "get_units"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "route-threat-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-05.json",
+          "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-08.json"
+        ],
+        "pattern": "\\*\\*\\[[^\\]]*Barbarian",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "pillage-visible-in-city",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-03.json"
+        ],
+        "pattern": "PILLAGED TILES",
+        "source": "get_cities"
+      }
+    ],
+    "save_ack": {
+      "message": "Saved: PLAN3_BUILDER_A1_V1",
+      "ok": true
+    },
+    "state_sha256": "62e56d7ea11b5650504a7b3ed750cf13fc8fa5199d0f463af75f6a689950717c",
+    "version": 1
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/009-archive.json",
+      "sha256": "b836b4014bbbe11a274e121302021b2f37ef35194af8f34feb46c70503ed1977"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-00.json",
+      "sha256": "5da382b5b4bfe242e75918ad8607e24163ec04d2f3f0af1e51f8514245d4965b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-01.json",
+      "sha256": "f1a6244863b93b3872fec1f35716aefc6c1f9da1d5010b0b4968ff33071de686"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-02.json",
+      "sha256": "296a9be013e17a646773b681eac5c6714e48b372e07ae27d1e086fe53835dc09"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-03.json",
+      "sha256": "07c9bb1daa4470ed63dd35f5e1f57f6b7736eee5d9040050c95c89b21ddc446f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-04.json",
+      "sha256": "d06d9546b9e437f81a4622a5b292f595c95acfb19a095550e14fdd95eedce731"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-05.json",
+      "sha256": "cac2127d308ecace57b46e27028b036702699ed545ad784a4f31f2b0e69c1d09"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-06.json",
+      "sha256": "75959f67342aeb8f71e0e2fa095be64ab4e3c648c2c54356d0f518860191fd47"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-07.json",
+      "sha256": "6684ab868e0a7c08e7e30fae3a4237eca5f6feaec0c776790620321828778198"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/observations/archived-009-08.json",
+      "sha256": "c91b6408d8dec9990ad993e63c43ca58da64aa2f40081b485519424ef3ddd819"
+    },
+    {
+      "path": "benchmarks/saves/plan3-builder-a1-v1.Civ6Save",
+      "sha256": "3afea3d425ddbade193944fa31fa0f99e3de646676a756b262726844fb53dcc8"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+    "recipe_id": "plan3-builder-a1",
+    "sha256": "9ecd529376c25184202b7ce6b32c730630b9c50ef16725a1efed8fdfa0f9e9ec",
+    "version": 1
+  },
+  "scenario_id": "builder-a1",
+  "schema_version": "2.0.0",
+  "sequence": 9,
+  "stage": "archive",
+  "status": "passed"
+}

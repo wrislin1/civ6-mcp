@@ -1,0 +1,427 @@
+# Version-2 trial report
+
+## Provenance
+
+- actor_kind: "scripted"
+- case_id: "repeat-undo"
+- case_sha256: "7371da9db44325f25fe8ca4ab91ffe51799e02e8797cbeaf5f162f22a4d8900e"
+- contract_fingerprint: "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697"
+- contract_identity: "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697"
+- counting: false
+- coverage: {"area": [[66, 21], [66, 22], [66, 23], [66, 24], [66, 25], [67, 21], [67, 22], [67, 23], [67, 24], [67, 25], [68, 21], [68, 22], [68, 23], [68, 24], [68, 25], [69, 21], [69, 22], [69, 23], [69, 24], [69, 25], [70, 21], [70, 22], [70, 23], [71, 21], [71, 22], [71, 23]], "include_owned_tiles": true, "tracked_targets": []}
+- evidence_version: "2.0.0"
+- position_id: "plan3-city-a2-v2"
+- position_version: 2
+- public_observation_sha256: "9a52f573280d0dda9d906db19e878c87d3be344e5636ee3045fb0f56049eb7d3"
+- public_task_tiles: [[68, 24], [67, 23], [67, 22]]
+- public_task_tiles_sha256: "218b9007caee5fa3ca5efa73cf8c81d2a01a66c2d027c256bb4e07f468533b25"
+- rubric_sha256: "a5a47c3c56eb17de8bddfd798e6ba8c657ab993e6561d6cb5f849875e14f28e1"
+- script_id: "repeat-undo"
+- script_sha256: "71cfc9b1329a5b5860be7385da12588066e22b7c2510daca0e7c52bde493e68f"
+- session_fingerprint: "d94a820dabe6b892530cda4dc4c588bdd98b249cfdc8357f76f7017f7622bef9"
+- toolset_id: "plan3-part1-v1"
+- toolset_identity: {"schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7", "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"}
+
+## Identity
+
+### drift
+```json
+[]
+```
+
+### identity_ok
+```json
+true
+```
+
+## Mechanics
+
+- invalid_tool_calls: []
+- validation_failures: [{"reason": "rejected_operation", "result": "Error: CANNOT_PURCHASE|costs 260g but you only have 240g", "step": 1, "tool_name": "purchase_item"}]
+- validation_status: "failed"
+
+## Terminal
+
+- terminal: "finish_trial"
+- truncated_steps: []
+- truncation_unavailable_steps: []
+
+## Counters
+
+- attempts_per_round: 0.8
+- dispatched_calls: 4
+- round_trips: 5
+- round_trips_completed: 5
+- tool_call_attempts: 4
+
+## Score
+
+- gross_credit: 4
+- harm_total: 0
+- maximum_credit: 12
+- maximum_harm: 4
+- net_credit: 4
+- primary_score: 0.3333333333333333
+
+### Objectives
+| id | credit | maximum | rung_index |
+|---|---|---|---|
+| "address-housing" | 4 | 4 | 1 |
+| "commit-district" | 0 | 4 | null |
+| "initiate-repair" | 0 | 4 | null |
+
+### Harms
+| id | loss_key | status | timing | weight | deduction | fired_steps | charged_harm |
+|---|---|---|---|---|---|---|---|
+| "destructive-placement" | "productive_asset" | "not_fired" | "event" | 4 | 0 | [] | null |
+
+### Scored evidence
+```json
+{
+  "gross_credit": 4,
+  "harm_total": 0,
+  "harms": [
+    {
+      "charged_harm": null,
+      "compensation": [],
+      "deduction": 0,
+      "fired": false,
+      "fired_steps": [],
+      "first_step": null,
+      "id": "destructive-placement",
+      "loss_key": "productive_asset",
+      "objective_id": "commit-district",
+      "priority": 0,
+      "reference": [
+        {
+          "asset_fields": {
+            "improvement": "IMPROVEMENT_QUARRY"
+          },
+          "kind": "asset_displaced",
+          "tiles": [
+            [
+              67,
+              23
+            ]
+          ]
+        },
+        {
+          "asset_fields": {
+            "improvement": "IMPROVEMENT_MINE"
+          },
+          "kind": "asset_displaced",
+          "tiles": [
+            [
+              67,
+              22
+            ]
+          ]
+        }
+      ],
+      "status": "not_fired",
+      "timing": "event",
+      "weight": 4
+    }
+  ],
+  "maximum_credit": 12,
+  "maximum_harm": 4,
+  "net_credit": 4,
+  "objectives": [
+    {
+      "credit": 4,
+      "id": "address-housing",
+      "maximum": 4,
+      "predicate": {
+        "cities": [
+          131073
+        ],
+        "kind": "housing_resolved",
+        "minimum_surplus": 1,
+        "remedy_buildings": [
+          "BUILDING_GRANARY"
+        ]
+      },
+      "rung_index": 1,
+      "rungs": [
+        {
+          "points": 2,
+          "predicate": {
+            "cities": [
+              131073
+            ],
+            "items": [
+              "BUILDING_GRANARY"
+            ],
+            "kind": "active_production",
+            "repair": false
+          }
+        },
+        {
+          "points": 4,
+          "predicate": {
+            "cities": [
+              131073
+            ],
+            "kind": "housing_resolved",
+            "minimum_surplus": 1,
+            "remedy_buildings": [
+              "BUILDING_GRANARY"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "credit": 0,
+      "id": "commit-district",
+      "maximum": 4,
+      "predicate": null,
+      "rung_index": null,
+      "rungs": [
+        {
+          "points": 4,
+          "predicate": {
+            "cities": [
+              131073
+            ],
+            "district_types": [
+              "DISTRICT_SEOWON"
+            ],
+            "kind": "district_committed",
+            "tiles": [
+              [
+                68,
+                24
+              ],
+              [
+                67,
+                22
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "credit": 0,
+      "id": "initiate-repair",
+      "maximum": 4,
+      "predicate": null,
+      "rung_index": null,
+      "rungs": [
+        {
+          "points": 4,
+          "predicate": {
+            "cities": [
+              196610
+            ],
+            "items": [
+              "BUILDING_MONUMENT"
+            ],
+            "kind": "active_production",
+            "repair": true
+          }
+        }
+      ]
+    }
+  ],
+  "primary_score": 0.3333333333333333,
+  "scales": {
+    "attainable_values": [
+      -0.3333333333333333,
+      -0.16666666666666666,
+      0.0,
+      0.16666666666666666,
+      0.3333333333333333,
+      0.5,
+      0.6666666666666666,
+      0.8333333333333334,
+      1.0
+    ],
+    "maximum_credit": 12,
+    "maximum_harm": 4,
+    "one_objective": 0.3333333333333333,
+    "smallest_increment": 0.16666666666666666
+  }
+}
+```
+
+## Ledger
+
+### Net
+| path | before | after | delta | coverage | source_steps |
+|---|---|---|---|---|---|
+| ["faith"] | 119.7890625 | 119.7890625 | 0.0 | "measured" | [] |
+| ["gold"] | 500 | 240 | -260 | "measured" | [0] |
+
+### Steps
+```json
+[
+  {
+    "entries": [
+      {
+        "after": 240,
+        "before": 500,
+        "coverage": "measured",
+        "delta": -260,
+        "path": [
+          "gold"
+        ],
+        "refs": {},
+        "source_steps": [
+          0
+        ],
+        "tool_name": "purchase_item",
+        "units": "gold"
+      }
+    ],
+    "step": 0,
+    "tool_name": "purchase_item"
+  },
+  {
+    "entries": [],
+    "step": 1,
+    "tool_name": "purchase_item"
+  },
+  {
+    "entries": [],
+    "step": 2,
+    "tool_name": "set_city_production"
+  },
+  {
+    "entries": [],
+    "step": 3,
+    "tool_name": "set_city_production"
+  }
+]
+```
+
+## Audits
+
+### loss_coverage
+```json
+{
+  "declared": 0,
+  "observed": 0,
+  "steps_examined": 4,
+  "undeclared": 0
+}
+```
+
+### losses
+```json
+[]
+```
+
+### uncredited
+```json
+[
+  {
+    "category": "insufficient_evidence",
+    "evidence": {
+      "economic_paths": [],
+      "improvement": null,
+      "losses": [],
+      "movement": null,
+      "step": 3,
+      "tool_name": "set_city_production"
+    },
+    "primary_deduction": 0,
+    "tags": []
+  }
+]
+```
+
+### undercredit
+```json
+[
+  {
+    "final_credit": 0,
+    "max_attained": 4,
+    "objective_id": "initiate-repair",
+    "steps": [
+      2
+    ]
+  }
+]
+```
+
+## Capture
+
+- available: true
+- in_episode_share: 0.009875901836591462
+- in_episode_total_s: 2.9627705509774387
+- non_drain_residual_s: 0.6973548859823495
+- post_drain_total_s: 2.0041880560165737
+- pre_drain_total_s: 1.002874564990634
+- total_s: 3.7044175069895573
+
+### Unavailable
+```json
+{}
+```
+
+### Summary
+```json
+{
+  "all_single_execution": true,
+  "count": 10,
+  "in_episode_share": 0.009875901836591462,
+  "in_episode_total_s": 2.9627705509774387,
+  "lua_executions_total": 10,
+  "max_s": 0.3748243640002329,
+  "mean_s": 0.37044175069895574,
+  "non_drain_residual_s": 0.6973548859823495,
+  "p95_s": 0.3748243640002329,
+  "post_drain_total_s": 2.0041880560165737,
+  "pre_drain_total_s": 1.002874564990634,
+  "total_s": 3.7044175069895573,
+  "unavailable": {}
+}
+```
+
+## Model usage
+
+- completion_tokens: null
+- cost_usd: null
+- model: null
+- model_latency_s: null
+- prompt_tokens: null
+
+## Digests
+
+### final
+```json
+"10368e64bc6ab1a3ab9aaf6b066024660eff77df2dc78ac77247a3ea590599e6"
+```
+
+### initial
+```json
+"9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731"
+```
+
+### steps
+```json
+[
+  {
+    "after": "55550e30f01833b59db4bf5b14406e5a18ae5dd9ebd19dcdd6bb5743e6629e88",
+    "before": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "step": 0
+  },
+  {
+    "after": "55550e30f01833b59db4bf5b14406e5a18ae5dd9ebd19dcdd6bb5743e6629e88",
+    "before": "55550e30f01833b59db4bf5b14406e5a18ae5dd9ebd19dcdd6bb5743e6629e88",
+    "step": 1
+  },
+  {
+    "after": "f38557c24d8bbb9a00e6c83d05a635d905f3a18e11ba3b5edcad1e9c668dcb7f",
+    "before": "55550e30f01833b59db4bf5b14406e5a18ae5dd9ebd19dcdd6bb5743e6629e88",
+    "step": 2
+  },
+  {
+    "after": "10368e64bc6ab1a3ab9aaf6b066024660eff77df2dc78ac77247a3ea590599e6",
+    "before": "f38557c24d8bbb9a00e6c83d05a635d905f3a18e11ba3b5edcad1e9c668dcb7f",
+    "step": 3
+  }
+]
+```

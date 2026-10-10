@@ -1,0 +1,675 @@
+{
+  "error": null,
+  "evidence": {
+    "archive_path": "benchmarks/saves/plan3-builder-a2-v3.Civ6Save",
+    "archive_sha256": "166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46",
+    "assertions": [
+      {
+        "actual": true,
+        "expected": true,
+        "id": "repair-site-pillaged",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_MINE",
+            "pillaged": true
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              68,
+              23
+            ]
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "builders-start-away-from-work",
+        "passed": true,
+        "predicate": {
+          "kind": "charged_builder_at",
+          "tiles": [
+            [
+              68,
+              23
+            ],
+            [
+              74,
+              30
+            ],
+            [
+              66,
+              22
+            ],
+            [
+              69,
+              22
+            ]
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "resource-unimproved",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_PASTURE"
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              74,
+              30
+            ]
+          ]
+        }
+      }
+    ],
+    "authoring_input": {
+      "path": "benchmarks/provenance/plan3-builder-a2-v3-authoring.json",
+      "sha256": "c98e0e4c271f1611b260fad1ac9f84b926ba8384c0cdad0ec5be4979f6b7c4cc"
+    },
+    "captured_state_sha256": "a29b6d01b3b3e61f63c59dc0c585aa12c238a9a8247414564dec09c7fa0f1bb5",
+    "cases": [
+      "benchmarks/validation/plan3-builder-a2-v3/cases/null-discovery.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/joint-full.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/alternative-full.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/partial-repair.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/partial-resource.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/partial-food.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/closer-only.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/escort-loss.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/new-exposure.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/temporary-exposure-repaired.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/two-harm.json",
+      "benchmarks/validation/plan3-builder-a2-v3/cases/repeat-undo.json"
+    ],
+    "contract_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
+    "coverage": {
+      "area": [
+        [
+          64,
+          20
+        ],
+        [
+          64,
+          21
+        ],
+        [
+          64,
+          22
+        ],
+        [
+          64,
+          23
+        ],
+        [
+          64,
+          24
+        ],
+        [
+          65,
+          20
+        ],
+        [
+          65,
+          21
+        ],
+        [
+          65,
+          22
+        ],
+        [
+          65,
+          23
+        ],
+        [
+          65,
+          24
+        ],
+        [
+          65,
+          25
+        ],
+        [
+          66,
+          20
+        ],
+        [
+          66,
+          21
+        ],
+        [
+          66,
+          22
+        ],
+        [
+          66,
+          23
+        ],
+        [
+          66,
+          24
+        ],
+        [
+          66,
+          25
+        ],
+        [
+          67,
+          20
+        ],
+        [
+          67,
+          21
+        ],
+        [
+          67,
+          22
+        ],
+        [
+          67,
+          23
+        ],
+        [
+          67,
+          24
+        ],
+        [
+          67,
+          25
+        ],
+        [
+          68,
+          20
+        ],
+        [
+          68,
+          21
+        ],
+        [
+          68,
+          22
+        ],
+        [
+          68,
+          23
+        ],
+        [
+          68,
+          24
+        ],
+        [
+          68,
+          25
+        ],
+        [
+          69,
+          20
+        ],
+        [
+          69,
+          21
+        ],
+        [
+          69,
+          22
+        ],
+        [
+          69,
+          23
+        ],
+        [
+          69,
+          24
+        ],
+        [
+          69,
+          25
+        ],
+        [
+          70,
+          20
+        ],
+        [
+          70,
+          21
+        ],
+        [
+          70,
+          22
+        ],
+        [
+          70,
+          23
+        ],
+        [
+          70,
+          24
+        ],
+        [
+          70,
+          25
+        ],
+        [
+          70,
+          29
+        ],
+        [
+          70,
+          30
+        ],
+        [
+          70,
+          31
+        ],
+        [
+          70,
+          32
+        ],
+        [
+          70,
+          33
+        ],
+        [
+          71,
+          20
+        ],
+        [
+          71,
+          21
+        ],
+        [
+          71,
+          22
+        ],
+        [
+          71,
+          23
+        ],
+        [
+          71,
+          24
+        ],
+        [
+          71,
+          25
+        ],
+        [
+          71,
+          27
+        ],
+        [
+          71,
+          28
+        ],
+        [
+          71,
+          29
+        ],
+        [
+          71,
+          30
+        ],
+        [
+          71,
+          31
+        ],
+        [
+          71,
+          32
+        ],
+        [
+          71,
+          33
+        ],
+        [
+          72,
+          20
+        ],
+        [
+          72,
+          21
+        ],
+        [
+          72,
+          22
+        ],
+        [
+          72,
+          23
+        ],
+        [
+          72,
+          24
+        ],
+        [
+          72,
+          27
+        ],
+        [
+          72,
+          28
+        ],
+        [
+          72,
+          29
+        ],
+        [
+          72,
+          30
+        ],
+        [
+          72,
+          31
+        ],
+        [
+          72,
+          32
+        ],
+        [
+          72,
+          33
+        ],
+        [
+          73,
+          27
+        ],
+        [
+          73,
+          28
+        ],
+        [
+          73,
+          29
+        ],
+        [
+          73,
+          30
+        ],
+        [
+          73,
+          31
+        ],
+        [
+          73,
+          32
+        ],
+        [
+          73,
+          33
+        ],
+        [
+          74,
+          27
+        ],
+        [
+          74,
+          28
+        ],
+        [
+          74,
+          29
+        ],
+        [
+          74,
+          30
+        ],
+        [
+          74,
+          31
+        ],
+        [
+          74,
+          32
+        ],
+        [
+          74,
+          33
+        ],
+        [
+          75,
+          27
+        ],
+        [
+          75,
+          28
+        ],
+        [
+          75,
+          29
+        ],
+        [
+          75,
+          30
+        ],
+        [
+          75,
+          31
+        ],
+        [
+          75,
+          32
+        ],
+        [
+          75,
+          33
+        ],
+        [
+          76,
+          28
+        ],
+        [
+          76,
+          29
+        ],
+        [
+          76,
+          30
+        ],
+        [
+          76,
+          31
+        ],
+        [
+          76,
+          32
+        ]
+      ],
+      "include_owned_tiles": true,
+      "tracked_targets": [
+        [
+          63,
+          16908390
+        ]
+      ]
+    },
+    "game_save_name": "PLAN3_BUILDER_A2_V3",
+    "popup_hygiene": {
+      "status": "POPUPS|none"
+    },
+    "position_id": "plan3-builder-a2-v3",
+    "position_path": "benchmarks/positions/plan3-builder-a2-v3.json",
+    "position_sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc",
+    "public_observation": "benchmarks/validation/plan3-builder-a2-v3/public-observation.json",
+    "reload": {
+      "verified": true
+    },
+    "row_counts": {
+      "building": 21,
+      "city": 5,
+      "district": 18,
+      "identity": 1,
+      "queue": 5,
+      "resource": 54,
+      "target": 1,
+      "tile": 123,
+      "unit": 15
+    },
+    "scripts": [
+      "benchmarks/scripts/plan3-builder-a2-v3/observe.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/joint-full.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/alternative-full.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/partial-repair.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/partial-resource.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/partial-food.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/closer-only.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/escort-loss.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/new-exposure.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/temporary-exposure-repaired.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/two-harm.json",
+      "benchmarks/scripts/plan3-builder-a2-v3/repeat-undo.json"
+    ],
+    "suite_id": "plan3-builder-a2-v3-validation",
+    "suite_path": "benchmarks/validation/plan3-builder-a2-v3/suite.json",
+    "telemetry": {
+      "all_single_execution": true,
+      "count": 1,
+      "in_episode_share": 0.0,
+      "in_episode_total_s": 0,
+      "lua_executions_total": 1,
+      "max_s": 0.37488962401403114,
+      "mean_s": 0.37488962401403114,
+      "non_drain_residual_s": 0.07406045004609041,
+      "p95_s": 0.37488962401403114,
+      "post_drain_total_s": 0.20049098497838713,
+      "pre_drain_total_s": 0.1003381889895536,
+      "total_s": 0.37488962401403114,
+      "unavailable": {}
+    },
+    "toolset_identity": {
+      "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
+      "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
+    },
+    "version": 3
+  },
+  "files": [
+    {
+      "path": "benchmarks/provenance/plan3-builder-a2-v3-authoring.json",
+      "sha256": "c98e0e4c271f1611b260fad1ac9f84b926ba8384c0cdad0ec5be4979f6b7c4cc"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/public-observation.json",
+      "sha256": "c12bfede31d5f81621e3096902bc4b6cc7279fa2ed577d58f21a8822f24404cb"
+    },
+    {
+      "path": "benchmarks/positions/plan3-builder-a2-v3.json",
+      "sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/observe.json",
+      "sha256": "112e8dc781f6cb28103793a3cf4d78ac984bb1bf83f3113dac0ac692887d1fa0"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/joint-full.json",
+      "sha256": "b45cd2a0dd8956cd8e69b889adf4848f0e1a9e96850a0b698f0f134b4a5727ed"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/alternative-full.json",
+      "sha256": "ba1fb21d7286969fb6c420e117f5be16ad91790552869e96abd73a703ff2098b"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/partial-repair.json",
+      "sha256": "140982ffd9786d5949dedbe2d64998668afa9fb22a0c0d527bff7243c202b8b6"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/partial-resource.json",
+      "sha256": "1961b337fcec031dfc7a49ce28d973dc6d8192b9ad7d12ced70d58060fafae75"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/partial-food.json",
+      "sha256": "8475e4f97e9a90bb811fe63d2de183b8f69e2ca4150395864bf407206a387770"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/closer-only.json",
+      "sha256": "279d00068af4efcb23c1c9d86d6ea2cc8ddee09b5942ffa605594e8d64c1f3b3"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/escort-loss.json",
+      "sha256": "2554ed9cc0c2b710278fc07529fe4f71e6cd49590575470cd6cdbcd0947bccf8"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/new-exposure.json",
+      "sha256": "0a0afdeebf3099b072c8d922c2de25ac2980a1405acf63ce22b94386e7021b51"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/temporary-exposure-repaired.json",
+      "sha256": "e4ddba7d0fd9e77c7109a7c1dd581bd44a5ede91cf668c62dd718c35d767b9fe"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/two-harm.json",
+      "sha256": "06129a7df8953e40430a075969d053fd5b74e35972e935fa6b02834614e1869c"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-builder-a2-v3/repeat-undo.json",
+      "sha256": "33e6a28c60a0776ae8f258d844f495e5cdf290131a66436713636e1def438305"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/null-discovery.json",
+      "sha256": "8a90e76be3756191b376fd0f04fcfac5fc8fa3e4aa6b67eff94f2cbd829ad8ae"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/joint-full.json",
+      "sha256": "affca7d4c16b0e1417047c5aea614ac277f9bf134665361f6fc2e88f863e9e6a"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/alternative-full.json",
+      "sha256": "e861c57c346497d2091fafcd2bdf8f77f9345d67ee47b91085d67f327cd4cb1e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/partial-repair.json",
+      "sha256": "a732cb73a78ae3ce1011c6045df320614e1b6f8bcc4163faf5b94ecd163b17a5"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/partial-resource.json",
+      "sha256": "61f992b51b8466b0914d616a41b90f3f915f6c6a7ec6db4accd0ed807fc84ade"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/partial-food.json",
+      "sha256": "7187c7d2fceaca06bf1d58323346c6fdef0c72a08cb7fe9cd9789b66c0e8945a"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/closer-only.json",
+      "sha256": "be45df2fa77eb6506f356b2562ff9694f3f7f35cec6596036b39a06b040681ad"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/escort-loss.json",
+      "sha256": "01dae8383ae1a222f00d74eac423d78a39a781b1b5df6bf87a7bb55409c16238"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/new-exposure.json",
+      "sha256": "cefe51b21767fbda69d37f6290b8d666eafebdfca7d0b4c99fb6d56deecfc9e2"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/temporary-exposure-repaired.json",
+      "sha256": "843114f5eb25a9c37a577d1c53f88d014abe5f0ad7c11b5f50a8edcacbaabcf8"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/two-harm.json",
+      "sha256": "3bcf58d65f337ca082abe95c95d1a08b1dfac0bb2d596ff35f1d711200e20d84"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/cases/repeat-undo.json",
+      "sha256": "ba356dece363405477f1cf6a8c90ec4c868f0353d5cec5cdc2073f9ddaadc97a"
+    },
+    {
+      "path": "benchmarks/validation/plan3-builder-a2-v3/suite.json",
+      "sha256": "be03c118585d27ee751eeaea99cdc0789fec917d3d863af952ee00fb55c75b2d"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a2.yaml",
+    "recipe_id": "plan3-builder-a2",
+    "sha256": "73dd54eb9c76feb0d3ec3a169aac051c7835c2f80f64b09df05b6db54a7678c1",
+    "version": 2
+  },
+  "scenario_id": "builder-a2",
+  "schema_version": "2.0.0",
+  "sequence": 16,
+  "stage": "capture",
+  "status": "passed"
+}

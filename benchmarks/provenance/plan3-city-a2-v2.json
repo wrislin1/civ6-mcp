@@ -1,0 +1,29 @@
+{
+  "authoring_input": {
+    "path": "benchmarks/provenance/plan3-city-a2-v2-authoring.json",
+    "sha256": "7ec18f8399d80ff8a9c941faf8906b4941426cf51db92a647cd0771b9bf52134"
+  },
+  "evidence_index": {
+    "path": "benchmark_runs/plan3-part1/city-a2-reval/evidence-index.json",
+    "sha256": "b1159f6d6aaab40fa13439cf2d8e6f14eec6db6d04f416efb9e178168258add7"
+  },
+  "family": "city",
+  "journal": {
+    "path": "benchmark_runs/plan3-part1/city-a2-reval/authoring-journal.json",
+    "sha256": "0464ae1510acc211f977dc68a0f2fe93ceb9205e455ce46bccdec8c821be8896"
+  },
+  "position": {
+    "path": "benchmarks/positions/plan3-city-a2-v2.json",
+    "sha256": "40e55f2330e10529e710ded069784aebbb6fae826827a7b429e795e2f8908d76"
+  },
+  "position_id": "plan3-city-a2-v2",
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "validation_runs": [
+    {
+      "run_dir": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation",
+      "suite_id": "plan3-city-a2-v2-validation",
+      "validation_sha256": "57d2da83528b35548427a85c6f0e58d4a7998b86f248de7801e014589ad2a7ba"
+    }
+  ]
+}

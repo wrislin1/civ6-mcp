@@ -1,0 +1,78 @@
+{
+  "error": null,
+  "evidence": {
+    "expected_state_sha256": "a29b6d01b3b3e61f63c59dc0c585aa12c238a9a8247414564dec09c7fa0f1bb5",
+    "reports": {
+      "alternative-full/report.json": "88897fa1397fd95ac47aa1ecd4935d51c5c441dbae095572139328e01d25e8f5",
+      "alternative-full/report.md": "aad4d84f79c83afa6944160de3fa448262eafb670781bdddb999273fb2731ff9",
+      "closer-only/report.json": "a1ad15ce8a234c3945e01b21811710e749bd52b15f40f3a06b8d6e2a44743f43",
+      "closer-only/report.md": "2ca22f24edc41b6e82c6dee0c44043fd38c11d9b4be32c5845372bb29e4b2f0d",
+      "escort-loss/report.json": "c0281d4e704bdcfcdbc7293140d3cff6a285bb4899ca66cc0b620e7fb953234e",
+      "escort-loss/report.md": "39475334e0592ec47268a13c527d994d5536f27e75463a89d537e39de0947f05",
+      "joint-full/report.json": "b3ce2963fb006e49caa47158d2c3b5b1a5e2127ebc409b5d44d5831e4a3fb182",
+      "joint-full/report.md": "c9d7e1d54984e4f61421e1199410cc9d293313d729c5b1cc0620d9dd9cd13b35",
+      "new-exposure/report.json": "acf50b906eda6fe99b35ed61e371997aca9923d8f6a96c3ba161233e06125a13",
+      "new-exposure/report.md": "c229ad7e077cfc24f99414af5f702d4f1b422db26c23cd136df7c831dc60b36b",
+      "null-discovery/report.json": "8ff6cf7e18ab256f9c4449fbcf24722bbf6601b99b0f64766b556379b742ef1b",
+      "null-discovery/report.md": "c5cc057d3a537023b26ab59bb519558586b9523c0318689bc4299ac522ece1da",
+      "partial-food/report.json": "e2b635117e58d51384f2e97eebf7d2f991987a703240f3baae06825ecf51775f",
+      "partial-food/report.md": "88f2927fd6fd7b99183e0552e85055a532a19b2e3af4ed58e23e33c696efb3ab",
+      "partial-repair/report.json": "1e6ef0cccffdfcdaeb741e2e5da84e68033f560bdb827c5586a946af320800a1",
+      "partial-repair/report.md": "38373fb0e8b8e89fd426674c3683847e86229c346ac1657f35fac6450cee85de",
+      "partial-resource/report.json": "750b9e44496b89842413d3c8dc0c9385337d7dc41c818b726a103ee8f4e83787",
+      "partial-resource/report.md": "6e51700318cee3e61b9263cb73548a1894c79bd6d7067273ab82d05b06963af4",
+      "repeat-undo/report.json": "6b85adb6b045d3038ecd07dc83e89e5102da6601af520c817d77a694ad8eabbf",
+      "repeat-undo/report.md": "5cfe783e03f0dd4ebaad5c1f3b2dcdf953d407f4b95bee81c441c2dc1b529e77",
+      "temporary-exposure-repaired/report.json": "5f41b5fb3937c061e518a95553c30a836c403d09391d864e1bc234bd5d5a6faf",
+      "temporary-exposure-repaired/report.md": "4bbf98813f8414c0217843a3edf5156a899ddd3f102ca12233c199e0f1724dc4",
+      "two-harm/report.json": "4ab3c1c8e5bf3f7e4acc91d32dfb53be334733aa1a01f8c89600a4f64cc30ae5",
+      "two-harm/report.md": "aabc4fc16fa52ab2fbe445fd6d47c7d153e8db54806bd2e9808fa4d2475904c8"
+    },
+    "reports_identical": true,
+    "restore": {
+      "digest": "a29b6d01b3b3e61f63c59dc0c585aa12c238a9a8247414564dec09c7fa0f1bb5",
+      "reconnect": {
+        "reconnected": true
+      },
+      "reloaded": true
+    },
+    "restore_deploy": {
+      "archive_sha256": "166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46",
+      "deployed_sha256": "166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A2_V3.Civ6Save",
+      "expected_sha256": "166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46",
+      "ok": true,
+      "raw": {
+        "archive_sha256": "166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46",
+        "deployed_sha256": "166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46",
+        "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A2_V3.Civ6Save",
+        "expected_sha256": "166b702bb4548059fc1ea0a5cfa0ef984ca799fa9ea46a5537f069f749611c46",
+        "ok": true,
+        "save_name": "PLAN3_BUILDER_A2_V3",
+        "source": "benchmarks/saves/plan3-builder-a2-v3.Civ6Save"
+      },
+      "save_name": "PLAN3_BUILDER_A2_V3"
+    },
+    "restore_reload_verified": true,
+    "restored_digest": "a29b6d01b3b3e61f63c59dc0c585aa12c238a9a8247414564dec09c7fa0f1bb5",
+    "restored_digest_matches": true,
+    "run_dir": "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation",
+    "validation": {
+      "errored": false,
+      "passed": true
+    },
+    "validation_sha256": "ab5836f0cde25b34fa438275081bb10fc4c9d06a2d1181e38a1d37d256124dc3"
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a2.yaml",
+    "recipe_id": "plan3-builder-a2",
+    "sha256": "73dd54eb9c76feb0d3ec3a169aac051c7835c2f80f64b09df05b6db54a7678c1",
+    "version": 2
+  },
+  "scenario_id": "builder-a2",
+  "schema_version": "2.0.0",
+  "sequence": 19,
+  "stage": "validate",
+  "status": "passed"
+}

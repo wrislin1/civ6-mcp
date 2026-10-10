@@ -1,0 +1,19 @@
+{
+  "arguments": {
+    "radius": 1,
+    "x": "${route_threat.x}",
+    "y": "${route_threat.y}"
+  },
+  "capped_sha256": "b60de776c1c3abceebb5caabd518d5e02cbbbf0fd7be00809d517cf4fd3e2c5a",
+  "full_sha256": "b60de776c1c3abceebb5caabd518d5e02cbbbf0fd7be00809d517cf4fd3e2c5a",
+  "index": 7,
+  "resolved_arguments": {
+    "radius": 1,
+    "x": 74,
+    "y": 31
+  },
+  "result_capped": "9 tiles:\n  (73,30): GRASS FLOODPLAINS_GRASSLAND River (Road) [CITY_CENTER] {F:2 P:0} (owned by Korea) [my: SWORDSMAN, BUILDER]\n  (74,30): GRASS [HORSES*] {F:3 P:1} (owned by Korea)\n  (75,30): GRASS_HILLS Hills (MINE) {F:2 P:1} (owned by Valletta [City-State]) [mv:2]\n  (73,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (74,31): GRASS_HILLS Hills FOREST River {F:2 P:2} [mv:3] **[Barbarian WARRIOR]**\n  (75,31): GRASS_HILLS Hills River {F:2 P:1} [mv:2] **[Valletta ARCHER]**\n  (73,32): PLAINS FLOODPLAINS_PLAINS River {F:1 P:1}\n  (74,32): PLAINS [HORSES*] River (PASTURE) {F:2 P:2} (owned by Hunza [City-State])\n  (75,32): PLAINS_HILLS Hills River {F:1 P:2} [mv:2]",
+  "result_char_cap": 1500,
+  "result_full": "9 tiles:\n  (73,30): GRASS FLOODPLAINS_GRASSLAND River (Road) [CITY_CENTER] {F:2 P:0} (owned by Korea) [my: SWORDSMAN, BUILDER]\n  (74,30): GRASS [HORSES*] {F:3 P:1} (owned by Korea)\n  (75,30): GRASS_HILLS Hills (MINE) {F:2 P:1} (owned by Valletta [City-State]) [mv:2]\n  (73,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (74,31): GRASS_HILLS Hills FOREST River {F:2 P:2} [mv:3] **[Barbarian WARRIOR]**\n  (75,31): GRASS_HILLS Hills River {F:2 P:1} [mv:2] **[Valletta ARCHER]**\n  (73,32): PLAINS FLOODPLAINS_PLAINS River {F:1 P:1}\n  (74,32): PLAINS [HORSES*] River (PASTURE) {F:2 P:2} (owned by Hunza [City-State])\n  (75,32): PLAINS_HILLS Hills River {F:1 P:2} [mv:2]",
+  "tool": "get_map_area"
+}

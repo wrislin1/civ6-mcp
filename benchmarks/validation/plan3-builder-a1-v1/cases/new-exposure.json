@@ -1,0 +1,26 @@
+{
+  "case_id": "new-exposure",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 2,
+      "harm_total": 4,
+      "net_credit": -2,
+      "primary_score": -0.16666666666666666
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a1-v1.json",
+    "sha256": "2935811af6f3606b9fc2af535877f9fc9d47544f416ae4e295bd3a4d8b71442f"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a1-v1/new-exposure.json",
+    "sha256": "ffa8c2a2c9d807495e1ffb7b5885ce52e7e07c139e02262cb7eb95c2e7703689"
+  },
+  "tags": [
+    "new_exposure",
+    "mixed_gain_loss"
+  ]
+}

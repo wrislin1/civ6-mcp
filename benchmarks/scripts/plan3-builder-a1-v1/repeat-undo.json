@@ -1,0 +1,70 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 12,
+            "x": 68,
+            "y": 23
+          },
+          "name": "move_unit"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 12
+          },
+          "name": "repair_improvement"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 12
+          },
+          "name": "repair_improvement"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 14,
+            "x": 66,
+            "y": 22
+          },
+          "name": "move_unit"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 14,
+            "x": 67,
+            "y": 24
+          },
+          "name": "move_unit"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "repeat-undo"
+}

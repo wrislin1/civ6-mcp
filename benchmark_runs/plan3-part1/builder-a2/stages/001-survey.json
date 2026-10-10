@@ -1,0 +1,164 @@
+{
+  "error": null,
+  "evidence": {
+    "base_export": {
+      "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+      "excluded_signature": null,
+      "existed": true,
+      "ok": true,
+      "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+      "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+      "size": 3145591,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+    },
+    "base_identity": {
+      "expected": {
+        "civ_type": "CIVILIZATION_KOREA",
+        "player_id": 0,
+        "seed": 1881300077,
+        "turn": 100
+      },
+      "matches": true,
+      "observed": {
+        "civ_type": "CIVILIZATION_KOREA",
+        "player_id": 0,
+        "seed": 1881300077,
+        "turn": 100
+      }
+    },
+    "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+    "base_popups": "POPUPS|none",
+    "base_reconnect": {
+      "reconnected": true
+    },
+    "base_required_facts": [
+      {
+        "beyond_cap_only": false,
+        "discoverable": false,
+        "id": "pillaged-mine-visible",
+        "observations": [],
+        "pattern": "repair\\s+\\S*IRON|repair\\s+\\S*MINE",
+        "source": "get_builder_tasks"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "horses-unimproved-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-02.json"
+        ],
+        "pattern": "HORSES",
+        "source": "get_builder_tasks"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "food-site-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-07.json"
+        ],
+        "pattern": "\\(66,22\\): PLAINS(?![^\\n]*\\((?:FARM|MINE|PASTURE|QUARRY|CAMP)\\))[^\\n]*\\(owned by Korea\\)",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "food-site-alt-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-06.json"
+        ],
+        "pattern": "\\(69,22\\): PLAINS(?![^\\n]*\\((?:FARM|MINE|PASTURE|QUARRY|CAMP)\\))[^\\n]*\\(owned by Korea\\)",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "builders-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-01.json"
+        ],
+        "pattern": "(?i)builder",
+        "source": "get_units"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": false,
+        "id": "route-threat-visible",
+        "observations": [],
+        "pattern": "\\*\\*\\[[^\\]]*Barbarian",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": false,
+        "id": "pillage-visible-in-city",
+        "observations": [],
+        "pattern": "PILLAGED TILES",
+        "source": "get_cities"
+      }
+    ],
+    "observations": [
+      "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-00.json",
+      "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-01.json",
+      "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-02.json",
+      "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-03.json",
+      "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-04.json",
+      "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-05.json",
+      "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-06.json",
+      "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-07.json"
+    ],
+    "private_state": {
+      "path": "benchmark_runs/plan3-part1/builder-a2/samples/001-survey-state.json",
+      "sha256": "2446d2c7389f515736c57fc22c49ffa30163cc99cfeebe9d3b961720999f7b8e"
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/samples/001-survey-state.json",
+      "sha256": "42416ce6362c6994faf6cf3f8cbd5a96483a89884bff5df55f4eb679124eb944"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-00.json",
+      "sha256": "0eb9b633dfb555fe3928a2b2c950c1e251dad83532e60dc4360692b987e80f81"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-01.json",
+      "sha256": "79e73942bbee3902bfba43dcb7478ab42eb37a8d1c324515c8cfc8a02b037b1f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-02.json",
+      "sha256": "5f05ca1f127ee70d09ba4f3d3e7b087cd84a7a37a718bbee7bb8dbfc9f4c6eb3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-03.json",
+      "sha256": "db8026002994a7486f741c3433d2782cd20d2bb103ebd3560da999d1c337f5a8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-04.json",
+      "sha256": "d06d9546b9e437f81a4622a5b292f595c95acfb19a095550e14fdd95eedce731"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-05.json",
+      "sha256": "d858a899218ac93a46936a114e02a61fd95f750719b8691acfc3fe1a8a2358a1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-06.json",
+      "sha256": "7412914374f4d55e51243d7cc361aedbe108c0652eb607f19dcb711f3bd46706"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a2/observations/001-survey-07.json",
+      "sha256": "6684ab868e0a7c08e7e30fae3a4237eca5f6feaec0c776790620321828778198"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a2.yaml",
+    "recipe_id": "plan3-builder-a2",
+    "sha256": "e8ae24343b20e7881a7cd5b6306812497d3aa388868121bbbc298acabe52e5a1",
+    "version": 1
+  },
+  "scenario_id": "builder-a2",
+  "schema_version": "2.0.0",
+  "sequence": 1,
+  "stage": "survey",
+  "status": "passed"
+}

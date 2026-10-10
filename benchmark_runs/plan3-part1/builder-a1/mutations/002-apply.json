@@ -1,0 +1,71 @@
+{
+  "base_export": {
+    "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+    "excluded_signature": null,
+    "existed": true,
+    "ok": true,
+    "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "size": 3145591,
+    "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+  },
+  "base_identity": {
+    "expected": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "matches": true,
+    "observed": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    }
+  },
+  "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+  "base_popups": "POPUPS|none",
+  "base_reconnect": {
+    "reconnected": true
+  },
+  "base_save_identity": {
+    "civ_type": "CIVILIZATION_KOREA",
+    "name": "SEONDEOK 100 400 BC",
+    "seed": 1881300077,
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "turn": 100
+  },
+  "operations": [
+    {
+      "context": "gamecore",
+      "index": 0,
+      "lua": "local p = Map.GetPlot(68, 23)\nif p == nil then print(\"ERR|repair_site plot missing\") return end\nImprovementBuilder.SetImprovementPillaged(p, true)\nprint(\"OK|pillaged|68,23\")\n",
+      "readback": [
+        "OK|repair_site|68,23|IMPROVEMENT_MINE|pillaged"
+      ],
+      "readback_lua": "local p = Map.GetPlot(68, 23)\nlocal imp = p:GetImprovementType()\nlocal info = imp >= 0 and GameInfo.Improvements[imp] or nil\nif info ~= nil and info.ImprovementType == \"IMPROVEMENT_MINE\" and p:IsImprovementPillaged()\n    and p:GetOwner() == 0 then\n  print(\"OK|repair_site|68,23|IMPROVEMENT_MINE|pillaged\")\nelse\n  print(\"ERR|repair_site 68,23 is not an owned pillaged mine\")\nend\n",
+      "readback_ok": true,
+      "result": [
+        "OK|pillaged|68,23"
+      ]
+    },
+    {
+      "context": "gamecore",
+      "index": 1,
+      "lua": "local spots = {{70, 22}, {73, 30}, {67, 24}}\nfor _, s in ipairs(spots) do\n  local u = UnitManager.InitUnit(0, \"UNIT_BUILDER\", s[1], s[2])\n  if u == nil then\n    for _, v in Players[0]:GetUnits():Members() do\n      if v:GetX() == s[1] and v:GetY() == s[2]\n          and GameInfo.Units[v:GetType()].UnitType == \"UNIT_BUILDER\" then u = v end\n    end\n  end\n  if u == nil then\n    print(\"ERR|builder spawn failed at \" .. s[1] .. \",\" .. s[2])\n  else\n    UnitManager.RestoreMovement(u)\n    print(\"OK|builder|\" .. s[1] .. \",\" .. s[2] .. \"|charges \" .. u:GetBuildCharges())\n  end\nend\n",
+      "readback": [
+        "ERR|builder at 70,22: found 1, work within 2 = false",
+        "OK|builder|73,30|charges 3|work within 2",
+        "ERR|builder at 67,24: found 1, work within 2 = false"
+      ],
+      "readback_lua": "local function eligible(p)\n  return p ~= nil and p:GetOwner() == 0 and p:GetFeatureType() < 0\n    and p:GetResourceType() < 0 and p:GetImprovementType() < 0 and p:GetDistrictType() < 0\n    and GameInfo.Terrains[p:GetTerrainType()].TerrainType == \"TERRAIN_GRASS\"\nend\nlocal function ringOk(x, y, cx, cy)\n  for dy = -1, 1 do\n    for dx = -1, 1 do\n      if dx ~= 0 or dy ~= 0 then\n        local d = Map.GetPlotDistance(x, y, cx + dx, cy + dy)\n        if d >= 1 and d <= 2 and eligible(Map.GetPlot(cx + dx, cy + dy)) then return true end\n      end\n    end\n  end\n  return false\nend\nlocal spots = {\n  {70, 22, {{68, 23}}, {{70, 22}}},\n  {73, 30, {{74, 30}}, {}},\n  {67, 24, {{68, 23}}, {{67, 24}}},\n}\nfor _, s in ipairs(spots) do\n  local n = 0\n  for _, v in Players[0]:GetUnits():Members() do\n    if v:GetX() == s[1] and v:GetY() == s[2]\n        and GameInfo.Units[v:GetType()].UnitType == \"UNIT_BUILDER\"\n        and v:GetBuildCharges() == 3 and v:GetMovesRemaining() > 0 then n = n + 1 end\n  end\n  local near = true\n  for _, t in ipairs(s[3]) do\n    local d = Map.GetPlotDistance(s[1], s[2], t[1], t[2])\n    if d < 1 or d > 2 then near = false end\n  end\n  for _, r in ipairs(s[4]) do\n    if not ringOk(s[1], s[2], r[1], r[2]) then near = false end\n  end\n  if n == 1 and near then print(\"OK|builder|\" .. s[1] .. \",\" .. s[2] .. \"|charges 3|work within 2\")\n  else print(\"ERR|builder at \" .. s[1] .. \",\" .. s[2] .. \": found \" .. n\n             .. \", work within 2 = \" .. tostring(near)) end\nend\n",
+      "readback_ok": false,
+      "result": [
+        "OK|builder|70,22|charges 3",
+        "OK|builder|73,30|charges 3",
+        "OK|builder|67,24|charges 3"
+      ]
+    }
+  ]
+}

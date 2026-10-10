@@ -1,0 +1,368 @@
+{
+  "attempt_dir": "benchmark_runs/plan3-part1/city-a2-reval",
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/authoring-journal.json",
+      "sha256": "0464ae1510acc211f977dc68a0f2fe93ceb9205e455ce46bccdec8c821be8896"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/mutations/002-apply.json",
+      "sha256": "f5d6974c5c60c9a4c644aa6fa5a2dc6baa35ff1c6902720a46f1913ab7f2d75e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/mutations/004-archive.json",
+      "sha256": "f5d6974c5c60c9a4c644aa6fa5a2dc6baa35ff1c6902720a46f1913ab7f2d75e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-00.json",
+      "sha256": "2b380cb12f372b8241dc0faf469d472480c7dacb67f894e2260a1f1b04538267"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-01.json",
+      "sha256": "9504aa5c0a71ecd3c93a29135a61553160388299d581697d81968b1ad9436ac8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-02.json",
+      "sha256": "a547d4ce7c400df3523221c55de0a23c6f34a4710b65b880f777ac6ece0c538a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-03.json",
+      "sha256": "75a690f3bf8a6c9b7bed110c5c36f28af2c60fed8d1f5f86f7c72d6f54a2cd62"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-04.json",
+      "sha256": "50759d5f1c62cb55751163a6be44149a97713712a62428f2b17063493a3c2516"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-05.json",
+      "sha256": "f43d76d0f4ab1449500d728e28857f5a34ad8c1dfe24088879ef4d6b29846c88"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-06.json",
+      "sha256": "5fd7a10ae9569609957409ab4b9caf17912da014c095d962fd1102ab1281db0a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-00.json",
+      "sha256": "efb47c1ab3ced2d4628f047f7acd235d1e2b2ad3073889b00e6a36c1c2ee1d03"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-01.json",
+      "sha256": "e092edbbacf9ce09860429aebe1d84a7ae5d58c40ff85f44623568a5f2679289"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-02.json",
+      "sha256": "37110c20a2ab702e598c24b9617ff99572362d4263492e4035ac1cf71f24517b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-03.json",
+      "sha256": "33f2002286d512de141d406d51428f5a0c6f58bc2e573217e10d2c0ce27f74f6"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-04.json",
+      "sha256": "3c442b2610cb7e4b5421bb74b88ca1341440a09fdfbcd9f770a05e23c6504f23"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-05.json",
+      "sha256": "97bdb5fc977489ef8068abeed2c82022b641a92354c74895f5784e282e039588"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/archived-004-06.json",
+      "sha256": "14893e81a5bfcd496a08bb818a553fe37293f55046196c58b7c16ae387bab877"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-purchase-district-rejected.json",
+      "sha256": "b10b0ff6c6cb554cdc890421f93a13c9193910d057a3caff50efae46a30f2bba"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-purchase-granary.json",
+      "sha256": "d09c11917204d4aff342d17eeca0cb1aabb0662b92392c0904e41674eb53fe50"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-queue-granary.json",
+      "sha256": "36b12ca3a3d33c50b05ad3e06672633f9c2932eb7070cd920343e2dc0664a891"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-queue-monument-repair.json",
+      "sha256": "799d733fbe1dd81e130f03cac625400e8b6511a89f9379669ed57ecbf9e823ea"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-at-clean-site.json",
+      "sha256": "14483f01fd4e3b550ac3907fba6b6b8a40ff115aaf3ead591f307591754ad986"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-at-replacement-site.json",
+      "sha256": "192e68d29c2fcf82debfcc449c2c1a1f64adb1140e6c21d49d7b0360da3a01f8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-on-city-centre-rejected.json",
+      "sha256": "f52843d8748dd6493145ab34785163b09d0ca3d01623e2e9943a9f98cdbf33e3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-on-protected-mine.json",
+      "sha256": "03e7eef057bcdab815fe4b7bfb01124fd1602090ea952a2fdc458e8c5cf4e18e"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/samples/001-survey-state.json",
+      "sha256": "68de7c8a5216582588a7ff57aac2b1e8dc6e384be909a7a17a8004bfa2e072ae"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/001-survey.json",
+      "sha256": "821907d7abb46f23bf06bf536a21539259427f50529faaff66bf98ee56f84152"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/002-apply.json",
+      "sha256": "f09b512533c9114d7cea5abacd3c4d0feb9b1cd8ed7e35ecd97b34d9dd7b146b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/003-probe.json",
+      "sha256": "2973580d8d2dcecbeaae28c07fd7b614ee473ff98faa9a9ab62c6e96653c24f4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/004-archive.json",
+      "sha256": "da7b649d0d5dfcf639805b5936ae1365d7c21308cdf3956e9eefbf7e1ca9d617"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/005-capture.json",
+      "sha256": "06a5a2a6c78dd9edfc770c4df4cbe6bf8ddb22e7744b28228351f664a601fd41"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/006-verify.json",
+      "sha256": "8b9dd204bc4d015d4fcc74bb005af1cb5bf62c67335d5e4196ba9480b76f6c71"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/007-menu-check.json",
+      "sha256": "e21a2bb5485d888337e8ba04c9e83431abd99062dfc660976bbcc37daf5dc094"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/008-validate.json",
+      "sha256": "d9d6de81469dbf4a4bf916dd9b253b84069ad2fbdba37b3b6733a1edda4db3e2"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/stages/009-finish.json",
+      "sha256": "625baef2639a76bf2301deffe8ef59dc933ae6d2e4fc35535c9944563dbfa252"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/journal.jsonl",
+      "sha256": "7cc8c0013df56c4df45d81c338c23c94299b1ca16e40133f0461908e4e425036"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+      "sha256": "b3e92bf69b76e032e7b62f67f6046787de2b5b9e11c1dc4d8dea23bc3f3a2dcb"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.md",
+      "sha256": "855135c9438be9bf9171c4c27e1328645aa6cb4f9a6f8934c641e50e460048b5"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+      "sha256": "82a4249cdc7adb5f5208c4d85e9f7a2b60c7489ecfd4917bb3c404d0a42d2507"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.md",
+      "sha256": "3e9dc9f59931a946dc5b7510f21c1c22bfa38be8013a2ee23c74f7047936dcd3"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.json",
+      "sha256": "9ff8f88ca06e31ee75b08cb49e3bf7fb4faec56143cada1c987df1d86ff0fd4a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.md",
+      "sha256": "74bac3394468a1454ae78d48a34c8761edd41040f26b597dc16b9c2b9d954b5b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+      "sha256": "d7fc8d494f5cc8831a3dacb4b99d3e41e82f4344ffcd5f9062888e43050e15a4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.md",
+      "sha256": "5f1e644461fbd95718f45ae37257414e7370e7d7e17ff0927a2e8f267d4731e9"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+      "sha256": "dc527a475e06556f3efb0cc0fff37ba706f7762a9a67b14f5342dca5d00fa4de"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.md",
+      "sha256": "fc024c4ba26ca936a924dd698c17e91bb046f3faec459fd95b969f8d41626c24"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+      "sha256": "6426302dd8d9da32c9aa7c1311870692b365aff78fe3d1b9049b21b61501152c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.md",
+      "sha256": "6bada5220515102eaf58c123ea6a457166d9bcdf6aa61583268a2c436164fe0c"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+      "sha256": "87e7004e89c21dc92373a0370c6b56db9f87cc7c5a096af27d83caea1e44abf0"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.md",
+      "sha256": "923e0220bd5ef4ed7cbf0ad56c9272418bbee3c90b9cfe0bceb04b649ad2477b"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.json",
+      "sha256": "47dceec889c8df8fa8efd0bd4113fd5869ae077714f3a6b33b3e0c9f684693ef"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.md",
+      "sha256": "99308a2f203eacdb1059db06b0139586f8bc4d7e0f811067d54810fe522cde65"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+      "sha256": "7a53b7cccad44ea5c1e314596e9f3524e532212d0a32fb3b74cdb1bceb3f4515"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.md",
+      "sha256": "cc9f53e4584b4d295b9f8e0770cb8f8a34dfe4fe5585fa3b5d68d039cb99fb66"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/session.json",
+      "sha256": "83c602426b6c89ae7ab4f73b904b638d4a061bd51e0b3348e76cc4ebfc631ccd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json",
+      "sha256": "c9f7145c7f453020e918c0c660d7af6215ac4e0c6ffee95225533ac5d0e3d30f"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json",
+      "sha256": "a1db0db6d1d57f2571a628a536cc23b2bd1eeae460f343666633151c16c0c142"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json",
+      "sha256": "20f912250b11a8eb33a58a37d035d8db5f4f2deb751592816b5da2957894fc83"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-004.json",
+      "sha256": "b87d97a631fbe9c34a0c2310d7ce57ba1c71881d128483d5ee3f24f383a1f106"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json",
+      "sha256": "fa4fbd2de5073059f658464193bade7871d8ce4b19b54d7f3ada19aa61c71fc1"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+      "sha256": "e8733b11f8c18c6e375a090f052a98b63f7715282b73b2354259ef1d7d5bedb4"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+      "sha256": "2c3e50376788d3a5a4a0b4402abec085a79de8d97f2de20ebca07c76ebf8f253"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json",
+      "sha256": "9d32b1dbc72d7d01edebc73a8377cb405679728bfd28e50a1fa2c115e5fb12bd"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-009.json",
+      "sha256": "1e63620770f479490b26a0b29c7cd141a6133645ba10f2c1764f1a266bd8cd32"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/validation.json",
+      "sha256": "57d2da83528b35548427a85c6f0e58d4a7998b86f248de7801e014589ad2a7ba"
+    },
+    {
+      "path": "benchmarks/positions/plan3-city-a2-v2.json",
+      "sha256": "40e55f2330e10529e710ded069784aebbb6fae826827a7b429e795e2f8908d76"
+    },
+    {
+      "path": "benchmarks/provenance/plan3-city-a2-v2-authoring.json",
+      "sha256": "7ec18f8399d80ff8a9c941faf8906b4941426cf51db92a647cd0771b9bf52134"
+    },
+    {
+      "path": "benchmarks/recipes/plan3-city-a2.yaml",
+      "sha256": "b87d74616b82caac934088759f79a8cfc4733ddcf41c9bc853727b6269d51eb0"
+    },
+    {
+      "path": "benchmarks/saves/plan3-city-a2-v2.Civ6Save",
+      "sha256": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/alternative-full.json",
+      "sha256": "bbfd00c15793e860614108007f970b2063d9920a2c37c3e836c49e4e398ce652"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/destructive-placement.json",
+      "sha256": "84ca7541c5b2ce1fa2d8ebfe179d99cb2a307849c05fefec42bdb8a1fe00dd52"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/housing-partial.json",
+      "sha256": "f77b42907ee491a3261f5e75fd947d84239bb30ce376384e49a5fde802fe9c40"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/joint-full.json",
+      "sha256": "d6242be99b989384b8e55a8bd85eb3c537ae22e3b5484cca67beb1dca3bd26ae"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/mixed-gain-loss.json",
+      "sha256": "a6b43e4aaebb92f7f8f7c5caefa6ca3ae440041f56d94aad1681eb1647755c75"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/observe.json",
+      "sha256": "c329725070f246a356f2158351c76b0a14f2a98c3488d907b389138d0073599c"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/queue-overwrite.json",
+      "sha256": "eaa50de6e56801f20aba1d5a341508c2173d2aa8889fe0b4ac956705662b98d5"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/repeat-undo.json",
+      "sha256": "71cfc9b1329a5b5860be7385da12588066e22b7c2510daca0e7c52bde493e68f"
+    },
+    {
+      "path": "benchmarks/scripts/plan3-city-a2-v2/uncredited-preparation.json",
+      "sha256": "9cf4b1a9d625abc0cd750ad39f94e78a51a97c230c2e28581a286ed1b5cf3812"
+    },
+    {
+      "path": "benchmarks/toolsets/plan3-part1-v1.yaml",
+      "sha256": "c456f0907b2a20c649ce31166fc830334283326f96b8e4bb471d6f447fb4967e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/alternative-full.json",
+      "sha256": "d938d31170e4f455970957ccea6822bf2262ccf0d28273349a999a0143e68a40"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/destructive-placement.json",
+      "sha256": "bc21fc2aa0de6df4db39afa7335afddb72c3bf86309b5e12a45e44aa10e0eab1"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/housing-partial.json",
+      "sha256": "3f737fe693cd9b41799ca96bb1bae78d36e045ec5760aded9b6ebb2577c0f1b4"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/joint-full.json",
+      "sha256": "41522b1d4ee9753337a99e19e0d96415cf3ad8d9c262fe4b439901ed0da99b8c"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/mixed-gain-loss.json",
+      "sha256": "3709d400f4b44c014358d3bd26f7063c6a1bb615f99d2c0d05a43ba81f6fcf07"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/null-discovery.json",
+      "sha256": "4037257a951a7bf2049e8b70e8fb00df87346a19c376b0a4a87b515996707dcc"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/queue-overwrite.json",
+      "sha256": "ab2768108a1f15560ae14222e4b0f88d95c51f8d5b3832c882f4c5dc190ad1ac"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/repeat-undo.json",
+      "sha256": "7371da9db44325f25fe8ca4ab91ffe51799e02e8797cbeaf5f162f22a4d8900e"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/cases/uncredited-preparation.json",
+      "sha256": "81bb6569c1587cfe29099cab08366f351da39f832e5fd50bae196aa5e2603d78"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/public-observation.json",
+      "sha256": "9a52f573280d0dda9d906db19e878c87d3be344e5636ee3045fb0f56049eb7d3"
+    },
+    {
+      "path": "benchmarks/validation/plan3-city-a2-v2/suite.json",
+      "sha256": "e371a60bfb86dcb8d03870a61a20bf3260c7eb5c03939c4bf9b4fb4a90b8196c"
+    }
+  ],
+  "position_id": "plan3-city-a2-v2",
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0"
+}

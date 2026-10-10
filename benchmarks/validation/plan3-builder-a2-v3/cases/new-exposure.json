@@ -1,0 +1,55 @@
+{
+  "case_id": "new-exposure",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "mine-restored-alongside",
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_MINE",
+            "pillaged": false
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              68,
+              23
+            ]
+          ]
+        },
+        "value": true
+      },
+      {
+        "id": "builder-left-exposed",
+        "predicate": {
+          "kind": "civilian_exposed",
+          "unit": [
+            0,
+            1835021
+          ]
+        },
+        "value": true
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 4,
+      "harm_total": 4,
+      "net_credit": 0,
+      "primary_score": 0.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a2-v3.json",
+    "sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a2-v3/new-exposure.json",
+    "sha256": "0a0afdeebf3099b072c8d922c2de25ac2980a1405acf63ce22b94386e7021b51"
+  },
+  "tags": [
+    "new_exposure",
+    "mixed_gain_loss"
+  ]
+}

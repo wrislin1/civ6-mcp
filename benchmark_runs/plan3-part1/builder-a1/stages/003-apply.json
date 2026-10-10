@@ -1,0 +1,35 @@
+{
+  "error": "StageFailure: setup operation 4 readback failed: ['ERR|no eligible closer-only tile next to 68,23']",
+  "evidence": {
+    "replay": {
+      "base_export": {
+        "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+        "excluded_signature": null,
+        "existed": true,
+        "ok": true,
+        "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+        "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+        "size": 3145591,
+        "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+      },
+      "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview."
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/003-apply.json",
+      "sha256": "ec6348269bf5ffa79b6fa25e476f15af94fbe047217a9ec6fa17db9bac51e311"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+    "recipe_id": "plan3-builder-a1",
+    "sha256": "be0e12e8b079245602b0ab3242b2bf9497c6302737925088ca7d1d8c4288094e",
+    "version": 1
+  },
+  "scenario_id": "builder-a1",
+  "schema_version": "2.0.0",
+  "sequence": 3,
+  "stage": "apply",
+  "status": "failed"
+}

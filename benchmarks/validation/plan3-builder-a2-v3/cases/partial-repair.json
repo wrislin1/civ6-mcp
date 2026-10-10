@@ -1,0 +1,25 @@
+{
+  "case_id": "partial-repair",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 2,
+      "harm_total": 0,
+      "net_credit": 2,
+      "primary_score": 0.16666666666666666
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a2-v3.json",
+    "sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a2-v3/partial-repair.json",
+    "sha256": "140982ffd9786d5949dedbe2d64998668afa9fb22a0c0d527bff7243c202b8b6"
+  },
+  "tags": [
+    "partial_repair"
+  ]
+}

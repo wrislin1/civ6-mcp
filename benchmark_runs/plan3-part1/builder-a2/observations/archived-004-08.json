@@ -1,0 +1,19 @@
+{
+  "arguments": {
+    "radius": 1,
+    "x": "${route_threat.x}",
+    "y": "${route_threat.y}"
+  },
+  "capped_sha256": "6a31286566b2615da59069ee523da327b55148663a7a2aea162783f017ed997a",
+  "full_sha256": "6a31286566b2615da59069ee523da327b55148663a7a2aea162783f017ed997a",
+  "index": 8,
+  "resolved_arguments": {
+    "radius": 1,
+    "x": 72,
+    "y": 31
+  },
+  "result_capped": "9 tiles:\n  (71,30): GRASS FOREST [DEER] {F:2 P:2} (owned by Korea) [mv:2]\n  (72,30): GRASS FOREST [IVORY+] River (CAMP) {F:2 P:2 G:1} (owned by Korea) [mv:2] [my: BUILDER]\n  (73,30): GRASS FLOODPLAINS_GRASSLAND River (Road) [CITY_CENTER] {F:2 P:0} (owned by Korea) [my: SWORDSMAN, BUILDER]\n  (71,31): GRASS {F:2 P:0}\n  (72,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea) **[Barbarian WARRIOR]**\n  (73,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (71,32): PLAINS {F:1 P:1}\n  (72,32): PLAINS FLOODPLAINS_PLAINS River [COMMERCIAL_HUB] {F:0 P:0} (owned by Korea)\n  (73,32): PLAINS FLOODPLAINS_PLAINS River {F:1 P:1}",
+  "result_char_cap": 1500,
+  "result_full": "9 tiles:\n  (71,30): GRASS FOREST [DEER] {F:2 P:2} (owned by Korea) [mv:2]\n  (72,30): GRASS FOREST [IVORY+] River (CAMP) {F:2 P:2 G:1} (owned by Korea) [mv:2] [my: BUILDER]\n  (73,30): GRASS FLOODPLAINS_GRASSLAND River (Road) [CITY_CENTER] {F:2 P:0} (owned by Korea) [my: SWORDSMAN, BUILDER]\n  (71,31): GRASS {F:2 P:0}\n  (72,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea) **[Barbarian WARRIOR]**\n  (73,31): GRASS FLOODPLAINS_GRASSLAND [RICE] River {F:3 P:0} (owned by Korea)\n  (71,32): PLAINS {F:1 P:1}\n  (72,32): PLAINS FLOODPLAINS_PLAINS River [COMMERCIAL_HUB] {F:0 P:0} (owned by Korea)\n  (73,32): PLAINS FLOODPLAINS_PLAINS River {F:1 P:1}",
+  "tool": "get_map_area"
+}

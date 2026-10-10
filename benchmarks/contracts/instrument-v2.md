@@ -326,4 +326,12 @@ Amendment procedure by kind of change:
   identity budget, substitution rules or clock changes. The gate keeps reading every attempt
   directory of the family; the passed `city-a2` attempt remains in the attempt list with its
   own journal and index. Nothing in the city scenario depends on the fixed code path (no unit
-  dies there), so the revalidation is expected to pass unchanged.
+  dies there), so the revalidation is expected to pass unchanged. Outcome (20:14 UTC): the
+  revalidation attempt `city-a2-reval` passed every stage (validate 11/11) on a 2109 s clock,
+  packet `plan3-city-a2-v2.json` under `af0de817…`. Toolkit consequence found at close-out:
+  the retained `city-a2` index binds the shared recipe path at the digest it ran, and the
+  revalidation changed that file (`version: 2`), so the evidence closure check
+  (`evidence_files`) reports that one recipe entry of an attempt that a later journal declares
+  it revalidates as superseded rather than altered (the retained attempt's authoring snapshot
+  `plan3-city-a2-v1-authoring.json` holds the recipe it ran); every other entry must still
+  match, and the gate's own per-packet verification is unchanged.

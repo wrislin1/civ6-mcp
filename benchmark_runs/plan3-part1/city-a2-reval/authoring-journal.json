@@ -1,0 +1,916 @@
+{
+  "families": {
+    "city": {
+      "scenarios": [
+        {
+          "attempt": 1,
+          "checkpoints": [
+            {
+              "elapsed_s": 0.0,
+              "label": "begin",
+              "unix_s": 1791564121.9449358
+            },
+            {
+              "elapsed_s": 0.00590968132019043,
+              "label": "survey:connect",
+              "unix_s": 1791564121.9508455
+            },
+            {
+              "elapsed_s": 0.37781262397766113,
+              "label": "survey:load-base",
+              "unix_s": 1791564122.3227484
+            },
+            {
+              "elapsed_s": 50.24586749076843,
+              "label": "survey:query-0",
+              "unix_s": 1791564172.1908033
+            },
+            {
+              "elapsed_s": 51.63227343559265,
+              "label": "survey:query-1",
+              "unix_s": 1791564173.5772092
+            },
+            {
+              "elapsed_s": 51.981953859329224,
+              "label": "survey:query-2",
+              "unix_s": 1791564173.9268897
+            },
+            {
+              "elapsed_s": 52.33058166503906,
+              "label": "survey:query-3",
+              "unix_s": 1791564174.2755175
+            },
+            {
+              "elapsed_s": 52.67927861213684,
+              "label": "survey:query-4",
+              "unix_s": 1791564174.6242144
+            },
+            {
+              "elapsed_s": 53.027838706970215,
+              "label": "survey:query-5",
+              "unix_s": 1791564174.9727745
+            },
+            {
+              "elapsed_s": 53.37779903411865,
+              "label": "survey:query-6",
+              "unix_s": 1791564175.3227348
+            },
+            {
+              "elapsed_s": 53.70972537994385,
+              "label": "stage:survey",
+              "unix_s": 1791564175.6546612
+            },
+            {
+              "elapsed_s": 336.27654099464417,
+              "label": "resume",
+              "unix_s": 1791564458.2214768
+            },
+            {
+              "elapsed_s": 336.28028988838196,
+              "label": "apply:connect",
+              "unix_s": 1791564458.2252257
+            },
+            {
+              "elapsed_s": 336.64647150039673,
+              "label": "apply:load-base",
+              "unix_s": 1791564458.5914073
+            },
+            {
+              "elapsed_s": 386.1100814342499,
+              "label": "apply:setup-0",
+              "unix_s": 1791564508.0550172
+            },
+            {
+              "elapsed_s": 390.7707440853119,
+              "label": "apply:setup-1",
+              "unix_s": 1791564512.71568
+            },
+            {
+              "elapsed_s": 395.44159746170044,
+              "label": "apply:setup-2",
+              "unix_s": 1791564517.3865333
+            },
+            {
+              "elapsed_s": 400.45731949806213,
+              "label": "stage:apply",
+              "unix_s": 1791564522.4022553
+            },
+            {
+              "elapsed_s": 450.15729570388794,
+              "label": "stage:abandon",
+              "unix_s": 1791564572.1022315
+            },
+            {
+              "elapsed_s": 450.1630029678345,
+              "label": "finish",
+              "unix_s": 1791564572.1079388
+            }
+          ],
+          "expired": false,
+          "family": "city",
+          "finished_unix_s": 1791564572.1079388,
+          "imported_from": {
+            "journal": "benchmark_runs/plan3-part1/city-a1/authoring-journal.json",
+            "sha256": "9744851f071bef4e59512dfd79e4116e10e1b6ba1a3d84f2ae4f29bb86a8458c"
+          },
+          "material_change": null,
+          "predecessor": null,
+          "reason": null,
+          "recorded_elapsed_s": 450.1630029678345,
+          "scenario_id": "city-a1",
+          "stages": [
+            {
+              "elapsed_s": 53.70972537994385,
+              "ended_unix_s": 1791564175.6546612,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/001-survey.json",
+                "sha256": "3f103ded3df09f02a5a70cf0eca940070f2f35af236de04ff48f9d21c310e1e7"
+              },
+              "passed": true,
+              "stage": "survey",
+              "started_unix_s": 1791564121.9449358
+            },
+            {
+              "elapsed_s": 346.7475941181183,
+              "ended_unix_s": 1791564522.4022553,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/002-apply.json",
+                "sha256": "6623192d3a462ae76a15f3ce6db1317b12f71fb530bc87160041fe4642ae79d1"
+              },
+              "passed": false,
+              "stage": "apply",
+              "started_unix_s": 1791564175.6546612
+            },
+            {
+              "elapsed_s": 49.699976205825806,
+              "ended_unix_s": 1791564572.1022315,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a1/stages/003-abandon.json",
+                "sha256": "d466643ee3e4b49832fc1c7e12ad06bee14cb87f4f9c51bfc62ce431d4b0b0aa"
+              },
+              "passed": false,
+              "stage": "abandon",
+              "started_unix_s": 1791564522.4022553
+            }
+          ],
+          "started_unix_s": 1791564121.9449358,
+          "status": "failed",
+          "wall_elapsed_s": 450.1630029678345
+        },
+        {
+          "attempt": 2,
+          "checkpoints": [
+            {
+              "elapsed_s": 0.0,
+              "label": "begin",
+              "unix_s": 1791661175.866987
+            },
+            {
+              "elapsed_s": 0.0034532546997070312,
+              "label": "survey:connect",
+              "unix_s": 1791661175.8704402
+            },
+            {
+              "elapsed_s": 0.3605191707611084,
+              "label": "survey:load-base",
+              "unix_s": 1791661176.2275062
+            },
+            {
+              "elapsed_s": 50.83906030654907,
+              "label": "survey:query-0",
+              "unix_s": 1791661226.7060473
+            },
+            {
+              "elapsed_s": 52.22959637641907,
+              "label": "survey:query-1",
+              "unix_s": 1791661228.0965834
+            },
+            {
+              "elapsed_s": 52.579713344573975,
+              "label": "survey:query-2",
+              "unix_s": 1791661228.4467003
+            },
+            {
+              "elapsed_s": 52.93025779724121,
+              "label": "survey:query-3",
+              "unix_s": 1791661228.7972448
+            },
+            {
+              "elapsed_s": 53.279611587524414,
+              "label": "survey:query-4",
+              "unix_s": 1791661229.1465986
+            },
+            {
+              "elapsed_s": 53.62933897972107,
+              "label": "survey:query-5",
+              "unix_s": 1791661229.496326
+            },
+            {
+              "elapsed_s": 53.979968786239624,
+              "label": "survey:query-6",
+              "unix_s": 1791661229.8469558
+            },
+            {
+              "elapsed_s": 54.31439018249512,
+              "label": "stage:survey",
+              "unix_s": 1791661230.1813772
+            },
+            {
+              "elapsed_s": 63.11607074737549,
+              "label": "resume",
+              "unix_s": 1791661238.9830577
+            },
+            {
+              "elapsed_s": 63.121723651885986,
+              "label": "apply:connect",
+              "unix_s": 1791661238.9887106
+            },
+            {
+              "elapsed_s": 63.47939491271973,
+              "label": "apply:load-base",
+              "unix_s": 1791661239.346382
+            },
+            {
+              "elapsed_s": 112.94760608673096,
+              "label": "apply:setup-0",
+              "unix_s": 1791661288.814593
+            },
+            {
+              "elapsed_s": 117.61152291297913,
+              "label": "apply:setup-1",
+              "unix_s": 1791661293.47851
+            },
+            {
+              "elapsed_s": 122.28023147583008,
+              "label": "apply:setup-2",
+              "unix_s": 1791661298.1472185
+            },
+            {
+              "elapsed_s": 126.94774794578552,
+              "label": "apply:setup-3",
+              "unix_s": 1791661302.814735
+            },
+            {
+              "elapsed_s": 131.61419129371643,
+              "label": "apply:setup-4",
+              "unix_s": 1791661307.4811783
+            },
+            {
+              "elapsed_s": 136.65254497528076,
+              "label": "apply:grid-size",
+              "unix_s": 1791661312.519532
+            },
+            {
+              "elapsed_s": 137.35663294792175,
+              "label": "stage:apply",
+              "unix_s": 1791661313.22362
+            },
+            {
+              "elapsed_s": 138.29338192939758,
+              "label": "resume",
+              "unix_s": 1791661314.160369
+            },
+            {
+              "elapsed_s": 138.29919505119324,
+              "label": "probe:connect",
+              "unix_s": 1791661314.166182
+            },
+            {
+              "elapsed_s": 138.66143202781677,
+              "label": "probe:load-base",
+              "unix_s": 1791661314.528419
+            },
+            {
+              "elapsed_s": 188.13135623931885,
+              "label": "probe:setup-0",
+              "unix_s": 1791661363.9983432
+            },
+            {
+              "elapsed_s": 192.7970073223114,
+              "label": "probe:setup-1",
+              "unix_s": 1791661368.6639943
+            },
+            {
+              "elapsed_s": 197.46388483047485,
+              "label": "probe:setup-2",
+              "unix_s": 1791661373.3308718
+            },
+            {
+              "elapsed_s": 202.13145112991333,
+              "label": "probe:setup-3",
+              "unix_s": 1791661377.9984381
+            },
+            {
+              "elapsed_s": 206.79732847213745,
+              "label": "probe:setup-4",
+              "unix_s": 1791661382.6643155
+            },
+            {
+              "elapsed_s": 211.83613204956055,
+              "label": "probe:grid-size",
+              "unix_s": 1791661387.703119
+            },
+            {
+              "elapsed_s": 212.5363597869873,
+              "label": "probe:probe-purchase-granary",
+              "unix_s": 1791661388.4033468
+            },
+            {
+              "elapsed_s": 212.87973165512085,
+              "label": "probe:load-base",
+              "unix_s": 1791661388.7467186
+            },
+            {
+              "elapsed_s": 262.39783930778503,
+              "label": "probe:setup-0",
+              "unix_s": 1791661438.2648263
+            },
+            {
+              "elapsed_s": 267.06433033943176,
+              "label": "probe:setup-1",
+              "unix_s": 1791661442.9313173
+            },
+            {
+              "elapsed_s": 271.7314248085022,
+              "label": "probe:setup-2",
+              "unix_s": 1791661447.5984118
+            },
+            {
+              "elapsed_s": 276.39821219444275,
+              "label": "probe:setup-3",
+              "unix_s": 1791661452.2651992
+            },
+            {
+              "elapsed_s": 281.0648663043976,
+              "label": "probe:setup-4",
+              "unix_s": 1791661456.9318533
+            },
+            {
+              "elapsed_s": 286.1031582355499,
+              "label": "probe:grid-size",
+              "unix_s": 1791661461.9701452
+            },
+            {
+              "elapsed_s": 286.8040850162506,
+              "label": "probe:probe-queue-granary",
+              "unix_s": 1791661462.671072
+            },
+            {
+              "elapsed_s": 287.480060338974,
+              "label": "probe:load-base",
+              "unix_s": 1791661463.3470473
+            },
+            {
+              "elapsed_s": 337.0651180744171,
+              "label": "probe:setup-0",
+              "unix_s": 1791661512.932105
+            },
+            {
+              "elapsed_s": 341.73136258125305,
+              "label": "probe:setup-1",
+              "unix_s": 1791661517.5983496
+            },
+            {
+              "elapsed_s": 346.39839816093445,
+              "label": "probe:setup-2",
+              "unix_s": 1791661522.2653852
+            },
+            {
+              "elapsed_s": 351.0652189254761,
+              "label": "probe:setup-3",
+              "unix_s": 1791661526.932206
+            },
+            {
+              "elapsed_s": 355.73185682296753,
+              "label": "probe:setup-4",
+              "unix_s": 1791661531.5988438
+            },
+            {
+              "elapsed_s": 360.7698974609375,
+              "label": "probe:grid-size",
+              "unix_s": 1791661536.6368845
+            },
+            {
+              "elapsed_s": 361.47073674201965,
+              "label": "probe:probe-seowon-at-clean-site",
+              "unix_s": 1791661537.3377237
+            },
+            {
+              "elapsed_s": 362.14672327041626,
+              "label": "probe:load-base",
+              "unix_s": 1791661538.0137103
+            },
+            {
+              "elapsed_s": 411.6654107570648,
+              "label": "probe:setup-0",
+              "unix_s": 1791661587.5323977
+            },
+            {
+              "elapsed_s": 416.332396030426,
+              "label": "probe:setup-1",
+              "unix_s": 1791661592.199383
+            },
+            {
+              "elapsed_s": 420.99891543388367,
+              "label": "probe:setup-2",
+              "unix_s": 1791661596.8659024
+            },
+            {
+              "elapsed_s": 425.66533493995667,
+              "label": "probe:setup-3",
+              "unix_s": 1791661601.532322
+            },
+            {
+              "elapsed_s": 430.3322842121124,
+              "label": "probe:setup-4",
+              "unix_s": 1791661606.1992712
+            },
+            {
+              "elapsed_s": 435.37070417404175,
+              "label": "probe:grid-size",
+              "unix_s": 1791661611.2376912
+            },
+            {
+              "elapsed_s": 436.07136726379395,
+              "label": "probe:probe-seowon-at-replacement-site",
+              "unix_s": 1791661611.9383543
+            },
+            {
+              "elapsed_s": 436.7478711605072,
+              "label": "probe:load-base",
+              "unix_s": 1791661612.6148582
+            },
+            {
+              "elapsed_s": 486.2661728858948,
+              "label": "probe:setup-0",
+              "unix_s": 1791661662.1331599
+            },
+            {
+              "elapsed_s": 490.9316840171814,
+              "label": "probe:setup-1",
+              "unix_s": 1791661666.798671
+            },
+            {
+              "elapsed_s": 495.5992395877838,
+              "label": "probe:setup-2",
+              "unix_s": 1791661671.4662266
+            },
+            {
+              "elapsed_s": 500.26586270332336,
+              "label": "probe:setup-3",
+              "unix_s": 1791661676.1328497
+            },
+            {
+              "elapsed_s": 504.9327974319458,
+              "label": "probe:setup-4",
+              "unix_s": 1791661680.7997844
+            },
+            {
+              "elapsed_s": 509.9738850593567,
+              "label": "probe:grid-size",
+              "unix_s": 1791661685.840872
+            },
+            {
+              "elapsed_s": 510.67158603668213,
+              "label": "probe:probe-seowon-on-protected-mine",
+              "unix_s": 1791661686.538573
+            },
+            {
+              "elapsed_s": 511.3475914001465,
+              "label": "probe:load-base",
+              "unix_s": 1791661687.2145784
+            },
+            {
+              "elapsed_s": 560.8659303188324,
+              "label": "probe:setup-0",
+              "unix_s": 1791661736.7329173
+            },
+            {
+              "elapsed_s": 565.5335602760315,
+              "label": "probe:setup-1",
+              "unix_s": 1791661741.4005473
+            },
+            {
+              "elapsed_s": 570.1996948719025,
+              "label": "probe:setup-2",
+              "unix_s": 1791661746.0666819
+            },
+            {
+              "elapsed_s": 574.8664453029633,
+              "label": "probe:setup-3",
+              "unix_s": 1791661750.7334323
+            },
+            {
+              "elapsed_s": 579.5329115390778,
+              "label": "probe:setup-4",
+              "unix_s": 1791661755.3998985
+            },
+            {
+              "elapsed_s": 584.571620464325,
+              "label": "probe:grid-size",
+              "unix_s": 1791661760.4386075
+            },
+            {
+              "elapsed_s": 585.2719848155975,
+              "label": "probe:probe-queue-monument-repair",
+              "unix_s": 1791661761.1389718
+            },
+            {
+              "elapsed_s": 585.9480531215668,
+              "label": "probe:load-base",
+              "unix_s": 1791661761.81504
+            },
+            {
+              "elapsed_s": 635.4003865718842,
+              "label": "probe:setup-0",
+              "unix_s": 1791661811.2673736
+            },
+            {
+              "elapsed_s": 640.0665693283081,
+              "label": "probe:setup-1",
+              "unix_s": 1791661815.9335563
+            },
+            {
+              "elapsed_s": 644.7341296672821,
+              "label": "probe:setup-2",
+              "unix_s": 1791661820.6011167
+            },
+            {
+              "elapsed_s": 649.4000720977783,
+              "label": "probe:setup-3",
+              "unix_s": 1791661825.267059
+            },
+            {
+              "elapsed_s": 654.0669176578522,
+              "label": "probe:setup-4",
+              "unix_s": 1791661829.9339046
+            },
+            {
+              "elapsed_s": 659.1057534217834,
+              "label": "probe:grid-size",
+              "unix_s": 1791661834.9727404
+            },
+            {
+              "elapsed_s": 659.8067758083344,
+              "label": "probe:probe-seowon-on-city-centre-rejected",
+              "unix_s": 1791661835.6737628
+            },
+            {
+              "elapsed_s": 660.8327693939209,
+              "label": "probe:load-base",
+              "unix_s": 1791661836.6997564
+            },
+            {
+              "elapsed_s": 710.8010346889496,
+              "label": "probe:setup-0",
+              "unix_s": 1791661886.6680217
+            },
+            {
+              "elapsed_s": 715.4673883914948,
+              "label": "probe:setup-1",
+              "unix_s": 1791661891.3343754
+            },
+            {
+              "elapsed_s": 720.1345920562744,
+              "label": "probe:setup-2",
+              "unix_s": 1791661896.001579
+            },
+            {
+              "elapsed_s": 724.8006055355072,
+              "label": "probe:setup-3",
+              "unix_s": 1791661900.6675925
+            },
+            {
+              "elapsed_s": 729.467702627182,
+              "label": "probe:setup-4",
+              "unix_s": 1791661905.3346896
+            },
+            {
+              "elapsed_s": 734.5057685375214,
+              "label": "probe:grid-size",
+              "unix_s": 1791661910.3727555
+            },
+            {
+              "elapsed_s": 735.206493139267,
+              "label": "probe:probe-purchase-district-rejected",
+              "unix_s": 1791661911.0734801
+            },
+            {
+              "elapsed_s": 735.5500612258911,
+              "label": "stage:probe",
+              "unix_s": 1791661911.4170482
+            },
+            {
+              "elapsed_s": 736.5283143520355,
+              "label": "resume",
+              "unix_s": 1791661912.3953013
+            },
+            {
+              "elapsed_s": 736.5352885723114,
+              "label": "archive:connect",
+              "unix_s": 1791661912.4022756
+            },
+            {
+              "elapsed_s": 736.8994784355164,
+              "label": "archive:load-base",
+              "unix_s": 1791661912.7664654
+            },
+            {
+              "elapsed_s": 786.7509632110596,
+              "label": "archive:setup-0",
+              "unix_s": 1791661962.6179502
+            },
+            {
+              "elapsed_s": 791.4157266616821,
+              "label": "archive:setup-1",
+              "unix_s": 1791661967.2827137
+            },
+            {
+              "elapsed_s": 796.0837097167969,
+              "label": "archive:setup-2",
+              "unix_s": 1791661971.9506967
+            },
+            {
+              "elapsed_s": 800.7512583732605,
+              "label": "archive:setup-3",
+              "unix_s": 1791661976.6182454
+            },
+            {
+              "elapsed_s": 805.4187927246094,
+              "label": "archive:setup-4",
+              "unix_s": 1791661981.2857797
+            },
+            {
+              "elapsed_s": 810.4571089744568,
+              "label": "archive:grid-size",
+              "unix_s": 1791661986.324096
+            },
+            {
+              "elapsed_s": 811.1587891578674,
+              "label": "archive:query-0",
+              "unix_s": 1791661987.0257761
+            },
+            {
+              "elapsed_s": 812.5498905181885,
+              "label": "archive:query-1",
+              "unix_s": 1791661988.4168775
+            },
+            {
+              "elapsed_s": 812.9004175662994,
+              "label": "archive:query-2",
+              "unix_s": 1791661988.7674046
+            },
+            {
+              "elapsed_s": 813.2501604557037,
+              "label": "archive:query-3",
+              "unix_s": 1791661989.1171474
+            },
+            {
+              "elapsed_s": 813.6007778644562,
+              "label": "archive:query-4",
+              "unix_s": 1791661989.4677649
+            },
+            {
+              "elapsed_s": 813.9496212005615,
+              "label": "archive:query-5",
+              "unix_s": 1791661989.8166082
+            },
+            {
+              "elapsed_s": 814.3001523017883,
+              "label": "archive:query-6",
+              "unix_s": 1791661990.1671393
+            },
+            {
+              "elapsed_s": 814.6338169574738,
+              "label": "archive:save",
+              "unix_s": 1791661990.500804
+            },
+            {
+              "elapsed_s": 817.8588213920593,
+              "label": "stage:archive",
+              "unix_s": 1791661993.7258084
+            },
+            {
+              "elapsed_s": 824.7339375019073,
+              "label": "resume",
+              "unix_s": 1791662000.6009245
+            },
+            {
+              "elapsed_s": 824.740353345871,
+              "label": "capture:capture",
+              "unix_s": 1791662000.6073403
+            },
+            {
+              "elapsed_s": 873.9583551883698,
+              "label": "stage:capture",
+              "unix_s": 1791662049.8253422
+            },
+            {
+              "elapsed_s": 874.9283289909363,
+              "label": "resume",
+              "unix_s": 1791662050.795316
+            },
+            {
+              "elapsed_s": 875.0402100086212,
+              "label": "verify:verify",
+              "unix_s": 1791662050.907197
+            },
+            {
+              "elapsed_s": 1465.7120101451874,
+              "label": "stage:verify",
+              "unix_s": 1791662641.5789971
+            },
+            {
+              "elapsed_s": 1466.6622388362885,
+              "label": "resume",
+              "unix_s": 1791662642.5292258
+            },
+            {
+              "elapsed_s": 1466.7763261795044,
+              "label": "menu-check:deploy",
+              "unix_s": 1791662642.6433132
+            },
+            {
+              "elapsed_s": 1467.0876443386078,
+              "label": "menu-check:restart-and-load",
+              "unix_s": 1791662642.9546313
+            },
+            {
+              "elapsed_s": 1581.521184682846,
+              "label": "menu-check:connect",
+              "unix_s": 1791662757.3881717
+            },
+            {
+              "elapsed_s": 1584.9631237983704,
+              "label": "stage:menu-check",
+              "unix_s": 1791662760.8301108
+            },
+            {
+              "elapsed_s": 1585.947506427765,
+              "label": "resume",
+              "unix_s": 1791662761.8144934
+            },
+            {
+              "elapsed_s": 1586.0617418289185,
+              "label": "validate:validation",
+              "unix_s": 1791662761.9287288
+            },
+            {
+              "elapsed_s": 2058.7967875003815,
+              "label": "validate:restore",
+              "unix_s": 1791663234.6637745
+            },
+            {
+              "elapsed_s": 2059.108503818512,
+              "label": "validate:connect",
+              "unix_s": 1791663234.9754908
+            },
+            {
+              "elapsed_s": 2107.8846368789673,
+              "label": "stage:validate",
+              "unix_s": 1791663283.7516239
+            },
+            {
+              "elapsed_s": 2108.8946754932404,
+              "label": "resume",
+              "unix_s": 1791663284.7616625
+            },
+            {
+              "elapsed_s": 2108.9014134407043,
+              "label": "finish:finish",
+              "unix_s": 1791663284.7684004
+            },
+            {
+              "elapsed_s": 2108.905007839203,
+              "label": "stage:finish",
+              "unix_s": 1791663284.7719948
+            },
+            {
+              "elapsed_s": 2108.908488512039,
+              "label": "finish",
+              "unix_s": 1791663284.7754755
+            }
+          ],
+          "expired": false,
+          "family": "city",
+          "finished_unix_s": 1791663284.7754755,
+          "material_change": "The district objective keeps its three roles but on the real sites: the clean site is the wooded grass hills (68,24) (only woods are displaced); the accepted replacement is a plain grass-hills mine authored by setup on (67,22), an unowned bare hills tile two tiles from Jeonju that setup grants to Jeonju (Plot:SetOwner) and mines (ImprovementBuilder), which the game then lists as a third legal Seowon tile; the protected asset is the stone quarry at (67,23), whose loss also forfeits the bonus resource. The destructive-placement harm is one any-of over the two improvements (quarry at the protected site, mine at the replacement site) with the same compensation at the replacement site. The housing shortfall moves from Gongju to Jeonju (granary removed: housing 8 -> 6 against pop 7, the same arithmetic), because at the archived start Gongju's get_cities line begins at character 1448 and its housing figure falls past the 1500-character feed cap (the pillaged-monument line of the city listed before it pushed it out; a2 archive stage 004); Jeonju is listed second and its housing is always inside the cap. Jeonju thus carries the housing and district objectives (spec: compatible production commitments -- the housing full-score witness is a purchase). Repair objective, probes, scripts, expected scores and tags are unchanged.",
+          "predecessor": "city-a1",
+          "reason": "Live 2026-10-09: city-a1's three Seowon-site selectors resolved to 0 rows on the real map (apply stage 002). Jeonju is the only city of this base able to produce a Seowon and the game lists exactly two legal tiles for it: the wooded grass hills at (68,24) and the stone quarry at (67,23). No bare hills, plains-hills mine or resource-free grass-hills mine exists within its ring.",
+          "recorded_elapsed_s": 2108.908488512039,
+          "revalidates": {
+            "journal": "benchmark_runs/plan3-part1/city-a2/authoring-journal.json",
+            "sha256": "1dd298b3ba39763dfae856a82437cdc3f1212b8eb99a7ac2d5c67be1ce61a0d9"
+          },
+          "scenario_id": "city-a2",
+          "stages": [
+            {
+              "elapsed_s": 54.31439018249512,
+              "ended_unix_s": 1791661230.1813772,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/001-survey.json",
+                "sha256": "821907d7abb46f23bf06bf536a21539259427f50529faaff66bf98ee56f84152"
+              },
+              "passed": true,
+              "stage": "survey",
+              "started_unix_s": 1791661175.866987
+            },
+            {
+              "elapsed_s": 83.04224276542664,
+              "ended_unix_s": 1791661313.22362,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/002-apply.json",
+                "sha256": "f09b512533c9114d7cea5abacd3c4d0feb9b1cd8ed7e35ecd97b34d9dd7b146b"
+              },
+              "passed": true,
+              "stage": "apply",
+              "started_unix_s": 1791661230.1813772
+            },
+            {
+              "elapsed_s": 598.1934282779694,
+              "ended_unix_s": 1791661911.4170482,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/003-probe.json",
+                "sha256": "2973580d8d2dcecbeaae28c07fd7b614ee473ff98faa9a9ab62c6e96653c24f4"
+              },
+              "passed": true,
+              "stage": "probe",
+              "started_unix_s": 1791661313.22362
+            },
+            {
+              "elapsed_s": 82.30876016616821,
+              "ended_unix_s": 1791661993.7258084,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/004-archive.json",
+                "sha256": "da7b649d0d5dfcf639805b5936ae1365d7c21308cdf3956e9eefbf7e1ca9d617"
+              },
+              "passed": true,
+              "stage": "archive",
+              "started_unix_s": 1791661911.4170482
+            },
+            {
+              "elapsed_s": 56.099533796310425,
+              "ended_unix_s": 1791662049.8253422,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/005-capture.json",
+                "sha256": "06a5a2a6c78dd9edfc770c4df4cbe6bf8ddb22e7744b28228351f664a601fd41"
+              },
+              "passed": true,
+              "stage": "capture",
+              "started_unix_s": 1791661993.7258084
+            },
+            {
+              "elapsed_s": 591.7536549568176,
+              "ended_unix_s": 1791662641.5789971,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/006-verify.json",
+                "sha256": "8b9dd204bc4d015d4fcc74bb005af1cb5bf62c67335d5e4196ba9480b76f6c71"
+              },
+              "passed": true,
+              "stage": "verify",
+              "started_unix_s": 1791662049.8253422
+            },
+            {
+              "elapsed_s": 119.25111365318298,
+              "ended_unix_s": 1791662760.8301108,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/007-menu-check.json",
+                "sha256": "e21a2bb5485d888337e8ba04c9e83431abd99062dfc660976bbcc37daf5dc094"
+              },
+              "passed": true,
+              "stage": "menu-check",
+              "started_unix_s": 1791662641.5789971
+            },
+            {
+              "elapsed_s": 522.9215130805969,
+              "ended_unix_s": 1791663283.7516239,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/008-validate.json",
+                "sha256": "d9d6de81469dbf4a4bf916dd9b253b84069ad2fbdba37b3b6733a1edda4db3e2"
+              },
+              "passed": true,
+              "stage": "validate",
+              "started_unix_s": 1791662760.8301108
+            },
+            {
+              "elapsed_s": 1.0203709602355957,
+              "ended_unix_s": 1791663284.7719948,
+              "evidence": {
+                "record": "benchmark_runs/plan3-part1/city-a2-reval/stages/009-finish.json",
+                "sha256": "625baef2639a76bf2301deffe8ef59dc933ae6d2e4fc35535c9944563dbfa252"
+              },
+              "passed": true,
+              "stage": "finish",
+              "started_unix_s": 1791663283.7516239
+            }
+          ],
+          "started_unix_s": 1791661175.866987,
+          "status": "passed",
+          "wall_elapsed_s": 2108.908488512039
+        }
+      ],
+      "total_elapsed_s": 2559.0714914798737
+    }
+  },
+  "schema_version": "2.0.0"
+}

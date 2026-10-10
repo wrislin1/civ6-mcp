@@ -1,0 +1,38 @@
+{
+  "case_id": "escort-loss",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "threat-survives",
+        "predicate": {
+          "kind": "target_neutralised",
+          "target": [
+            63,
+            16908390
+          ]
+        },
+        "value": false
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 0,
+      "harm_total": 4,
+      "net_credit": -4,
+      "primary_score": -0.3333333333333333
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a2-v1.json",
+    "sha256": "4317c648a6aaaaea13ec31eb71456bf9687202501bb8e407fdf657e7c66cd68f"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a2-v1/escort-loss.json",
+    "sha256": "2554ed9cc0c2b710278fc07529fe4f71e6cd49590575470cd6cdbcd0947bccf8"
+  },
+  "tags": [
+    "escort_loss",
+    "harm_only"
+  ]
+}

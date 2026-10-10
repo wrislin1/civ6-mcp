@@ -1,0 +1,43 @@
+{
+  "case_id": "alternative-full",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "replacement-mine-displaced",
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_MINE"
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              22
+            ]
+          ]
+        },
+        "value": false
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 12,
+      "harm_total": 0,
+      "net_credit": 12,
+      "primary_score": 1.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-city-a2-v2.json",
+    "sha256": "40e55f2330e10529e710ded069784aebbb6fae826827a7b429e795e2f8908d76"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-city-a2-v2/alternative-full.json",
+    "sha256": "bbfd00c15793e860614108007f970b2063d9920a2c37c3e836c49e4e398ce652"
+  },
+  "tags": [
+    "alternative_full",
+    "accepted_replacement"
+  ]
+}

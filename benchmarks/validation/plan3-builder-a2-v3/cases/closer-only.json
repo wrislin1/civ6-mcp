@@ -1,0 +1,25 @@
+{
+  "case_id": "closer-only",
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 0,
+      "harm_total": 0,
+      "net_credit": 0,
+      "primary_score": 0.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a2-v3.json",
+    "sha256": "a19c8039132bd8bf46592407c7bc635a594551c403bc505326609b674bb9a2cc"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a2-v3/closer-only.json",
+    "sha256": "279d00068af4efcb23c1c9d86d6ea2cc8ddee09b5942ffa605594e8d64c1f3b3"
+  },
+  "tags": [
+    "closer_only"
+  ]
+}

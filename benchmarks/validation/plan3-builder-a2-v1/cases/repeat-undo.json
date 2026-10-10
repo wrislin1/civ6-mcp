@@ -1,0 +1,31 @@
+{
+  "case_id": "repeat-undo",
+  "declared_rejections": [
+    {
+      "step": 2,
+      "tool_name": "repair_improvement"
+    }
+  ],
+  "expected": {
+    "endpoints": [],
+    "ledger": [],
+    "score": {
+      "gross_credit": 4,
+      "harm_total": 0,
+      "net_credit": 4,
+      "primary_score": 0.3333333333333333
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-builder-a2-v1.json",
+    "sha256": "4317c648a6aaaaea13ec31eb71456bf9687202501bb8e407fdf657e7c66cd68f"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-builder-a2-v1/repeat-undo.json",
+    "sha256": "33e6a28c60a0776ae8f258d844f495e5cdf290131a66436713636e1def438305"
+  },
+  "tags": [
+    "repeat_undo"
+  ]
+}

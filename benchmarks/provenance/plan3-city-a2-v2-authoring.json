@@ -1,0 +1,601 @@
+{
+  "archive": "benchmarks/saves/plan3-city-a2-v2.Civ6Save",
+  "archive_digests": {
+    "export": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd",
+    "local": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd",
+    "publish": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd"
+  },
+  "archive_sha256": "8a66d234bea355e17c0ee326d87e4d33fedd696ef2c198173ba4f11e55dfedbd",
+  "base_save_identity": {
+    "civ_type": "CIVILIZATION_KOREA",
+    "name": "SEONDEOK 100 400 BC",
+    "seed": 1881300077,
+    "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+    "turn": 100
+  },
+  "bindings": {
+    "district_city": {
+      "id": 131073,
+      "owner": 0,
+      "pair": [
+        0,
+        131073
+      ],
+      "x": 67,
+      "xy": [
+        67,
+        24
+      ],
+      "y": 24
+    },
+    "district_site": {
+      "owner": 0,
+      "x": 68,
+      "xy": [
+        68,
+        24
+      ],
+      "y": 24
+    },
+    "housing_city": {
+      "id": 131073,
+      "owner": 0,
+      "pair": [
+        0,
+        131073
+      ],
+      "x": 67,
+      "xy": [
+        67,
+        24
+      ],
+      "y": 24
+    },
+    "protected_asset": {
+      "owner": 0,
+      "x": 67,
+      "xy": [
+        67,
+        23
+      ],
+      "y": 23
+    },
+    "repair_city": {
+      "id": 196610,
+      "owner": 0,
+      "pair": [
+        0,
+        196610
+      ],
+      "x": 70,
+      "xy": [
+        70,
+        22
+      ],
+      "y": 22
+    },
+    "replacement_site": {
+      "owner": 0,
+      "x": 67,
+      "xy": [
+        67,
+        22
+      ],
+      "y": 22
+    }
+  },
+  "capture": {
+    "digest": "9164c5fa6de5940b7a02a908175837264b522e01369e7b6939ce7aa3fd706731",
+    "popup_hygiene": {
+      "status": "POPUPS|none"
+    },
+    "reload": {
+      "verified": true
+    },
+    "row_counts": {
+      "building": 20,
+      "city": 5,
+      "district": 18,
+      "identity": 1,
+      "queue": 5,
+      "resource": 54,
+      "target": 0,
+      "tile": 77,
+      "unit": 12
+    }
+  },
+  "coverage": {
+    "area": [
+      [
+        66,
+        21
+      ],
+      [
+        66,
+        22
+      ],
+      [
+        66,
+        23
+      ],
+      [
+        66,
+        24
+      ],
+      [
+        66,
+        25
+      ],
+      [
+        67,
+        21
+      ],
+      [
+        67,
+        22
+      ],
+      [
+        67,
+        23
+      ],
+      [
+        67,
+        24
+      ],
+      [
+        67,
+        25
+      ],
+      [
+        68,
+        21
+      ],
+      [
+        68,
+        22
+      ],
+      [
+        68,
+        23
+      ],
+      [
+        68,
+        24
+      ],
+      [
+        68,
+        25
+      ],
+      [
+        69,
+        21
+      ],
+      [
+        69,
+        22
+      ],
+      [
+        69,
+        23
+      ],
+      [
+        69,
+        24
+      ],
+      [
+        69,
+        25
+      ],
+      [
+        70,
+        21
+      ],
+      [
+        70,
+        22
+      ],
+      [
+        70,
+        23
+      ],
+      [
+        71,
+        21
+      ],
+      [
+        71,
+        22
+      ],
+      [
+        71,
+        23
+      ]
+    ],
+    "include_owned_tiles": true,
+    "tracked_targets": []
+  },
+  "family": "city",
+  "game_save_name": "PLAN3_CITY_A2_V2",
+  "measured_parameters": [],
+  "player_id": 0,
+  "position_id": "plan3-city-a2-v2",
+  "probes": {
+    "files": [
+      {
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-purchase-granary.json",
+        "sha256": "d09c11917204d4aff342d17eeca0cb1aabb0662b92392c0904e41674eb53fe50"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-queue-granary.json",
+        "sha256": "36b12ca3a3d33c50b05ad3e06672633f9c2932eb7070cd920343e2dc0664a891"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-at-clean-site.json",
+        "sha256": "14483f01fd4e3b550ac3907fba6b6b8a40ff115aaf3ead591f307591754ad986"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-at-replacement-site.json",
+        "sha256": "192e68d29c2fcf82debfcc449c2c1a1f64adb1140e6c21d49d7b0360da3a01f8"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-on-protected-mine.json",
+        "sha256": "03e7eef057bcdab815fe4b7bfb01124fd1602090ea952a2fdc458e8c5cf4e18e"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-queue-monument-repair.json",
+        "sha256": "799d733fbe1dd81e130f03cac625400e8b6511a89f9379669ed57ecbf9e823ea"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-on-city-centre-rejected.json",
+        "sha256": "f52843d8748dd6493145ab34785163b09d0ca3d01623e2e9943a9f98cdbf33e3"
+      },
+      {
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-purchase-district-rejected.json",
+        "sha256": "b10b0ff6c6cb554cdc890421f93a13c9193910d057a3caff50efae46a30f2bba"
+      }
+    ],
+    "results": [
+      {
+        "expect": "ok",
+        "id": "purchase-granary",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-purchase-granary.json"
+      },
+      {
+        "expect": "ok",
+        "id": "queue-granary",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-queue-granary.json"
+      },
+      {
+        "expect": "ok",
+        "id": "seowon-at-clean-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-at-clean-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "seowon-at-replacement-site",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-at-replacement-site.json"
+      },
+      {
+        "expect": "ok",
+        "id": "seowon-on-protected-mine",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-on-protected-mine.json"
+      },
+      {
+        "expect": "ok",
+        "id": "queue-monument-repair",
+        "outcome": "ok",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-queue-monument-repair.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "seowon-on-city-centre-rejected",
+        "outcome": "rejected",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-seowon-on-city-centre-rejected.json"
+      },
+      {
+        "expect": "rejected",
+        "id": "purchase-district-rejected",
+        "outcome": "rejected",
+        "passed": true,
+        "path": "benchmark_runs/plan3-part1/city-a2-reval/probes/003-purchase-district-rejected.json"
+      }
+    ]
+  },
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "b87d74616b82caac934088759f79a8cfc4733ddcf41c9bc853727b6269d51eb0",
+    "version": 2
+  },
+  "relevant_tiles": [
+    [
+      66,
+      21
+    ],
+    [
+      66,
+      22
+    ],
+    [
+      66,
+      23
+    ],
+    [
+      66,
+      24
+    ],
+    [
+      66,
+      25
+    ],
+    [
+      67,
+      21
+    ],
+    [
+      67,
+      22
+    ],
+    [
+      67,
+      23
+    ],
+    [
+      67,
+      24
+    ],
+    [
+      67,
+      25
+    ],
+    [
+      68,
+      21
+    ],
+    [
+      68,
+      22
+    ],
+    [
+      68,
+      23
+    ],
+    [
+      68,
+      24
+    ],
+    [
+      68,
+      25
+    ],
+    [
+      69,
+      21
+    ],
+    [
+      69,
+      22
+    ],
+    [
+      69,
+      23
+    ],
+    [
+      69,
+      24
+    ],
+    [
+      69,
+      25
+    ],
+    [
+      70,
+      21
+    ],
+    [
+      70,
+      22
+    ],
+    [
+      70,
+      23
+    ],
+    [
+      71,
+      21
+    ],
+    [
+      71,
+      22
+    ],
+    [
+      71,
+      23
+    ]
+  ],
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "setup": {
+    "assertions": [
+      {
+        "actual": false,
+        "expected": false,
+        "id": "housing-unresolved",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            131073
+          ],
+          "kind": "housing_resolved",
+          "minimum_surplus": 1,
+          "remedy_buildings": [
+            "BUILDING_GRANARY"
+          ]
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "repair-not-queued",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            196610
+          ],
+          "items": [
+            "BUILDING_MONUMENT"
+          ],
+          "kind": "active_production",
+          "repair": true
+        }
+      },
+      {
+        "actual": false,
+        "expected": false,
+        "id": "district-not-committed",
+        "passed": true,
+        "predicate": {
+          "cities": [
+            131073
+          ],
+          "district_types": [
+            "DISTRICT_SEOWON"
+          ],
+          "kind": "district_committed",
+          "tiles": [
+            [
+              68,
+              24
+            ],
+            [
+              67,
+              22
+            ]
+          ]
+        }
+      },
+      {
+        "actual": true,
+        "expected": true,
+        "id": "protected-quarry-present",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_QUARRY",
+            "pillaged": false
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              23
+            ]
+          ]
+        }
+      },
+      {
+        "actual": true,
+        "expected": true,
+        "id": "replacement-mine-present",
+        "passed": true,
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_MINE",
+            "pillaged": false
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              22
+            ]
+          ]
+        }
+      }
+    ],
+    "mutation_record": {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/mutations/004-archive.json",
+      "sha256": "f5d6974c5c60c9a4c644aa6fa5a2dc6baa35ff1c6902720a46f1913ab7f2d75e"
+    },
+    "operations": [
+      {
+        "context": "gamecore",
+        "index": 0,
+        "lua": "local t = Players[0]:GetTreasury()\nt:ChangeGoldBalance(500 - t:GetGoldBalance())\nprint(\"OK|gold \" .. t:GetGoldBalance())\n",
+        "readback": [
+          "OK|gold 500"
+        ],
+        "readback_lua": "local g = Players[0]:GetTreasury():GetGoldBalance()\nif g >= 500 then print(\"OK|gold \" .. g) else print(\"ERR|gold \" .. g) end\n",
+        "readback_ok": true,
+        "result": [
+          "OK|gold 500"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 1,
+        "lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gwangju\" then c = city end\nend\nif c == nil then print(\"ERR|Gwangju missing\") return end\nlocal b = GameInfo.Buildings[\"BUILDING_MONUMENT\"].Index\nif not c:GetBuildings():HasBuilding(b) then print(\"ERR|Gwangju has no monument\") return end\nc:GetBuildings():SetPillaged(b, true)\nprint(\"OK|pillaged|Gwangju|BUILDING_MONUMENT\")\n",
+        "readback": [
+          "OK|repair_city|Gwangju|BUILDING_MONUMENT|pillaged"
+        ],
+        "readback_lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Gwangju\" then c = city end\nend\nlocal b = GameInfo.Buildings[\"BUILDING_MONUMENT\"].Index\nif c ~= nil and c:GetBuildings():IsPillaged(b) then\n  print(\"OK|repair_city|Gwangju|BUILDING_MONUMENT|pillaged\")\nelse\n  print(\"ERR|Gwangju monument is not pillaged\")\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|pillaged|Gwangju|BUILDING_MONUMENT"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 2,
+        "lua": "local c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Jeonju\" then c = city end\nend\nif c == nil then print(\"ERR|Jeonju missing\") return end\nlocal info = GameInfo.Buildings[\"BUILDING_GRANARY\"]\nlocal cb = c:GetBuildings()\nif not cb:HasBuilding(info.Index) then print(\"ERR|Jeonju has no granary to remove\") return end\nif cb.RemoveBuilding == nil then\n  print(\"ERR|CityBuildings:RemoveBuilding is not available in GameCore\") return\nend\ncb:RemoveBuilding(info.Index)\nprint(\"OK|removed|Jeonju|BUILDING_GRANARY\")\n",
+        "readback": [
+          "OK|housing_city|Jeonju|surplus -1|granary_housing 2"
+        ],
+        "readback_lua": "local minimum_surplus = 1\nlocal c = nil\nfor _, city in Players[0]:GetCities():Members() do\n  if Locale.Lookup(city:GetName()) == \"Jeonju\" then c = city end\nend\nif c == nil then print(\"ERR|Jeonju missing\") return end\nlocal info = GameInfo.Buildings[\"BUILDING_GRANARY\"]\nlocal gain = info.Housing or 0\nlocal surplus = c:GetGrowth():GetHousing() - c:GetPopulation()\nlocal granary = c:GetBuildings():HasBuilding(info.Index)\nif not granary and surplus < minimum_surplus and surplus + gain >= minimum_surplus then\n  print(\"OK|housing_city|Jeonju|surplus \" .. surplus .. \"|granary_housing \" .. gain)\nelse\n  print(\"ERR|Jeonju surplus \" .. surplus .. \" granary_housing \" .. gain\n        .. \" has_granary \" .. tostring(granary))\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|removed|Jeonju|BUILDING_GRANARY"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 3,
+        "lua": "local p = Map.GetPlot(67, 22)\nif p == nil then print(\"ERR|(67,22) missing\") return end\nif p:GetOwner() ~= -1 then print(\"ERR|(67,22) already owned by \" .. p:GetOwner()) return end\np:SetOwner(0, 131073)\nprint(\"OK|owner|67,22|Jeonju\")\n",
+        "readback": [
+          "OK|replacement_site|67,22|owned|TERRAIN_GRASS_HILLS|bare"
+        ],
+        "readback_lua": "local p = Map.GetPlot(67, 22)\nif p ~= nil and p:GetOwner() == 0\n    and GameInfo.Terrains[p:GetTerrainType()].TerrainType == \"TERRAIN_GRASS_HILLS\"\n    and p:GetFeatureType() < 0 and p:GetResourceType() < 0 and p:GetDistrictType() < 0 then\n  print(\"OK|replacement_site|67,22|owned|TERRAIN_GRASS_HILLS|bare\")\nelse\n  print(\"ERR|(67,22) is not Korea's bare grass hills\")\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|owner|67,22|Jeonju"
+        ]
+      },
+      {
+        "context": "gamecore",
+        "index": 4,
+        "lua": "local p = Map.GetPlot(67, 22)\nif p == nil then print(\"ERR|(67,22) missing\") return end\nImprovementBuilder.SetImprovementType(p, GameInfo.Improvements[\"IMPROVEMENT_MINE\"].Index, 0)\nprint(\"OK|mine|67,22\")\n",
+        "readback": [
+          "OK|replacement_site|67,22|IMPROVEMENT_MINE|intact"
+        ],
+        "readback_lua": "local p = Map.GetPlot(67, 22)\nlocal imp = p ~= nil and p:GetImprovementType() or -1\nlocal info = imp >= 0 and GameInfo.Improvements[imp] or nil\nif info ~= nil and info.ImprovementType == \"IMPROVEMENT_MINE\"\n    and not p:IsImprovementPillaged() and p:GetOwner() == 0 then\n  print(\"OK|replacement_site|67,22|IMPROVEMENT_MINE|intact\")\nelse\n  print(\"ERR|(67,22) holds no intact owned mine\")\nend\n",
+        "readback_ok": true,
+        "result": [
+          "OK|mine|67,22"
+        ]
+      }
+    ]
+  },
+  "version": 2
+}

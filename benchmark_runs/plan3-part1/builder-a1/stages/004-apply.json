@@ -1,0 +1,35 @@
+{
+  "error": "StageFailure: binding 'route_threat' resolved to 0 rows (exactly one required); candidates: []",
+  "evidence": {
+    "replay": {
+      "base_export": {
+        "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+        "excluded_signature": null,
+        "existed": true,
+        "ok": true,
+        "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+        "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+        "size": 3145591,
+        "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+      },
+      "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview."
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/builder-a1/mutations/004-apply.json",
+      "sha256": "ce09877e6bd798f0539b734341e6b539dae9ac83a203aab6da70bfebcdd74fa6"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a1.yaml",
+    "recipe_id": "plan3-builder-a1",
+    "sha256": "76a11b7b9a38f38953240647d197bff13d855d055c7863a21867ab7ccafb0753",
+    "version": 1
+  },
+  "scenario_id": "builder-a1",
+  "schema_version": "2.0.0",
+  "sequence": 4,
+  "stage": "apply",
+  "status": "failed"
+}

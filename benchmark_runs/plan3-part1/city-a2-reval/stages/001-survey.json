@@ -1,0 +1,169 @@
+{
+  "error": null,
+  "evidence": {
+    "base_export": {
+      "dest_path": "C:\\Users\\wrisl\\dev\\civ6-mcp\\benchmark_runs\\plan3-part1\\bases\\2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29.Civ6Save",
+      "excluded_signature": null,
+      "existed": true,
+      "ok": true,
+      "save_name": "SEONDEOK 100 400 BC.Civ6Save",
+      "sha256": "2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29",
+      "size": 3145591,
+      "source_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\SEONDEOK 100 400 BC.Civ6Save"
+    },
+    "base_identity": {
+      "expected": {
+        "civ_type": "CIVILIZATION_KOREA",
+        "player_id": 0,
+        "seed": 1881300077,
+        "turn": 100
+      },
+      "matches": true,
+      "observed": {
+        "civ_type": "CIVILIZATION_KOREA",
+        "player_id": 0,
+        "seed": 1881300077,
+        "turn": 100
+      }
+    },
+    "base_load": "Loaded SEONDEOK 100 400 BC: world ready, FireTuner port is open. Reconnect and verify with get_game_overview.",
+    "base_popups": "POPUPS|none",
+    "base_reconnect": {
+      "reconnected": true
+    },
+    "base_required_facts": [
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "housing-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-01.json"
+        ],
+        "pattern": "Jeonju \\(pop \\d+\\).*Housing \\d+",
+        "source": "get_cities"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": false,
+        "id": "pillaged-building-visible",
+        "observations": [],
+        "pattern": "PILLAGED: .*MONUMENT",
+        "source": "get_cities"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "granary-purchasable",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-03.json"
+        ],
+        "pattern": "GRANARY",
+        "source": "get_city_production"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": false,
+        "id": "monument-repair-listed",
+        "observations": [],
+        "pattern": "MONUMENT",
+        "source": "get_city_production"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "seowon-sites-ranked",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-04.json"
+        ],
+        "pattern": "\\(\\d+,\\s*\\d+\\)",
+        "source": "get_district_advisor"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": false,
+        "id": "replacement-site-ranked",
+        "observations": [],
+        "pattern": "\\(67,\\s*22\\)",
+        "source": "get_district_advisor"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "mines-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-05.json"
+        ],
+        "pattern": "(?i)mine",
+        "source": "get_map_area"
+      },
+      {
+        "beyond_cap_only": false,
+        "discoverable": true,
+        "id": "quarry-visible",
+        "observations": [
+          "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-05.json"
+        ],
+        "pattern": "(?i)quarry",
+        "source": "get_map_area"
+      }
+    ],
+    "observations": [
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-00.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-01.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-02.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-03.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-04.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-05.json",
+      "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-06.json"
+    ],
+    "private_state": {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/samples/001-survey-state.json",
+      "sha256": "204df48128eceb6c10f15543fc972292c79dc95fe8e5008da92dd335bf9f1c84"
+    }
+  },
+  "files": [
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/samples/001-survey-state.json",
+      "sha256": "68de7c8a5216582588a7ff57aac2b1e8dc6e384be909a7a17a8004bfa2e072ae"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-00.json",
+      "sha256": "2b380cb12f372b8241dc0faf469d472480c7dacb67f894e2260a1f1b04538267"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-01.json",
+      "sha256": "9504aa5c0a71ecd3c93a29135a61553160388299d581697d81968b1ad9436ac8"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-02.json",
+      "sha256": "a547d4ce7c400df3523221c55de0a23c6f34a4710b65b880f777ac6ece0c538a"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-03.json",
+      "sha256": "75a690f3bf8a6c9b7bed110c5c36f28af2c60fed8d1f5f86f7c72d6f54a2cd62"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-04.json",
+      "sha256": "50759d5f1c62cb55751163a6be44149a97713712a62428f2b17063493a3c2516"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-05.json",
+      "sha256": "f43d76d0f4ab1449500d728e28857f5a34ad8c1dfe24088879ef4d6b29846c88"
+    },
+    {
+      "path": "benchmark_runs/plan3-part1/city-a2-reval/observations/001-survey-06.json",
+      "sha256": "5fd7a10ae9569609957409ab4b9caf17912da014c095d962fd1102ab1281db0a"
+    }
+  ],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-city-a2.yaml",
+    "recipe_id": "plan3-city-a2",
+    "sha256": "b87d74616b82caac934088759f79a8cfc4733ddcf41c9bc853727b6269d51eb0",
+    "version": 2
+  },
+  "scenario_id": "city-a2",
+  "schema_version": "2.0.0",
+  "sequence": 1,
+  "stage": "survey",
+  "status": "passed"
+}

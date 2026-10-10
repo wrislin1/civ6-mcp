@@ -4,25 +4,25 @@
   "full_suite_result": {
     "code_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
     "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
-    "duration_s": 188.167,
+    "duration_s": 195.797,
     "errors": 0,
     "exit_code": 0,
     "failed": 0,
-    "finished": "2026-10-09T19:06:48.562603+00:00",
-    "git_head": "382a449351d4c1f3a10be382f22951a39667ddc7",
+    "finished": "2026-10-10T19:58:36.142438+00:00",
+    "git_head": "cbd86f1ac5221d826b8f8d5b82a18a57e8a6525c",
     "output": {
       "path": "benchmark_runs/plan3-part1/preflight/pytest.txt",
-      "sha256": "9f757b158b1fc4b7ecfa678d2e1e1aa1a8e8a1c796b3448322b3830d6c1c1909"
+      "sha256": "3edb7a785092f0f143e332cccaeacd817202676247be55de3e437f555f9314df"
     },
     "passed": true,
     "present": true,
     "problems": [],
     "result": {
       "path": "benchmark_runs/plan3-part1/preflight/pytest-result.json",
-      "sha256": "694c07e292d2967430c4ee5fac27384303c76f504e74c8d3b40f7551793a32d6"
+      "sha256": "a0f9518f18dcf95d0d1583d5decc100b1c1ae1cebe492aa8f48e0a501e62461a"
     },
-    "started": "2026-10-09T19:03:40.395483+00:00",
-    "tests_passed": 4056
+    "started": "2026-10-10T19:55:20.345279+00:00",
+    "tests_passed": 4063
   },
   "historical_audit": {
     "affected_trial_count": 64,
@@ -56,29 +56,29 @@
   "recipes": [
     {
       "family": "builder",
-      "path": "benchmarks/recipes/plan3-builder-a1.yaml",
-      "recipe_id": "plan3-builder-a1",
-      "scenario_id": "builder-a1",
-      "sha256": "0d3e224cc647e50a629d1a2208de4de0580fc13212caf7c4e4eae8a1d86c94a6",
+      "path": "benchmarks/recipes/plan3-builder-a2.yaml",
+      "recipe_id": "plan3-builder-a2",
+      "scenario_id": "builder-a2",
+      "sha256": "73dd54eb9c76feb0d3ec3a169aac051c7835c2f80f64b09df05b6db54a7678c1",
       "toolset_id": "plan3-part1-v1",
       "toolset_identity": {
         "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
         "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
       },
-      "version": 1
+      "version": 2
     },
     {
       "family": "city",
       "path": "benchmarks/recipes/plan3-city-a2.yaml",
       "recipe_id": "plan3-city-a2",
       "scenario_id": "city-a2",
-      "sha256": "aba6b0a558094669b6dca0e4c39d95035f238cc2c15291107b3a3eb058ab243c",
+      "sha256": "b87d74616b82caac934088759f79a8cfc4733ddcf41c9bc853727b6269d51eb0",
       "toolset_id": "plan3-part1-v1",
       "toolset_identity": {
         "schemas_sha256": "79098f6c05ef8ac5b5a7c5317a8df9256313326a5108e0ca09de52edfa3f5de7",
         "source_sha256": "e09dca93f7afd7e57866009315226facaa00aa63e3c5aeff4d5da30ecdff2882"
       },
-      "version": 1
+      "version": 2
     },
     {
       "family": "tactical",
@@ -102,5 +102,5 @@
     "state_sha256": "40486fb2f7202aad429983f0c9735f70a081428ae1ca4174a8653a739e88b438"
   },
   "schema_version": "2.0.0",
-  "toolkit_identity": "fb4a4b22ca7d1773ac390f96c7d7e2bbd7eec54f437fa64f80d2f22d827379c4"
+  "toolkit_identity": "530a2a15ae328c7e169ca54e3d0fd348b11ef1ec9e3a5b9e40c9ee6d2d405f8f"
 }

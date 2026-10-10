@@ -1,0 +1,57 @@
+{
+  "error": null,
+  "evidence": {
+    "deploy": {
+      "archive_sha256": "701bd07b8c94308a588aa696993e004aeaeecb3658cdfc90aa6f4e52bb924d99",
+      "deployed_sha256": "701bd07b8c94308a588aa696993e004aeaeecb3658cdfc90aa6f4e52bb924d99",
+      "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A2_V1.Civ6Save",
+      "expected_sha256": "701bd07b8c94308a588aa696993e004aeaeecb3658cdfc90aa6f4e52bb924d99",
+      "ok": true,
+      "raw": {
+        "archive_sha256": "701bd07b8c94308a588aa696993e004aeaeecb3658cdfc90aa6f4e52bb924d99",
+        "deployed_sha256": "701bd07b8c94308a588aa696993e004aeaeecb3658cdfc90aa6f4e52bb924d99",
+        "dest_path": "C:\\Users\\wrisl\\OneDrive\\Documents\\My Games\\Sid Meier's Civilization VI\\Saves\\Single\\PLAN3_BUILDER_A2_V1.Civ6Save",
+        "expected_sha256": "701bd07b8c94308a588aa696993e004aeaeecb3658cdfc90aa6f4e52bb924d99",
+        "ok": true,
+        "save_name": "PLAN3_BUILDER_A2_V1",
+        "source": "benchmarks/saves/plan3-builder-a2-v1.Civ6Save"
+      },
+      "save_name": "PLAN3_BUILDER_A2_V1"
+    },
+    "digest_matches": true,
+    "expected_identity": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "expected_state_sha256": "a29b6d01b3b3e61f63c59dc0c585aa12c238a9a8247414564dec09c7fa0f1bb5",
+    "identity_matches": true,
+    "loader": "restart_and_load",
+    "loader_result": "Kill: Game killed. Steam deregistration wait complete. | Launch: Game launched. Process started after 1s, FireTuner port is open. | Load: Loaded PLAN3_BUILDER_A2_V1: world ready, FireTuner port is open. Reconnect and verify with get_game_overview. Steps: Clicked Single Player, Clicked Load Game, Default save list (regular saves), Selected save PLAN3_BUILDER_A2_V1, Clicked Load Game button.",
+    "observed_identity": {
+      "civ_type": "CIVILIZATION_KOREA",
+      "player_id": 0,
+      "seed": 1881300077,
+      "turn": 100
+    },
+    "observed_state_sha256": "a29b6d01b3b3e61f63c59dc0c585aa12c238a9a8247414564dec09c7fa0f1bb5",
+    "popups": "POPUPS|none",
+    "reconnect": {
+      "fresh_connection": true,
+      "reconnected": true
+    }
+  },
+  "files": [],
+  "recipe": {
+    "path": "benchmarks/recipes/plan3-builder-a2.yaml",
+    "recipe_id": "plan3-builder-a2",
+    "sha256": "e8ae24343b20e7881a7cd5b6306812497d3aa388868121bbbc298acabe52e5a1",
+    "version": 1
+  },
+  "scenario_id": "builder-a2",
+  "schema_version": "2.0.0",
+  "sequence": 7,
+  "stage": "menu-check",
+  "status": "passed"
+}

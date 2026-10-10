@@ -1,0 +1,38 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 13,
+            "x": 74,
+            "y": 30
+          },
+          "name": "move_unit"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {
+            "unit_index": 3,
+            "x": 74,
+            "y": 31
+          },
+          "name": "attack_unit"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "two-harm"
+}

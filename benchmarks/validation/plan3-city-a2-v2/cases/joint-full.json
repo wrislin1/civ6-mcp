@@ -1,0 +1,42 @@
+{
+  "case_id": "joint-full",
+  "expected": {
+    "endpoints": [
+      {
+        "id": "protected-quarry-kept",
+        "predicate": {
+          "fields": {
+            "improvement": "IMPROVEMENT_QUARRY"
+          },
+          "kind": "tile_matches",
+          "tiles": [
+            [
+              67,
+              23
+            ]
+          ]
+        },
+        "value": true
+      }
+    ],
+    "ledger": [],
+    "score": {
+      "gross_credit": 12,
+      "harm_total": 0,
+      "net_credit": 12,
+      "primary_score": 1.0
+    }
+  },
+  "position": {
+    "path": "../../../positions/plan3-city-a2-v2.json",
+    "sha256": "40e55f2330e10529e710ded069784aebbb6fae826827a7b429e795e2f8908d76"
+  },
+  "schema_version": "2.0.0",
+  "script": {
+    "path": "../../../scripts/plan3-city-a2-v2/joint-full.json",
+    "sha256": "d6242be99b989384b8e55a8bd85eb3c537ae22e3b5484cca67beb1dca3bd26ae"
+  },
+  "tags": [
+    "joint_full"
+  ]
+}

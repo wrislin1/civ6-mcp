@@ -1,0 +1,26 @@
+{
+  "batches": [
+    {
+      "calls": [
+        {
+          "arguments": {
+            "city_id": 131073,
+            "item_name": "BUILDING_GRANARY",
+            "item_type": "BUILDING"
+          },
+          "name": "set_city_production"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arguments": {},
+          "name": "finish_trial"
+        }
+      ]
+    }
+  ],
+  "schema_version": "2.0.0",
+  "script_id": "housing-partial"
+}
