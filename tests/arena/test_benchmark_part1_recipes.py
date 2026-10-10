@@ -388,13 +388,18 @@ def _tiles(cx, cy, radius, hostile_at):
     ring = [(cx + dx, cy + dy) for dy in range(-radius, radius + 1)
             for dx in range(-radius, radius + 1) if (dx, dy) != (0, 0)]
     coords = ring[: count - 1] + [(cx, cy)]
+    # The builder family's two food sites are unimproved, featureless plains.
+    plains = {(66, 22), (69, 22)}
     return [lq.TileInfo(
-        x=x, y=y, terrain="TERRAIN_GRASS", feature="FEATURE_FOREST" if i % 3 else None,
-        resource="RESOURCE_HORSES" if i % 2 else "RESOURCE_WHEAT", is_hills=True,
+        x=x, y=y, terrain="TERRAIN_PLAINS" if (x, y) in plains else "TERRAIN_GRASS",
+        feature=None if (x, y) in plains else "FEATURE_FOREST" if i % 3 else None,
+        resource=(None if (x, y) in plains else "RESOURCE_HORSES" if i % 2
+                  else "RESOURCE_WHEAT"),
+        is_hills=(x, y) not in plains,
         is_river=True, is_coastal=True,
         # Farms, hills mines and pastures: the city family's Seowon sites and
         # protected/replacement assets are mines, the builder family's are farms.
-        improvement=("IMPROVEMENT_FARM" if i % 2 == 0
+        improvement=(None if (x, y) in plains else "IMPROVEMENT_FARM" if i % 2 == 0
                      else "IMPROVEMENT_MINE" if i % 4 == 1 else "IMPROVEMENT_PASTURE"),
         owner_id=0, owner_name="Korea", yields=(3, 2, 1, 1, 1, 1),
         resource_class="bonus", route_type=0, movement_cost=3,

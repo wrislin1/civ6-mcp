@@ -274,7 +274,15 @@ Amendment procedure by kind of change:
   `builder-attack-rejected` legality probe was dropped: the frozen registry answers a
   builder's `attack_unit` with a success-shaped move report (`STOPPED_SHORT`), the
   civilian-attack defect recorded on 2026-10-09 for a later identity, so no probe can
-  witness that rejection under this identity and no case depends on it.
+  witness that rejection under this identity and no case depends on it. The first
+  `archive` attempt then failed discoverability: the builder-task list places the two
+  plains farms under NORMAL, past the 1500-character cap at the archived start (the first
+  "build FARM" line, a Jinju rice farm, sat at character 1609), so the `food-work-visible`
+  fact became two map facts, `food-site-visible` and `food-site-alt-visible`, each the
+  unimproved owned plains tile on its own radius-1 `get_map_area` query ((66,22) added to
+  the survey queries; (69,22) already lies inside the mine's radius-1 query). The survey
+  stage's base observations keep the original query list; the archive stage re-runs the
+  recipe's queries at the archived start, and the gate reads only that record.
 - **2026-10-10, before the city revalidation clock opens (decision 2, city family).**
   Prospective amendment granting the city family one revalidation attempt. The 2026-10-09
   delayed-death amendment required `plan3-city-a2-v1` (captured under `08585538…`) to be

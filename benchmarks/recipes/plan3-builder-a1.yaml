@@ -258,12 +258,19 @@ survey:
   - {tool: get_empire_resources, arguments: {}}
   - {tool: get_map_area, arguments: {x: 74, y: 30, radius: 2}}
   - {tool: get_map_area, arguments: {x: 68, y: 23, radius: 1}}
+  # Radius 1 around the Jeonju farm site (66,22): the builder-task list places the
+  # two plains farms under NORMAL, past the 1500-character cap at the archived
+  # start (first archive attempt 2026-10-10: the first "build FARM" line sat at
+  # character 1609), so each food site is witnessed on its own map query instead.
+  - {tool: get_map_area, arguments: {x: 66, y: 22, radius: 1}}
   # Radius 1 on the resolved threat keeps its unit line inside the result cap.
   - {tool: get_map_area, arguments: {x: "${route_threat.x}", y: "${route_threat.y}", radius: 1}}
   required_facts:
   - {id: pillaged-mine-visible, source: get_builder_tasks, pattern: "repair\\s+\\S*IRON|repair\\s+\\S*MINE"}
   - {id: horses-unimproved-visible, source: get_builder_tasks, pattern: "HORSES"}
-  - {id: food-work-visible, source: get_builder_tasks, pattern: "build FARM"}
+  # Each food site as an unimproved, owned plains tile (no improvement in parentheses).
+  - {id: food-site-visible, source: get_map_area, pattern: "\\(66,22\\): PLAINS(?![^\\n]*\\((?:FARM|MINE|PASTURE|QUARRY|CAMP)\\))[^\\n]*\\(owned by Korea\\)"}
+  - {id: food-site-alt-visible, source: get_map_area, pattern: "\\(69,22\\): PLAINS(?![^\\n]*\\((?:FARM|MINE|PASTURE|QUARRY|CAMP)\\))[^\\n]*\\(owned by Korea\\)"}
   - {id: builders-visible, source: get_units, pattern: "(?i)builder"}
   - {id: route-threat-visible, source: get_map_area, pattern: "\\*\\*\\[[^\\]]*Barbarian"}
   - {id: pillage-visible-in-city, source: get_cities, pattern: "PILLAGED TILES"}
