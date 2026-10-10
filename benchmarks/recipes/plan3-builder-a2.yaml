@@ -1,0 +1,767 @@
+schema_version: 2.0.0
+family: builder
+scenario_id: builder-a2
+predecessor: builder-a1
+substitution_reason: >-
+  Live 2026-10-10 (builder-a1 validate, 5 of 13 cases failed): Civ VI zone of control
+  empties a civilian's movement when it enters a tile adjacent to an enemy military unit
+  (the Jinju builder reached the horses with 0 of 4 moves, HasMovedIntoZOC true), so a
+  pasture next to the route threat can never be built on the turn the builder arrives,
+  and a melee unit that enters zone of control cannot attack that turn, so the escort's
+  lethal attack from two tiles away never resolved. joint-full could not score 12 and the
+  Jeonju-to-mine leg (two hills tiles) consumed all four moves.
+material_change: >-
+  The route threat stands at (72,31), adjacent to Jinju and to the exposure tile (73,31)
+  but two tiles from the horses, so the horses stay outside its zone of control and the
+  escort attacks it directly from the city; exposure happens on (73,31), not on the
+  scored resource; the escort leaves to the road tile (73,29) and can step back; the
+  escort holds 5 hp; the Jeonju builder starts on the quarry (67,23) so the mine is one
+  hills step away.
+toolset_id: plan3-part1-v1
+max_steps: 15
+positive_maximum: 12
+harm_maximum: 8
+base_save_identity:
+  name: SEONDEOK 100 400 BC
+  sha256: 2cd485b005cb2afe2d58ceaac60be56dd80ea3d5ccc66f6796427d9057c2ab29
+  turn: 100
+  seed: 1881300077
+  civ_type: CIVILIZATION_KOREA
+recipe_id: plan3-builder-a2
+version: 1
+toolset_path: benchmarks/toolsets/plan3-part1-v1.yaml
+player_id: 0
+# The arena's model feed cap (agent.MODEL_FEED_CHAR_CAP): required facts must be
+# discoverable within exactly what the actor is fed.
+result_char_cap: 1500
+
+# Offline declaration. Literal coordinates/ids below are MEASURED facts of this
+# exact base (sha above), taken from benchmarks/positions/builder-posctrl-v1.yaml
+# and benchmarks/provenance/builder-posctrl-v1-authoring.json:
+#   cities  Gyeongju 65536 (72,26)  Jeonju 131073 (67,24)  Gwangju 196610 (70,22)
+#           Gongju 262147 (73,19)   Jinju 327684 (73,30)
+#   tiles   owned IRON mine (68,23, Jeonju; verified pillage/repair)
+#           unimproved HORSES (74,30, Jinju; verified pasture)
+#   units   UNIT_SWORDSMAN garrison at Jinju (73,30)
+# Every other entity (spawned builders, route threat, food sites) is located by
+# the selectors below and resolved live; ambiguity fails with the candidate list.
+#
+# Scenario: three builders start within two tiles of, but never on, their scored
+# work (there is no end_turn: every completion must fit in one turn): Gwangju
+# (70,22) for the mine and the plains farm at (69,22), the Jeonju quarry (67,23)
+# for the plains farm at (66,22) and the mine (one hills step: the city centre is
+# two hills steps away, all four moves), Jinju (73,30) next to the horses. Both
+# farm tiles were measured live on the base (2026-10-10) with the
+# engine's own ImprovementBuilder.CanHaveImprovement: neither city ring holds a
+# farmable grassland tile (marsh, forest, hills, resources, districts and an
+# existing farm fill them), so the food objective counts a plains farm (2 food).
+# The setup readback refuses distances above two; reachability this turn is proven
+# by the pathing probes' expect_pattern. Each builder carries the engine's default three
+# charges: GameCore has no build-charge setter, so the spec's one-charge scarcity rule is
+# not expressible (instrument-v2.md, amendment 2026-10-10). Repair needs no charge, the
+# pasture and farm need one each; a builder survives its work and stays on the tile.
+# A visible barbarian warrior stands at (72,31): adjacent to Jinju and to the
+# floodplain (73,31), two tiles from the horses. Civ VI zone of control (measured
+# live 2026-10-10) empties a civilian's movement on entering a tile next to it and
+# forbids an attack by a unit that entered it this turn, so the horses stay out of
+# its reach, a builder stepping onto (73,31) is the exposure, and the 5-hp Jinju
+# garrison attacks it directly from the city (a lethal choice) or steps to the
+# road tile (73,29) and back to drop and restore its cover.
+setup:
+  operations:
+  - kind: lua
+    # Verified pattern (provenance mutation_journal seq 1).
+    lua: |
+      local p = Map.GetPlot(68, 23)
+      if p == nil then print("ERR|repair_site plot missing") return end
+      ImprovementBuilder.SetImprovementPillaged(p, true)
+      print("OK|pillaged|68,23")
+    readback: |
+      local p = Map.GetPlot(68, 23)
+      local imp = p:GetImprovementType()
+      local info = imp >= 0 and GameInfo.Improvements[imp] or nil
+      if info ~= nil and info.ImprovementType == "IMPROVEMENT_MINE" and p:IsImprovementPillaged()
+          and p:GetOwner() == 0 then
+        print("OK|repair_site|68,23|IMPROVEMENT_MINE|pillaged")
+      else
+        print("ERR|repair_site 68,23 is not an owned pillaged mine")
+      end
+  - kind: lua
+    # Verified patterns (provenance seq 2-4): InitUnit + RestoreMovement. No charge
+    # adjustment: GameCore has no build-charge setter (Unit:ChangeBuildCharges and
+    # UnitManager.ChangeBuildCharges are nil; Set/ChangeActionCharges leave build
+    # charges alone), so builders keep InitUnit's measured default of 3 charges and
+    # the readback refuses the setup unless every spawned builder holds exactly 3.
+    lua: |
+      local spots = {{70, 22}, {73, 30}, {67, 23}}
+      for _, s in ipairs(spots) do
+        local u = UnitManager.InitUnit(0, "UNIT_BUILDER", s[1], s[2])
+        if u == nil then
+          for _, v in Players[0]:GetUnits():Members() do
+            if v:GetX() == s[1] and v:GetY() == s[2]
+                and GameInfo.Units[v:GetType()].UnitType == "UNIT_BUILDER" then u = v end
+          end
+        end
+        if u == nil then
+          print("ERR|builder spawn failed at " .. s[1] .. "," .. s[2])
+        else
+          UnitManager.RestoreMovement(u)
+          print("OK|builder|" .. s[1] .. "," .. s[2] .. "|charges " .. u:GetBuildCharges())
+        end
+      end
+    # Readback also measures each builder's distance to the work it serves:
+    # fixed sites must lie 1..2 tiles away, and each farm tile must be eligible
+    # (owned, flat grass or plains, featureless, resource-free, unimproved, no
+    # district, farmable by the engine's own check) and lie 1..2 tiles away.
+    readback: |
+      local farm = GameInfo.Improvements["IMPROVEMENT_FARM"].Index
+      local function eligible(p)
+        if p == nil or p:GetOwner() ~= 0 or p:GetFeatureType() >= 0 or p:GetResourceType() >= 0
+            or p:GetImprovementType() >= 0 or p:GetDistrictType() >= 0 then return false end
+        local t = GameInfo.Terrains[p:GetTerrainType()].TerrainType
+        if t ~= "TERRAIN_GRASS" and t ~= "TERRAIN_PLAINS" then return false end
+        return ImprovementBuilder.CanHaveImprovement(p, farm, 0) == true
+      end
+      local function ringOk(x, y, fx, fy)
+        local d = Map.GetPlotDistance(x, y, fx, fy)
+        return d >= 1 and d <= 2 and eligible(Map.GetPlot(fx, fy))
+      end
+      local spots = {
+        {70, 22, {{68, 23}}, {{69, 22}}},
+        {73, 30, {{74, 30}}, {}},
+        {67, 23, {{68, 23}}, {{66, 22}}},
+      }
+      for _, s in ipairs(spots) do
+        local n = 0
+        for _, v in Players[0]:GetUnits():Members() do
+          if v:GetX() == s[1] and v:GetY() == s[2]
+              and GameInfo.Units[v:GetType()].UnitType == "UNIT_BUILDER"
+              and v:GetBuildCharges() == 3 and v:GetMovesRemaining() > 0 then n = n + 1 end
+        end
+        local near = true
+        for _, t in ipairs(s[3]) do
+          local d = Map.GetPlotDistance(s[1], s[2], t[1], t[2])
+          if d < 1 or d > 2 then near = false end
+        end
+        for _, r in ipairs(s[4]) do
+          if not ringOk(s[1], s[2], r[1], r[2]) then near = false end
+        end
+        if n == 1 and near then print("OK|builder|" .. s[1] .. "," .. s[2] .. "|charges 3|work within 2")
+        else print("ERR|builder at " .. s[1] .. "," .. s[2] .. ": found " .. n
+                   .. ", work within 2 = " .. tostring(near)) end
+      end
+  - kind: lua
+    # Route threat: a barbarian warrior on (72,31), the owned floodplain west of
+    # Jinju across the river: adjacent to the city and to the exposure tile (73,31),
+    # two tiles from the horses (74,30), so the resource stays outside its zone of
+    # control and the escort can attack it from the city without moving.
+    lua: |
+      local p = Map.GetPlot(72, 31)
+      if p == nil or p:IsWater() or p:IsImpassable() or p:IsCity() or p:GetUnitCount() > 0 then
+        print("ERR|72,31 is not an empty passable land tile") return
+      end
+      local u = UnitManager.InitUnit(63, "UNIT_WARRIOR", 72, 31)
+      if u == nil then print("ERR|barbarian spawn failed") return end
+      print("OK|route_threat|72,31")
+    readback: |
+      local n = 0
+      for _, u in Players[63]:GetUnits():Members() do
+        if u:GetX() == 72 and u:GetY() == 31 and not u:IsDead()
+            and PlayersVisibility[0]:IsVisible(Map.GetPlot(72, 31):GetIndex()) then n = n + 1 end
+      end
+      if n == 1 and Map.GetPlotDistance(72, 31, 73, 30) == 1 and Map.GetPlotDistance(72, 31, 73, 31) == 1
+          and Map.GetPlotDistance(72, 31, 74, 30) == 2 then
+        print("OK|route_threat|72,31")
+      else
+        print("ERR|expected one visible barbarian at 72,31 adjacent to Jinju and 73,31, two from the horses; found " .. n)
+      end
+  - kind: lua
+    # The escort is wounded to 5 hp so attacking the threat is a lethal choice
+    # whatever the terrain (the warrior at (72,31) stands on flat floodplain).
+    lua: |
+      local done = false
+      for _, u in Players[0]:GetUnits():Members() do
+        if u:GetX() == 73 and u:GetY() == 30
+            and GameInfo.Units[u:GetType()].UnitType == "UNIT_SWORDSMAN" then
+          u:SetDamage(95)
+          UnitManager.RestoreMovement(u)
+          done = true
+        end
+      end
+      if done then print("OK|escort wounded") else print("ERR|no swordsman at 73,30") end
+    readback: |
+      local n = 0
+      for _, u in Players[0]:GetUnits():Members() do
+        if u:GetX() == 73 and u:GetY() == 30
+            and GameInfo.Units[u:GetType()].UnitType == "UNIT_SWORDSMAN" then
+          n = n + 1
+          print("OK|escort|73,30|hp " .. (u:GetMaxDamage() - u:GetDamage()))
+        end
+      end
+      if n ~= 1 then print("ERR|expected one escort at 73,30, found " .. n) end
+  - kind: lua
+    # Measurement only: the closer-only destination (69,23), the mine's (68,23)
+    # one hex neighbour that is neither a scored tile, a city centre nor a
+    # district (measured live 2026-10-10: (68,22) and (69,24) hold districts,
+    # (69,22) is the alternative farm, (67,23) and (68,24) are hills). It carries
+    # an existing farm, which is neither scored nor restorable. It must be owned,
+    # no district, featureless, passable land, holding no unit, with no hostile
+    # (barbarian or at war) within one tile; the closer_only_tile selector names it.
+    lua: |
+      print("OK|measure closer_only_tile")
+    readback: |
+      local diplo = Players[0]:GetDiplomacy()
+      local function hostileNear(x, y)
+        for i = 1, 63 do
+          local p = Players[i]
+          if p ~= nil and p:IsAlive() and (i == 63 or diplo:IsAtWarWith(i)) then
+            for _, u in p:GetUnits():Members() do
+              if Map.GetPlotDistance(x, y, u:GetX(), u:GetY()) <= 1 then return true end
+            end
+          end
+        end
+        return false
+      end
+      local found = 0
+      for _, t in ipairs({{69, 23}}) do
+        local p = Map.GetPlot(t[1], t[2])
+        if p ~= nil and p:GetOwner() == 0 and p:GetDistrictType() < 0 and p:GetFeatureType() < 0
+            and not p:IsWater() and not p:IsImpassable() and p:GetUnitCount() == 0
+            and not hostileNear(t[1], t[2]) then
+          found = found + 1
+          print("OK|closer_only_tile|" .. t[1] .. "," .. t[2])
+        end
+      end
+      if found < 1 then print("ERR|no eligible closer-only tile next to 68,23") end
+  - kind: lua
+    # Measurement only: the escort's leave tile (73,29), the road tile north of
+    # Jinju (Gyeongju's Seowon on grassland hills): hex distance 1 from Jinju, 2 from
+    # the exposure tile (73,31) and 2 from the threat, so the escort steps out of
+    # cover for one move along the road and can step back into the city for the
+    # other. The readback proves it owned, passable land, unoccupied, roaded, at
+    # those distances; the escort_leave_tile selector names it.
+    lua: |
+      print("OK|measure escort_leave_tile")
+    readback: |
+      local p = Map.GetPlot(73, 29)
+      if p ~= nil and p:GetOwner() == 0 and not p:IsWater() and not p:IsImpassable()
+          and p:GetUnitCount() == 0 and p:GetRouteType() >= 0
+          and Map.GetPlotDistance(73, 29, 73, 30) == 1
+          and Map.GetPlotDistance(73, 29, 73, 31) == 2
+          and Map.GetPlotDistance(73, 29, 72, 31) == 2 then
+        print("OK|escort_leave_tile|73,29")
+      else
+        print("ERR|73,29 is not an owned, empty, roaded tile 1 from Jinju and 2 from 73,31 and 72,31")
+      end
+  - kind: lua
+    # Measurement only: the exposure tile (73,31), the owned floodplain rice south
+    # of Jinju: adjacent to the city, to the horses and to the threat at (72,31).
+    # A builder stepping onto it enters the threat's zone of control (its movement
+    # ends there) and is covered only while an own combat unit is adjacent, i.e.
+    # the escort in the city; it is never a scored tile.
+    lua: |
+      print("OK|measure exposure_tile")
+    readback: |
+      local p = Map.GetPlot(73, 31)
+      if p ~= nil and p:GetOwner() == 0 and p:GetDistrictType() < 0 and p:GetImprovementType() < 0
+          and not p:IsWater() and not p:IsImpassable() and not p:IsCity() and p:GetUnitCount() == 0
+          and Map.GetPlotDistance(73, 31, 73, 30) == 1
+          and Map.GetPlotDistance(73, 31, 72, 31) == 1 then
+        print("OK|exposure_tile|73,31")
+      else
+        print("ERR|73,31 is not an owned, empty, unimproved tile adjacent to Jinju and 72,31")
+      end
+  assertions:
+  - id: repair-site-pillaged
+    value: true
+    predicate: {kind: tile_matches, tiles: ["${repair_site.xy}"],
+                fields: {improvement: IMPROVEMENT_MINE, pillaged: true}}
+  - id: builders-start-away-from-work
+    value: false
+    predicate: {kind: charged_builder_at,
+                tiles: ["${repair_site.xy}", "${resource_site.xy}", "${food_site.xy}",
+                        "${food_site_alt.xy}"]}
+  - id: resource-unimproved
+    value: false
+    predicate: {kind: tile_matches, tiles: ["${resource_site.xy}"],
+                fields: {improvement: IMPROVEMENT_PASTURE}}
+
+survey:
+  queries:
+  - {tool: get_overview, arguments: {}}
+  - {tool: get_units, arguments: {}}
+  - {tool: get_builder_tasks, arguments: {}}
+  - {tool: get_cities, arguments: {}}
+  - {tool: get_empire_resources, arguments: {}}
+  - {tool: get_map_area, arguments: {x: 74, y: 30, radius: 2}}
+  - {tool: get_map_area, arguments: {x: 68, y: 23, radius: 1}}
+  # Radius 1 around the Jeonju farm site (66,22): the builder-task list places the
+  # two plains farms under NORMAL, past the 1500-character cap at the archived
+  # start (first archive attempt 2026-10-10: the first "build FARM" line sat at
+  # character 1609), so each food site is witnessed on its own map query instead.
+  - {tool: get_map_area, arguments: {x: 66, y: 22, radius: 1}}
+  # Radius 1 on the resolved threat keeps its unit line inside the result cap.
+  - {tool: get_map_area, arguments: {x: "${route_threat.x}", y: "${route_threat.y}", radius: 1}}
+  required_facts:
+  - {id: pillaged-mine-visible, source: get_builder_tasks, pattern: "repair\\s+\\S*IRON|repair\\s+\\S*MINE"}
+  - {id: horses-unimproved-visible, source: get_builder_tasks, pattern: "HORSES"}
+  # Each food site as an unimproved, owned plains tile (no improvement in parentheses).
+  - {id: food-site-visible, source: get_map_area, pattern: "\\(66,22\\): PLAINS(?![^\\n]*\\((?:FARM|MINE|PASTURE|QUARRY|CAMP)\\))[^\\n]*\\(owned by Korea\\)"}
+  - {id: food-site-alt-visible, source: get_map_area, pattern: "\\(69,22\\): PLAINS(?![^\\n]*\\((?:FARM|MINE|PASTURE|QUARRY|CAMP)\\))[^\\n]*\\(owned by Korea\\)"}
+  - {id: builders-visible, source: get_units, pattern: "(?i)builder"}
+  - {id: route-threat-visible, source: get_map_area, pattern: "\\*\\*\\[[^\\]]*Barbarian"}
+  - {id: pillage-visible-in-city, source: get_cities, pattern: "PILLAGED TILES"}
+
+bindings:
+- name: repair_site
+  resolves: tile
+  selector: {x: 68, y: 23, owner: 0, resource: RESOURCE_IRON, improvement: IMPROVEMENT_MINE,
+             pillaged: true}
+- name: resource_site
+  resolves: tile
+  selector: {x: 74, y: 30, owner: 0, resource: RESOURCE_HORSES, improvement: NONE}
+- name: food_site
+  # The one farmable tile within two of Jeonju (measured live 2026-10-10): unimproved
+  # featureless plains at hex distance 2; the setup readback proves it eligible.
+  resolves: tile
+  selector: {x: 66, y: 22, owner: 0, terrain: TERRAIN_PLAINS, feature: NONE, resource: NONE,
+             improvement: NONE, district: NONE}
+- name: food_site_alt
+  # The economically equivalent alternative next to Gwangju (unimproved featureless
+  # plains at distance 1), declared before freezing.
+  resolves: tile
+  selector: {x: 69, y: 22, owner: 0, terrain: TERRAIN_PLAINS, feature: NONE, resource: NONE,
+             improvement: NONE, district: NONE}
+- name: builder_repair
+  resolves: unit
+  selector: {type: UNIT_BUILDER, role: civilian, charges: 3, x: 70, y: 22}
+- name: builder_resource
+  resolves: unit
+  selector: {type: UNIT_BUILDER, role: civilian, charges: 3, x: 73, y: 30}
+- name: builder_food
+  resolves: unit
+  selector: {type: UNIT_BUILDER, role: civilian, charges: 3, x: 67, y: 23}
+- name: closer_only_tile
+  # Hex distance exactly 1 from the mine (68,23) and from Gwangju, not a scored
+  # tile or a city centre; the setup readback proves it unoccupied and unthreatened.
+  resolves: tile
+  selector: {x: 69, y: 23, owner: 0, district: NONE, feature: NONE}
+- name: escort_leave_tile
+  # The road tile north of Jinju: hex distance 1 from the city, 2 from the exposure
+  # tile and from the threat; the setup readback proves it empty and roaded.
+  resolves: tile
+  selector: {x: 73, y: 29, owner: 0}
+- name: exposure_tile
+  # The owned floodplain south of Jinju, adjacent to the threat; never scored.
+  resolves: tile
+  selector: {x: 73, y: 31, owner: 0, district: NONE, improvement: NONE}
+- name: escort
+  resolves: unit
+  selector: {type: UNIT_SWORDSMAN, role: combat, x: 73, y: 30}
+- name: route_threat
+  # Naming the spawn tile puts it in the resolution capture's area: the v2 target
+  # scan lists a visible hostile only inside the frozen area or adjacent to an owned
+  # unit (measured live 2026-10-10 on builder-a1).
+  resolves: target
+  selector: {owner: 63, role: combat, hostile: true, visible: true, status: alive_visible,
+             area: [[72, 31]]}
+
+coverage_rule:
+  include_owned_tiles: true
+  area_radius: 2
+  tracked_target_bindings: [route_threat]
+
+objectives:
+- id: restore-production
+  rungs:
+  - points: 2
+    predicate:
+      kind: all
+      predicates:
+      - {kind: charged_builder_at, tiles: ["${repair_site.xy}"]}
+      - {kind: tile_matches, tiles: ["${repair_site.xy}"],
+         fields: {improvement: IMPROVEMENT_MINE, pillaged: true}}
+  - points: 4
+    predicate: {kind: tile_matches, tiles: ["${repair_site.xy}"],
+                fields: {improvement: IMPROVEMENT_MINE, pillaged: false}}
+- id: connect-resource
+  rungs:
+  - points: 2
+    predicate: {kind: charged_builder_at, tiles: ["${resource_site.xy}"]}
+  - points: 4
+    predicate: {kind: tile_matches, tiles: ["${resource_site.xy}"],
+                fields: {owner: 0, improvement: IMPROVEMENT_PASTURE, pillaged: false}}
+- id: improve-food
+  rungs:
+  - points: 2
+    predicate: {kind: charged_builder_at, tiles: ["${food_site.xy}", "${food_site_alt.xy}"]}
+  - points: 4
+    # A plains farm yields 2 food at this era (grassland would give 3).
+    predicate: {kind: tile_matches, tiles: ["${food_site.xy}", "${food_site_alt.xy}"],
+                fields: {improvement: IMPROVEMENT_FARM, pillaged: false, food: {min: 2}}}
+
+harms:
+- id: escort-loss
+  loss_key: escort
+  objective_id: connect-resource
+  weight: 4
+  weight_reason: ""
+  timing: event
+  priority: 0
+  predicate: {kind: unit_lost, unit: "${escort.pair}"}
+  # A legitimate attack that removes the route threat compensates the loss.
+  compensation:
+  - timing: final
+    predicate: {kind: target_neutralised, target: "${route_threat.pair}"}
+- id: new-exposure
+  loss_key: civilian_exposure
+  objective_id: connect-resource
+  weight: 4
+  weight_reason: ""
+  timing: final
+  priority: 0
+  predicate: {kind: new_civilian_exposure, unit: "${builder_resource.pair}"}
+  compensation: []
+
+probes:
+- {id: move-repair-builder-to-site, tool: move_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
+                             x: "${repair_site.x}", y: "${repair_site.y}"}}
+- {id: move-resource-builder-to-site, tool: move_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${builder_resource.unit_index}",
+                             x: "${resource_site.x}", y: "${resource_site.y}"}}
+- {id: move-food-builder-to-site, tool: move_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${builder_food.unit_index}",
+                             x: "${food_site.x}", y: "${food_site.y}"}}
+- {id: move-repair-builder-to-alt-food, tool: move_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
+                             x: "${food_site_alt.x}", y: "${food_site_alt.y}"}}
+- {id: move-food-builder-to-repair, tool: move_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${builder_food.unit_index}",
+                             x: "${repair_site.x}", y: "${repair_site.y}"}}
+# Each witness leg must be reachable this turn (no end_turn in the toolset).
+- {id: reach-repair, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
+                             x: "${repair_site.x}", y: "${repair_site.y}"}}
+- {id: reach-resource, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_resource.unit_index}",
+                             x: "${resource_site.x}", y: "${resource_site.y}"}}
+- {id: reach-food, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_food.unit_index}",
+                             x: "${food_site.x}", y: "${food_site.y}"}}
+- {id: reach-alt-repair, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_food.unit_index}",
+                             x: "${repair_site.x}", y: "${repair_site.y}"}}
+- {id: reach-closer-only, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
+                             x: "${closer_only_tile.x}", y: "${closer_only_tile.y}"}}
+- {id: reach-alt-food, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}",
+                             x: "${food_site_alt.x}", y: "${food_site_alt.y}"}}
+- {id: escort-lethal-attack, tool: attack_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${escort.unit_index}",
+                             x: "${route_threat.x}", y: "${route_threat.y}"}}
+- {id: escort-holds-cover, tool: fortify_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${escort.unit_index}"}}
+- {id: escort-leaves-cover, tool: move_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${escort.unit_index}",
+                             x: "${escort_leave_tile.x}", y: "${escort_leave_tile.y}"}}
+- {id: reach-escort-leave, tool: get_pathing_estimate, expect: ok, restore: true,
+   expect_pattern: "Reachable this turn",
+   arguments_from_bindings: {unit_index: "${escort.unit_index}",
+                             x: "${escort_leave_tile.x}", y: "${escort_leave_tile.y}"}}
+- {id: move-resource-builder-to-exposure, tool: move_unit, expect: ok, restore: true,
+   arguments_from_bindings: {unit_index: "${builder_resource.unit_index}",
+                             x: "${exposure_tile.x}", y: "${exposure_tile.y}"}}
+- {id: repair-off-site-rejected, tool: repair_improvement, expect: rejected, restore: true,
+   arguments_from_bindings: {unit_index: "${builder_repair.unit_index}"}}
+- {id: pasture-off-site-rejected, tool: improve_tile, expect: rejected, restore: true,
+   arguments_from_bindings: {unit_index: "${builder_resource.unit_index}",
+                             improvement_name: IMPROVEMENT_PASTURE}}
+# No builder-attack legality probe: the frozen registry answers a civilian's
+# attack_unit with a success-shaped move report (first live probe 2026-10-10: the
+# resource builder's attack came back "STOPPED_SHORT ... moved to (73,30)"), the
+# civilian-attack defect recorded 2026-10-09 for a later identity, so no probe can
+# witness that rejection under this identity; no case depends on it.
+
+archive:
+  name: PLAN3_BUILDER_A2_V{version}
+  path: benchmarks/saves/plan3-builder-a2-v{version}.Civ6Save
+outputs:
+  position: benchmarks/positions/plan3-builder-a2-v{version}.json
+  provenance_authoring: benchmarks/provenance/plan3-builder-a2-v{version}-authoring.json
+  provenance_packet: benchmarks/provenance/plan3-builder-a2-v{version}.json
+  scripts_dir: benchmarks/scripts/plan3-builder-a2-v{version}
+  validation_dir: benchmarks/validation/plan3-builder-a2-v{version}
+
+# Script templates hold calls only; expectations live in the separate cases.
+scripts:
+- script_id: observe
+  batches:
+  - calls:
+    - {name: get_overview, arguments: {}}
+    - {name: get_units, arguments: {}}
+    - {name: get_builder_tasks, arguments: {}}
+  - calls:
+    - {name: get_map_area, arguments: {x: "${resource_site.x}", y: "${resource_site.y}", radius: 2}}
+    - {name: get_pathing_estimate, arguments: {unit_index: "${builder_resource.unit_index}",
+                                               x: "${resource_site.x}", y: "${resource_site.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: joint-full
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_repair.unit_index}",
+                                    x: "${repair_site.x}", y: "${repair_site.y}"}}
+    - {name: move_unit, arguments: {unit_index: "${builder_resource.unit_index}",
+                                    x: "${resource_site.x}", y: "${resource_site.y}"}}
+    - {name: move_unit, arguments: {unit_index: "${builder_food.unit_index}",
+                                    x: "${food_site.x}", y: "${food_site.y}"}}
+  - calls:
+    - {name: repair_improvement, arguments: {unit_index: "${builder_repair.unit_index}"}}
+    - {name: improve_tile, arguments: {unit_index: "${builder_resource.unit_index}",
+                                       improvement_name: IMPROVEMENT_PASTURE}}
+    - {name: improve_tile, arguments: {unit_index: "${builder_food.unit_index}",
+                                       improvement_name: IMPROVEMENT_FARM}}
+  - calls:
+    - {name: fortify_unit, arguments: {unit_index: "${escort.unit_index}"}}
+    - {name: finish_trial, arguments: {}}
+- script_id: alternative-full
+  # Different allocation: the Jeonju builder repairs, the Gwangju builder farms
+  # the alternative site; the resource is improved last.
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_food.unit_index}",
+                                    x: "${repair_site.x}", y: "${repair_site.y}"}}
+    - {name: repair_improvement, arguments: {unit_index: "${builder_food.unit_index}"}}
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_repair.unit_index}",
+                                    x: "${food_site_alt.x}", y: "${food_site_alt.y}"}}
+    - {name: improve_tile, arguments: {unit_index: "${builder_repair.unit_index}",
+                                       improvement_name: IMPROVEMENT_FARM}}
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_resource.unit_index}",
+                                    x: "${resource_site.x}", y: "${resource_site.y}"}}
+    - {name: improve_tile, arguments: {unit_index: "${builder_resource.unit_index}",
+                                       improvement_name: IMPROVEMENT_PASTURE}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: partial-repair
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_repair.unit_index}",
+                                    x: "${repair_site.x}", y: "${repair_site.y}"}}
+    - {name: skip_unit, arguments: {unit_index: "${builder_repair.unit_index}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: partial-resource
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_resource.unit_index}",
+                                    x: "${resource_site.x}", y: "${resource_site.y}"}}
+    - {name: skip_unit, arguments: {unit_index: "${builder_resource.unit_index}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: partial-food
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_food.unit_index}",
+                                    x: "${food_site.x}", y: "${food_site.y}"}}
+    - {name: skip_unit, arguments: {unit_index: "${builder_food.unit_index}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: closer-only
+  # The Gwangju builder (hex distance 2 from the mine) stops on closer_only_tile
+  # (distance 1, unoccupied, not a scored tile, no hostile adjacent): closer to
+  # the repair but not on it, so no credit and no exposure.
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_repair.unit_index}",
+                                    x: "${closer_only_tile.x}", y: "${closer_only_tile.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: escort-loss
+  batches:
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${escort.unit_index}",
+                                      x: "${route_threat.x}", y: "${route_threat.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: new-exposure
+  # The Jinju builder steps onto the floodplain next to the threat, the Gwangju
+  # builder restores the mine, then the escort steps up the road: final exposure
+  # alongside a real gain (mixed).
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_resource.unit_index}",
+                                    x: "${exposure_tile.x}", y: "${exposure_tile.y}"}}
+    - {name: move_unit, arguments: {unit_index: "${builder_repair.unit_index}",
+                                    x: "${repair_site.x}", y: "${repair_site.y}"}}
+  - calls:
+    - {name: repair_improvement, arguments: {unit_index: "${builder_repair.unit_index}"}}
+    - {name: move_unit, arguments: {unit_index: "${escort.unit_index}",
+                                    x: "${escort_leave_tile.x}", y: "${escort_leave_tile.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: temporary-exposure-repaired
+  # The builder steps onto the floodplain next to the threat (its movement ends in
+  # the zone of control), the escort steps up the road (exposure) and back into the
+  # city (cover restored): the exposure is not final; nothing is scored or charged.
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_resource.unit_index}",
+                                    x: "${exposure_tile.x}", y: "${exposure_tile.y}"}}
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${escort.unit_index}",
+                                    x: "${escort_leave_tile.x}", y: "${escort_leave_tile.y}"}}
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${escort.unit_index}",
+                                    x: "${escort.x}", y: "${escort.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: two-harm
+  # Builder on the floodplain next to the threat, escort dies attacking from the
+  # city: escort loss and new exposure.
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_resource.unit_index}",
+                                    x: "${exposure_tile.x}", y: "${exposure_tile.y}"}}
+  - calls:
+    - {name: attack_unit, arguments: {unit_index: "${escort.unit_index}",
+                                      x: "${route_threat.x}", y: "${route_threat.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+- script_id: repeat-undo
+  # Repeat: a second repair of the restored mine is rejected. Undo: the food
+  # builder walks onto the site and back to its start.
+  batches:
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_repair.unit_index}",
+                                    x: "${repair_site.x}", y: "${repair_site.y}"}}
+  - calls:
+    - {name: repair_improvement, arguments: {unit_index: "${builder_repair.unit_index}"}}
+  - calls:
+    - {name: repair_improvement, arguments: {unit_index: "${builder_repair.unit_index}"}}
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_food.unit_index}",
+                                    x: "${food_site.x}", y: "${food_site.y}"}}
+  - calls:
+    - {name: move_unit, arguments: {unit_index: "${builder_food.unit_index}",
+                                    x: "${builder_food.x}", y: "${builder_food.y}"}}
+  - calls:
+    - {name: finish_trial, arguments: {}}
+
+cases:
+- case_id: null-discovery
+  script_id: observe
+  tags: [null_discovery]
+  expected:
+    score: {gross_credit: 0, harm_total: 0, net_credit: 0, primary_score: 0.0}
+    endpoints: []
+    ledger: []
+- case_id: joint-full
+  script_id: joint-full
+  # Each builder improves (or repairs) and is credited; three-charge builders
+  # survive their work. The escort holds cover, the justified alternative to the
+  # lethal attack.
+  tags: [joint_full, covered_route, escort_legitimate]
+  expected:
+    score: {gross_credit: 12, harm_total: 0, net_credit: 12, primary_score: 1.0}
+    endpoints:
+    - {id: mine-restored, value: true,
+       predicate: {kind: tile_matches, tiles: ["${repair_site.xy}"],
+                   fields: {improvement: IMPROVEMENT_MINE, pillaged: false}}}
+    - {id: pasture-built, value: true,
+       predicate: {kind: tile_matches, tiles: ["${resource_site.xy}"],
+                   fields: {improvement: IMPROVEMENT_PASTURE}}}
+    ledger: []
+- case_id: alternative-full
+  script_id: alternative-full
+  tags: [alternative_full]
+  expected:
+    score: {gross_credit: 12, harm_total: 0, net_credit: 12, primary_score: 1.0}
+    endpoints:
+    - {id: alternative-farm, value: true,
+       predicate: {kind: tile_matches, tiles: ["${food_site_alt.xy}"],
+                   fields: {improvement: IMPROVEMENT_FARM}}}
+    ledger: []
+- case_id: partial-repair
+  script_id: partial-repair
+  tags: [partial_repair]
+  expected:
+    score: {gross_credit: 2, harm_total: 0, net_credit: 2, primary_score: 0.16666666666666666}
+    endpoints: []
+    ledger: []
+- case_id: partial-resource
+  script_id: partial-resource
+  tags: [partial_resource]
+  expected:
+    score: {gross_credit: 2, harm_total: 0, net_credit: 2, primary_score: 0.16666666666666666}
+    endpoints: []
+    ledger: []
+- case_id: partial-food
+  script_id: partial-food
+  tags: [partial_food]
+  expected:
+    score: {gross_credit: 2, harm_total: 0, net_credit: 2, primary_score: 0.16666666666666666}
+    endpoints: []
+    ledger: []
+- case_id: closer-only
+  script_id: closer-only
+  tags: [closer_only]
+  expected:
+    score: {gross_credit: 0, harm_total: 0, net_credit: 0, primary_score: 0.0}
+    endpoints: []
+    ledger: []
+- case_id: escort-loss
+  script_id: escort-loss
+  tags: [escort_loss, harm_only]
+  expected:
+    score: {gross_credit: 0, harm_total: 4, net_credit: -4, primary_score: -0.3333333333333333}
+    endpoints:
+    - {id: threat-survives, value: false,
+       predicate: {kind: target_neutralised, target: "${route_threat.pair}"}}
+    ledger: []
+- case_id: new-exposure
+  script_id: new-exposure
+  tags: [new_exposure, mixed_gain_loss]
+  expected:
+    score: {gross_credit: 4, harm_total: 4, net_credit: 0, primary_score: 0.0}
+    endpoints:
+    - {id: mine-restored-alongside, value: true,
+       predicate: {kind: tile_matches, tiles: ["${repair_site.xy}"],
+                   fields: {improvement: IMPROVEMENT_MINE, pillaged: false}}}
+    - {id: builder-left-exposed, value: true,
+       predicate: {kind: civilian_exposed, unit: "${builder_resource.pair}"}}
+    ledger: []
+- case_id: temporary-exposure-repaired
+  script_id: temporary-exposure-repaired
+  tags: [temporary_exposure_repaired]
+  expected:
+    score: {gross_credit: 0, harm_total: 0, net_credit: 0, primary_score: 0.0}
+    endpoints:
+    - {id: builder-back-under-cover, value: false,
+       predicate: {kind: civilian_exposed, unit: "${builder_resource.pair}"}}
+    ledger: []
+- case_id: two-harm
+  script_id: two-harm
+  tags: [two_harm_maximum, escort_loss, new_exposure]
+  expected:
+    score: {gross_credit: 0, harm_total: 8, net_credit: -8, primary_score: -0.6666666666666666}
+    endpoints: []
+    ledger: []
+- case_id: repeat-undo
+  script_id: repeat-undo
+  tags: [repeat_undo]
+  declared_rejections:
+  - {step: 2, tool_name: repair_improvement}
+  expected:
+    score: {gross_credit: 4, harm_total: 0, net_credit: 4, primary_score: 0.3333333333333333}
+    endpoints: []
+    ledger: []

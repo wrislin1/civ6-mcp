@@ -283,6 +283,23 @@ Amendment procedure by kind of change:
   the survey queries; (69,22) already lies inside the mine's radius-1 query). The survey
   stage's base observations keep the original query list; the archive stage re-runs the
   recipe's queries at the archived start, and the gate reads only that record.
+  **Builder substitution (2026-10-10, ~17:55 UTC; recipes only, no identity consequence).**
+  `builder-a1` was abandoned after `validate` (5 of 13 cases failed, attempt retained and
+  indexed): a live experiment on the archived start showed Civ VI zone of control empties
+  a civilian's movement when it enters a tile adjacent to an enemy military unit (the Jinju
+  builder reached the horses with 0 of 4 moves, `HasMovedIntoZOC` true), so a pasture next
+  to the route threat can never be built on the turn the builder arrives, and a melee unit
+  that entered zone of control this turn cannot attack (the registry reports `ERR:ZOC`), so
+  the escort's lethal attack from two tiles away never resolved; the Jeonju-to-mine leg
+  (two hills steps) also consumed all four moves. The declared substitute `plan3-builder-a2`
+  (predecessor `builder-a1`) moves the threat to (72,31), adjacent to Jinju and to the
+  exposure tile (73,31) but two tiles from the horses, keeps the escort in the city at 5 hp
+  so it attacks the threat directly and lethally, lets it step to the road tile (73,29) and
+  back, starts the Jeonju builder on the quarry (67,23) one hills step from the mine, and
+  re-expresses `new-exposure` (exposure on (73,31) alongside the Gwangju builder's repair,
+  4/4/0, the family's `mixed_gain_loss` witness), `temporary-exposure-repaired` (escort out
+  and back, 0/0/0) and `two-harm` (0/8/-8). Every other case, objective, harm and probe is
+  unchanged.
 - **2026-10-10, before the city revalidation clock opens (decision 2, city family).**
   Prospective amendment granting the city family one revalidation attempt. The 2026-10-09
   delayed-death amendment required `plan3-city-a2-v1` (captured under `08585538…`) to be
