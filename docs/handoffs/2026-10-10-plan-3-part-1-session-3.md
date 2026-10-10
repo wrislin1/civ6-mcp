@@ -10,7 +10,7 @@ builder family and the city revalidation attempt.
 
 | Item | State |
 |---|---|
-| `main` | `288598a` gate commit, followed by the exit-suite evidence and this handoff; Windows checkout fast-forwarded at session end; **not pushed to GitHub** (no push authorisation this session) |
+| `main` | `288598a` gate commit, followed by the exit-suite evidence and this handoff; Windows checkout fast-forwarded at session end; pushed to GitHub (`64918b6..5636d25`, Riz authorised) |
 | `code_identity` | unchanged all day: `af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697`; every code change was toolkit (`benchmark_part1_gate.py`, `benchmark_authoring.py`, `benchmark_authoring_journal.py`), confirmed with `identity-impact.py` before each commit |
 | Full suite | 4063 passed (`benchmark_runs/plan3-part1/preflight/pytest.txt`, result JSON and index regenerated) |
 | Offline preflight | passed with the final recipe set (builder-a2, city-a2 v2, tactical-a1) |
@@ -75,7 +75,7 @@ builder family and the city revalidation attempt.
 
 1. **Plan Task 22**: exit report, report regeneration from a temporary checkout of the tracked
    tree (compare bytes with the retained reports), release notes. Nothing live is needed.
-2. **Push** `main` to GitHub when Riz authorises (eleven commits today, `a8b8765..` onward).
+2. ~~Push~~ done: `main` is on GitHub at the session's final commit.
 3. **Fingerprint hazards, only after the release is cut**: the registry answers a civilian's
    attack and fortify and an archer's second shot with success-shaped text; fixing them moves
    `code_identity`, and the gate compares packets to the *current checkout*, so land them on a
