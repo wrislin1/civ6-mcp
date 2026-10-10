@@ -456,11 +456,9 @@ class _ArenaFixtureGame:
                 lq.DistrictPlacement(68, 24, {"science": 1}, 1, "Plains")]
 
 
-@pytest.mark.parametrize("family", FAMILIES)
-async def test_required_facts_match_the_arena_narrators_within_the_cap(family):
-    recipe = load_recipe(_path(family), root=REPO)
+async def _missing_facts(recipe: dict, bindings: dict) -> tuple[list[str], dict]:
+    """Required facts the arena narrators cannot emit within the cap for `recipe`."""
     allowed = tuple(load_toolset(REPO / recipe["toolset_path"])["game_tools"])
-    bindings = FIXTURE_BINDINGS[family]
     game = _ArenaFixtureGame([(b["x"], b["y"]) for b in bindings.values()])
     sources = {fact["source"] for fact in recipe["survey"]["required_facts"]}
     rendered: dict[str, list[str]] = {}
@@ -474,7 +472,77 @@ async def test_required_facts_match_the_arena_narrators_within_the_cap(family):
     missing = [fact["id"] for fact in recipe["survey"]["required_facts"]
                if not any(re.search(fact["pattern"], text)
                           for text in rendered.get(fact["source"], []))]
+    return missing, rendered
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+async def test_required_facts_match_the_arena_narrators_within_the_cap(family):
+    recipe = load_recipe(_path(family), root=REPO)
+    missing, rendered = await _missing_facts(recipe, FIXTURE_BINDINGS[family])
     assert missing == [], {tool: texts for tool, texts in rendered.items()}
+
+
+BUILDER_A2 = REPO / "benchmarks" / "recipes" / "plan3-builder-a2.yaml"
+
+
+async def test_builder_a2_required_facts_match_the_arena_narrators_within_the_cap():
+    recipe = load_recipe(BUILDER_A2, root=REPO)
+    missing, rendered = await _missing_facts(recipe, {"route_threat": {"x": 72, "y": 31}})
+    assert missing == [], {tool: texts for tool, texts in rendered.items()}
+
+
+def test_builder_a2_substitute_pins_the_zone_of_control_geometry():
+    """The builder family's declared substitute (live 2026-10-10). Civ VI zone of
+    control empties a civilian's movement on entering a tile next to an enemy
+    military unit and forbids an attack by a unit that entered it this turn, so
+    the threat stands two tiles from the horses, exposure happens on (73,31),
+    the escort attacks from the city and steps out along the road and back, and
+    no completion rung carries a yield field (the yield cache is stale in-turn)."""
+    from civ_mcp.arena.action_metrics import _hex_distance
+    recipe = load_recipe(BUILDER_A2, root=REPO)
+    assert recipe["scenario_id"] == "builder-a2" and recipe["predecessor"] == "builder-a1"
+    assert recipe["substitution_reason"].strip() and recipe["material_change"].strip()
+    assert recipe["version"] == 2
+    tags = {tag for case in recipe["cases"] for tag in case["tags"]}
+    assert REQUIRED_TAGS["builder"] <= tags
+    for case in recipe["cases"]:
+        score = case["expected"]["score"]
+        assert score["net_credit"] == score["gross_credit"] - score["harm_total"]
+        assert score["primary_score"] == score["net_credit"] / 12
+        assert 0 <= score["harm_total"] <= recipe["harm_maximum"] == 8
+    sel = {b["name"]: b["selector"] for b in recipe["bindings"]}
+    assert sel["route_threat"]["area"] == [[72, 31]]
+    assert (sel["exposure_tile"]["x"], sel["exposure_tile"]["y"]) == (73, 31)
+    assert (sel["escort_leave_tile"]["x"], sel["escort_leave_tile"]["y"]) == (73, 29)
+    assert (sel["escort"]["x"], sel["escort"]["y"]) == (73, 30)
+    assert (sel["builder_food"]["x"], sel["builder_food"]["y"]) == (67, 23)
+    horses, threat, exposure = (74, 30), (72, 31), (73, 31)
+    assert _hex_distance(threat, horses) == 2  # the horses stay outside its ZOC
+    assert _hex_distance(threat, exposure) == 1 and _hex_distance(threat, (73, 30)) == 1
+    assert _hex_distance((73, 29), exposure) == 2 and _hex_distance((73, 29), (73, 30)) == 1
+    setup = recipe["setup"]["operations"]
+    assert "InitUnit(63, \"UNIT_WARRIOR\", 72, 31)" in setup[2]["lua"]
+    assert "SetDamage(95)" in setup[3]["lua"]
+    for objective in recipe["objectives"]:
+        for rung in objective["rungs"]:
+            assert "food" not in rung["predicate"].get("fields", {})
+    scripts = {s["script_id"]: s for s in recipe["scripts"]}
+    calls = lambda sid: [c for b in scripts[sid]["batches"] for c in b["calls"]]
+    for sid in ("new-exposure", "temporary-exposure-repaired", "two-harm"):
+        first = calls(sid)[0]
+        assert first["name"] == "move_unit" and first["arguments"]["x"] == "${exposure_tile.x}"
+    assert any(c["name"] == "repair_improvement" for c in calls("new-exposure"))
+    escort_moves = [c["arguments"]["x"] for c in calls("temporary-exposure-repaired")
+                    if c["name"] == "move_unit" and c["arguments"]["unit_index"] == "${escort.unit_index}"]
+    assert escort_moves == ["${escort_leave_tile.x}", "${escort.x}"]
+    attack = next(c for c in calls("escort-loss") if c["name"] == "attack_unit")
+    assert attack["arguments"]["unit_index"] == "${escort.unit_index}"
+    expected = {c["case_id"]: c["expected"]["score"] for c in recipe["cases"]}
+    assert expected["new-exposure"]["gross_credit"] == 4 and expected["new-exposure"]["harm_total"] == 4
+    assert expected["temporary-exposure-repaired"] == {"gross_credit": 0, "harm_total": 0,
+                                                      "net_credit": 0, "primary_score": 0.0}
+    assert expected["two-harm"]["harm_total"] == 8 and expected["two-harm"]["gross_credit"] == 0
+    assert not any(p["id"] == "builder-attack-rejected" for p in recipe["probes"])
 
 
 def test_the_arena_get_units_surface_never_emits_the_threats_header():

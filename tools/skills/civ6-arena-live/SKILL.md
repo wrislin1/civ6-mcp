@@ -342,6 +342,19 @@ computed from the live game turn — see "Resume budget accounting" above.
   (the sibling journal holding the scenario as passed; bump the recipe `version` so the
   archive and packet names do not collide). Later stages resume the open clock without the
   flag, so the chain script runs them unchanged. The passed attempt stays retained.
+- **Engine rules that break one-turn builder scenarios** (measured live 2026-10-10,
+  builder-a1 abandoned over them). Civ VI zone of control empties a *civilian's* movement
+  the moment it enters a tile adjacent to an enemy military unit (`HasMovedIntoZOC` true,
+  0 MP), so a builder can never improve a tile next to a hostile on the turn it arrives;
+  a melee unit that entered ZOC this turn cannot attack (the registry answers `ERR:ZOC`),
+  so an escort must start adjacent to its target. The GameCore yield cache does not
+  refresh within the turn after an improvement lands (a fresh farm still reads its old
+  food), so never put a yield field on a completion rung. Two hills steps cost all four
+  builder moves; the pathing probe's "Reachable this turn" says nothing about moves left.
+- **Archive numbering.** The archive stage names a capture `version + archives already
+  published by the attempt`, so a re-capture after a failed validate (repeat from `probe`)
+  lands as v(N+1) even if you bump the recipe version; bumping is unnecessary. The chain
+  commits whichever new save appears.
 - **The native menu loader cannot reach old saves.** `restart-and-load`/`load` scroll the
   Load Game list at most 12 pages, sorted by last modified, so a July base save among ~300
   is "not found". Load a recent archive (our own `PLAN3_*`/`BUILDER_*` saves sit at the top;
