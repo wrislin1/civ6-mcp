@@ -35,7 +35,9 @@ base_save_identity:
   seed: 1881300077
   civ_type: CIVILIZATION_KOREA
 recipe_id: plan3-city-a2
-version: 1
+# version 2: the declared revalidation attempt under code identity af0de817… (instrument-v2.md,
+# amendment 2026-10-10); v1 is the retained packet captured under 08585538….
+version: 2
 toolset_path: benchmarks/toolsets/plan3-part1-v1.yaml
 player_id: 0
 # The arena's model feed cap (agent.MODEL_FEED_CHAR_CAP).

@@ -128,7 +128,7 @@ bound to the same probe. Each output names failed requirements with the evidence
 
 | family | tags |
 |---|---|
-| builder | `null_discovery`, `joint_full`, `alternative_full`, `partial_repair`, `partial_resource`, `partial_food`, `closer_only`, `escort_loss`, `escort_legitimate`, `new_exposure`, `covered_route`, `temporary_exposure_repaired`, `mixed_gain_loss`, `harm_only`, `repeat_undo`, `final_charge` |
+| builder | `null_discovery`, `joint_full`, `alternative_full`, `partial_repair`, `partial_resource`, `partial_food`, `closer_only`, `escort_loss`, `escort_legitimate`, `new_exposure`, `covered_route`, `temporary_exposure_repaired`, `mixed_gain_loss`, `harm_only`, `repeat_undo` |
 | city | `null_discovery`, `joint_full`, `alternative_full`, `housing_partial`, `uncredited_preparation`, `destructive_placement`, `accepted_replacement`, `mixed_gain_loss`, `harm_only`, `queue_overwrite`, `repeat_undo` |
 | tactical | `null_discovery`, `joint_full`, `alternative_full`, `meaningful_damage`, `reinforcement_partial`, `closer_only`, `covered_rescue`, `initial_exposure_null`, `military_loss`, `accepted_compensation`, `mixed_gain_loss`, `harm_only`, `repeat_undo` |
 
@@ -243,3 +243,44 @@ Amendment procedure by kind of change:
   iron a swordsman needs), and repeats a purchase rather than an archer shot. Toolset defects
   recorded for a later identity: `attack_unit` answers a settler's attack and an archer's second
   shot, and `fortify_unit` answers a settler, with success-shaped text instead of rejections.
+- **2026-10-10, before the builder family clock opens (decision 1, builder family).** Toolkit
+  (no identity consequence: `benchmark_part1_gate.py` is a toolkit dependency, `code_identity`
+  stays `af0de817…`): the builder family's required live case tag `final_charge` is withdrawn
+  from `REQUIRED_LIVE_TAGS["builder"]` and from the tag table above. GameCore offers no
+  build-charge setter (`Unit:ChangeBuildCharges` and `UnitManager.ChangeBuildCharges` are nil,
+  `Set/ChangeActionCharges` do not touch build charges, every DB builder-charge modifier is
+  positive), so the one-charge builder that `final_charge` presupposed is not expressible in
+  the game's own API; `UnitManager.InitUnit` gives a builder 3 charges and 4 moves. Recipe
+  (no identity consequence): `plan3-builder-a1` keeps the engine default (selectors and the
+  setup readback require exactly 3 charges), `joint-full` drops the tag, and the
+  `temporary-exposure-repaired` case is re-expressed as a retreat: the builder reaches the
+  horses, the escort steps away, and the builder walks back into Jinju, whose city tile
+  covers it (expected 0/0/0 with a `civilian_exposed` = false endpoint), because a
+  three-charge builder that built the pasture would survive on the tile and the old
+  completion-under-final-charge ending no longer exists. The escort's leave move targets an
+  explicit tile, (72,31) across the river (binding `escort_leave_tile`, measured live on the
+  base 2026-10-10: owned flat floodplain, empty, hex distance 1 from Jinju and 2 from the
+  horses, in the swordsman's reachable set this turn) instead of the far food site, for which
+  the live path query returned no path at all; `new-exposure` and the `escort-leaves-cover`
+  probe use the same tile, and a `reach-escort-leave` pathing probe witnesses it. Every other
+  case, objective, harm and expected score is unchanged. The scarcity rule of the spec (a
+  stray improvement starves an objective) is forfeited for this family.
+- **2026-10-10, before the city revalidation clock opens (decision 2, city family).**
+  Prospective amendment granting the city family one revalidation attempt. The 2026-10-09
+  delayed-death amendment required `plan3-city-a2-v1` (captured under `08585538…`) to be
+  repeated under `af0de817…`, but the stage machine refuses every stage on a closed attempt,
+  a fresh attempt for a scenario already journaled in a sibling directory is refused
+  ("already journaled"), and a third scenario identity is refused by the two-identity family
+  budget. The revalidation attempt is therefore declared explicitly: same recipe
+  `plan3-city-a2.yaml` at `version: 2` (archive `plan3-city-a2-v2`, packet
+  `plan3-city-a2-v2.json`), new attempt directory `benchmark_runs/plan3-part1/city-a2-reval`,
+  new three-hour clock from `survey`, predecessor packet `plan3-city-a2-v1.json` named here and
+  retained unchanged with its attempt directory. Toolkit (no identity consequence:
+  `benchmark_authoring.py` and `benchmark_authoring_journal.py` are toolkit dependencies): the
+  stage CLI gains `--revalidates JOURNAL`, the sibling journal holding the same scenario as
+  passed; the new journal records that reference (`revalidates: {journal, sha256}`), the
+  "already journaled" refusal is waived for exactly that journal, and nothing else about the
+  identity budget, substitution rules or clock changes. The gate keeps reading every attempt
+  directory of the family; the passed `city-a2` attempt remains in the attempt list with its
+  own journal and index. Nothing in the city scenario depends on the fixed code path (no unit
+  dies there), so the revalidation is expected to pass unchanged.

@@ -21,6 +21,7 @@ from civ_mcp.arena.benchmark_authoring import (
     query_uses_bindings,
     substitute_bindings,
 )
+from civ_mcp.arena import benchmark_part1_gate as gate
 from civ_mcp.arena.benchmark_manifest_v2 import load_toolset
 from civ_mcp.lua import models as lq
 
@@ -31,8 +32,7 @@ REQUIRED_TAGS = {
     "builder": {"null_discovery", "joint_full", "alternative_full", "partial_repair",
                 "partial_resource", "partial_food", "closer_only", "escort_loss",
                 "escort_legitimate", "new_exposure", "covered_route",
-                "temporary_exposure_repaired", "mixed_gain_loss", "harm_only", "repeat_undo",
-                "final_charge"},
+                "temporary_exposure_repaired", "mixed_gain_loss", "harm_only", "repeat_undo"},
     "city": {"null_discovery", "joint_full", "alternative_full", "housing_partial",
              "uncredited_preparation", "destructive_placement", "accepted_replacement",
              "mixed_gain_loss", "harm_only", "queue_overwrite", "repeat_undo"},
@@ -209,15 +209,55 @@ def test_builder_witness_legs_must_be_reachable_this_turn():
     reach = {(p["arguments_from_bindings"]["unit_index"], p["arguments_from_bindings"]["x"])
              for p in recipe["probes"] if p["tool"] == "get_pathing_estimate"
              and p.get("expect_pattern") == "Reachable this turn"}
-    # joint-full legs and the alternative allocation's legs
+    # joint-full legs, the alternative allocation's legs, and the escort's leave step
     assert reach == {("${builder_repair.unit_index}", "${repair_site.x}"),
                      ("${builder_resource.unit_index}", "${resource_site.x}"),
                      ("${builder_food.unit_index}", "${food_site.x}"),
                      ("${builder_food.unit_index}", "${repair_site.x}"),
                      ("${builder_repair.unit_index}", "${food_site_alt.x}"),
-                     ("${builder_repair.unit_index}", "${closer_only_tile.x}")}
+                     ("${builder_repair.unit_index}", "${closer_only_tile.x}"),
+                     ("${escort.unit_index}", "${escort_leave_tile.x}")}
     spawn = recipe["setup"]["operations"][1]
     assert "Map.GetPlotDistance" in spawn["readback"] and "d > 2" in spawn["readback"]
+
+
+def test_builder_keeps_the_engine_default_charges_and_retreats_from_exposure():
+    """Amendment 2026-10-10 (decision 1): GameCore has no build-charge setter, so
+    the builder family carries InitUnit's default 3 charges, `final_charge` is no
+    longer a required tag, the escort leaves to a measured tile instead of the
+    unreachable far food site, and the temporary exposure is repaired by retreat."""
+    recipe = load_recipe(_path("builder"), root=REPO)
+    builders = [b for b in recipe["bindings"] if b["selector"].get("type") == "UNIT_BUILDER"]
+    assert len(builders) == 3 and all(b["selector"]["charges"] == 3 for b in builders)
+    spawn = recipe["setup"]["operations"][1]
+    assert "ChangeBuildCharges" not in spawn["lua"]
+    assert "GetBuildCharges() == 3" in spawn["readback"]
+    assert not any("final_charge" in case["tags"] for case in recipe["cases"])
+    assert "final_charge" not in gate.REQUIRED_LIVE_TAGS["builder"]
+    leave = next(b for b in recipe["bindings"] if b["name"] == "escort_leave_tile")
+    assert leave["selector"] == {"x": 72, "y": 31, "owner": 0, "district": "NONE"}
+    scripts = {s["script_id"]: s for s in recipe["scripts"]}
+    escort_moves = [c for sid in ("new-exposure", "temporary-exposure-repaired")
+                    for batch in scripts[sid]["batches"] for c in batch["calls"]
+                    if c["name"] == "move_unit"
+                    and c["arguments"]["unit_index"] == "${escort.unit_index}"]
+    assert escort_moves and all(c["arguments"]["x"] == "${escort_leave_tile.x}"
+                                for c in escort_moves)
+    assert "${food_site.x}" not in str(scripts["new-exposure"]) + str(
+        scripts["temporary-exposure-repaired"])
+    retreat = scripts["temporary-exposure-repaired"]["batches"][-2]["calls"][0]
+    assert retreat["name"] == "move_unit" and retreat["arguments"] == {
+        "unit_index": "${builder_resource.unit_index}",
+        "x": "${builder_resource.x}", "y": "${builder_resource.y}"}
+    case = next(c for c in recipe["cases"] if c["case_id"] == "temporary-exposure-repaired")
+    assert case["tags"] == ["temporary_exposure_repaired"]
+    assert case["expected"]["score"] == {"gross_credit": 0, "harm_total": 0, "net_credit": 0,
+                                         "primary_score": 0.0}
+    assert case["expected"]["endpoints"] == [{
+        "id": "builder-back-under-cover", "value": False,
+        "predicate": {"kind": "civilian_exposed", "unit": "${builder_resource.pair}"}}]
+    probe = next(p for p in recipe["probes"] if p["id"] == "escort-leaves-cover")
+    assert probe["arguments_from_bindings"]["x"] == "${escort_leave_tile.x}"
 
 
 def test_builder_closer_only_destination_is_strictly_closer_and_unscored():

@@ -335,3 +335,18 @@ computed from the live game turn — see "Resume budget accounting" above.
   layout setup op that scans for a consistent tile set and reads back every position;
   independent selectors cannot see each other. Freeze damage thresholds from measured
   probe shots, not from the combat table.
+- **Revalidating a passed packet** (amendment 2026-10-10). The stage machine refuses every
+  stage on a closed attempt and a fresh directory for a scenario already journaled in a
+  sibling. Record the amendment first, then open the new clock with
+  `benchmark-stage.sh RECIPE NEW_ATTEMPT_DIR survey --revalidates OLD_ATTEMPT_DIR/authoring-journal.json`
+  (the sibling journal holding the scenario as passed; bump the recipe `version` so the
+  archive and packet names do not collide). Later stages resume the open clock without the
+  flag, so the chain script runs them unchanged. The passed attempt stays retained.
+- **The native menu loader cannot reach old saves.** `restart-and-load`/`load` scroll the
+  Load Game list at most 12 pages, sorted by last modified, so a July base save among ~300
+  is "not found". Load a recent archive (our own `PLAN3_*`/`BUILDER_*` saves sit at the top;
+  use the on-disk underscore name, e.g. `PLAN3_TACTICAL_A1_V2`) to get in-world, then reload
+  the base through the in-game tier (`game_lifecycle.load_game_save`, ~45 s). If the Single
+  Player submenu is already open, `load` toggles it shut and fails on "Load Game"; just run
+  it again. Turn/civ/seed do not distinguish an archive from its base (same turn 100): verify
+  by content (unit counts, pillage state) before trusting a reload.

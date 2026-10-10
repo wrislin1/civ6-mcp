@@ -1058,6 +1058,44 @@ async def _finished(tmp_path, tool_log) -> Rig:
     return rig
 
 
+async def test_revalidation_attempt_reopens_a_passed_scenario_in_a_fresh_dir(
+        tmp_path, tool_log):
+    """Amendment 2026-10-10 (decision 2): a declared revalidation of a closed,
+    passed attempt is admitted in a new attempt directory with a new clock; the
+    closed attempt is never touched."""
+    done = await _finished(tmp_path, tool_log)
+    closed_journal = done.attempt / "authoring-journal.json"
+    before = closed_journal.read_bytes()
+    attempt = done.attempt.parent / "builder-a1-reval"
+    with pytest.raises(ValueError, match="already journaled"):
+        await run_authoring_stage(done.recipe_path, stage="survey", attempt_dir=attempt,
+                                  ops=done.ops.live_ops(), root=tmp_path)
+    assert not (attempt / "stages").exists()
+    outside = tmp_path / "benchmark_runs" / "elsewhere" / "authoring-journal.json"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(before)
+    with pytest.raises(ValueError, match="revalidated journal .* must live under "
+                                         "benchmark_runs/plan3-part1/"):
+        await run_authoring_stage(done.recipe_path, stage="survey", attempt_dir=attempt,
+                                  ops=done.ops.live_ops(), root=tmp_path, revalidates=outside)
+    record = await run_authoring_stage(
+        done.recipe_path, stage="survey", attempt_dir=attempt, ops=done.ops.live_ops(),
+        root=tmp_path, revalidates=closed_journal)
+    assert record["status"] == "passed", record.get("error")
+    journal = json.loads((attempt / "authoring-journal.json").read_text())
+    (own,) = journal["families"]["builder"]["scenarios"]
+    assert own["revalidates"] == {
+        "journal": "benchmark_runs/plan3-part1/builder-a1/authoring-journal.json",
+        "sha256": hashlib.sha256(before).hexdigest()}
+    assert own["attempt"] == 1 and own["status"] == "open"
+    assert closed_journal.read_bytes() == before
+    assert (done.attempt / "evidence-index.json").exists()
+    # Later stages resume the open revalidation clock without the declaration.
+    record = await run_authoring_stage(done.recipe_path, stage="apply", attempt_dir=attempt,
+                                       ops=done.ops.live_ops(), root=tmp_path)
+    assert record["status"] == "passed", record.get("error")
+
+
 async def test_evidence_files_lists_closed_inventory(tmp_path, tool_log):
     rig = await _finished(tmp_path, tool_log)
     (rig.attempt / "stray.lock").write_text("123")

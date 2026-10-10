@@ -1904,7 +1904,8 @@ def _recover_completion(ctx: _Context, journal: AuthoringJournal,
 async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Path,
                               ops: LiveOps | None = None,
                               root: Path | None = None,
-                              predecessor_journal: Path | None = None) -> dict[str, Any]:
+                              predecessor_journal: Path | None = None,
+                              revalidates: Path | None = None) -> dict[str, Any]:
     """Run one stage; returns its (immutable) stage record.
 
     Raises `ValueError` without writing anything when the transition is not
@@ -1918,6 +1919,12 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
     attempt journal holding the predecessor as terminal-failed. Re-running
     `finish` on a passed attempt whose evidence index is missing (the write
     failed after the journal closed) re-runs only the index/packet writes.
+
+    A declared revalidation (`revalidates`: the sibling attempt journal holding
+    the same scenario as passed; amendment 2026-10-10) opens the scenario again
+    in a fresh attempt directory with a new clock. The reference is journaled
+    and only that journal's "already journaled" refusal is waived; the passed
+    attempt is never touched. Later stages resume the open clock without it.
     """
     if stage not in STAGE_PREREQUISITES:
         raise ValueError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
@@ -1957,6 +1964,11 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
         predecessor_ref = _rel(predecessor_journal, root)
         # Refused before the journal opens: the gate would never see it there.
         _require_under_attempts_root(predecessor_ref, "predecessor journal")
+    revalidates_ref = None
+    if revalidates is not None:
+        revalidates = Path(os.path.abspath(revalidates))
+        revalidates_ref = _rel(revalidates, root)
+        _require_under_attempts_root(revalidates_ref, "revalidated journal")
     attempt_dir.mkdir(parents=True, exist_ok=True)
     if stage in REPEATABLE_STAGES:
         _invalidate_downstream(ctx)
@@ -1971,7 +1983,8 @@ async def run_authoring_stage(recipe_path: Path, *, stage: str, attempt_dir: Pat
                           material_change=recipe["material_change"],
                           predecessor_journal=predecessor_journal,
                           predecessor_journal_ref=predecessor_ref,
-                          sibling_journals=_sibling_journals(attempt_dir))
+                          sibling_journals=_sibling_journals(attempt_dir),
+                          revalidates=revalidates, revalidates_ref=revalidates_ref)
         except ValueError as exc:
             if "expired" not in str(exc):
                 raise
@@ -2263,6 +2276,11 @@ def main(argv: list[str] | None = None) -> int:
             "--predecessor-journal", type=Path, default=None,
             help="a substitute recipe's failed predecessor journal (default: the sibling "
                  "attempt directory journal holding the predecessor as terminal-failed)")
+        stage_parser.add_argument(
+            "--revalidates", type=Path, default=None,
+            help="declared revalidation (contract amendment required): the sibling attempt "
+                 "journal holding this recipe's scenario as passed; opens a new clock in "
+                 "this fresh attempt directory and records the reference")
     pre = sub.add_parser(
         "preflight", help="OFFLINE, needs the committed full-suite run and (to pass) the "
                           "positive-control probe: bind code, toolkit, recipe, toolset and "
@@ -2323,7 +2341,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         record = asyncio.run(run_authoring_stage(args.recipe, stage=args.command,
                                                  attempt_dir=args.attempt_dir,
-                                                 predecessor_journal=args.predecessor_journal))
+                                                 predecessor_journal=args.predecessor_journal,
+                                                 revalidates=args.revalidates))
         print(json.dumps({"stage": record["stage"], "sequence": record["sequence"],
                           "status": record["status"], "error": record["error"]}))
         return 0 if record["status"] == "passed" else 1

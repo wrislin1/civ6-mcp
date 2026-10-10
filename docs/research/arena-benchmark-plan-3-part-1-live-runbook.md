@@ -96,6 +96,16 @@ lands at the recipe's `outputs.provenance_packet` for the archived version
   and refuses an imported reference to any other):
   `... survey --recipe benchmarks/recipes/plan3-builder-a2.yaml --attempt-dir benchmark_runs/plan3-part1/builder-a2 --predecessor-journal benchmark_runs/plan3-part1/builder-a1/authoring-journal.json`.
   A third identity in a family, across all sibling journals, is refused.
+- **Revalidation** (amendment 2026-10-10; only with a recorded prospective amendment
+  naming the predecessor packet): a passed packet captured under an earlier identity is
+  repeated in a **new** attempt dir with a new clock, same recipe at a bumped `version`
+  (new archive and packet names), declaring the sibling journal that holds the scenario as
+  passed:
+  `... survey --recipe benchmarks/recipes/plan3-city-a2.yaml --attempt-dir benchmark_runs/plan3-part1/city-a2-reval --revalidates benchmark_runs/plan3-part1/city-a2/authoring-journal.json`.
+  The reference is journaled (`revalidates: {journal, sha256}`), only that journal's
+  "already journaled" refusal is waived, later stages resume without the flag, and the
+  passed attempt is left untouched (the gate still lists it). One revalidation per scenario:
+  a scenario held by two sibling journals is refused.
 - **Setup Lua runs in GameCore** (`GameConnection.execute_mutation`, never re-sent on a
   dead socket): recipes may use the GameCore mutation APIs the verified journals used
   (`UnitManager.InitUnit/PlaceUnit/RestoreMovement`, `ImprovementBuilder.*`, treasury

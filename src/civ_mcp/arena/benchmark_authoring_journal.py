@@ -1,7 +1,10 @@
 """Durable, append-only journal of benchmark scenario authoring attempts.
 
 Each scenario family gets at most two authoring identities: attempt 1 and,
-only after attempt 1 failed terminally, one declared material substitute.
+only after attempt 1 failed terminally, one declared material substitute. A
+passed scenario may be reopened once more only as a declared *revalidation*
+(``revalidates``: the sibling journal that holds it as passed), which starts a
+new clock in a new attempt directory and leaves the passed attempt untouched.
 Every scenario carries a three-elapsed-hour clock (``AUTHORING_LIMIT_S``)
 that starts before the first live command and never pauses: it survives
 process restarts (UTC start time is persisted), counts same-process
@@ -74,6 +77,23 @@ def _import_predecessor(path: Path, family: str, predecessor: str, ref: str) -> 
                          "not terminal-failed")
     record["imported_from"] = {"journal": ref, "sha256": hashlib.sha256(data).hexdigest()}
     return record
+
+
+def _revalidation_reference(path: Path, family: str, scenario_id: str, ref: str
+                            ) -> dict[str, Any]:
+    """Reference to the closed, passed sibling journal that `scenario_id` revalidates."""
+    if not path.is_file():
+        raise ValueError(f"revalidated journal {path} does not exist")
+    data = path.read_bytes()
+    found = [s for s in _family_scenarios(_read_journal(path), family)
+             if s.get("scenario_id") == scenario_id and not s.get("imported_from")]
+    if not found:
+        raise ValueError(f"revalidation of {scenario_id!r}: no such scenario of family "
+                         f"{family!r} in {path}")
+    if found[0].get("status") != "passed":
+        raise ValueError(f"revalidation of {scenario_id!r}: {path} holds it as "
+                         f"{found[0].get('status')!r}, not passed")
+    return {"journal": ref, "sha256": hashlib.sha256(data).hexdigest()}
 
 
 def _pid_alive(pid: int) -> bool:
@@ -267,6 +287,8 @@ class AuthoringJournal:
         predecessor_journal: Path | None = None,
         predecessor_journal_ref: str | None = None,
         sibling_journals: Sequence[Path] = (),
+        revalidates: Path | None = None,
+        revalidates_ref: str | None = None,
     ) -> dict[str, Any]:
         """Open (or resume) `scenario_id`'s clock.
 
@@ -275,7 +297,13 @@ class AuthoringJournal:
         by reference (journal path + sha256, ``imported_from``) so substitution
         validation and the family total see both attempts. `sibling_journals`
         are every other attempt journal of the run: their identities count
-        toward the two-identity family budget."""
+        toward the two-identity family budget.
+
+        A declared revalidation names, in `revalidates`, the one sibling
+        journal holding `scenario_id` as passed (amendment 2026-10-10): that
+        reference is recorded on the new record (``revalidates``) and the
+        "already journaled" refusal is waived for exactly that journal. The
+        identity budget, the substitution rules and the clock are unchanged."""
         doc = copy.deepcopy(self._doc)
         existing = self._find(doc, scenario_id)
         if existing is not None:
@@ -292,21 +320,40 @@ class AuthoringJournal:
                     raise ValueError("authoring clock expired")
             return copy.deepcopy(existing)
 
+        revalidated: dict[str, Any] | None = None
+        if revalidates is not None:
+            revalidated = _revalidation_reference(
+                Path(revalidates), family, scenario_id,
+                revalidates_ref or Path(revalidates).as_posix())
+
         entry = doc["families"].setdefault(family, {"scenarios": [], "total_elapsed_s": 0.0})
         scenarios = entry["scenarios"]
         # Identities journaled elsewhere (sibling attempt directories) count
         # toward the family's two-identity budget.
-        elsewhere: dict[str, str] = {}
+        elsewhere: dict[str, list[Path]] = {}
         for path in sibling_journals:
             path = Path(path)
             if path.resolve() == self._path.resolve() or not path.is_file():
                 continue
             for other in _family_scenarios(_read_journal(path), family):
                 if not other.get("imported_from"):
-                    elsewhere.setdefault(other["scenario_id"], str(path))
-        if scenario_id in elsewhere:
+                    elsewhere.setdefault(other["scenario_id"], []).append(path)
+        holders = elsewhere.get(scenario_id, [])
+        if revalidated is not None:
+            if len(holders) > 1:
+                raise ValueError(
+                    f"scenario {scenario_id!r} is already journaled in {len(holders)} sibling "
+                    f"attempt journals {[str(p) for p in holders]}; the amendment grants one "
+                    "revalidation attempt"
+                )
+            if [p.resolve() for p in holders] != [Path(revalidates).resolve()]:
+                raise ValueError(
+                    f"revalidation of {scenario_id!r}: {revalidates} is not the sibling "
+                    f"attempt journal holding it (held by {[str(p) for p in holders]})"
+                )
+        elif holders:
             raise ValueError(
-                f"scenario {scenario_id!r} is already journaled in {elsewhere[scenario_id]}"
+                f"scenario {scenario_id!r} is already journaled in {holders[0]}"
             )
         identities = set(elsewhere) | {
             s["scenario_id"] for s in scenarios if not s.get("imported_from")}
@@ -326,7 +373,9 @@ class AuthoringJournal:
                     "(a substitute in a fresh attempt directory needs the predecessor's "
                     "journal: --predecessor-journal)"
                 )
-            if elsewhere:
+            # A revalidation of attempt 1 itself reuses that identity; any other
+            # sibling identity still means a new one needs a failed predecessor.
+            if elsewhere and not (revalidated is not None and set(elsewhere) == {scenario_id}):
                 raise ValueError(
                     f"family {family!r} already has attempt 1 {sorted(elsewhere)}; a new "
                     "identity must be a declared substitute of a failed predecessor"
@@ -362,6 +411,8 @@ class AuthoringJournal:
             "expired": False,
             "finished_unix_s": None,
         }
+        if revalidated is not None:
+            record["revalidates"] = revalidated
         scenarios.append(record)
         self._commit(doc)
         self._mark(scenario_id)

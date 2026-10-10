@@ -5,6 +5,7 @@ Every clock is injected -- no test waits in real time.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -438,3 +439,93 @@ def test_unreadable_lock_is_not_reclaimed(tmp_path):
     Path(f"{path}.lock").write_text("")
     with pytest.raises(RuntimeError, match="locked"):
         AuthoringJournal(path)
+
+
+# --- revalidation (amendment 2026-10-10, decision 2) -----------------------
+
+
+def _passed_substitute(tmp_path, clock):
+    """Attempt 1 failed in builder-a1; the substitute builder-a2 passed in builder-a2."""
+    first = _failed_attempt_one(tmp_path / "builder-a1" / "journal.json", clock)
+    second = tmp_path / "builder-a2" / "journal.json"
+    with _open(second, clock) as journal:
+        _begin_substitute(journal, predecessor_journal=first, sibling_journals=[first])
+        clock.advance(3000)
+        journal.finish(scenario_id="builder-a2", passed=True)
+    return first, second
+
+
+def test_revalidation_attempt_is_admitted_for_the_passed_sibling_scenario(tmp_path):
+    clock = FakeClock()
+    first, second = _passed_substitute(tmp_path, clock)
+    reval = tmp_path / "builder-a2-reval" / "journal.json"
+    with _open(reval, clock) as journal:
+        record = _begin_substitute(journal, predecessor_journal=first,
+                                   sibling_journals=[first, second],
+                                   revalidates=second, revalidates_ref="builder-a2/journal.json")
+    assert record["attempt"] == 2 and record["status"] == "open"
+    assert record["revalidates"] == {
+        "journal": "builder-a2/journal.json",
+        "sha256": hashlib.sha256(second.read_bytes()).hexdigest()}
+    doc = json.loads(reval.read_text())
+    imported, own = doc["families"]["builder"]["scenarios"]
+    assert imported["scenario_id"] == "builder-a1" and imported["imported_from"]
+    assert own["scenario_id"] == "builder-a2" and own["revalidates"]
+    # A new clock: nothing of the revalidated attempt's elapsed time carries over.
+    assert own["recorded_elapsed_s"] == 0.0
+    # The revalidated journal is untouched.
+    assert json.loads(second.read_text())["families"]["builder"]["scenarios"][1]["status"] \
+        == "passed"
+
+
+def test_revalidation_requires_the_named_journal_to_hold_the_scenario_as_passed(tmp_path):
+    clock = FakeClock()
+    first = _failed_attempt_one(tmp_path / "builder-a1" / "journal.json", clock)
+    second = tmp_path / "builder-a2" / "journal.json"
+    with _open(second, clock) as journal:
+        _begin_substitute(journal, predecessor_journal=first, sibling_journals=[first])
+        journal.finish(scenario_id="builder-a2", passed=False)
+    with _open(tmp_path / "builder-a2-reval" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="revalidation of 'builder-a2'.*not passed"):
+            _begin_substitute(journal, predecessor_journal=first,
+                              sibling_journals=[first, second], revalidates=second)
+        with pytest.raises(ValueError, match="revalidation of 'builder-a2'.*no such scenario"):
+            _begin_substitute(journal, predecessor_journal=first,
+                              sibling_journals=[first, second], revalidates=first)
+        with pytest.raises(ValueError, match="does not exist"):
+            _begin_substitute(journal, predecessor_journal=first,
+                              sibling_journals=[first, second],
+                              revalidates=tmp_path / "nowhere.json")
+
+
+def test_revalidation_waives_only_the_named_sibling_and_only_once(tmp_path):
+    clock = FakeClock()
+    first, second = _passed_substitute(tmp_path, clock)
+    # Undeclared, the same scenario is still refused.
+    with _open(tmp_path / "builder-a2-again" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="already journaled"):
+            _begin_substitute(journal, predecessor_journal=first,
+                              sibling_journals=[first, second])
+    # The named journal must be the sibling that holds the scenario.
+    stray = tmp_path / "elsewhere" / "journal.json"
+    stray.parent.mkdir()
+    stray.write_bytes(second.read_bytes())
+    with _open(tmp_path / "builder-a2-stray" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="not the sibling attempt journal"):
+            _begin_substitute(journal, predecessor_journal=first,
+                              sibling_journals=[first, second], revalidates=stray)
+    # One revalidation attempt is admitted; a second finds the scenario journaled twice.
+    reval = tmp_path / "builder-a2-reval" / "journal.json"
+    with _open(reval, clock) as journal:
+        _begin_substitute(journal, predecessor_journal=first, sibling_journals=[first, second],
+                          revalidates=second)
+        journal.finish(scenario_id="builder-a2", passed=True)
+    with _open(tmp_path / "builder-a2-reval-2" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="already journaled"):
+            _begin_substitute(journal, predecessor_journal=first,
+                              sibling_journals=[first, second, reval], revalidates=reval)
+    # Nor does a declaration admit a different identity.
+    with _open(tmp_path / "builder-a3" / "journal.json", clock) as journal:
+        with pytest.raises(ValueError, match="revalidation of 'builder-a3'.*no such scenario"):
+            _begin_substitute(journal, scenario_id="builder-a3", predecessor_journal=first,
+                              sibling_journals=[first, second], revalidates=second)
