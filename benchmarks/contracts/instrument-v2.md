@@ -299,7 +299,12 @@ Amendment procedure by kind of change:
   re-expresses `new-exposure` (exposure on (73,31) alongside the Gwangju builder's repair,
   4/4/0, the family's `mixed_gain_loss` witness), `temporary-exposure-repaired` (escort out
   and back, 0/0/0) and `two-harm` (0/8/-8). Every other case, objective, harm and probe is
-  unchanged.
+  unchanged. Its first `validate` (18:34 UTC) passed 10 of 12 cases; both full cases scored
+  10 because the improve-food rung's `food: {min: 2}` field never reads true: the GameCore
+  yield cache does not refresh within the turn after an improvement lands (a fresh plains
+  farm still read 1 food, the repaired iron mine 1 production). The field is dropped (the
+  farm itself is the completion), the recipe moves to `version: 2`, and the family repeats
+  from `probe` under the same clock (v1 archive and outputs retained).
 - **2026-10-10, before the city revalidation clock opens (decision 2, city family).**
   Prospective amendment granting the city family one revalidation attempt. The 2026-10-09
   delayed-death amendment required `plan3-city-a2-v1` (captured under `08585538…`) to be

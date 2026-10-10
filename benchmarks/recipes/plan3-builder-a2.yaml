@@ -28,7 +28,8 @@ base_save_identity:
   seed: 1881300077
   civ_type: CIVILIZATION_KOREA
 recipe_id: plan3-builder-a2
-version: 1
+# version 2: re-captured after the first validate (v1 archive and outputs retained).
+version: 2
 toolset_path: benchmarks/toolsets/plan3-part1-v1.yaml
 player_id: 0
 # The arena's model feed cap (agent.MODEL_FEED_CHAR_CAP): required facts must be
@@ -396,9 +397,12 @@ objectives:
   - points: 2
     predicate: {kind: charged_builder_at, tiles: ["${food_site.xy}", "${food_site_alt.xy}"]}
   - points: 4
-    # A plains farm yields 2 food at this era (grassland would give 3).
+    # No yield field: the GameCore yield cache does not refresh within the turn
+    # after an improvement lands (measured live 2026-10-10, builder-a2 validate: a
+    # fresh plains farm still read 1 food in the capture, the repaired iron mine
+    # 1 production), so the farm itself is the completion.
     predicate: {kind: tile_matches, tiles: ["${food_site.xy}", "${food_site_alt.xy}"],
-                fields: {improvement: IMPROVEMENT_FARM, pillaged: false, food: {min: 2}}}
+                fields: {improvement: IMPROVEMENT_FARM, pillaged: false}}
 
 harms:
 - id: escort-loss
