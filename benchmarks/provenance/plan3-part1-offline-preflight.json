@@ -4,25 +4,25 @@
   "full_suite_result": {
     "code_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
     "command": "uv run pytest -q 2>&1 | tee benchmark_runs/plan3-part1/preflight/pytest.txt",
-    "duration_s": 195.797,
+    "duration_s": 192.358,
     "errors": 0,
     "exit_code": 0,
     "failed": 0,
-    "finished": "2026-10-10T19:58:36.142438+00:00",
-    "git_head": "cbd86f1ac5221d826b8f8d5b82a18a57e8a6525c",
+    "finished": "2026-10-10T20:21:02.083021+00:00",
+    "git_head": "7b454a2699f8a2ee5a40fc1abe1e38ecbb398744",
     "output": {
       "path": "benchmark_runs/plan3-part1/preflight/pytest.txt",
-      "sha256": "3edb7a785092f0f143e332cccaeacd817202676247be55de3e437f555f9314df"
+      "sha256": "e3320d7ad595cef14bc4ea8757cb257ef59d84b0e3d24fab6ecdcb0bdc482c3e"
     },
     "passed": true,
     "present": true,
     "problems": [],
     "result": {
       "path": "benchmark_runs/plan3-part1/preflight/pytest-result.json",
-      "sha256": "a0f9518f18dcf95d0d1583d5decc100b1c1ae1cebe492aa8f48e0a501e62461a"
+      "sha256": "5de48b87f7e4fcb1b4ca0746284092f49b1878e0c7f7de54c7d764ded3ba710f"
     },
-    "started": "2026-10-10T19:55:20.345279+00:00",
-    "tests_passed": 4063
+    "started": "2026-10-10T20:17:49.724899+00:00",
+    "tests_passed": 4064
   },
   "historical_audit": {
     "affected_trial_count": 64,
@@ -102,5 +102,5 @@
     "state_sha256": "40486fb2f7202aad429983f0c9735f70a081428ae1ca4174a8653a739e88b438"
   },
   "schema_version": "2.0.0",
-  "toolkit_identity": "530a2a15ae328c7e169ca54e3d0fd348b11ef1ec9e3a5b9e40c9ee6d2d405f8f"
+  "toolkit_identity": "f5828ec11e96227cdfdd9391715b41d9d5329d0d3752b4a1f99dfca07f2b9e9d"
 }

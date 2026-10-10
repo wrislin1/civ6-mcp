@@ -1,0 +1,1235 @@
+{
+  "details": {},
+  "failed_requirements": [],
+  "families": {
+    "builder": {
+      "failed_requirements": [],
+      "family_total_s": 12621.355816364288,
+      "passed": true,
+      "position_id": "plan3-builder-a2-v3",
+      "requirements": {
+        "alternative_full_case": {
+          "detail": "1 passed live alternative full-score case(s) whose script digest differs from every joint-full script",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-003.json"
+          ],
+          "passed": true
+        },
+        "capture_records_complete": {
+          "detail": "12 live trials, every capture single-execution and <= 2.0 s",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/new-exposure/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-food/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-repair/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-resource/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/temporary-exposure-repaired/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/two-harm/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-010.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-011.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-012.json"
+          ],
+          "passed": true
+        },
+        "closer_only_zero": {
+          "detail": "1 closer/preparation case(s); nonzero or failed: []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-007.json"
+          ],
+          "passed": true
+        },
+        "evidence_index_complete": {
+          "detail": "every file in the attempt directory is in the immutable index",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "failed_attempt_history": {
+          "detail": "2 attempt dirs (1 failed), all journaled and indexed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a1/authoring-journal.json",
+            "benchmark_runs/plan3-part1/builder-a1/evidence-index.json",
+            "benchmark_runs/plan3-part1/builder-a2/authoring-journal.json",
+            "benchmark_runs/plan3-part1/builder-a2/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "final_restore_verified": {
+          "detail": "reloaded=True, reconnect=True, digest matches",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/stages/019-validate.json"
+          ],
+          "passed": true
+        },
+        "finish_packet_resolved": {
+          "detail": "every finish-packet reference resolved and hash-correct; attempt files read only from the verified index",
+          "evidence": [
+            "benchmarks/provenance/plan3-builder-a2-v3.json"
+          ],
+          "passed": true
+        },
+        "harm_negative_cases": {
+          "detail": "every declared harm ['escort-loss', 'new-exposure'] has an uncharged legitimate/compensated counterpart",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/temporary-exposure-repaired/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-010.json"
+          ],
+          "passed": true
+        },
+        "harm_only_negative": {
+          "detail": "1 harm-only case(s); not (passed, gross 0, primary < 0): []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json"
+          ],
+          "passed": true
+        },
+        "harm_positive_cases": {
+          "detail": "declared ['escort-loss', 'new-exposure']; no passed case charging []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/new-exposure/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/two-harm/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-011.json"
+          ],
+          "passed": true
+        },
+        "intermediate_rungs_covered": {
+          "detail": "every intermediate rung witnessed live",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/new-exposure/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-food/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-repair/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-resource/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/temporary-exposure-repaired/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/two-harm/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-010.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-011.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-012.json"
+          ],
+          "passed": true
+        },
+        "joint_full_case": {
+          "detail": "1 passed live joint-full case(s) at primary 1.0",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json"
+          ],
+          "passed": true
+        },
+        "live_vs_offline_cases_distinguished": {
+          "detail": "12 validation-run cases are live witnesses; offline fixtures are pytest node IDs",
+          "evidence": [],
+          "passed": true
+        },
+        "measured_parameters_frozen": {
+          "detail": "0 measured parameter(s) frozen with probe evidence",
+          "evidence": [],
+          "passed": true
+        },
+        "menu_recovery_verified": {
+          "detail": "loader, reconnect, identity and digest confirmed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/stages/018-menu-check.json"
+          ],
+          "passed": true
+        },
+        "no_model_provenance": {
+          "detail": "13 records scripted, non-counting, not pilot-informed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/new-exposure/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-food/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-repair/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-resource/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/temporary-exposure-repaired/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/two-harm/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-010.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-011.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-012.json"
+          ],
+          "passed": true
+        },
+        "no_undefined_predicate_support": {
+          "detail": "satisfied by construction: the v2 predicate layer raises BenchmarkStateError on any undefined yield/lifecycle/queue value, which validation records as a case error; no live case errored",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/new-exposure/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-food/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-repair/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-resource/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/temporary-exposure-repaired/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/two-harm/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-010.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-011.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-012.json"
+          ],
+          "passed": true
+        },
+        "null_capture_timing": {
+          "detail": "12 full-scope captures, max <= 2.0 s, single execution",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "null_digest_chain": {
+          "detail": "5 steps, every pair and boundary equal",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "null_observation_calls": {
+          "detail": "5 public observation calls; 7 facts discoverable",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "offline_audit": {
+          "detail": "membership_matches=True, 117/117 uncredited over 96/96 trials",
+          "evidence": [
+            "benchmarks/provenance/plan3-part1-offline-preflight.json"
+          ],
+          "passed": true
+        },
+        "offline_fixture_inventory": {
+          "detail": "7 offline robustness tests present",
+          "evidence": [
+            "tests/arena/test_benchmark_agent.py",
+            "tests/arena/test_benchmark_capture.py",
+            "tests/arena/test_benchmark_predicates_v2.py",
+            "tests/arena/test_benchmark_report_v2.py",
+            "tests/arena/test_benchmark_scripted_runner.py",
+            "tests/arena/test_benchmark_state_v2.py"
+          ],
+          "passed": true
+        },
+        "positive_control_timing_probe": {
+          "detail": "passing 20-sample probe under the current capture implementation; 22 indexed raw evidence files present, hash-correct and Git-tracked",
+          "evidence": [
+            "benchmark_runs/plan3-part1/capture-probe-5/evidence-index.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/001.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/002.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/003.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/004.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/005.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/006.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/007.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/008.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/009.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/010.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/011.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/012.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/013.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/014.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/015.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/016.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/017.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/018.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/019.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/020.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/summary.json",
+            "benchmarks/provenance/plan3-part1-capture-probe.json"
+          ],
+          "passed": true
+        },
+        "rejections_declared": {
+          "detail": "every rejected_operation matches a declared rejection",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/new-exposure/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-food/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-repair/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-resource/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/temporary-exposure-repaired/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/two-harm/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-010.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-011.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-012.json"
+          ],
+          "passed": true
+        },
+        "report_regeneration_recorded": {
+          "detail": "reports_identical=True, validation.json matches the finish packet and validate record: True (Task 22 re-verifies in a temporary checkout)",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/stages/019-validate.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/validation.json"
+          ],
+          "passed": true
+        },
+        "required_live_tags": {
+          "detail": "all 15 builder tags witnessed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/new-exposure/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-food/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-repair/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-resource/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/temporary-exposure-repaired/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/two-harm/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-010.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-011.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-012.json"
+          ],
+          "passed": true
+        },
+        "scenario_duration": {
+          "detail": "scenarios {'builder-a1': 6229.397923231125, 'builder-a2': 6391.957893133163}; family total 12621.4 s",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a1/authoring-journal.json",
+            "benchmark_runs/plan3-part1/builder-a2/authoring-journal.json"
+          ],
+          "passed": true
+        },
+        "tracked_evidence_inventory": {
+          "detail": "231 referenced/indexed files present, hash-correct and Git-tracked",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "twelve_cycle_verify": {
+          "detail": "12 digests, cycles_completed=12, 12 match the expected state",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/stages/017-verify.json"
+          ],
+          "passed": true
+        },
+        "validation_cases_passed": {
+          "detail": "12 live cases passed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/escort-loss/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/new-exposure/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-food/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-repair/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/partial-resource/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/temporary-exposure-repaired/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/reports/two-harm/report.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-010.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-011.json",
+            "benchmark_runs/plan3-part1/builder-a2/validation/plan3-builder-a2-v3/plan3-builder-a2-v3-validation/trials/trial-012.json"
+          ],
+          "passed": true
+        }
+      },
+      "scenario_durations": {
+        "builder-a1": 6229.397923231125,
+        "builder-a2": 6391.957893133163
+      }
+    },
+    "city": {
+      "failed_requirements": [],
+      "family_total_s": 4246.8264899253845,
+      "passed": true,
+      "position_id": "plan3-city-a2-v2",
+      "requirements": {
+        "alternative_full_case": {
+          "detail": "1 passed live alternative full-score case(s) whose script digest differs from every joint-full script",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json"
+          ],
+          "passed": true
+        },
+        "capture_records_complete": {
+          "detail": "9 live trials, every capture single-execution and <= 2.0 s",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-009.json"
+          ],
+          "passed": true
+        },
+        "closer_only_zero": {
+          "detail": "1 closer/preparation case(s); nonzero or failed: []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json"
+          ],
+          "passed": true
+        },
+        "evidence_index_complete": {
+          "detail": "every file in the attempt directory is in the immutable index",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "failed_attempt_history": {
+          "detail": "3 attempt dirs (1 failed), all journaled and indexed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a1/authoring-journal.json",
+            "benchmark_runs/plan3-part1/city-a1/evidence-index.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/authoring-journal.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/evidence-index.json",
+            "benchmark_runs/plan3-part1/city-a2/authoring-journal.json",
+            "benchmark_runs/plan3-part1/city-a2/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "final_restore_verified": {
+          "detail": "reloaded=True, reconnect=True, digest matches",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/stages/008-validate.json"
+          ],
+          "passed": true
+        },
+        "finish_packet_resolved": {
+          "detail": "every finish-packet reference resolved and hash-correct; attempt files read only from the verified index",
+          "evidence": [
+            "benchmarks/provenance/plan3-city-a2-v2.json"
+          ],
+          "passed": true
+        },
+        "harm_negative_cases": {
+          "detail": "every declared harm ['destructive-placement'] has an uncharged legitimate/compensated counterpart",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json"
+          ],
+          "passed": true
+        },
+        "harm_only_negative": {
+          "detail": "1 harm-only case(s); not (passed, gross 0, primary < 0): []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json"
+          ],
+          "passed": true
+        },
+        "harm_positive_cases": {
+          "detail": "declared ['destructive-placement']; no passed case charging []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json"
+          ],
+          "passed": true
+        },
+        "intermediate_rungs_covered": {
+          "detail": "every intermediate rung witnessed live",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-009.json"
+          ],
+          "passed": true
+        },
+        "joint_full_case": {
+          "detail": "1 passed live joint-full case(s) at primary 1.0",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json"
+          ],
+          "passed": true
+        },
+        "live_vs_offline_cases_distinguished": {
+          "detail": "9 validation-run cases are live witnesses; offline fixtures are pytest node IDs",
+          "evidence": [],
+          "passed": true
+        },
+        "measured_parameters_frozen": {
+          "detail": "0 measured parameter(s) frozen with probe evidence",
+          "evidence": [],
+          "passed": true
+        },
+        "menu_recovery_verified": {
+          "detail": "loader, reconnect, identity and digest confirmed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/stages/007-menu-check.json"
+          ],
+          "passed": true
+        },
+        "no_model_provenance": {
+          "detail": "10 records scripted, non-counting, not pilot-informed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-009.json"
+          ],
+          "passed": true
+        },
+        "no_undefined_predicate_support": {
+          "detail": "satisfied by construction: the v2 predicate layer raises BenchmarkStateError on any undefined yield/lifecycle/queue value, which validation records as a case error; no live case errored",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-009.json"
+          ],
+          "passed": true
+        },
+        "null_capture_timing": {
+          "detail": "10 full-scope captures, max <= 2.0 s, single execution",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "null_digest_chain": {
+          "detail": "4 steps, every pair and boundary equal",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "null_observation_calls": {
+          "detail": "4 public observation calls; 8 facts discoverable",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "offline_audit": {
+          "detail": "membership_matches=True, 117/117 uncredited over 96/96 trials",
+          "evidence": [
+            "benchmarks/provenance/plan3-part1-offline-preflight.json"
+          ],
+          "passed": true
+        },
+        "offline_fixture_inventory": {
+          "detail": "7 offline robustness tests present",
+          "evidence": [
+            "tests/arena/test_benchmark_agent.py",
+            "tests/arena/test_benchmark_capture.py",
+            "tests/arena/test_benchmark_predicates_v2.py",
+            "tests/arena/test_benchmark_report_v2.py",
+            "tests/arena/test_benchmark_scripted_runner.py",
+            "tests/arena/test_benchmark_state_v2.py"
+          ],
+          "passed": true
+        },
+        "positive_control_timing_probe": {
+          "detail": "passing 20-sample probe under the current capture implementation; 22 indexed raw evidence files present, hash-correct and Git-tracked",
+          "evidence": [
+            "benchmark_runs/plan3-part1/capture-probe-5/evidence-index.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/001.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/002.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/003.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/004.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/005.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/006.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/007.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/008.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/009.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/010.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/011.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/012.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/013.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/014.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/015.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/016.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/017.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/018.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/019.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/020.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/summary.json",
+            "benchmarks/provenance/plan3-part1-capture-probe.json"
+          ],
+          "passed": true
+        },
+        "rejections_declared": {
+          "detail": "every rejected_operation matches a declared rejection",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-009.json"
+          ],
+          "passed": true
+        },
+        "report_regeneration_recorded": {
+          "detail": "reports_identical=True, validation.json matches the finish packet and validate record: True (Task 22 re-verifies in a temporary checkout)",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/stages/008-validate.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/validation.json"
+          ],
+          "passed": true
+        },
+        "required_live_tags": {
+          "detail": "all 11 city tags witnessed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-009.json"
+          ],
+          "passed": true
+        },
+        "scenario_duration": {
+          "detail": "scenarios {'city-a1': 450.1630029678345, 'city-a2': 3796.66348695755}; family total 4246.83 s",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a1/authoring-journal.json",
+            "benchmark_runs/plan3-part1/city-a2/authoring-journal.json"
+          ],
+          "passed": true
+        },
+        "tracked_evidence_inventory": {
+          "detail": "98 referenced/indexed files present, hash-correct and Git-tracked",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "twelve_cycle_verify": {
+          "detail": "12 digests, cycles_completed=12, 12 match the expected state",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/stages/006-verify.json"
+          ],
+          "passed": true
+        },
+        "validation_cases_passed": {
+          "detail": "9 live cases passed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/destructive-placement/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/housing-partial/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/queue-overwrite/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/reports/uncredited-preparation/report.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/city-a2-reval/validation/plan3-city-a2-v2/plan3-city-a2-v2-validation/trials/trial-009.json"
+          ],
+          "passed": true
+        }
+      },
+      "scenario_durations": {
+        "city-a1": 450.1630029678345,
+        "city-a2": 3796.66348695755
+      }
+    },
+    "tactical": {
+      "failed_requirements": [],
+      "family_total_s": 7291.224150657654,
+      "passed": true,
+      "position_id": "plan3-tactical-a1-v2",
+      "requirements": {
+        "alternative_full_case": {
+          "detail": "1 passed live alternative full-score case(s) whose script digest differs from every joint-full script",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json"
+          ],
+          "passed": true
+        },
+        "capture_records_complete": {
+          "detail": "10 live trials, every capture single-execution and <= 2.0 s",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-010.json"
+          ],
+          "passed": true
+        },
+        "closer_only_zero": {
+          "detail": "1 closer/preparation case(s); nonzero or failed: []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json"
+          ],
+          "passed": true
+        },
+        "evidence_index_complete": {
+          "detail": "every file in the attempt directory is in the immutable index",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "failed_attempt_history": {
+          "detail": "1 attempt dirs (0 failed), all journaled and indexed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/authoring-journal.json",
+            "benchmark_runs/plan3-part1/tactical-a1/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "final_restore_verified": {
+          "detail": "reloaded=True, reconnect=True, digest matches",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/stages/032-validate.json"
+          ],
+          "passed": true
+        },
+        "finish_packet_resolved": {
+          "detail": "every finish-packet reference resolved and hash-correct; attempt files read only from the verified index",
+          "evidence": [
+            "benchmarks/provenance/plan3-tactical-a1-v2.json"
+          ],
+          "passed": true
+        },
+        "harm_negative_cases": {
+          "detail": "every declared harm ['military-loss'] has an uncharged legitimate/compensated counterpart",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json"
+          ],
+          "passed": true
+        },
+        "harm_only_negative": {
+          "detail": "1 harm-only case(s); not (passed, gross 0, primary < 0): []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json"
+          ],
+          "passed": true
+        },
+        "harm_positive_cases": {
+          "detail": "declared ['military-loss']; no passed case charging []",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json"
+          ],
+          "passed": true
+        },
+        "intermediate_rungs_covered": {
+          "detail": "every intermediate rung witnessed live",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-010.json"
+          ],
+          "passed": true
+        },
+        "joint_full_case": {
+          "detail": "1 passed live joint-full case(s) at primary 1.0",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json"
+          ],
+          "passed": true
+        },
+        "live_vs_offline_cases_distinguished": {
+          "detail": "10 validation-run cases are live witnesses; offline fixtures are pytest node IDs",
+          "evidence": [],
+          "passed": true
+        },
+        "measured_parameters_frozen": {
+          "detail": "1 measured parameter(s) frozen with probe evidence",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/probes/026-archer-shot.json",
+            "benchmark_runs/plan3-part1/tactical-a1/probes/026-expendable-attack.json"
+          ],
+          "passed": true
+        },
+        "menu_recovery_verified": {
+          "detail": "loader, reconnect, identity and digest confirmed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/stages/030-menu-check.json"
+          ],
+          "passed": true
+        },
+        "no_model_provenance": {
+          "detail": "11 records scripted, non-counting, not pilot-informed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-010.json"
+          ],
+          "passed": true
+        },
+        "no_undefined_predicate_support": {
+          "detail": "satisfied by construction: the v2 predicate layer raises BenchmarkStateError on any undefined yield/lifecycle/queue value, which validation records as a case error; no live case errored",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-010.json"
+          ],
+          "passed": true
+        },
+        "null_capture_timing": {
+          "detail": "10 full-scope captures, max <= 2.0 s, single execution",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "null_digest_chain": {
+          "detail": "4 steps, every pair and boundary equal",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "null_observation_calls": {
+          "detail": "4 public observation calls; 5 facts discoverable",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json"
+          ],
+          "passed": true
+        },
+        "offline_audit": {
+          "detail": "membership_matches=True, 117/117 uncredited over 96/96 trials",
+          "evidence": [
+            "benchmarks/provenance/plan3-part1-offline-preflight.json"
+          ],
+          "passed": true
+        },
+        "offline_fixture_inventory": {
+          "detail": "7 offline robustness tests present",
+          "evidence": [
+            "tests/arena/test_benchmark_agent.py",
+            "tests/arena/test_benchmark_capture.py",
+            "tests/arena/test_benchmark_predicates_v2.py",
+            "tests/arena/test_benchmark_report_v2.py",
+            "tests/arena/test_benchmark_scripted_runner.py",
+            "tests/arena/test_benchmark_state_v2.py"
+          ],
+          "passed": true
+        },
+        "positive_control_timing_probe": {
+          "detail": "passing 20-sample probe under the current capture implementation; 22 indexed raw evidence files present, hash-correct and Git-tracked",
+          "evidence": [
+            "benchmark_runs/plan3-part1/capture-probe-5/evidence-index.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/001.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/002.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/003.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/004.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/005.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/006.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/007.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/008.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/009.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/010.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/011.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/012.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/013.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/014.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/015.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/016.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/017.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/018.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/019.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/samples/020.json",
+            "benchmark_runs/plan3-part1/capture-probe-5/summary.json",
+            "benchmarks/provenance/plan3-part1-capture-probe.json"
+          ],
+          "passed": true
+        },
+        "rejections_declared": {
+          "detail": "every rejected_operation matches a declared rejection",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-010.json"
+          ],
+          "passed": true
+        },
+        "report_regeneration_recorded": {
+          "detail": "reports_identical=True, validation.json matches the finish packet and validate record: True (Task 22 re-verifies in a temporary checkout)",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/stages/032-validate.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/validation.json"
+          ],
+          "passed": true
+        },
+        "required_live_tags": {
+          "detail": "all 13 tactical tags witnessed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-010.json"
+          ],
+          "passed": true
+        },
+        "scenario_duration": {
+          "detail": "scenarios {'tactical-a1': 7291.224150657654}; family total 7291.22 s",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/authoring-journal.json"
+          ],
+          "passed": true
+        },
+        "tracked_evidence_inventory": {
+          "detail": "229 referenced/indexed files present, hash-correct and Git-tracked",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/evidence-index.json"
+          ],
+          "passed": true
+        },
+        "twelve_cycle_verify": {
+          "detail": "12 digests, cycles_completed=12, 12 match the expected state",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/stages/029-verify.json"
+          ],
+          "passed": true
+        },
+        "validation_cases_passed": {
+          "detail": "10 live cases passed",
+          "evidence": [
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/alternative-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/closer-only/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/covered-rescue/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/joint-full/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/meaningful-damage/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/military-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/mixed-gain-loss/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/null-discovery/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/reinforcement-partial/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/reports/repeat-undo/report.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-001.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-002.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-003.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-004.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-005.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-006.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-007.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-008.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-009.json",
+            "benchmark_runs/plan3-part1/tactical-a1/validation/plan3-tactical-a1-v2/plan3-tactical-a1-v2-validation/trials/trial-010.json"
+          ],
+          "passed": true
+        }
+      },
+      "scenario_durations": {
+        "tactical-a1": 7291.224150657654
+      }
+    }
+  },
+  "passed": true,
+  "preflight": {
+    "code_identity": "af0de81714e8319d0983540c25ef8b08afe083ab30b81a62d4229a7921649697",
+    "failed_requirements": [],
+    "passed": true,
+    "probe": {
+      "capture_implementation_sha256": "19c9c30ffcffcb78545a717feccbf2f3aadaca99369c9e5a1421efeec3460e6f",
+      "evidence_index_path": "benchmark_runs/plan3-part1/capture-probe-5/evidence-index.json",
+      "evidence_index_sha256": "357e1f3d58f2a40fbffeebe0020988eb7a419aa60e90a741bfdb2a7e3316eacd",
+      "limitations": [
+        "timing proven only for the recorded scope",
+        "no visible hostile targets at the positive control: TARGET rows not timed"
+      ],
+      "path": "benchmarks/provenance/plan3-part1-capture-probe.json",
+      "present": true,
+      "problems": [],
+      "samples": 20,
+      "sha256": "a177a88c2af4fcf3d41330f2bcb1fefd6399ddee1999bfdb7bcf6898bd51c8cf",
+      "verdict": {
+        "passed": true,
+        "reasons": []
+      }
+    },
+    "toolkit_identity": "f5828ec11e96227cdfdd9391715b41d9d5329d0d3752b4a1f99dfca07f2b9e9d"
+  },
+  "toolkit_identity": "f5828ec11e96227cdfdd9391715b41d9d5329d0d3752b4a1f99dfca07f2b9e9d"
+}
