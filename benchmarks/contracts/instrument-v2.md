@@ -304,7 +304,10 @@ Amendment procedure by kind of change:
   yield cache does not refresh within the turn after an improvement lands (a fresh plains
   farm still read 1 food, the repaired iron mine 1 production). The field is dropped (the
   farm itself is the completion), the recipe moves to `version: 2`, and the family repeats
-  from `probe` under the same clock (v1 archive and outputs retained).
+  from `probe` under the same clock (v1 archive and outputs retained). The archive stage
+  numbers a re-capture as the recipe version plus the archives the attempt already
+  published, so the second capture is `plan3-builder-a2-v3` (archive, position and packet);
+  no v2 artefact exists. The family finished at 19:39 UTC with validate 12/12.
 - **2026-10-10, before the city revalidation clock opens (decision 2, city family).**
   Prospective amendment granting the city family one revalidation attempt. The 2026-10-09
   delayed-death amendment required `plan3-city-a2-v1` (captured under `08585538…`) to be
