@@ -266,9 +266,15 @@ def test_builder_closer_only_destination_is_strictly_closer_and_unscored():
     selectors = {b["name"]: b["selector"] for b in recipe["bindings"]}
     mine = (selectors["repair_site"]["x"], selectors["repair_site"]["y"])
     start = (selectors["builder_repair"]["x"], selectors["builder_repair"]["y"])
-    area = [tuple(p) for p in selectors["closer_only_tile"]["area"]]
-    scored = {tuple(p) for name in ("food_site", "food_site_alt")
-              for p in selectors[name]["area"]} | {mine}
+    area = [(selectors["closer_only_tile"]["x"], selectors["closer_only_tile"]["y"])]
+    scored = {(selectors[name]["x"], selectors[name]["y"])
+              for name in ("food_site", "food_site_alt")} | {mine}
+    # Both farm tiles are measured plains tiles within two of their builders.
+    assert (selectors["food_site"]["x"], selectors["food_site"]["y"]) == (66, 22)
+    assert (selectors["food_site_alt"]["x"], selectors["food_site_alt"]["y"]) == (69, 22)
+    assert _hex_distance((66, 22), (selectors["builder_food"]["x"],
+                                    selectors["builder_food"]["y"])) <= 2
+    assert _hex_distance((69, 22), start) <= 2
     starts = {(selectors[n]["x"], selectors[n]["y"])
               for n in ("builder_repair", "builder_resource", "builder_food")}
     assert _hex_distance(start, mine) == 2

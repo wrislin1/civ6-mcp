@@ -35,9 +35,13 @@ result_char_cap: 1500
 #
 # Scenario: three builders start on city centres within two tiles of, but never
 # on, their scored work (there is no end_turn: every completion must fit in one
-# turn): Gwangju (70,22) for the mine and the Gwangju-ring farm, Jeonju (67,24)
-# for the Jeonju-ring farm and the mine, Jinju (73,30) next to the horses. The
-# setup readback refuses distances above two; reachability this turn is proven
+# turn): Gwangju (70,22) for the mine and the plains farm at (69,22), Jeonju
+# (67,24) for the plains farm at (66,22) and the mine, Jinju (73,30) next to the
+# horses. Both farm tiles were measured live on the base (2026-10-10) with the
+# engine's own ImprovementBuilder.CanHaveImprovement: neither city ring holds a
+# farmable grassland tile (marsh, forest, hills, resources, districts and an
+# existing farm fill them), so the food objective counts a plains farm (2 food).
+# The setup readback refuses distances above two; reachability this turn is proven
 # by the pathing probes' expect_pattern. Each builder carries the engine's default three
 # charges: GameCore has no build-charge setter, so the spec's one-charge scarcity rule is
 # not expressible (instrument-v2.md, amendment 2026-10-10). Repair needs no charge, the
@@ -87,29 +91,26 @@ setup:
         end
       end
     # Readback also measures each builder's distance to the work it serves:
-    # fixed sites must lie 1..2 tiles away, and each farm ring must offer an
-    # eligible (owned, flat grass, featureless, unimproved) tile 1..2 away.
+    # fixed sites must lie 1..2 tiles away, and each farm tile must be eligible
+    # (owned, flat grass or plains, featureless, resource-free, unimproved, no
+    # district, farmable by the engine's own check) and lie 1..2 tiles away.
     readback: |
+      local farm = GameInfo.Improvements["IMPROVEMENT_FARM"].Index
       local function eligible(p)
-        return p ~= nil and p:GetOwner() == 0 and p:GetFeatureType() < 0
-          and p:GetResourceType() < 0 and p:GetImprovementType() < 0 and p:GetDistrictType() < 0
-          and GameInfo.Terrains[p:GetTerrainType()].TerrainType == "TERRAIN_GRASS"
+        if p == nil or p:GetOwner() ~= 0 or p:GetFeatureType() >= 0 or p:GetResourceType() >= 0
+            or p:GetImprovementType() >= 0 or p:GetDistrictType() >= 0 then return false end
+        local t = GameInfo.Terrains[p:GetTerrainType()].TerrainType
+        if t ~= "TERRAIN_GRASS" and t ~= "TERRAIN_PLAINS" then return false end
+        return ImprovementBuilder.CanHaveImprovement(p, farm, 0) == true
       end
-      local function ringOk(x, y, cx, cy)
-        for dy = -1, 1 do
-          for dx = -1, 1 do
-            if dx ~= 0 or dy ~= 0 then
-              local d = Map.GetPlotDistance(x, y, cx + dx, cy + dy)
-              if d >= 1 and d <= 2 and eligible(Map.GetPlot(cx + dx, cy + dy)) then return true end
-            end
-          end
-        end
-        return false
+      local function ringOk(x, y, fx, fy)
+        local d = Map.GetPlotDistance(x, y, fx, fy)
+        return d >= 1 and d <= 2 and eligible(Map.GetPlot(fx, fy))
       end
       local spots = {
-        {70, 22, {{68, 23}}, {{70, 22}}},
+        {70, 22, {{68, 23}}, {{69, 22}}},
         {73, 30, {{74, 30}}, {}},
-        {67, 24, {{68, 23}}, {{67, 24}}},
+        {67, 24, {{68, 23}}, {{66, 22}}},
       }
       for _, s in ipairs(spots) do
         local n = 0
@@ -180,12 +181,13 @@ setup:
       end
       if n ~= 1 then print("ERR|expected one escort at 73,30, found " .. n) end
   - kind: lua
-    # Measurement only: the closer-only destination. Of the mine's (68,23) two
-    # hex neighbours outside both farm rings and city centres, (68,22) and
-    # (69,24), at least one must be eligible: owned, no district, featureless,
-    # passable land, holding no unit, and no hostile (barbarian or at war)
-    # within one tile. The closer_only_tile selector narrows to it (an
-    # ambiguous resolution fails with both candidates).
+    # Measurement only: the closer-only destination (69,23), the mine's (68,23)
+    # one hex neighbour that is neither a scored tile, a city centre nor a
+    # district (measured live 2026-10-10: (68,22) and (69,24) hold districts,
+    # (69,22) is the alternative farm, (67,23) and (68,24) are hills). It carries
+    # an existing farm, which is neither scored nor restorable. It must be owned,
+    # no district, featureless, passable land, holding no unit, with no hostile
+    # (barbarian or at war) within one tile; the closer_only_tile selector names it.
     lua: |
       print("OK|measure closer_only_tile")
     readback: |
@@ -202,7 +204,7 @@ setup:
         return false
       end
       local found = 0
-      for _, t in ipairs({{68, 22}, {69, 24}}) do
+      for _, t in ipairs({{69, 23}}) do
         local p = Map.GetPlot(t[1], t[2])
         if p ~= nil and p:GetOwner() == 0 and p:GetDistrictType() < 0 and p:GetFeatureType() < 0
             and not p:IsWater() and not p:IsImpassable() and p:GetUnitCount() == 0
@@ -275,19 +277,17 @@ bindings:
   resolves: tile
   selector: {x: 74, y: 30, owner: 0, resource: RESOURCE_HORSES, improvement: NONE}
 - name: food_site
-  # Unimproved featureless grassland next to Jeonju; narrowed live from the candidates.
+  # The one farmable tile within two of Jeonju (measured live 2026-10-10): unimproved
+  # featureless plains at hex distance 2; the setup readback proves it eligible.
   resolves: tile
-  selector: {owner: 0, terrain: TERRAIN_GRASS, feature: NONE, resource: NONE,
-             improvement: NONE, district: NONE,
-             area: [[66, 23], [67, 23], [68, 23], [66, 24], [68, 24], [66, 25], [67, 25],
-                    [68, 25]]}
+  selector: {x: 66, y: 22, owner: 0, terrain: TERRAIN_PLAINS, feature: NONE, resource: NONE,
+             improvement: NONE, district: NONE}
 - name: food_site_alt
-  # The economically equivalent alternative next to Gwangju, declared before freezing.
+  # The economically equivalent alternative next to Gwangju (unimproved featureless
+  # plains at distance 1), declared before freezing.
   resolves: tile
-  selector: {owner: 0, terrain: TERRAIN_GRASS, feature: NONE, resource: NONE,
-             improvement: NONE, district: NONE,
-             area: [[69, 21], [70, 21], [71, 21], [69, 22], [71, 22], [69, 23], [70, 23],
-                    [71, 23]]}
+  selector: {x: 69, y: 22, owner: 0, terrain: TERRAIN_PLAINS, feature: NONE, resource: NONE,
+             improvement: NONE, district: NONE}
 - name: builder_repair
   resolves: unit
   selector: {type: UNIT_BUILDER, role: civilian, charges: 3, x: 70, y: 22}
@@ -298,10 +298,10 @@ bindings:
   resolves: unit
   selector: {type: UNIT_BUILDER, role: civilian, charges: 3, x: 67, y: 24}
 - name: closer_only_tile
-  # Hex distance exactly 1 from the mine (68,23), outside both farm rings and
-  # every city centre; the setup readback proves it unoccupied and unthreatened.
+  # Hex distance exactly 1 from the mine (68,23) and from Gwangju, not a scored
+  # tile or a city centre; the setup readback proves it unoccupied and unthreatened.
   resolves: tile
-  selector: {owner: 0, district: NONE, feature: NONE, area: [[68, 22], [69, 24]]}
+  selector: {x: 69, y: 23, owner: 0, district: NONE, feature: NONE}
 - name: escort_leave_tile
   # Hex distance 1 from Jinju and 2 from the horses, across the river; the setup
   # readback proves it empty and passable (measured live 2026-10-10).
@@ -311,8 +311,14 @@ bindings:
   resolves: unit
   selector: {type: UNIT_SWORDSMAN, role: combat, x: 73, y: 30}
 - name: route_threat
+  # The horses' three neighbours that are not adjacent to Jinju (the spawn rule's
+  # candidates, in its direction order (74,31) first). Naming them puts the tile in
+  # the resolution capture's area: the v2 target scan lists a visible hostile only
+  # inside the frozen area or adjacent to an owned unit, and the threat is neither
+  # (measured live 2026-10-10: the warrior at (74,31) was captured as no row).
   resolves: target
-  selector: {owner: 63, role: combat, hostile: true, visible: true, status: alive_visible}
+  selector: {owner: 63, role: combat, hostile: true, visible: true, status: alive_visible,
+             area: [[74, 31], [75, 30], [74, 29]]}
 
 coverage_rule:
   include_owned_tiles: true
@@ -344,8 +350,9 @@ objectives:
   - points: 2
     predicate: {kind: charged_builder_at, tiles: ["${food_site.xy}", "${food_site_alt.xy}"]}
   - points: 4
+    # A plains farm yields 2 food at this era (grassland would give 3).
     predicate: {kind: tile_matches, tiles: ["${food_site.xy}", "${food_site_alt.xy}"],
-                fields: {improvement: IMPROVEMENT_FARM, pillaged: false, food: {min: 3}}}
+                fields: {improvement: IMPROVEMENT_FARM, pillaged: false, food: {min: 2}}}
 
 harms:
 - id: escort-loss
